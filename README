@@ -1,0 +1,50 @@
+nemo - map filtering and cluster detection code
+
+This is a slightly edited version of the original code, for posting on ACT github.
+There may be all sorts of weird things in here that don't make sense, wrong turns, and all the rest
+
+I have disabled the code that does the catalog matching and (static) web page generation as
+that is all now handled by the sourcery package - which runs a live, editable web database. All
+of the photometry routines (for measuring Y etc.) are also disabled at the moment. But you
+can get signal-to-noise values. All of this will be tidied up if the code is eventually 
+refactored.
+
+---
+
+
+Required python modules (current versions running on given in brackets, earlier versions probably work):
+
+* pyfits (2.1.3)
+* numpy (1.5)
+* scipy (0.7.2)
+* matplotlib (0.99.3)
+* astLib (svn possibly, if so: svn co https://astlib.svn.sourceforge.net/svnroot/astlib/trunk astlib) 
+* flipper (0.1.3)
+
+Cython is now needed for the inserting fake sources completeness sim stuff.
+
+The fake source sims are run from the main nemo script, and output is written 
+under <outDir>/diagnostics/fakeSourceSims. A .par file with the settings for 
+running completeness sims is included 
+(examples/equS82AR1Only_MatchedProfile_simpleNoise_backsub_season234_narrow.par).
+All the action is under simTools.fakeSourceSims.
+
+IPython isn't really required, but I like to throw in ipshells() all over the place when testing (comment out
+the ipshell import at the top of each file if necessary).
+
+To install:
+
+ - as root:
+   % sudo python setup.py install
+
+ - to home directory:
+   % python setup.py install --prefix=$HOME/local
+   Then add $HOME/local/bin to $PATH, and e.g. $HOME/local/lib/python2.5/site-packages to $PYTHONPATH
+
+To run:
+
+  % nemo <.par file>
+
+  See the examples/ dir for example .par files (and also Ryan's temperature profiles)
+
+

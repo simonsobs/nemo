@@ -1,0 +1,8 @@
+Set redshifts, masses to draw from in equ_physicalArnaud.par
+Cosmology of Omega_M0 = 0.3, Omega_Lambda = 0.7, H0 = 70 km/s/Mpc is assumed,
+as is Y_SZ scaling relation in Arnaud et al. (2010, see their equation 25).
+
+To run:
+
+% nemoFakeSources equ_physicalArnaud.par
+

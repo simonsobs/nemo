@@ -1,0 +1,41 @@
+This directory contains a .par file for running over the ACT
+equatorial maps that are available on LAMBDA. You'll need the files
+named:
+
+* ACT_148_equ_season_3_1way_hits_v3.fits  
+* ACT_148_equ_season_3_1way_v3_src_free.fits
+
+You'll then need to edit the .par file accordingly to point to 
+wherever these live on your machine. In practice, one would make
+a weighted average of all of the season / array maps and run on
+that to reach the full depth.
+
+This example runs only a single cluster model, but you add
+(uncomment) as many more as you like - they will be combined to
+make an "optimal" catalog. It just takes longer.
+
+For speed, this example runs over only a small section of the map,
+which you can adjust with the RADecSection key in the .par file.
+
+To run:
+
+% nemo equ.par
+
+For the settings in this example, this should take ~35 sec on an
+Intel Core i5-3320M (2.60 GHz). Subsequent runs (if you fiddle with
+the code and decide to re-run, for example) will be quicker, if you 
+don't modify the filters, as they are cached.
+
+Output will be written to a directory called 'equ', in which you
+will find:
+
+* equ/diagnostics           - various diagnostic plots
+* equ/filteredMaps          - the filtered maps themselves, with .reg
+                              files for each model
+* equ/equ_optimal_catalog.* - the combined, optimal catalog, in
+                              various formats 
+
+The file Hasselfield2013_upp.fits contains the Hasselfield et al.
+(2013) catalog, if you want to compare by cross matching using
+TopCat. Please note the different area and maps used in this quick
+example when doing so.
