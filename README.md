@@ -45,7 +45,8 @@ python setup.py install --prefix=$HOME/local
 
 Then add `$HOME/local/bin` to $PATH, and e.g., `$HOME/local/lib/python2.7/site-packages` to $PYTHONPATH.
 
-```export PATH=$HOME/local/bin:$PATH    
+```
+export PATH=$HOME/local/bin:$PATH    
 export PYTHONPATH=$HOME/local/lib/python2.7/site-packages:$PYTHONPATH
 ```
 
