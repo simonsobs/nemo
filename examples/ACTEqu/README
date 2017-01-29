@@ -8,11 +8,12 @@ named:
 You'll then need to edit the .par file accordingly to point to 
 wherever these live on your machine. In practice, one would make
 a weighted average of all of the season / array maps and run on
-that to reach the full depth.
+that to use the full available depth.
 
-This example runs only a single cluster model, but you add
+This example runs only a single cluster model, but you can add
 (uncomment) as many more as you like - they will be combined to
-make an "optimal" catalog. It just takes longer.
+make an "optimal" catalog, selecting the higher signal-to-noise
+result as the preferred one. It just takes longer.
 
 For speed, this example runs over only a small section of the map,
 which you can adjust with the RADecSection key in the .par file.
