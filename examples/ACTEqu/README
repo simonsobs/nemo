@@ -21,7 +21,7 @@ To run:
 
 % nemo equ.par
 
-For the settings in this example, this should take ~35 sec on an
+For the settings in this example, this should take ~20 sec on an
 Intel Core i5-3320M (2.60 GHz). Subsequent runs (if you fiddle with
 the code and decide to re-run, for example) will be quicker, if you 
 don't modify the filters, as they are cached.
@@ -39,3 +39,7 @@ The file Hasselfield2013_upp.fits contains the Hasselfield et al.
 (2013) catalog, if you want to compare by cross matching using
 TopCat. Please note the different area and maps used in this quick
 example when doing so.
+
+Note that the output for photometric measurements (Y500 etc.) is not
+correct at the moment - this was being experimented with a while ago 
+and has been left 'as is'.
