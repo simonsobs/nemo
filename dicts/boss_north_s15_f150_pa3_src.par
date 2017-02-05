@@ -1,0 +1,36 @@
+unfilteredMaps = [\
+                 {'mapFileName': "/data/saiola/maps/MR1_20161215/boss_north/boss_north_2015_MR1/boss_north_2015_150GHz_MR1_singlerecal_PA3_night_set0123_nosrcsub_inv_400_I.fits", \
+                  'weightsFileName': "/data/saiola/maps/MR1_20161215/boss_north/boss_north_2015_MR1/boss_north_2015_150GHz_MR1_singlerecal_PA3_night_set0123_weights_I.fits", \
+                  'obsFreqGHz': 148.0, 'units': 'uK', \
+                  'beamFileName': "/data/saiola/maps/MR1_20161215/beams/170112/beam_profile_170112_2015_pa3_150GHz_instant.txt", \
+                  'addNoise': None, \
+                  'RADecSection': [169, 235, -3.0, 20], \
+                  'backgroundSubtraction': False, \
+                  'pointSourceRemoval': None} \
+]
+
+# Detection options
+thresholdSigma = 4.0
+minObjPix = 4
+rejectBorder = 10
+
+# Catalog options
+catalogCuts=['SN > 4.0']
+
+mapFilters = [\
+               {'label': "BeamProfileTest", 'class': "BeamMatchedFilter", \
+               'params': {'M500MSun': 1e14, 'z': 0.2, \
+                          'noiseParams': {'method': "dataMap"}, \
+                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+]
+             
+# Photometry options
+photometryOptions = {'apertureRadiusArcmin': 3.0, \
+                     'numBackgrounds': 100, \
+                     'minBackgroundSepArcmin': 10, \
+                     'maxBackgroundSepArcmin': 30}
+
+
+
+compareToSim = False
+
