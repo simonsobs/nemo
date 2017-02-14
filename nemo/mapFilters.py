@@ -20,8 +20,8 @@ ArnaudModelWienerFilter
 """
 
 import math
-import liteMap
-import fftTools
+from flipper import liteMap
+from flipper import fftTools
 from astLib import *
 import numpy as np
 from numpy import fft
