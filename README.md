@@ -24,10 +24,12 @@ Nemo itself is written in python (2.7.x), and requires the following additional 
 * scipy (0.17.1)
 * matplotlib (1.5.2)
 * astLib (git version probably: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
-* flipper (0.1.3)
-* atpy (0.9.7)
+* flipper ([ACT collaboration git version](https://github.com/ACTCollaboration/flipper))
+* astropy (1.3)
 * IPython (2.4.1)
 * Cython (0.24.1)
+
+_Note:_ Switched from `atpy` to `astropy` for handling .fits tables (Feb 2017).
 
 ## Installation
 

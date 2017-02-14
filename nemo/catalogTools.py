@@ -11,7 +11,7 @@ import urllib
 import urllib2
 import sys
 import time
-import atpy
+import astropy.table as atpy
 import IPython
 
 # For adding meta data to output
@@ -496,6 +496,7 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
     outFile.close()   
     
     # Write a .fits version (easier for topcatting)
+    # NOTE: switched to astropy (v1.3) tables interface
     tab=atpy.Table()
     for key in keysToWrite:
         if key in availKeys:
@@ -505,8 +506,8 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
                     arr.append(obj[key])
                 else:
                     arr.append(-99)
-            tab.add_column(key, arr)
-    tab.table_name='ACT'
+            tab.add_column(atpy.Column(arr, key))
+    #tab.table_name='ACT'
     fitsOutFileName=outFileName.replace(".csv", ".fits")
     if os.path.exists(fitsOutFileName) == True:
         os.remove(fitsOutFileName)
