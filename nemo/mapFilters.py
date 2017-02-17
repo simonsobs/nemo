@@ -901,8 +901,13 @@ class RealSpaceMatchedFilter(MapFilter):
     Tne S/N map is constructed, measuring locally on a scale 3 x that of the filter kernel, with 3-sigma
     clipping applied. This allows us to take into account how the noise level varies across the map.
     
-    Finally, a rank filter is used to zap noisy regions at the edge of the map, where the RMS values are
+    A rank filter is used to zap noisy regions at the edge of the map, where the RMS values are
     not accurate.
+    
+    Optionally, a 'surveyMask' can be applied (e.g., for point source masking)
+    
+    A map of the final area searched for clusters called 'areaMask.fits' is written in the diagnostics/ 
+    folder.
     
     NOTE: ArnaudModel is currently hard coded in here!
     
@@ -956,9 +961,9 @@ class RealSpaceMatchedFilter(MapFilter):
         kern2d=kern2d/kern2d.sum()
         
         # Sanity check plot
-        plt.plot(arcminRange[mask], prof[mask])
-        plt.xlabel("$\\theta$ (arcmin)")
-        plt.ylabel("Amplitude")
+        #plt.plot(arcminRange[mask], prof[mask])
+        #plt.xlabel("$\\theta$ (arcmin)")
+        #plt.ylabel("Amplitude")
 
         # Apply the kernel, after first subtracting background on larger scales using difference of Gaussians
         filteredMaps={}
@@ -967,9 +972,13 @@ class RealSpaceMatchedFilter(MapFilter):
             wcs=mapDict['wcs']
             bckSubData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
             filteredMap=ndimage.convolve(bckSubData, kern2d)
+            if 'surveyMask' in mapDict.keys():
+                smImg=pyfits.open(mapDict['surveyMask'])
+                surveyMask=smImg[0].data
+            else:
+                surveyMask=np.ones(mapData.shape)
             filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
-            #astImages.saveFITS("test.fits", filteredMap, wcs)
-
+            
         # Linearly combine filtered maps and convert to yc if asked to do so
         # NOTE: Here, we ARE converting to yc always...
         if 'mapCombination' in self.params.keys():
@@ -983,7 +992,6 @@ class RealSpaceMatchedFilter(MapFilter):
             combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
             combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
         
-
         # Local RMS measurements on a grid, over the whole filtered map
         # Could overlap? 
         gridSize=rIndex*3
@@ -1046,13 +1054,13 @@ class RealSpaceMatchedFilter(MapFilter):
         # Need to *-1 to get +ve SN for clusters if map yc
         SNMap=np.zeros(combinedMap.shape)
         SNMap[apodMask]=combinedMap[apodMask]/mapRMS[apodMask]
-        SNMap=SNMap*edgeCheck*-1
+        SNMap=SNMap*edgeCheck*surveyMask*-1
         SNMap[np.isnan(SNMap)]=0.
         combinedMap=combinedMap*edgeCheck
 
         maskFileName=self.diagnosticsDir+os.path.sep+"areaMask.fits"
         if os.path.exists(maskFileName) == False:
-            astImages.saveFITS(maskFileName, np.array(edgeCheck, dtype = int), mapDict['wcs'])
+            astImages.saveFITS(maskFileName, np.array(edgeCheck*surveyMask, dtype = int), mapDict['wcs'])
                 
         return {'data': combinedMap, 'simData': None, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'signalMap': kern2d, 'beamDecrementBias': 1.0,
