@@ -25,7 +25,7 @@ from flipper import fftTools
 from astLib import *
 import numpy as np
 from numpy import fft
-import pylab
+import pylab as plt
 import os
 from scipy import interpolate
 from scipy import ndimage
@@ -38,6 +38,9 @@ import copy
 import sys
 import glob
 import itertools
+import pyximport; pyximport.install()
+import nemoCython
+import time
 import IPython
 
 #------------------------------------------------------------------------------------------------------------
@@ -155,8 +158,8 @@ class MapFilter:
         
         # Check if can recover 1d power spectrum from 2d
         #results=fgPower.binInAnnuli("/home/matty/Astro_Software/flipper-0.1.0/params/BIN_100_200")
-        #pylab.plot(results[2], (results[2]*(results[2]+1)*results[3])/(np.pi*2))
-        #pylab.plot(l, llClsMicroK2)
+        #plt.plot(results[2], (results[2]*(results[2]+1)*results[3])/(np.pi*2))
+        #plt.plot(l, llClsMicroK2)
         
         return fgPower
                
@@ -423,11 +426,11 @@ class MapFilter:
         astImages.saveFITS(outFileName, self.filteredMap, self.wcs)
 
 
-    def saveRealSpaceFilterProfile(self):
-        """Saves a real-space profile of the filter out as a .png plot and 2d .fits image.
+    def makeRealSpaceFilterProfile(self):
+        """Makes a 1d real-space profile of the filter.
         
+        Returns profile, arcminRange
         """
-        
         wcs=self.wcs
         
         realSpace=fft.ifft2(self.G).real
@@ -438,25 +441,36 @@ class MapFilter:
         prof=realSpace[y0, x0:]/realSpace[y0, x0:].max() # normalise for plot
         arcminRange=np.arange(0, prof.shape[0])*self.degPerPixX*60.0
         
+        return prof, arcminRange
+    
+        
+    def saveRealSpaceFilterProfile(self):
+        """Saves a real-space profile of the filter out as a .png plot and 2d .fits image.
+        
+        """
+        
+        prof, arcminRange=self.makeRealSpaceFilterProfile()
+        
         # Measure characteristic FWHM
         tck=interpolate.splrep(arcminRange, prof)
         FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
         
-        fig=pylab.figure(num=2, figsize=(8,8))
+        fig=plt.figure(num=2, figsize=(8,8))
         fig.canvas.set_window_title('Filter Profile in Real Space')
-        pylab.clf()
-        pylab.title("Filter Profile %s" % (self.label))
-        pylab.ylabel("Amplitude")
-        pylab.xlabel("$\\theta$ (arcmin)")
-        pylab.plot(arcminRange, prof)
-        pylab.xlim(0, 30.0)
-        pylab.ylim(prof.min(), prof.max()*1.1)
-        pylab.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+".png")
-        pylab.close()
+        plt.clf()
+        plt.title("Filter Profile %s" % (self.label))
+        plt.ylabel("Amplitude")
+        plt.xlabel("$\\theta$ (arcmin)")
+        plt.plot(arcminRange, prof)
+        plt.xlim(0, 30.0)
+        plt.ylim(prof.min(), prof.max()*1.1)
+        plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+".png")
+        plt.close()
         
         # Save 2D realspace filter image too
         #astImages.saveFITS(self.diagnosticsDir+os.path.sep+"realSpaceProfile2d_"+self.label+".fits", \
                                 #realSpace, wcs)
+    
 
 #------------------------------------------------------------------------------------------------------------
 class WienerFilter(MapFilter):
@@ -873,7 +887,177 @@ class MatchedFilter(MapFilter):
         return {'data': combinedMap, 'simData': filteredSimMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'signalMap': signalMap.data, 'beamDecrementBias': signalMapDict['beamDecrementBias'],
                 'signalAreaScaling': signalAreaScaling}
+            
+#------------------------------------------------------------------------------------------------------------
+class RealSpaceMatchedFilter(MapFilter):
+    """Makes a matched-filter kernel using the noise properties of a specified region of the map (e.g.
+    the deepest part) in Fourier space, which is converted into real space and truncated such that the 
+    kernel is small enough in footprint to be applied by directly convolving with the map in real space 
+    in a short amount of time. 
+    
+    First though we high-pass filter the maps on a similar scale using a Mexican hat (difference of Gaussian
+    smoothed images), to get rid of large scale noise from CMB and atmosphere.
+    
+    Tne S/N map is constructed, measuring locally on a scale 3 x that of the filter kernel, with 3-sigma
+    clipping applied. This allows us to take into account how the noise level varies across the map.
+    
+    Finally, a rank filter is used to zap noisy regions at the edge of the map, where the RMS values are
+    not accurate.
+    
+    NOTE: ArnaudModel is currently hard coded in here!
+    
+    """
+
+    def buildAndApply(self):
+        
+        print ">>> Building filter %s ..." % (self.label)
+
+        # First step: build matched filter on a map section
+        kernelUnfilteredMapsDictList=[]
+        keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
+                    'backgroundSubtraction', 'pointSourceRemoval']
+        for unfilteredMapsDict in self.unfilteredMapsDictList:
+            kernelUnfilteredMapsDict={}
+            for k in keysWanted:
+                kernelUnfilteredMapsDict[k]=unfilteredMapsDict[k]
+            kernelUnfilteredMapsDict['RADecSection']=self.params['noiseParams']['RADecSection']
+            kernelUnfilteredMapsDictList.append(kernelUnfilteredMapsDict)
                 
+        # NOTE: hard coded Arnaud here for now
+        kernelLabel="realSpaceKernel_%s" % (self.label)
+        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
+        if os.path.exists(matchedFilterDir) == False:
+            os.makedirs(matchedFilterDir)
+        if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
+            os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
+        matchedFilter=ArnaudModelMatchedFilter(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
+                                               outDir = matchedFilterDir, 
+                                               diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
+        matchedFilter.buildAndApply()
+        
+        # Turn the matched filter into a smaller real space convolution kernel
+        # This means we have to roll off the kernel to 0 at some radius
+        # This should be somewhere around the edge of the dip - so find the second zero crossing
+        prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
+        segProf=ndimage.label(np.greater(prof, 0))[0]
+        rIndex=np.where(segProf == 2)[0][0]
+        maxArcmin=arcminRange[rIndex]
+
+        # Make 2d kernel
+        mask=np.less(arcminRange, maxArcmin)
+        rRadians=np.radians(arcminRange/60.)
+        r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
+        profile2d=r2p(matchedFilter.radiansMap)
+        y, x=np.where(profile2d == profile2d.max())
+        ys, xs=np.where(profile2d != 0)
+        kern2d=profile2d[ys.min():ys.max(), xs.min():xs.max()]
+        
+        # Kernel normalisation
+        kern2d=kern2d/kern2d.sum()
+        
+        # Sanity check plot
+        plt.plot(arcminRange[mask], prof[mask])
+        plt.xlabel("$\\theta$ (arcmin)")
+        plt.ylabel("Amplitude")
+
+        # Apply the kernel, after first subtracting background on larger scales using difference of Gaussians
+        filteredMaps={}
+        for mapDict in self.unfilteredMapsDictList:   
+            mapData=mapDict['data']
+            wcs=mapDict['wcs']
+            bckSubData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
+            filteredMap=ndimage.convolve(bckSubData, kern2d)
+            filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
+            #astImages.saveFITS("test.fits", filteredMap, wcs)
+
+        # Linearly combine filtered maps and convert to yc if asked to do so
+        # NOTE: Here, we ARE converting to yc always...
+        if 'mapCombination' in self.params.keys():
+            combinedMap=np.zeros(filteredMaps[filteredMaps.keys()[0]].shape)
+            for key in filteredMaps.keys():
+                combinedMap=combinedMap+self.params['mapCombination'][key]*filteredMaps[key]
+            combinedMap=mapTools.convertToY(combinedMap, self.params['mapCombination']['rootFreqGHz'])
+            combinedObsFreqGHz='yc'
+        else:
+            # If no linear map combination given, assume we only want the first item in the filtered maps list
+            combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
+            combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
+        
+
+        # Local RMS measurements on a grid, over the whole filtered map
+        # Could overlap? 
+        gridSize=rIndex*3
+        overlapPix=gridSize/2
+        numXChunks=combinedMap.shape[1]/gridSize
+        numYChunks=combinedMap.shape[0]/gridSize
+        yChunks=np.linspace(0, combinedMap.shape[0], numYChunks+1, dtype = int)
+        xChunks=np.linspace(0, combinedMap.shape[1], numXChunks+1, dtype = int)
+        mapRMS=np.zeros(combinedMap.shape)
+        apodMask=np.not_equal(combinedMap, 0)
+        t0=time.time()
+        for i in range(len(yChunks)-1):
+            for k in range(len(xChunks)-1):
+                y0=yChunks[i]-overlapPix
+                y1=yChunks[i+1]+overlapPix
+                x0=xChunks[k]-overlapPix
+                x1=xChunks[k+1]+overlapPix
+                if y0 < 0:
+                    y0=0
+                if y1 > combinedMap.shape[0]:
+                    y1=combinedMap.shape[0]
+                if x0 < 0:
+                    x0=0
+                if x1 > combinedMap.shape[1]:
+                    x1=combinedMap.shape[1]
+                chunkValues=combinedMap[y0:y1, x0:x1]
+                if np.not_equal(chunkValues, 0).sum() != 0:
+                    goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                    chunkMean=np.mean(chunkValues[goodAreaMask])
+                    chunkRMS=np.std(chunkValues[goodAreaMask])
+                    sigmaClip=3.0
+                    for c in range(10):
+                        mask=np.less(abs(chunkValues), abs(chunkMean+sigmaClip*chunkRMS))
+                        mask=np.logical_and(goodAreaMask, mask)
+                        chunkMean=np.mean(chunkValues[mask])
+                        chunkRMS=np.std(chunkValues[mask])
+                else:
+                    chunkRMS=0.
+                mapRMS[y0:y1, x0:x1]=chunkRMS
+        t1=time.time()
+            
+        # Below is global RMS, for comparison
+        #apodMask=np.not_equal(mapData, 0)
+        #goodAreaMask=np.greater_equal(apodMask, 1.0) # don't want the apodized edges of the map to bias this
+        #mapMean=np.mean(combinedMap[goodAreaMask])
+        #mapRMS=np.std(combinedMap[goodAreaMask])
+        #sigmaClip=3.0
+        #for i in range(10):
+            #mask=np.less(abs(combinedMap), abs(mapMean+sigmaClip*mapRMS))
+            #mask=np.logical_and(goodAreaMask, mask)
+            #mapMean=np.mean(combinedMap[mask])
+            #mapRMS=np.std(combinedMap[mask])
+
+        # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
+        edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (gridSize*5.0, gridSize*5.0))
+        edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        
+        # Signal-to-noise map
+        # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
+        # Need to *-1 to get +ve SN for clusters if map yc
+        SNMap=np.zeros(combinedMap.shape)
+        SNMap[apodMask]=combinedMap[apodMask]/mapRMS[apodMask]
+        SNMap=SNMap*edgeCheck*-1
+        SNMap[np.isnan(SNMap)]=0.
+        combinedMap=combinedMap*edgeCheck
+
+        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask.fits"
+        if os.path.exists(maskFileName) == False:
+            astImages.saveFITS(maskFileName, np.array(edgeCheck, dtype = int), mapDict['wcs'])
+                
+        return {'data': combinedMap, 'simData': None, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
+                'SNMap': SNMap, 'signalMap': kern2d, 'beamDecrementBias': 1.0,
+                'signalAreaScaling': 1.0}
+            
 #------------------------------------------------------------------------------------------------------------
 class GaussianFilter(MapFilter):
     """Base class for filters using user specified Gaussian profile.
@@ -1207,16 +1391,16 @@ class ProfileFilter(MapFilter):
         diff=abs(plotProfile-0.5)
         FWHMIndex=diff.tolist().index(diff.min())
         FWHMArcmin=plotRangeArcmin[FWHMIndex]*2
-        fig=pylab.figure(num=2, figsize=(8,8))
+        fig=plt.figure(num=2, figsize=(8,8))
         fig.canvas.set_window_title('Signal Profile in Real Space')
-        pylab.clf()
-        pylab.title("Signal Profile - %s - FWHM = %.3f arcmin" % (self.label, FWHMArcmin))
-        pylab.ylabel("Amplitude")
-        pylab.xlabel("$\\theta$ (arcmin)")
-        pylab.plot(plotRangeArcmin, plotProfile)
-        pylab.xlim(0, 10)
-        pylab.ylim(0, 1.05)
-        pylab.savefig(self.diagnosticsDir+os.path.sep+"SignalProfile1d_"+self.label+".png")
+        plt.clf()
+        plt.title("Signal Profile - %s - FWHM = %.3f arcmin" % (self.label, FWHMArcmin))
+        plt.ylabel("Amplitude")
+        plt.xlabel("$\\theta$ (arcmin)")
+        plt.plot(plotRangeArcmin, plotProfile)
+        plt.xlim(0, 10)
+        plt.ylim(0, 1.05)
+        plt.savefig(self.diagnosticsDir+os.path.sep+"SignalProfile1d_"+self.label+".png")
 
         # Turn 1d profile into 2d
         r2prof=interpolate.interp1d(rRadiansLinear, profileLinear, bounds_error=False, fill_value=0.0)
@@ -1249,6 +1433,9 @@ class GaussianMatchedFilter(MatchedFilter, GaussianFilter):
 class ArnaudModelMatchedFilter(MatchedFilter, ArnaudModelFilter):
     pass
 class BeamMatchedFilter(MatchedFilter, BeamFilter):
+    pass
+
+class ArnaudModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, ArnaudModelFilter):
     pass
 
 class BetaModelWienerFilter(WienerFilter, BetaModelFilter):
