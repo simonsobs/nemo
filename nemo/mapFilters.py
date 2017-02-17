@@ -904,7 +904,7 @@ class RealSpaceMatchedFilter(MapFilter):
     A rank filter is used to zap noisy regions at the edge of the map, where the RMS values are
     not accurate.
     
-    Optionally, a 'surveyMask' can be applied (e.g., for point source masking)
+    Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
     
     A map of the final area searched for clusters called 'areaMask.fits' is written in the diagnostics/ 
     folder.
