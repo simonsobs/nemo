@@ -57,11 +57,11 @@ else:
         catalogTools.makeOptimalCatalog(imageDict, parDict['catalogCuts'])
         
         # Estimate of contamination from running cluster finding over inverted map (this takes no time really)
-        # We don't do anything with the output yet... (but we make plots, and chuck them on the diagnostics page)
+        # Makes a plot and we write a .fits table under diagnostics dir
         contaminationDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
                                                                           parDict['minObjPix'], parDict['rejectBorder'], 
                                                                           parDict['catalogCuts'],
-                                                                          diagnosticsDir = diagnosticsDir)
+                                                                          diagnosticsDir = diagnosticsDir)        
             
         # Sims based on inserting fake cluster profiles into the maps
         if 'fakeSourceSimOptions' in parDict.keys():

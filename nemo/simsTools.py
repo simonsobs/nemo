@@ -9,6 +9,7 @@ from scipy import ndimage
 from scipy import interpolate
 from scipy import stats
 import time
+import astropy.table as atpy
 import mapTools
 import catalogTools
 import photometry
@@ -932,6 +933,10 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
                                           minSNToIncludeInOptimalCatalog, diagnosticsDir = None):
     """Run the whole filtering set up again, on inverted maps.
     
+    Writes a plot and a .fits table to the diagnostics dir.
+    
+    Returns a dictionary containing the results
+    
     """
     
     invertedDict={}
@@ -1021,6 +1026,15 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     contaminDict['cumSumCandidates']=cumSumCandidates
     contaminDict['cumSumInverted']=cumSumInverted
     contaminDict['cumContamination']=cumContamination       
+    
+    # Wite a .fits table
+    contaminTab=atpy.Table()
+    for key in contaminDict.keys():
+        contaminTab.add_column(atpy.Column(contaminDict[key], key))
+    fitsOutFileName=diagnosticsDir+os.path.sep+"contaminationEstimateSNR.fits"
+    if os.path.exists(fitsOutFileName) == True:
+        os.remove(fitsOutFileName)
+    contaminTab.write(fitsOutFileName)
     
     return contaminDict
     

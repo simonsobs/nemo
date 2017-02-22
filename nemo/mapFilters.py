@@ -956,21 +956,42 @@ class RealSpaceMatchedFilter(MapFilter):
         y, x=np.where(profile2d == profile2d.max())
         ys, xs=np.where(profile2d != 0)
         kern2d=profile2d[ys.min():ys.max(), xs.min():xs.max()]
+        kern2dRadiansMap=matchedFilter.radiansMap[ys.min():ys.max(), xs.min():xs.max()]
         
-        # Kernel normalisation
-        kern2d=kern2d/kern2d.sum()
+        # Kernel normalisation - tried using sum within R500 of model, doesn't work
+        # Fiddle with this later - doesn't affect S/N
+        #t500=matchedFilter.params['theta500Arcmin']
+        #t500Mask=np.less(kern2dRadiansMap, np.radians(t500/60.))
+        #normFactor=kern2d[t500Mask].sum()
+        #if normFactor < 0:
+            #print "filter normalisation is -ve"
+            #IPython.embed()
+            #sys.exit()
+            ##raise Exception, "filter normalisation is -ve"
+        #kern2d=kern2d/normFactor
         
-        # Sanity check plot
-        #plt.plot(arcminRange[mask], prof[mask])
-        #plt.xlabel("$\\theta$ (arcmin)")
-        #plt.ylabel("Amplitude")
-
+        # Save 2d kernel in case we want to do anything with it later
+        astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, None)
+        
+        # Filter profile plot
+        plt.plot(arcminRange[mask], prof[mask])
+        plt.xlabel("$\\theta$ (arcmin)")
+        plt.ylabel("Amplitude")
+        plt.title(self.label)
+        plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
+        plt.xlim(0, arcminRange[mask].max())
+        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
+        plt.close()
+        
         # Apply the kernel, after first subtracting background on larger scales using difference of Gaussians
         filteredMaps={}
         for mapDict in self.unfilteredMapsDictList:   
             mapData=mapDict['data']
             wcs=mapDict['wcs']
             bckSubData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
+            if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
+                bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
+                astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
             filteredMap=ndimage.convolve(bckSubData, kern2d)
             if 'surveyMask' in mapDict.keys():
                 smImg=pyfits.open(mapDict['surveyMask'])
@@ -1032,7 +1053,10 @@ class RealSpaceMatchedFilter(MapFilter):
                     chunkRMS=0.
                 mapRMS[y0:y1, x0:x1]=chunkRMS
         t1=time.time()
-            
+        if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
+            astImages.saveFITS(RMSFileName, mapRMS, mapDict['wcs'])
+                
         # Below is global RMS, for comparison
         #apodMask=np.not_equal(mapData, 0)
         #goodAreaMask=np.greater_equal(apodMask, 1.0) # don't want the apodized edges of the map to bias this
@@ -1051,10 +1075,9 @@ class RealSpaceMatchedFilter(MapFilter):
         
         # Signal-to-noise map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
-        # Need to *-1 to get +ve SN for clusters if map yc
         SNMap=np.zeros(combinedMap.shape)
         SNMap[apodMask]=combinedMap[apodMask]/mapRMS[apodMask]
-        SNMap=SNMap*edgeCheck*surveyMask*-1
+        SNMap=SNMap*edgeCheck*surveyMask
         SNMap[np.isnan(SNMap)]=0.
         combinedMap=combinedMap*edgeCheck
 

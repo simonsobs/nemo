@@ -21,7 +21,7 @@ np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                makeDS9Regions = True, writeSegmentationMap = True, diagnosticsDir = None,
+                makeDS9Regions = True, writeSegmentationMap = False, diagnosticsDir = None,
                 invertMap = False):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
@@ -248,6 +248,9 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                 # i.e., avoid using interpolate.RectBivariateSpline
                 mapValue=mapData[int(round(obj['y'])), int(round(obj['x']))]
                 #mapValue=mapInterpolator(obj['y'], obj['x'])[0][0]
+                #print "photometry"
+                #IPython.embed()
+                #sys.exit()
                 Y500_sr=mapValue*signalAreaScaling*srToArcmin2
                 yc=mapValue*beamDecrementBias
                 deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
