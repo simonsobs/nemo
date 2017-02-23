@@ -154,7 +154,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                 objDict['name']=catalogTools.makeACTName(objDict['RADeg'], objDict['decDeg'])
                 objDict['numSigPix']=objNumPix[i]
                 objDict['template']=key
-                objDict['SN']=mapInterpolator(objDict['y'], objDict['x'])[0][0]              
+                objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]              
                 if objDict['x'] > minX and objDict['x'] < maxX and \
                     objDict['y'] > minY and objDict['y'] < maxY:
                     masked=False
@@ -200,10 +200,10 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False):
         for obj in imageDict[key]['catalog']:
             obj['x'], obj['y']=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
             if obj['x'] > 0 and obj['x'] < data.shape[1] and obj['y'] > 0 and obj['y'] < data.shape[0]:
-                #obj['SN']=data[obj['y'], obj['x']] # read directly off of S/N map
-                obj['SN']=mapInterpolator(obj['y'], obj['x'])[0][0]
+                #obj['SNR']=data[obj['y'], obj['x']] # read directly off of S/N map
+                obj['SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
             else:
-                obj['SN']=None
+                obj['SNR']=None
        
 #------------------------------------------------------------------------------------------------------------
 def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDict = None):
@@ -256,11 +256,11 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                 deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
                 
                 obj['Y500_sr']=Y500_sr
-                obj['err_Y500_sr']=Y500_sr/obj['SN']
+                obj['err_Y500_sr']=Y500_sr/obj['SNR']
                 obj['y_c']=yc
-                obj['err_y_c']=yc/obj['SN']
+                obj['err_y_c']=yc/obj['SNR']
                 obj['deltaT_c']=deltaTc
-                obj['err_deltaT_c']=deltaTc/obj['SN']
+                obj['err_deltaT_c']=deltaTc/obj['SNR']
         
 #------------------------------------------------------------------------------------------------------------ 
 def measureApertureFluxes(catalog, apertureRadiusArcmin, mapData, wcs, fluxCorrectionFactor, numBackgrounds = 10, 
@@ -299,7 +299,7 @@ def measureApertureFluxes(catalog, apertureRadiusArcmin, mapData, wcs, fluxCorre
         # Integrated Y, integrate profile method - insert it here, then comment out above
         
         # Error is a fudge, and wrong no doubt
-        fluxErrArcmin2=fluxArcmin2/obj['SN']
+        fluxErrArcmin2=fluxArcmin2/obj['SNR']
         
         # Add stuff to catalog
         obj['flux_arcmin2']=fluxArcmin2
