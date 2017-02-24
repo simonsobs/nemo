@@ -916,83 +916,94 @@ class RealSpaceMatchedFilter(MapFilter):
     def buildAndApply(self):
         
         print ">>> Building filter %s ..." % (self.label)
-
-        # First step: build matched filter on a map section
-        kernelUnfilteredMapsDictList=[]
-        keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
-                    'backgroundSubtraction', 'pointSourceRemoval']
-        for unfilteredMapsDict in self.unfilteredMapsDictList:
-            kernelUnfilteredMapsDict={}
-            for k in keysWanted:
-                kernelUnfilteredMapsDict[k]=unfilteredMapsDict[k]
-            kernelUnfilteredMapsDict['RADecSection']=self.params['noiseParams']['RADecSection']
-            kernelUnfilteredMapsDictList.append(kernelUnfilteredMapsDict)
-                
-        # NOTE: hard coded Arnaud here for now
-        kernelLabel="realSpaceKernel_%s" % (self.label)
-        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
-        if os.path.exists(matchedFilterDir) == False:
-            os.makedirs(matchedFilterDir)
-        if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
-            os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
-        matchedFilter=ArnaudModelMatchedFilter(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
-                                               outDir = matchedFilterDir, 
-                                               diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
-        matchedFilter.buildAndApply()
         
-        # Turn the matched filter into a smaller real space convolution kernel
-        # This means we have to roll off the kernel to 0 at some radius
-        # This should be somewhere around the edge of the dip - so find the second zero crossing
-        prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
-        segProf=ndimage.label(np.greater(prof, 0))[0]
-        rIndex=np.where(segProf == 2)[0][0]
-        maxArcmin=arcminRange[rIndex]
-
-        # Make 2d kernel
-        mask=np.less(arcminRange, maxArcmin)
-        rRadians=np.radians(arcminRange/60.)
-        r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
-        profile2d=r2p(matchedFilter.radiansMap)
-        y, x=np.where(profile2d == profile2d.max())
-        ys, xs=np.where(profile2d != 0)
-        kern2d=profile2d[ys.min():ys.max(), xs.min():xs.max()]
-        kern2dRadiansMap=matchedFilter.radiansMap[ys.min():ys.max(), xs.min():xs.max()]
-        
-        # Kernel normalisation - tried using sum within R500 of model, doesn't work
-        # Fiddle with this later - doesn't affect S/N
-        #t500=matchedFilter.params['theta500Arcmin']
-        #t500Mask=np.less(kern2dRadiansMap, np.radians(t500/60.))
-        #normFactor=kern2d[t500Mask].sum()
-        #if normFactor < 0:
-            #print "filter normalisation is -ve"
-            #IPython.embed()
-            #sys.exit()
-            ##raise Exception, "filter normalisation is -ve"
-        #kern2d=kern2d/normFactor
-        
-        # Save 2d kernel in case we want to do anything with it later
-        astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, None)
-        
-        # Filter profile plot
-        plt.plot(arcminRange[mask], prof[mask])
-        plt.xlabel("$\\theta$ (arcmin)")
-        plt.ylabel("Amplitude")
-        plt.title(self.label)
-        plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
-        plt.xlim(0, arcminRange[mask].max())
-        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
-        plt.close()
-        
-        # Apply the kernel, after first subtracting background on larger scales using difference of Gaussians
         filteredMaps={}
         for mapDict in self.unfilteredMapsDictList:   
+            
+            # Subtract background on larger scales using difference of Gaussians  
+            maxArcmin=self.params['noiseParams']['maxArcmin']
             mapData=mapDict['data']
             wcs=mapDict['wcs']
             bckSubData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
             if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
                 bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
                 astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
-            filteredMap=ndimage.convolve(bckSubData, kern2d)
+            
+            # Work out by how much the signal template power is rolled off by doing the high pass filter above
+            
+            # Build the matched-filter kernel in a small section of the map
+            keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
+                        'backgroundSubtraction', 'pointSourceRemoval']
+            kernelUnfilteredMapsDict={}
+            for k in keysWanted:
+                kernelUnfilteredMapsDict[k]=mapDict[k]
+            kernelUnfilteredMapsDict['RADecSection']=self.params['noiseParams']['RADecSection']
+            kernelUnfilteredMapsDictList=[kernelUnfilteredMapsDict]
+                
+            # NOTE: hard coded Arnaud here for now
+            kernelLabel="realSpaceKernel_%s" % (self.label)
+            matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
+            if os.path.exists(matchedFilterDir) == False:
+                os.makedirs(matchedFilterDir)
+            if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
+                os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
+            matchedFilter=ArnaudModelMatchedFilter(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
+                                                outDir = matchedFilterDir, 
+                                                diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
+            matchedFilter.buildAndApply()
+            
+            # Turn the matched filter into a smaller real space convolution kernel
+            # This means we have to roll off the kernel to 0 at some radius
+            # This should be somewhere around the edge of the dip - so find the second zero crossing
+            prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
+            segProf=ndimage.label(np.greater(prof, 0))[0]
+            rIndex=np.where(segProf == 2)[0][0]
+            maxArcmin=arcminRange[rIndex]
+
+            # Make 2d kernel
+            mask=np.less(arcminRange, maxArcmin)
+            rRadians=np.radians(arcminRange/60.)
+            r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
+            profile2d=r2p(matchedFilter.radiansMap)
+            y, x=np.where(profile2d == profile2d.max())
+            ys, xs=np.where(profile2d != 0)
+            kern2d=profile2d[ys.min():ys.max(), xs.min():xs.max()]
+            kern2dRadiansMap=matchedFilter.radiansMap[ys.min():ys.max(), xs.min():xs.max()]
+            
+            # Kernel normalisation
+            # Tried using sum within R500 of model, doesn't work
+            # Fiddle with this later - doesn't affect S/N
+            #t500=matchedFilter.params['theta500Arcmin']
+            #t500Mask=np.less(kern2dRadiansMap, np.radians(t500/60.))
+            #normFactor=kern2d[t500Mask].sum()
+            #if normFactor < 0:
+                #print "filter normalisation is -ve"
+                #IPython.embed()
+                #sys.exit()
+                ##raise Exception, "filter normalisation is -ve"
+            #kern2d=kern2d/normFactor
+            
+            # Save 2d kernel in case we want to do anything with it later
+            astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, None)
+            
+            # Filter profile plot
+            plt.plot(arcminRange[mask], prof[mask])
+            plt.xlabel("$\\theta$ (arcmin)")
+            plt.ylabel("Amplitude")
+            plt.title(self.label)
+            plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
+            plt.xlim(0, arcminRange[mask].max())
+            plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
+            plt.close()
+            
+            # Apply the kernel
+            filteredMap=ndimage.convolve(bckSubData, kern2d) 
+            #filteredMap=ndimage.correlate(bckSubData, kern2d)  # takes same amount of time, output almost identical
+            #t1=time.time()
+            
+            # Check signal recovery here
+            
+            # Grab the survey/point source mask to apply if given
             if 'surveyMask' in mapDict.keys():
                 smImg=pyfits.open(mapDict['surveyMask'])
                 surveyMask=smImg[0].data
@@ -1055,7 +1066,7 @@ class RealSpaceMatchedFilter(MapFilter):
         t1=time.time()
         if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
             RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
-            astImages.saveFITS(RMSFileName, mapRMS, mapDict['wcs'])
+            astImages.saveFITS(RMSFileName, mapRMS*surveyMask, mapDict['wcs'])
                 
         # Below is global RMS, for comparison
         #apodMask=np.not_equal(mapData, 0)
