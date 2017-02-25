@@ -402,4 +402,27 @@ def objectFluxInAperture(objDict, apertureRadiusArcmin, mapData, wcs, fluxCorrec
     flux_arcmin2=np.sum(fluxPixels)*arcmin2PerPix*fluxCorrectionFactor
         
     return flux_arcmin2
-            
+
+#------------------------------------------------------------------------------------------------------------
+def makeAnnulus(innerScalePix, outerScalePix):
+    """Makes the footprint of an annulus for feeding into the rank filter
+    
+    Returns annulus, numValues
+    
+    """
+
+    # Make the footprint for the rank filter
+    #bckInnerScalePix=beamSigmaPix*3#int(round((bckInnerRadiusArcmin/60.0)/yPixScale))
+    #bckOuterScalePix=beamSigmaPix*5#int(round((bckOuterRadiusArcmin/60.0)/yPixScale))
+    bckInnerScalePix=int(round(innerScalePix))
+    bckOuterScalePix=int(round(outerScalePix))
+    annulus=np.zeros([bckOuterScalePix*2, bckOuterScalePix*2])
+    xRange=np.array([np.arange(annulus.shape[1])-bckOuterScalePix]*annulus.shape[0])
+    yRange=np.array([np.arange(annulus.shape[0])-bckOuterScalePix]*annulus.shape[1]).transpose()
+    rRange=np.sqrt(xRange**2+yRange**2)
+    annulus[np.logical_and(np.greater(rRange, bckInnerScalePix),
+                                np.less(rRange, bckOuterScalePix))]=1.0
+    #numValues=annulus.flatten().nonzero()[0].shape[0]
+    
+    return annulus.astype('int64')
+

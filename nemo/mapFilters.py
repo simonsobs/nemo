@@ -966,9 +966,18 @@ class RealSpaceMatchedFilter(MapFilter):
             r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
             profile2d=r2p(matchedFilter.radiansMap)
             y, x=np.where(profile2d == profile2d.max())
-            ys, xs=np.where(profile2d != 0)
-            kern2d=profile2d[ys.min():ys.max(), xs.min():xs.max()]
-            kern2dRadiansMap=matchedFilter.radiansMap[ys.min():ys.max(), xs.min():xs.max()]
+            y=y[0]
+            x=x[0]
+            yMin=y-rIndex
+            yMax=y+rIndex
+            xMin=x-rIndex
+            xMax=x+rIndex
+            if (yMax-yMin) % 2 == 0:
+                yMin=yMin+1
+            if (xMax-xMin) % 2 == 0:
+                xMin=xMin+1
+            kern2d=profile2d[yMin:yMax, xMin:xMax]
+            kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
             
             # Kernel normalisation
             # Tried using sum within R500 of model, doesn't work
@@ -1023,9 +1032,16 @@ class RealSpaceMatchedFilter(MapFilter):
             # If no linear map combination given, assume we only want the first item in the filtered maps list
             combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
             combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
+
+        # Cython-based SNMap calc, which uses an annulus mask, but doesn't do clipping
+        # Takes ~460 sec on equD56
+        #t0=time.time()
+        #annulus=photometry.makeAnnulus(rIndex, rIndex*2)
+        #SNMap=nemoCython.makeLocalSNMap(combinedMap, annulus)
+        #t1=time.time()
         
         # Local RMS measurements on a grid, over the whole filtered map
-        # Could overlap? 
+        # Could overlap? Or use the annulus mask
         gridSize=rIndex*3
         overlapPix=gridSize/2
         numXChunks=combinedMap.shape[1]/gridSize
@@ -1050,6 +1066,8 @@ class RealSpaceMatchedFilter(MapFilter):
                 if x1 > combinedMap.shape[1]:
                     x1=combinedMap.shape[1]
                 chunkValues=combinedMap[y0:y1, x0:x1]
+                # 3-sigma clipped stdev - 12 sec
+                # Tried biweight scale version, 10 x slower than this
                 if np.not_equal(chunkValues, 0).sum() != 0:
                     goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
                     chunkMean=np.mean(chunkValues[goodAreaMask])
@@ -1067,7 +1085,8 @@ class RealSpaceMatchedFilter(MapFilter):
         if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
             RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
             astImages.saveFITS(RMSFileName, mapRMS*surveyMask, mapDict['wcs'])
-                
+        #print t1-t0
+        
         # Below is global RMS, for comparison
         #apodMask=np.not_equal(mapData, 0)
         #goodAreaMask=np.greater_equal(apodMask, 1.0) # don't want the apodized edges of the map to bias this
