@@ -22,7 +22,7 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
                 makeDS9Regions = True, writeSegmentationMap = False, diagnosticsDir = None,
-                invertMap = False):
+                invertMap = False, objIdent = 'ACT-CL', longNames = False):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
     
@@ -69,8 +69,8 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
             wcs=imageDict[key]['wcs']
         elif SNMap == 'local':
             # This ignores the area mask, for now
-            img=pyfits.open(imageDict[key]['ycFilteredMap'])
-            wcs=astWCS.WCS(imageDict[key]['ycFilteredMap'])
+            img=pyfits.open(imageDict[key]['filteredMap'])
+            wcs=astWCS.WCS(imageDict[key]['filteredMap'])
             data=img[0].data
             bckInnerRadiusArcmin=10.0
             bckOuterRadiusArcmin=15.0
@@ -151,7 +151,10 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                     objDict['RADeg']=360.0+objDict['RADeg']
                 galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
                 objDict['galacticLatDeg']=galLat
-                objDict['name']=catalogTools.makeACTName(objDict['RADeg'], objDict['decDeg'])
+                if longNames == False:
+                    objDict['name']=catalogTools.makeACTName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)
+                else:
+                    objDict['name']=catalogTools.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
                 objDict['numSigPix']=objNumPix[i]
                 objDict['template']=key
                 objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]              
@@ -165,7 +168,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                         catalog.append(objDict)
                         idNumCount=idNumCount+1     
         if makeDS9Regions == True:
-            catalogTools.catalog2DS9(catalog, imageDict[key]['ycFilteredMap'].replace(".fits", ".reg"))
+            catalogTools.catalog2DS9(catalog, imageDict[key]['filteredMap'].replace(".fits", ".reg"))
         imageDict[key]['catalog']=catalog
 
 #------------------------------------------------------------------------------------------------------------
@@ -225,15 +228,16 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
     print ">>> Measuring SZ decrements and Y500s ..."
     for key in imageDict.keys():
         
-        print "--> Map: %s ..." % (imageDict[key]['ycFilteredMap'])
+        print "--> Map: %s ..." % (imageDict[key]['filteredMap'])
         catalog=imageDict[key]['catalog']        
         
-        img=pyfits.open(imageDict[key]['ycFilteredMap'])
-        wcs=astWCS.WCS(imageDict[key]['ycFilteredMap'])
+        img=pyfits.open(imageDict[key]['filteredMap'])
+        wcs=astWCS.WCS(imageDict[key]['filteredMap'])
         mapData=img[0].data
 
         beamDecrementBias=wcs.header['BBIAS']       # multiply map values by this to get intrinsic yc, delta Tc
         signalAreaScaling=wcs.header['ASCALING']    # multiply map values by this to turn single pixel at object location to Y500
+        mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
         
         mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
                                                         np.arange(mapData.shape[1]), 
@@ -251,16 +255,27 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                 #print "photometry"
                 #IPython.embed()
                 #sys.exit()
-                Y500_sr=mapValue*signalAreaScaling*srToArcmin2
-                yc=mapValue*beamDecrementBias
-                deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
                 
-                obj['Y500_sr']=Y500_sr
-                obj['err_Y500_sr']=Y500_sr/obj['SNR']
-                obj['y_c']=yc
-                obj['err_y_c']=yc/obj['SNR']
-                obj['deltaT_c']=deltaTc
-                obj['err_deltaT_c']=deltaTc/obj['SNR']
+                if mapUnits == 'yc':
+                    Y500_sr=mapValue*signalAreaScaling*srToArcmin2
+                    yc=mapValue*beamDecrementBias
+                    deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
+                    obj['Y500_sr']=Y500_sr
+                    obj['err_Y500_sr']=Y500_sr/obj['SNR']
+                    obj['y_c']=yc
+                    obj['err_y_c']=yc/obj['SNR']
+                    obj['deltaT_c']=deltaTc
+                    obj['err_deltaT_c']=deltaTc/obj['SNR']
+                elif mapUnits == 'uK':
+                    # For this, we want deltaTc to be source amplitude
+                    deltaTc=mapValue*beamDecrementBias
+                    obj['deltaT_c']=deltaTc
+                    obj['err_deltaT_c']=deltaTc/obj['SNR']
+                elif mapUnits == 'Jy/beam':
+                    # For this, we want mapValue to be source amplitude == flux density
+                    print "add photometry.measureFluxes() Jy/beam photometry"
+                    IPython.embed()
+                    sys.exit()
         
 #------------------------------------------------------------------------------------------------------------ 
 def measureApertureFluxes(catalog, apertureRadiusArcmin, mapData, wcs, fluxCorrectionFactor, numBackgrounds = 10, 

@@ -263,12 +263,12 @@ def flagCatalogMatches(catalog, flagCatalog, key, matchRadiusDeg = 2.0/60.0):
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def makeACTName(RADeg, decDeg):
+def makeACTName(RADeg, decDeg, prefix = 'ACT-CL'):
     """Makes ACT cluster name from RADeg, decDeg
     
     """
     
-    actName="ACT-CL J"+makeRA(RADeg)+makeDec(decDeg)
+    actName=prefix+" J"+makeRA(RADeg)+makeDec(decDeg)
     
     return actName
 

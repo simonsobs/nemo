@@ -110,11 +110,13 @@ def filterMaps(unfilteredMapsDictList, filtersList, rootOutDir = ".", verbose = 
             # Keywords we need for photometry later
             filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
             filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
+            filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
             filteredMapDict['wcs'].updateFromHeader()
 
-            if filteredMapDict['obsFreqGHz'] != 'yc':
-                filteredMapDict['data']=convertToY(filteredMapDict['data'], \
-                                                   obsFrequencyGHz = filteredMapDict['obsFreqGHz'])
+            #if filteredMapDict['obsFreqGHz'] != 'yc':
+                #filteredMapDict['data']=convertToY(filteredMapDict['data'], \
+                                                   #obsFrequencyGHz = filteredMapDict['obsFreqGHz'])
+                                               
             astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
             astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
             #astImages.saveFITS(signalMapFileName, filteredMapDict['signalMap'], filteredMapDict['wcs'])            
@@ -125,10 +127,10 @@ def filterMaps(unfilteredMapsDictList, filtersList, rootOutDir = ".", verbose = 
         # Add file names to imageDict
         if f['label'] not in imageDict:
             imageDict[f['label']]={}
-        imageDict[f['label']]['ycFilteredMap']=filteredMapFileName
+        imageDict[f['label']]['filteredMap']=filteredMapFileName
         imageDict[f['label']]['SNMap']=SNMapFileName
         imageDict[f['label']]['signalMap']=signalMapFileName
-
+        
         # May be handy to keep track of for plotting etc. later
         imageDict[f['label']]['unfilteredMapsDictList']=unfilteredMapsDictList  
         
@@ -352,7 +354,7 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
     
     # Load data map, if we don't already have one (e.g. if removing point sources)
     if 'data' not in mapDict.keys():   
-        img=pyfits.open(mapDict['mapFileName'])
+        img=pyfits.open(mapDict['mapFileName'], memmap = True)
         wcs=astWCS.WCS(mapDict['mapFileName'])
         data=img[0].data
         if mapDict['units'] == 'Jy/sr':
@@ -366,7 +368,7 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
 
         # Load weight map if given
         if 'weightsFileName' in mapDict.keys() and mapDict['weightsFileName'] != None:
-            wht=pyfits.open(mapDict['weightsFileName'])
+            wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
             weights=wht[0].data
         else:
             weights=numpy.ones(data.shape)
@@ -388,7 +390,7 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
                 astImages.saveFITS(diagnosticsDir+os.path.sep+"simMapPlusNoise_%d.fits" \
                                 % (mapDict['obsFreqGHz']), data, wcs)                
         
-        # Optional background subtraction - subtract smoothed version of map, this is like low pass filtering
+        # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
         # or a wavelet decomposition scale image
         if 'backgroundSubtraction' in mapDict.keys() and mapDict['backgroundSubtraction'] == True:
             data=subtractBackground(data, wcs)

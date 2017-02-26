@@ -948,9 +948,10 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         if key not in ignoreKeys:
             invertedDict[key]=imageDict[key]
     
+    # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
     photometry.findObjects(invertedDict, threshold = thresholdSigma, minObjPix = minObjPix,
                            rejectBorder = rejectBorder, diagnosticsDir = diagnosticsDir,
-                           invertMap = True)    
+                           invertMap = True, makeDS9Regions = False)    
     catalogTools.mergeCatalogs(invertedDict)
     catalogTools.makeOptimalCatalog(invertedDict, minSNToIncludeInOptimalCatalog)
     catalogTools.catalog2DS9(invertedDict['optimalCatalog'], diagnosticsDir+os.path.sep+"invertedMapsCatalog.reg", constraintsList = ['SNR > 5'])

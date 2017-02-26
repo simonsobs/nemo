@@ -47,7 +47,8 @@ else:
         
         # Find objects in filtered maps
         photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'],
-                               rejectBorder = parDict['rejectBorder'], diagnosticsDir = diagnosticsDir)
+                               rejectBorder = parDict['rejectBorder'], diagnosticsDir = diagnosticsDir,
+                               objIdent = parDict['objIdent'], longNames = parDict['longNames'])
         
         # Measure fluxes
         photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])

@@ -917,7 +917,7 @@ class RealSpaceMatchedFilter(MapFilter):
         
         filteredMaps={}
         for mapDict in self.unfilteredMapsDictList:   
-            
+
             # Subtract background on larger scales using difference of Gaussians  
             maxArcmin=self.params['noiseParams']['maxArcmin']
             mapData=mapDict['data']
@@ -951,11 +951,14 @@ class RealSpaceMatchedFilter(MapFilter):
             
             # Turn the matched filter into a smaller real space convolution kernel
             # This means we have to roll off the kernel to 0 at some radius
-            # This should be somewhere around the edge of the dip - so find the second zero crossing
+            # This is set by maxArcmin in the .par file
             prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
-            segProf=ndimage.label(np.greater(prof, 0))[0]
-            rIndex=np.where(segProf == 2)[0][0]
-            maxArcmin=arcminRange[rIndex]
+            rIndex=np.where(arcminRange > maxArcmin)[0][0]
+            # Alternatively, roll off to zero after the second zero crossing
+            # NOTE: now setting in the .par file, uncomment below to switch back
+            #segProf=ndimage.label(np.greater(prof, 0))[0]
+            #rIndex=np.where(segProf == 2)[0][0]
+            #maxArcmin=arcminRange[rIndex]
 
             # Make 2d kernel
             mask=np.less(arcminRange, maxArcmin)
@@ -1003,32 +1006,53 @@ class RealSpaceMatchedFilter(MapFilter):
             plt.close()
             
             # Apply the kernel
-            filteredMap=ndimage.convolve(bckSubData, kern2d) 
+            t0=time.time()
+            print "... convolving map with kernel ..."
+            filteredMap=ndimage.convolve(bckSubData, kern2d)           
             #filteredMap=ndimage.correlate(bckSubData, kern2d)  # takes same amount of time, output almost identical
-            #t1=time.time()
+            t1=time.time()
+            print "... took %.3f sec ..." % (t1-t0)
             
             # Check signal recovery here
             
             # Grab the survey/point source mask to apply if given
-            if 'surveyMask' in mapDict.keys():
+            if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
                 smImg=pyfits.open(mapDict['surveyMask'])
                 surveyMask=smImg[0].data
             else:
                 surveyMask=np.ones(mapData.shape)
             filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
-            
+        
         # Linearly combine filtered maps and convert to yc if asked to do so
-        # NOTE: Here, we ARE converting to yc always...
+        # NOTE: Here, we ARE converting to yc always... we can change this somewhere for point source folks (use Jy/beam)
         if 'mapCombination' in self.params.keys():
             combinedMap=np.zeros(filteredMaps[filteredMaps.keys()[0]].shape)
             for key in filteredMaps.keys():
                 combinedMap=combinedMap+self.params['mapCombination'][key]*filteredMaps[key]
-            combinedMap=mapTools.convertToY(combinedMap, self.params['mapCombination']['rootFreqGHz'])
-            combinedObsFreqGHz='yc'
         else:
             # If no linear map combination given, assume we only want the first item in the filtered maps list
             combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
             combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
+
+        # Convert to whatever output units we want:
+        # Jy/sr (should go to Jy/beam eventually) for sources
+        # yc for SZ clusters
+        if 'outputUnits' in self.params.keys():
+            if self.params['outputUnits'] == 'yc':
+                combinedMap=mapTools.convertToY(combinedMap, self.params['mapCombination']['rootFreqGHz'])
+                combinedObsFreqGHz='yc'
+                mapUnits='yc'
+            elif self.params['outputUnits'] == 'uK':
+                combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
+                mapUnits='uK'
+            elif self.params['outputUnits'] == 'Jy/beam':
+                print "Jy/beam here"
+                combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
+                mapUnits='Jy/beam'
+                IPython.embed()
+                sys.exit()
+            else:
+                raise Exception, 'need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params'
 
         # Cython-based SNMap calc, which uses an annulus mask, but doesn't do clipping
         # Takes ~460 sec on equD56
@@ -1114,7 +1138,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 
         return {'data': combinedMap, 'simData': None, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'signalMap': kern2d, 'beamDecrementBias': 1.0,
-                'signalAreaScaling': 1.0}
+                'signalAreaScaling': 1.0, 'mapUnits': mapUnits}
             
 #------------------------------------------------------------------------------------------------------------
 class GaussianFilter(MapFilter):
@@ -1494,6 +1518,8 @@ class BeamMatchedFilter(MatchedFilter, BeamFilter):
     pass
 
 class ArnaudModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, ArnaudModelFilter):
+    pass
+class BeamRealSpaceMatchedFilter(RealSpaceMatchedFilter, BeamFilter):
     pass
 
 class BetaModelWienerFilter(WienerFilter, BetaModelFilter):
