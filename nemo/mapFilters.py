@@ -908,9 +908,7 @@ class RealSpaceMatchedFilter(MapFilter):
     
     A map of the final area searched for clusters called 'areaMask.fits' is written in the diagnostics/ 
     folder.
-    
-    NOTE: ArnaudModel is currently hard coded in here!
-    
+        
     """
 
     def buildAndApply(self):
@@ -939,15 +937,14 @@ class RealSpaceMatchedFilter(MapFilter):
                 kernelUnfilteredMapsDict[k]=mapDict[k]
             kernelUnfilteredMapsDict['RADecSection']=self.params['noiseParams']['RADecSection']
             kernelUnfilteredMapsDictList=[kernelUnfilteredMapsDict]
-                
-            # NOTE: hard coded Arnaud here for now
             kernelLabel="realSpaceKernel_%s" % (self.label)
             matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
             if os.path.exists(matchedFilterDir) == False:
                 os.makedirs(matchedFilterDir)
             if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
                 os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
-            matchedFilter=ArnaudModelMatchedFilter(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
+            matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
+            matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
                                                 outDir = matchedFilterDir, 
                                                 diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
             matchedFilter.buildAndApply()
