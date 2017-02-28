@@ -372,7 +372,9 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
             weights=wht[0].data
         else:
             weights=numpy.ones(data.shape)
-            
+        
+        print "... opened map %s ..." % (mapDict['mapFileName'])
+        
         # Optional map clipping
         if 'RADecSection' in mapDict.keys() and mapDict['RADecSection'] != None:
             RAMin, RAMax, decMin, decMax=mapDict['RADecSection']

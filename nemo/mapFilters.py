@@ -75,7 +75,6 @@ class MapFilter:
                 raise Exception, "Maps at different frequencies have different dimensions!"
         
         self.unfilteredMapsDictList=unfilteredMapsDictList
-        self.makeRadiansMap()
                                 
         # Set up storage if necessary, build this filter if not already stored
         self.diagnosticsDir=diagnosticsDir
@@ -670,6 +669,8 @@ class MatchedFilter(MapFilter):
     def buildAndApply(self):
         
         print ">>> Building filter %s ..." % (self.label)
+
+        self.makeRadiansMap()
 
         if 'iterations' not in self.params.keys():
             self.params['iterations']=1
