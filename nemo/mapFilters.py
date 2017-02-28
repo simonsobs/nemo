@@ -809,13 +809,31 @@ class MatchedFilter(MapFilter):
                 combinedMap=np.zeros(filteredMaps[filteredMaps.keys()[0]].shape)
                 for key in filteredMaps.keys():
                     combinedMap=combinedMap+self.params['mapCombination'][key]*filteredMaps[key]
-                combinedMap=mapTools.convertToY(combinedMap, self.params['mapCombination']['rootFreqGHz'])
-                combinedObsFreqGHz='yc'
             else:
                 # If no linear map combination given, assume we only want the first item in the filtered maps list
                 combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
                 combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
-            
+
+            # Convert to whatever output units we want:
+            # Jy/sr (should go to Jy/beam eventually) for sources
+            # yc for SZ clusters
+            if 'outputUnits' in self.params.keys():
+                if self.params['outputUnits'] == 'yc':
+                    combinedMap=mapTools.convertToY(combinedMap, self.params['mapCombination']['rootFreqGHz'])
+                    combinedObsFreqGHz='yc'
+                    mapUnits='yc'
+                elif self.params['outputUnits'] == 'uK':
+                    combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
+                    mapUnits='uK'
+                elif self.params['outputUnits'] == 'Jy/beam':
+                    print "Jy/beam here"
+                    combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
+                    mapUnits='Jy/beam'
+                    IPython.embed()
+                    sys.exit()
+                else:
+                    raise Exception, 'need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params'
+                
             # We'll be saving this shortly...
             apodMask=np.zeros(apodlm.data.shape)
             apodMask[np.greater(apodlm.data, 0.999999)]=1.0 # not sure why == 1 doesn't work
@@ -882,11 +900,11 @@ class MatchedFilter(MapFilter):
             SNMap=SNMap*apodMask
                                         
             # Save filter profile in real space
-            self.saveRealSpaceFilterProfile()
-                            
+            self.saveRealSpaceFilterProfile()        
+            
         return {'data': combinedMap, 'simData': filteredSimMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'signalMap': signalMap.data, 'beamDecrementBias': signalMapDict['beamDecrementBias'],
-                'signalAreaScaling': signalAreaScaling}
+                'signalAreaScaling': signalAreaScaling, 'mapUnits': mapUnits}
             
 #------------------------------------------------------------------------------------------------------------
 class RealSpaceMatchedFilter(MapFilter):

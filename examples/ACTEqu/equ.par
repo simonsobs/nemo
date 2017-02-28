@@ -15,15 +15,16 @@ unfilteredMaps = [\
                   'pointSourceRemoval': None} \
 ]
 
-# Detection options
+# Detection/catalog options
 thresholdSigma = 4.0
 minObjPix = 4
 rejectBorder = 10
-
-# Catalog options
-catalogCuts=['SN > 4.0']#, 'decDeg > -1.4', 'decDeg < 1.5']
+objIdent = 'ACT-CL'
+longNames = False
+catalogCuts = ['SNR > 4.0']#, 'decDeg > -1.4', 'decDeg < 1.5']
 
 # Photometry options
+# NOTE: these don't do anything at the moment
 photometryOptions = {'apertureRadiusArcmin': 3.0, \
                      'numBackgrounds': 100, \
                      'minBackgroundSepArcmin': 10, \
@@ -31,102 +32,11 @@ photometryOptions = {'apertureRadiusArcmin': 3.0, \
 
 # Filter definitions
 mapFilters = [\
-               #{'label': "Arnaud_M1e14_z0p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 1e14, 'z': 0.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M2e14_z0p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 2e14, 'z': 0.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M4e14_z0p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 4e14, 'z': 0.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M8e14_z0p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 8e14, 'z': 0.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \        
-               #{'label': "Arnaud_M1e14_z0p4", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 1e14, 'z': 0.4, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M2e14_z0p4", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 2e14, 'z': 0.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
                {'label': "Arnaud_M4e14_z0p4", 'class': "ArnaudModelMatchedFilter", \
                'params': {'M500MSun': 4e14, 'z': 0.4, \
                           'noiseParams': {'method': "dataMap"}, \
+                          'outputUnits': 'yc', \
                           'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M8e14_z0p4", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 8e14, 'z': 0.4, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \                             
-               #{'label': "Arnaud_M1e14_z0p6", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 1e14, 'z': 0.6, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M2e14_z0p6", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 2e14, 'z': 0.6, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M4e14_z0p6", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 4e14, 'z': 0.6, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M8e14_z0p6", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 8e14, 'z': 0.6, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \                                 
-               #{'label': "Arnaud_M1e14_z0p8", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 1e14, 'z': 0.8, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M2e14_z0p8", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 2e14, 'z': 0.8, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M4e14_z0p8", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 4e14, 'z': 0.8, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M8e14_z0p8", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 8e14, 'z': 0.8, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \   
-               #{'label': "Arnaud_M1e14_z1p0", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 1e14, 'z': 1.0, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M2e14_z1p0", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 2e14, 'z': 1.0, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M4e14_z1p0", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 4e14, 'z': 1.0, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M8e14_z1p0", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 8e14, 'z': 1.0, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M1e14_z1p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 1e14, 'z': 1.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M2e14_z1p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 2e14, 'z': 1.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M4e14_z1p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 4e14, 'z': 1.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-               #{'label': "Arnaud_M8e14_z1p2", 'class': "ArnaudModelMatchedFilter", \
-               #'params': {'M500MSun': 8e14, 'z': 1.2, \
-                          #'noiseParams': {'method': "dataMap"}, \
-                          #'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \                                 
 ]
 
 # These used for comparing simulations against input
