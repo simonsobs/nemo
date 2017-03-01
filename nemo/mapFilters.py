@@ -941,14 +941,18 @@ class RealSpaceMatchedFilter(MapFilter):
             maxArcmin=self.params['noiseParams']['maxArcmin']
             mapData=mapDict['data']
             wcs=mapDict['wcs']
-            bckSubData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
+            #bckSubData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
+            mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
             if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
                 bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
-                astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
+                #astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
+                astImages.saveFITS(bckSubFileName, mapData, mapDict['wcs'])
             
             # Work out by how much the signal template power is rolled off by doing the high pass filter above
             
             # Build the matched-filter kernel in a small section of the map
+            # Apply the same difference of Gaussians high pass filter here
+            #print "add bck sub to making matched filter in place"
             keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
                         'backgroundSubtraction', 'pointSourceRemoval']
             kernelUnfilteredMapsDict={}
@@ -967,6 +971,9 @@ class RealSpaceMatchedFilter(MapFilter):
                                                 outDir = matchedFilterDir, 
                                                 diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
             matchedFilter.buildAndApply()
+            
+            # We don't actually use the weight map from here on, so zap it to save memory
+            del mapDict['weights']
             
             # Turn the matched filter into a smaller real space convolution kernel
             # This means we have to roll off the kernel to 0 at some radius
@@ -1023,11 +1030,16 @@ class RealSpaceMatchedFilter(MapFilter):
             plt.xlim(0, arcminRange[mask].max())
             plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
             plt.close()
+
+            #print "implement chunking of maps here?"
+            #IPython.embed()
+            #sys.exit()
             
             # Apply the kernel
             t0=time.time()
             print "... convolving map with kernel ..."
-            filteredMap=ndimage.convolve(bckSubData, kern2d)           
+            #filteredMap=ndimage.convolve(bckSubData, kern2d)           
+            mapData=ndimage.convolve(mapData, kern2d)           
             #filteredMap=ndimage.correlate(bckSubData, kern2d)  # takes same amount of time, output almost identical
             t1=time.time()
             print "... took %.3f sec ..." % (t1-t0)
@@ -1040,7 +1052,8 @@ class RealSpaceMatchedFilter(MapFilter):
                 surveyMask=smImg[0].data
             else:
                 surveyMask=np.ones(mapData.shape)
-            filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
+            #filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
+            filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=mapData
         
         # Linearly combine filtered maps and convert to yc if asked to do so
         # NOTE: Here, we ARE converting to yc always... we can change this somewhere for point source folks (use Jy/beam)
@@ -1052,7 +1065,10 @@ class RealSpaceMatchedFilter(MapFilter):
             # If no linear map combination given, assume we only want the first item in the filtered maps list
             combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
             combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
-
+        
+        # We don't need the filteredMaps dict from here, so zap it to save memory
+        del filteredMaps
+        
         # Convert to whatever output units we want:
         # Jy/sr (should go to Jy/beam eventually) for sources
         # yc for SZ clusters
@@ -1082,6 +1098,7 @@ class RealSpaceMatchedFilter(MapFilter):
         
         # Local RMS measurements on a grid, over the whole filtered map
         # Could overlap? Or use the annulus mask
+        print "... making noise map ..."
         gridSize=rIndex*3
         overlapPix=gridSize/2
         numXChunks=combinedMap.shape[1]/gridSize
@@ -1125,7 +1142,7 @@ class RealSpaceMatchedFilter(MapFilter):
         if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
             RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
             astImages.saveFITS(RMSFileName, mapRMS*surveyMask, mapDict['wcs'])
-        #print t1-t0
+        print "... took %.3f sec ..." % (t1-t0)
         
         # Below is global RMS, for comparison
         #apodMask=np.not_equal(mapData, 0)
@@ -1142,18 +1159,21 @@ class RealSpaceMatchedFilter(MapFilter):
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (gridSize*5.0, gridSize*5.0))
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        combinedMap=combinedMap*edgeCheck
+        apodMask=np.not_equal(combinedMap, 0)
+        surveyMask=edgeCheck*surveyMask
+        del edgeCheck
         
         # Signal-to-noise map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
         SNMap=np.zeros(combinedMap.shape)
         SNMap[apodMask]=combinedMap[apodMask]/mapRMS[apodMask]
-        SNMap=SNMap*edgeCheck*surveyMask
+        SNMap=SNMap*surveyMask
         SNMap[np.isnan(SNMap)]=0.
-        combinedMap=combinedMap*edgeCheck
 
         maskFileName=self.diagnosticsDir+os.path.sep+"areaMask.fits"
         if os.path.exists(maskFileName) == False:
-            astImages.saveFITS(maskFileName, np.array(edgeCheck*surveyMask, dtype = int), mapDict['wcs'])
+            astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), mapDict['wcs'])
                 
         return {'data': combinedMap, 'simData': None, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'signalMap': kern2d, 'beamDecrementBias': 1.0,
