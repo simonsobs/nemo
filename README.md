@@ -56,7 +56,7 @@ export PYTHONPATH=$HOME/local/lib/python2.7/site-packages:$PYTHONPATH
 
 ## Running nemo
 
-See the README file under `examples/ACTEqu/` for a quick tutorial.
+See the README.md file under `examples/ACTEqu/` for a quick tutorial.
 
 ## Comments, bug reports, help, suggestions etc..
 
