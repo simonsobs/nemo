@@ -1096,16 +1096,16 @@ class RealSpaceMatchedFilter(MapFilter):
         #SNMap=nemoCython.makeLocalSNMap(combinedMap, annulus)
         #t1=time.time()
         
-        # Local RMS measurements on a grid, over the whole filtered map
-        # Could overlap? Or use the annulus mask
-        print "... making noise map ..."
+        # Make SN map by local RMS measurements on a grid, over the whole filtered map
+        # We're not making a separate noise map here any more to save memory
+        print "... making SN map ..."
         gridSize=rIndex*3
         overlapPix=gridSize/2
         numXChunks=combinedMap.shape[1]/gridSize
         numYChunks=combinedMap.shape[0]/gridSize
         yChunks=np.linspace(0, combinedMap.shape[0], numYChunks+1, dtype = int)
         xChunks=np.linspace(0, combinedMap.shape[1], numXChunks+1, dtype = int)
-        mapRMS=np.zeros(combinedMap.shape)
+        SNMap=np.zeros(combinedMap.shape)
         apodMask=np.not_equal(combinedMap, 0)
         t0=time.time()
         for i in range(len(yChunks)-1):
@@ -1137,12 +1137,13 @@ class RealSpaceMatchedFilter(MapFilter):
                         chunkRMS=np.std(chunkValues[mask])
                 else:
                     chunkRMS=0.
-                mapRMS[y0:y1, x0:x1]=chunkRMS
+                if chunkRMS > 0:
+                    SNMap[y0:y1, x0:x1]=combinedMap[y0:y1, x0:x1]/chunkRMS
         t1=time.time()
-        if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
-            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
-            astImages.saveFITS(RMSFileName, mapRMS*surveyMask, mapDict['wcs'])
-        print "... took %.3f sec ..." % (t1-t0)
+        #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+            #RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
+            #astImages.saveFITS(RMSFileName, mapRMS*surveyMask, mapDict['wcs'])
+        #print "... took %.3f sec ..." % (t1-t0)
         
         # Below is global RMS, for comparison
         #apodMask=np.not_equal(mapData, 0)
@@ -1164,10 +1165,8 @@ class RealSpaceMatchedFilter(MapFilter):
         surveyMask=edgeCheck*surveyMask
         del edgeCheck
         
-        # Signal-to-noise map
+        # Apply final survey mask to signal-to-noise map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
-        SNMap=np.zeros(combinedMap.shape)
-        SNMap[apodMask]=combinedMap[apodMask]/mapRMS[apodMask]
         SNMap=SNMap*surveyMask
         SNMap[np.isnan(SNMap)]=0.
 

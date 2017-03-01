@@ -50,7 +50,7 @@ was being experimented with a while ago and has been left 'as is'.
 ## Point Sources (equPointSources.par)
 
 This is the equivalent set-up to run a matched filter for point sources, using the beam profile
-specified under `unfilteredMaps` in equPointSources.par.
+specified under `unfilteredMaps` in `equPointSources.par`.
 
 To run:
 
