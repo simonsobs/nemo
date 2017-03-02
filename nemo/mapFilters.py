@@ -937,24 +937,16 @@ class RealSpaceMatchedFilter(MapFilter):
         filteredMaps={}
         for mapDict in self.unfilteredMapsDictList:   
 
-            # Subtract background on larger scales using difference of Gaussians  
-            maxArcmin=self.params['noiseParams']['maxArcmin']
             mapData=mapDict['data']
             wcs=mapDict['wcs']
-            #bckSubData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
-            mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
-            if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
-                bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
-                #astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
-                astImages.saveFITS(bckSubFileName, mapData, mapDict['wcs'])
-            
-            # Work out by how much the signal template power is rolled off by doing the high pass filter above
-            
+                                   
             # Build the matched-filter kernel in a small section of the map
             # Apply the same difference of Gaussians high pass filter here
-            #print "add bck sub to making matched filter in place"
+            # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
+            maxArcmin=self.params['noiseParams']['maxArcmin']
+            mapDict['bckSubScaleArcmin']=maxArcmin
             keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
-                        'backgroundSubtraction', 'pointSourceRemoval']
+                        'pointSourceRemoval']
             kernelUnfilteredMapsDict={}
             for k in keysWanted:
                 kernelUnfilteredMapsDict[k]=mapDict[k]
@@ -970,7 +962,15 @@ class RealSpaceMatchedFilter(MapFilter):
             matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
                                                 outDir = matchedFilterDir, 
                                                 diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
-            matchedFilter.buildAndApply()
+            filteredMapDict=matchedFilter.buildAndApply()
+            
+            # Use the signal map we made above to figure out how much it has been rolled off by
+            # 1. The high pass filter (bck sub step)
+            # 2. The matched filter itself (includes beam)
+            #print "signal norm"
+            #IPython.embed()
+            #sys.exit()
+            #signalMap=filteredMapDict['signalMap']
             
             # We don't actually use the weight map from here on, so zap it to save memory
             del mapDict['weights']
@@ -1031,10 +1031,20 @@ class RealSpaceMatchedFilter(MapFilter):
             plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
             plt.close()
 
+            # NOTE: at this point we should store the kernel somewhere, get out of this loop, and then add a call to
+            # something that will chunk up the maps and apply the kernel / calculate the SN map in parallel.
+            # We'd do that with all the different frequencies, so mapCombination step will go into that also.
             #print "implement chunking of maps here?"
             #IPython.embed()
             #sys.exit()
             
+            # Apply the high pass filter - subtract background on larger scales using difference of Gaussians  
+            mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
+            if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
+                bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
+                #astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
+                astImages.saveFITS(bckSubFileName, mapData, mapDict['wcs'])
+                
             # Apply the kernel
             t0=time.time()
             print "... convolving map with kernel ..."
@@ -1043,9 +1053,7 @@ class RealSpaceMatchedFilter(MapFilter):
             #filteredMap=ndimage.correlate(bckSubData, kern2d)  # takes same amount of time, output almost identical
             t1=time.time()
             print "... took %.3f sec ..." % (t1-t0)
-            
-            # Check signal recovery here
-            
+                        
             # Grab the survey/point source mask to apply if given
             if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
                 smImg=pyfits.open(mapDict['surveyMask'])

@@ -11,7 +11,6 @@ unfilteredMaps = [\
                   'beamFileName': "profiles_ACT/profile_AR1_2009_pixwin_130224.txt", \
                   'addNoise': None, \
                   'RADecSection': [22.5, 56.5, -2.0, 2.0], \
-                  'backgroundSubtraction': False, \
                   'pointSourceRemoval': None} \
 ]
 

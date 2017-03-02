@@ -394,8 +394,8 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
         
         # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
         # or a wavelet decomposition scale image
-        if 'backgroundSubtraction' in mapDict.keys() and mapDict['backgroundSubtraction'] == True:
-            data=subtractBackground(data, wcs)
+        if 'bckSubScaleArcmin' in mapDict.keys() and mapDict['bckSubScaleArcmin'] != None:
+            data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
             
         # Optional removal of point sources, using GaussianWienerFilter to find them
         # We only do this once, and cache the result in the diagnostics dir

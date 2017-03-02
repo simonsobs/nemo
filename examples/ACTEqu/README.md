@@ -6,12 +6,17 @@ LAMBDA. You'll need the files named:
 * `ACT_148_equ_season_3_1way_hits_v3.fits`  
 * `ACT_148_equ_season_3_1way_v3_src_free.fits`
 
-You'll then need to edit the .par files accordingly to point to wherever these live on your 
-machine. In practice, one would make a weighted average of all of the season / array maps and run
-on that to use the full available depth.
+You can fetch them with:
 
-There are two examples - one for clusters (`equClusters.par`), and another for point sources 
-(`equPointSources.par`).
+`wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Maps/AR1/Equa/ACT_148_equ_season_3_1way_v3_src_free.fits`
+`wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Weights/AR1/Equa/ACT_148_equ_season_3_1way_hits_v3.fits`
+
+If you don't save these maps in this directory, you'll need to edit the .par files accordingly to 
+point to wherever the maps live on your machine. In practice, one would make a weighted average of
+all of the season / array maps and run on that to use the full available depth.
+
+There are two examples .par files - one for clusters (`equClusters.par`), and another for point 
+sources (`equPointSources.par`).
 
 ## Clusters (equClusters.par)
 
@@ -34,9 +39,9 @@ if you don't modify the filters, as they are cached.
 
 Output will be written to a directory called `equClusters`, in which you will find:
 
-* equClusters/diagnostics           - various diagnostic plots
-* equClusters/filteredMaps          - the filtered maps themselves, with .reg files for each model
-* equClusters/equ_optimal_catalog.* - the combined, optimal catalog, in various formats 
+* `equClusters/diagnostics`           - various diagnostic plots
+* `equClusters/filteredMaps`          - the filtered maps themselves, with .reg files for each model
+* `equClusters/equ_optimal_catalog.*` - the combined, optimal catalog, in various formats 
 
 The filtered map is in units of yc.
 
