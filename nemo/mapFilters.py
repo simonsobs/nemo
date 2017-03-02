@@ -857,41 +857,6 @@ class MatchedFilter(MapFilter):
             #combinedMap=combinedMap/np.sqrt(mapDict['weights']/mapDict['weights'].max())
             #combinedMap=np.nan_to_num(combinedMap)
             
-            # Or ... local SNR map using rank filter
-            # In this case we have to increase the size of the apodisation mask
-            #bckInnerRadiusArcmin=8.0
-            #bckOuterRadiusArcmin=15.0
-            #ra0, dec0=self.wcs.getCentreWCSCoords()
-            #x0, y0=self.wcs.wcs2pix(ra0, dec0)
-            #x1=x0+1
-            #y1=y0+1
-            #ra1, dec1=self.wcs.pix2wcs(x1, y1)
-            #yPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
-            #bckInnerScalePix=int(round((bckInnerRadiusArcmin/60.0)/yPixScale))
-            #bckOuterScalePix=int(round((bckOuterRadiusArcmin/60.0)/yPixScale))
-            #annulus=np.zeros([bckOuterScalePix*2, bckOuterScalePix*2])
-            #xRange=np.array([np.arange(annulus.shape[1])-bckOuterScalePix]*annulus.shape[0])
-            #yRange=np.array([np.arange(annulus.shape[0])-bckOuterScalePix]*annulus.shape[1]).transpose()
-            #rRange=np.sqrt(xRange**2+yRange**2)
-            #annulus[np.logical_and(np.greater(rRange, bckInnerScalePix),
-                                        #np.less(rRange, bckOuterScalePix))]=1.0
-            #numValues=annulus.flatten().nonzero()[0].shape[0]
-                    
-            #noise=ndimage.rank_filter(abs(combinedMap), int(round(0.683*numValues)), footprint = annulus)
-            #SNMap=combinedMap/noise
-            
-            # NOTE: for local SNR estimate, we have to increase the size of the apodisation mask
-            # but actually we've reined that in a bit, because possibly too conservative and also we end
-            # up having to cut the bullet and J0102 with our default setting!
-            #minX=np.where(apodMask > 0)[1].min()
-            #maxX=np.where(apodMask > 0)[1].max()
-            #minY=np.where(apodMask > 0)[0].min()
-            #maxY=np.where(apodMask > 0)[0].max()
-            #extraCutPix=bckOuterScalePix/2.0
-            #apodMask[:minY+extraCutPix, :]=0
-            #apodMask[maxY-extraCutPix:, :]=0
-            #apodMask[:, :minX+extraCutPix]=0
-            #apodMask[:, maxX-extraCutPix:]=0
             maskFileName=self.diagnosticsDir+os.path.sep+"areaMask.fits"
             if os.path.exists(maskFileName) == False:
                 astImages.saveFITS(maskFileName, apodMask, mapDict['wcs'])
@@ -905,7 +870,8 @@ class MatchedFilter(MapFilter):
             
         return {'data': combinedMap, 'simData': filteredSimMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'signalMap': signalMap.data, 'beamDecrementBias': signalMapDict['beamDecrementBias'],
-                'signalAreaScaling': signalAreaScaling, 'mapUnits': mapUnits}
+                'signalAreaScaling': signalAreaScaling, 'mapUnits': mapUnits,
+                'inputSignalProperties': signalMapDict['inputSignalProperties']}
             
 #------------------------------------------------------------------------------------------------------------
 class RealSpaceMatchedFilter(MapFilter):
@@ -963,18 +929,7 @@ class RealSpaceMatchedFilter(MapFilter):
                                                 outDir = matchedFilterDir, 
                                                 diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
             filteredMapDict=matchedFilter.buildAndApply()
-            
-            # Use the signal map we made above to figure out how much it has been rolled off by
-            # 1. The high pass filter (bck sub step)
-            # 2. The matched filter itself (includes beam)
-            #print "signal norm"
-            #IPython.embed()
-            #sys.exit()
-            #signalMap=filteredMapDict['signalMap']
-            
-            # We don't actually use the weight map from here on, so zap it to save memory
-            del mapDict['weights']
-            
+                    
             # Turn the matched filter into a smaller real space convolution kernel
             # This means we have to roll off the kernel to 0 at some radius
             # This is set by maxArcmin in the .par file
@@ -1017,6 +972,40 @@ class RealSpaceMatchedFilter(MapFilter):
                 #sys.exit()
                 ##raise Exception, "filter normalisation is -ve"
             #kern2d=kern2d/normFactor
+
+            # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
+            # 1. The high pass filter (bck sub step)
+            # 2. The matched filter itself (includes beam)
+            signalMap=filteredMapDict['signalMap']      # Note that this has had the beam applied already
+            signalProperties=filteredMapDict['inputSignalProperties']
+            # Should add an applyKernel function to do all this
+            filteredSignal=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = maxArcmin/60.0)
+            filteredSignal=ndimage.convolve(filteredSignal, kern2d) 
+            if self.params['outputUnits'] == 'yc':
+                # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
+                filteredSignal=mapTools.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
+                signalNorm=signalProperties['y0']/filteredSignal.max()
+            elif self.params['outputUnits'] == 'Y500':
+                # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
+                # We can get this from yc and the info in signalProperties, so we don't really need this
+                print "implement signal norm for %s" % (self.params['outputUnits'])
+                IPython.embed()
+                sys.exit()
+            elif self.params['outputUnits'] == 'uK':
+                # Normalise such that peak value in filtered map == peak value of source in uK
+                print "implement signal norm for %s" % (self.params['outputUnits'])
+                IPython.embed()
+                sys.exit()
+            elif self.params['outputUnits'] == 'Jy/beam':
+                # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
+                print "implement signal norm for %s" % (self.params['outputUnits'])
+                IPython.embed()
+                sys.exit()
+            else:
+                raise Exception, "didn't understand 'outputUnits' given in the .par file"
+
+            # We don't actually use the weight map from here on, so zap it to save memory
+            del mapDict['weights']
             
             # Save 2d kernel in case we want to do anything with it later
             astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, None)
@@ -1037,7 +1026,26 @@ class RealSpaceMatchedFilter(MapFilter):
             #print "implement chunking of maps here?"
             #IPython.embed()
             #sys.exit()
-            
+            # Below is how we'd start sticking in MPI-based parallisation (see zCluster)
+            #if MPIEnabled ==True:
+                #from mpi4py import MPI
+                #comm=MPI.COMM_WORLD
+                #size=comm.Get_size()
+                #rank=comm.Get_rank()
+                #if size == 1:
+                    #raise Exception, "if you want to use MPI, run with mpirun --np 4 nemo -M ..."
+            #else:
+                #rank=0
+            # ... some more stuff ..."
+            #if MPIEnabled == True:
+                #objsPerNode=len(catalog)/size
+                #startIndex=objsPerNode*rank
+                #if rank == size-1:
+                    #endIndex=len(catalog)
+                #else:
+                    #endIndex=objsPerNode*(rank+1)
+                #catalog=catalog[startIndex:endIndex]
+        
             # Apply the high pass filter - subtract background on larger scales using difference of Gaussians  
             mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
             if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
@@ -1053,7 +1061,10 @@ class RealSpaceMatchedFilter(MapFilter):
             #filteredMap=ndimage.correlate(bckSubData, kern2d)  # takes same amount of time, output almost identical
             t1=time.time()
             print "... took %.3f sec ..." % (t1-t0)
-                        
+            
+            # Apply the normalisation
+            mapData=mapData*signalNorm
+            
             # Grab the survey/point source mask to apply if given
             if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
                 smImg=pyfits.open(mapDict['surveyMask'])
@@ -1250,9 +1261,17 @@ class BeamFilter(MapFilter):
                 
         # The ratio by which beam smoothing biases the intrinsic deltaT0
         beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
+
+        # For sanity checking later, let's dump the input properties of the model into a dictionary
+        # Then we can apply whatever filter we like later and check that we're recovering these
+        # NOTE: See ArnaudMpdelFilter, where we've started implementing this
+        inputSignalProperties={}
+        #inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500': theta500, 
+                               #'Y500arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': mapObsFreqGHz}
         
         return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None, 
-                'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 'signalAreaSum': 1.0}
+                'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 'signalAreaSum': 1.0,
+                'inputSignalProperties': inputSignalProperties}
     
 #------------------------------------------------------------------------------------------------------------
 class BetaModelFilter(MapFilter):
@@ -1365,6 +1384,7 @@ class ArnaudModelFilter(MapFilter):
         YArcmin2=np.trapz(fineyProfile*np.pi*2*fineDegRange*60, fineDegRange*60)
         norm=arnaudY500_arcmin2/YArcmin2
         deltaT0=fidDeltaT0*norm
+        y0=mapTools.convertToY(deltaT0, obsFrequencyGHz = mapObsFreqGHz)
         
         # Setup 1d profile
         rDeg=np.linspace(0.0, 1.0, 5000)
@@ -1429,10 +1449,17 @@ class ArnaudModelFilter(MapFilter):
         normFactor=symProfile.sum()/smoothedProfile1d.sum()
         smoothedProfile1d=normFactor*smoothedProfile1d
         beamDecrementBias=abs(profile1d).max()/abs(smoothedProfile1d).max()               
-        
+
+        # For sanity checking later, let's dump the input properties of the model into a dictionary
+        # Then we can apply whatever filter we like later and check that we're recovering these
+        # These are BEFORE beam smoothing in this case, i.e., just from the input Arnaud model
+        inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500Arcmin': theta500Arcmin, 
+                               'Y500Arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': mapObsFreqGHz}
+
         return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None,
                 'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 
-                'signalAreaSum': arnaudY500_arcmin2}
+                'signalAreaSum': arnaudY500_arcmin2,
+                'inputSignalProperties': inputSignalProperties}
     
 
     def calcY500FromM500_Arnaud(self, M500, z, units = 'sr'):

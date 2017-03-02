@@ -257,15 +257,21 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                 #sys.exit()
                 
                 if mapUnits == 'yc':
-                    Y500_sr=mapValue*signalAreaScaling*srToArcmin2
-                    yc=mapValue*beamDecrementBias
+                    # NOTE: if using RealSpaceMatchedFilter, we've done the normalisation in there
+                    # Map is in yc, with the effect of the beam taken out
+                    #Y500_sr=mapValue*signalAreaScaling*srToArcmin2
+                    yc=mapValue
                     deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
-                    obj['Y500_sr']=Y500_sr
-                    obj['err_Y500_sr']=Y500_sr/obj['SNR']
-                    obj['y_c']=yc
-                    obj['err_y_c']=yc/obj['SNR']
+                    #obj['Y500_sr']=Y500_sr
+                    #obj['err_Y500_sr']=Y500_sr/obj['SNR']
+                    obj['y_c']=yc/1e-4                      # So that same units as H13 in output catalogs
+                    obj['err_y_c']=obj['y_c']/obj['SNR']
                     obj['deltaT_c']=deltaTc
-                    obj['err_deltaT_c']=deltaTc/obj['SNR']
+                    obj['err_deltaT_c']=abs(deltaTc/obj['SNR'])
+                elif mapUnits == 'Y500':
+                    print "add photometry.measureFluxes() for Y500"
+                    IPython.embed()
+                    sys.exit()
                 elif mapUnits == 'uK':
                     # For this, we want deltaTc to be source amplitude
                     deltaTc=mapValue*beamDecrementBias

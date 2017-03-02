@@ -80,8 +80,8 @@ else:
         #outKeys=baseKeys+['template', 'galacticLatDeg', 'deltaT_c', 'y_c', 'flux_arcmin2', 'fluxErr_arcmin2']
         #outFormats=baseFormats+["%s", "%.3f", "%.3f", "%.3e", "%.3e", "%.3e"]
         #outLabels=baseLabels+["Signal template","Galactic Latitude (degrees)", "&Delta;T<sub>c</sub> (&mu;K)", "y<sub>c</sub>", "Y (arcmin<sup>2</sup>)", "Y error (arcmin<sup>2</sup>)"]        
-        outKeys=baseKeys+['template', 'galacticLatDeg', 'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
-        outFormats=baseFormats+["%s", "%.3f", "%3f", "%.3e", "%.3e", "%.3e"]
+        outKeys=baseKeys+['template', 'galacticLatDeg', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr']
+        outFormats=baseFormats+["%s", "%.3f", "%3f", "%.3e", "%.3e", "%.3e", "%.3e", "%.3e"]
         outLabels=baseLabels+["Signal template", "Galactic Latitude (degrees)", "&Delta;T<sub>c</sub> (&mu;K)", "y<sub>c</sub>", "Y<sub>500</sub> (sr)", "&Delta;Y<sub>500</sub> (sr)"]
         if len(outKeys) != len(outFormats) and len(outFormats) != len(outLabels):
             raise Exception, "outKeys, outFormats, outLabels lists must be same length"
@@ -100,7 +100,7 @@ else:
                                             clusterProfilesToPlot = [])
             outKeys=outKeys+['inputSim_flux_arcmin2', 'inputSim_RvirMpc', 'inputSim_Mvir']
             outFormats=outFormats+['%.3e', '%.3f', '%.3f']
-                        
+
         # Basic merged/optimal catalog
         optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(rootOutDir)[-1])
         catalogTools.writeCatalog(imageDict['optimalCatalog'], optimalCatalogFileName, \

@@ -27,7 +27,13 @@ def mergeCatalogs(imageDict):
     one entry per object, but multiple flux measurements where available.
     
     """
-       
+    
+    # Properties (apart from position, name info) that we keep for each object, if they are present
+    # Fix this properly later
+    wantedKeys=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
+                'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
+                'fluxJy', 'err_fluxJy']
+                
     # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
     templates=[]
     for key in imageDict.keys():
@@ -62,22 +68,17 @@ def mergeCatalogs(imageDict):
                 bestMatch=None
             
             if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
-                keysToAppend=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', \
-                              'fluxRadius_arcmin', 'template', 'fluxStatus', 'deltaT_c', 'y_c', 
-                              'Y500_sr', 'err_Y500Err']
-                for key in keysToAppend:
+                for key in wantedKeys:
                     if key in bestMatch.keys():
                         bestMatch[key].append(c[key])   
             else:
                 # Must be an object not already in list
                 nonListKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
-                listKeys=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
-                          'template', 'fluxStatus', 'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
                 newObj={}
                 for key in nonListKeys:
                     if key in c.keys():
                         newObj[key]=c[key]
-                for key in listKeys:
+                for key in wantedKeys:
                     if key in c.keys():
                         newObj[key]=[c[key]]
                 mergedCatalog.append(newObj)
@@ -95,6 +96,13 @@ def makeOptimalCatalog(imageDict, constraintsList):
     one entry per object, keeping only the highest S/N detection details.
     
     """
+
+    # Properties (apart from position, name info) that we keep for each object, if they are present
+    # Fix this properly later - duplicated for mergeCatalogs also (urgh)
+    wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
+    wantedKeys=wantedKeys+['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
+                           'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
+                           'fluxJy', 'err_fluxJy']
     
     # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
     templates=[]
@@ -122,9 +130,6 @@ def makeOptimalCatalog(imageDict, constraintsList):
             if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
                 # Is this better than the current object?
                 if c['SNR'] > bestMatch['SNR']:
-                    wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg', 'numSigPix', 'flux_arcmin2',
-                                'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 'template', 'fluxStatus',
-                                'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
                     for key in wantedKeys:
                         if key in c.keys():
                             bestMatch[key]=c[key]
@@ -133,9 +138,6 @@ def makeOptimalCatalog(imageDict, constraintsList):
                     bestMatch['fractionMapsDetected']=bestMatch['fractionMapsDetected']+1.0
             else:
                 # Must be an object not already in list
-                wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg', 'numSigPix', 'flux_arcmin2',
-                            'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 'template', 'fluxStatus',
-                            'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
                 newObj={}
                 for key in wantedKeys:
                     if key in c.keys():
