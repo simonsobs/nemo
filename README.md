@@ -24,10 +24,14 @@ Nemo itself is written in python (2.7.x), and requires the following additional 
 * scipy (0.17.1)
 * matplotlib (1.5.2)
 * astLib (git version probably: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
-* flipper (0.1.3)
-* atpy (0.9.7)
+* flipper ([ACT collaboration git version](https://github.com/ACTCollaboration/flipper))
+* Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)
+* astropy (1.3)
 * IPython (2.4.1)
 * Cython (0.24.1)
+
+_Note:_ Switched from `atpy` to `astropy` for handling .fits tables (Feb 2017). Most of the dependencies
+can be installed using `pip`.
 
 ## Installation
 
@@ -52,7 +56,7 @@ export PYTHONPATH=$HOME/local/lib/python2.7/site-packages:$PYTHONPATH
 
 ## Running nemo
 
-See the README file under `examples/ACTEqu/` for a quick tutorial.
+See the README.md file under `examples/ACTEqu/` for a quick tutorial.
 
 ## Comments, bug reports, help, suggestions etc..
 

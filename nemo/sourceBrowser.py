@@ -24,7 +24,7 @@ import time
 import string
 from PIL import Image
 import IPython
-import atpy
+import astropy.table as atpy
 
 #-------------------------------------------------------------------------------------------------------------
 # Constants

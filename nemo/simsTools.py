@@ -9,6 +9,7 @@ from scipy import ndimage
 from scipy import interpolate
 from scipy import stats
 import time
+import astropy.table as atpy
 import mapTools
 import catalogTools
 import photometry
@@ -260,9 +261,9 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
         realObjs=[]
         for obj in catalog:
             if obj['inputSim_Mvir'] != None:
-                realObjs.append([obj['SN'], 1])
+                realObjs.append([obj['SNR'], 1])
             else:
-                realObjs.append([obj['SN'], 0])
+                realObjs.append([obj['SNR'], 0])
         realObjs=sorted(realObjs, key=operator.itemgetter(0))
         realObjs=numpy.array(realObjs).transpose()
         pylab.axes(trueDetAxes)
@@ -932,6 +933,13 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
                                           minSNToIncludeInOptimalCatalog, diagnosticsDir = None):
     """Run the whole filtering set up again, on inverted maps.
     
+    Writes a DS9. reg file, which contains only the highest SNR contaminants (since these
+    are most likely to be associated with artefacts in the map - e.g., point source masking).
+    
+    Writes a plot and a .fits table to the diagnostics dir.
+    
+    Returns a dictionary containing the results
+    
     """
     
     invertedDict={}
@@ -940,23 +948,24 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         if key not in ignoreKeys:
             invertedDict[key]=imageDict[key]
     
+    # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
     photometry.findObjects(invertedDict, threshold = thresholdSigma, minObjPix = minObjPix,
                            rejectBorder = rejectBorder, diagnosticsDir = diagnosticsDir,
-                           invertMap = True)    
+                           invertMap = True, makeDS9Regions = False)    
     catalogTools.mergeCatalogs(invertedDict)
     catalogTools.makeOptimalCatalog(invertedDict, minSNToIncludeInOptimalCatalog)
-    catalogTools.catalog2DS9(invertedDict['optimalCatalog'], diagnosticsDir+os.path.sep+"invertedMapsCatalog.reg")
+    catalogTools.catalog2DS9(invertedDict['optimalCatalog'], diagnosticsDir+os.path.sep+"invertedMapsCatalog.reg", constraintsList = ['SNR > 5'])
     
     invertedSNRs=[]
     for obj in invertedDict['optimalCatalog']:
-        invertedSNRs.append(obj['SN'])
+        invertedSNRs.append(obj['SNR'])
     invertedSNRs=numpy.array(invertedSNRs)
     invertedSNRs.sort()
     numInverted=numpy.arange(len(invertedSNRs))+1
      
     candidateSNRs=[]
     for obj in imageDict['optimalCatalog']:
-        candidateSNRs.append(obj['SN'])
+        candidateSNRs.append(obj['SNR'])
     candidateSNRs=numpy.array(candidateSNRs)
     candidateSNRs.sort()
     numCandidates=numpy.arange(len(candidateSNRs))+1
@@ -1021,6 +1030,15 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     contaminDict['cumSumCandidates']=cumSumCandidates
     contaminDict['cumSumInverted']=cumSumInverted
     contaminDict['cumContamination']=cumContamination       
+    
+    # Wite a .fits table
+    contaminTab=atpy.Table()
+    for key in contaminDict.keys():
+        contaminTab.add_column(atpy.Column(contaminDict[key], key))
+    fitsOutFileName=diagnosticsDir+os.path.sep+"contaminationEstimateSNR.fits"
+    if os.path.exists(fitsOutFileName) == True:
+        os.remove(fitsOutFileName)
+    contaminTab.write(fitsOutFileName)
     
     return contaminDict
     

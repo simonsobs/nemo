@@ -11,7 +11,7 @@ import urllib
 import urllib2
 import sys
 import time
-import atpy
+import astropy.table as atpy
 import IPython
 
 # For adding meta data to output
@@ -62,7 +62,7 @@ def mergeCatalogs(imageDict):
                 bestMatch=None
             
             if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
-                keysToAppend=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SN', \
+                keysToAppend=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', \
                               'fluxRadius_arcmin', 'template', 'fluxStatus', 'deltaT_c', 'y_c', 
                               'Y500_sr', 'err_Y500Err']
                 for key in keysToAppend:
@@ -71,7 +71,7 @@ def mergeCatalogs(imageDict):
             else:
                 # Must be an object not already in list
                 nonListKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
-                listKeys=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SN', 'fluxRadius_arcmin', 
+                listKeys=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
                           'template', 'fluxStatus', 'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
                 newObj={}
                 for key in nonListKeys:
@@ -121,9 +121,9 @@ def makeOptimalCatalog(imageDict, constraintsList):
                     bestMatch=m
             if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
                 # Is this better than the current object?
-                if c['SN'] > bestMatch['SN']:
+                if c['SNR'] > bestMatch['SNR']:
                     wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg', 'numSigPix', 'flux_arcmin2',
-                                'fluxErr_arcmin2', 'SN', 'fluxRadius_arcmin', 'template', 'fluxStatus',
+                                'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 'template', 'fluxStatus',
                                 'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
                     for key in wantedKeys:
                         if key in c.keys():
@@ -134,7 +134,7 @@ def makeOptimalCatalog(imageDict, constraintsList):
             else:
                 # Must be an object not already in list
                 wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg', 'numSigPix', 'flux_arcmin2',
-                            'fluxErr_arcmin2', 'SN', 'fluxRadius_arcmin', 'template', 'fluxStatus',
+                            'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 'template', 'fluxStatus',
                             'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
                 newObj={}
                 for key in wantedKeys:
@@ -263,12 +263,12 @@ def flagCatalogMatches(catalog, flagCatalog, key, matchRadiusDeg = 2.0/60.0):
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def makeACTName(RADeg, decDeg):
+def makeACTName(RADeg, decDeg, prefix = 'ACT-CL'):
     """Makes ACT cluster name from RADeg, decDeg
     
     """
     
-    actName="ACT-CL J"+makeRA(RADeg)+makeDec(decDeg)
+    actName=prefix+" J"+makeRA(RADeg)+makeDec(decDeg)
     
     return actName
 
@@ -496,6 +496,7 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
     outFile.close()   
     
     # Write a .fits version (easier for topcatting)
+    # NOTE: switched to astropy (v1.3) tables interface
     tab=atpy.Table()
     for key in keysToWrite:
         if key in availKeys:
@@ -505,8 +506,8 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
                     arr.append(obj[key])
                 else:
                     arr.append(-99)
-            tab.add_column(key, arr)
-    tab.table_name='ACT'
+            tab.add_column(atpy.Column(arr, key))
+    #tab.table_name='ACT'
     fitsOutFileName=outFileName.replace(".csv", ".fits")
     if os.path.exists(fitsOutFileName) == True:
         os.remove(fitsOutFileName)
@@ -523,7 +524,7 @@ def readCatalog(fileName):
     typesDict={'name': 'str', 
                'RADeg': 'float', 
                'decDeg': 'float', 
-               'SN': 'float', 
+               'SNR': 'float', 
                'fractionMapsDetected': 'float',
                'template': 'str',
                'NED_name': 'str',
@@ -610,7 +611,7 @@ def readTobyLatexCatalog(fileName):
         objDict['name']=bits[0].lstrip(" ").rstrip(" ")
         objDict['RADeg']=astCoords.hms2decimal(bits[1].lstrip(" ").rstrip(" ").replace("$", ""), ":")
         objDict['decDeg']=astCoords.dms2decimal(bits[2].lstrip(" ").rstrip(" ").replace("$", ""), ":")
-        objDict['SN']=float(bits[3])
+        objDict['SNR']=float(bits[3])
         objDict['thetaCoreArcmin']=float(bits[4])
         deltaTString=bits[5].replace("$", "").lstrip(" ").rstrip(" ")
         deltaTBits=deltaTString.split("\\pm")

@@ -1,0 +1,48 @@
+# nemo parameters file
+
+# Valid units are uK or Jy/sr
+# this should be a list of maps at different frequencies that will be hit with the same mapFilter and then
+# combined according to mapCombination below. Note can choose to filter 219 here by including it, but not
+# use it for detection if wanted (to do this, don't include 219 in mapCombination)
+unfilteredMaps = [\
+                 {'mapFileName': "ACT_148_equ_season_3_1way_v3_src_free.fits", \
+                  'weightsFileName': "ACT_148_equ_season_3_1way_hits_v3.fits", \
+                  'obsFreqGHz': 148.0, 'units': 'uK', \
+                  'beamFileName': "profiles_ACT/profile_AR1_2009_pixwin_130224.txt", \
+                  'addNoise': None, \
+                  'RADecSection': [22.5, 56.5, -2.0, 2.0], \
+                  'pointSourceRemoval': None} \
+]
+
+# Detection/catalog options
+thresholdSigma = 4.0
+minObjPix = 4
+rejectBorder = 10
+objIdent = 'ACT-CL'
+longNames = False
+catalogCuts = ['SNR > 4.0']#, 'decDeg > -1.4', 'decDeg < 1.5']
+
+# Photometry options
+# NOTE: these don't do anything at the moment
+photometryOptions = {'apertureRadiusArcmin': 3.0, \
+                     'numBackgrounds': 100, \
+                     'minBackgroundSepArcmin': 10, \
+                     'maxBackgroundSepArcmin': 30}
+
+# Filter definitions
+mapFilters = [\
+               {'label': "Arnaud_M4e14_z0p4", 'class': "ArnaudModelMatchedFilter", \
+               'params': {'M500MSun': 4e14, 'z': 0.4, \
+                          'noiseParams': {'method': "dataMap"}, \
+                          'outputUnits': 'yc', \
+                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+]
+
+# These used for comparing simulations against input
+# Assuming sim catalog format is plain-text, as fiddled by Ryan
+compareToSim = False
+noiselessSimMap = "../simMaps/148_full_sz_adiabatic_5RA85_-50DEC-60_muK.fits"
+inputSimCatalog = "../simCatalogs/adiabatic_halo_sz_m_gt_5e13_5RA85_-50DEC-60.dat"
+minYLimit_arcmin2 = 0.0001
+zRange = [0.1, 2.0]
+

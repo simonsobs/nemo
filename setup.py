@@ -7,6 +7,7 @@ import glob
 from distutils.core import setup
 from distutils.extension import Extension
 from Cython.Distutils import build_ext
+import numpy
 import popen2
 
 setup(name='nemo',
@@ -21,5 +22,5 @@ setup(name='nemo',
       package_data={'nemo': ['data/*']},
       scripts=['bin/nemo', 'bin/nemoFakeSources', 'bin/nemomontage', 'bin/nemostack-Planck'],
       cmdclass={'build_ext': build_ext},
-      ext_modules=[Extension("nemoCython", ["nemo/nemoCython.pyx"])]
+      ext_modules=[Extension("nemoCython", ["nemo/nemoCython.pyx"], include_dirs=[numpy.get_include()])]
 )
