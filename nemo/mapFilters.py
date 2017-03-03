@@ -1004,9 +1004,6 @@ class RealSpaceMatchedFilter(MapFilter):
             else:
                 raise Exception, "didn't understand 'outputUnits' given in the .par file"
 
-            # We don't actually use the weight map from here on, so zap it to save memory
-            del mapDict['weights']
-            
             # Save 2d kernel in case we want to do anything with it later
             astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, None)
             

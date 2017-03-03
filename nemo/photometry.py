@@ -67,35 +67,6 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         elif SNMap == 'array':
             data=imageDict[key]['SNMap']
             wcs=imageDict[key]['wcs']
-        elif SNMap == 'local':
-            # This ignores the area mask, for now
-            img=pyfits.open(imageDict[key]['filteredMap'])
-            wcs=astWCS.WCS(imageDict[key]['filteredMap'])
-            data=img[0].data
-            bckInnerRadiusArcmin=10.0
-            bckOuterRadiusArcmin=15.0
-            ra0, dec0=wcs.getCentreWCSCoords()
-            x0, y0=wcs.wcs2pix(ra0, dec0)
-            x1=x0+1
-            y1=y0+1
-            ra1, dec1=wcs.pix2wcs(x1, y1)
-            yPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
-            bckInnerScalePix=int(round((bckInnerRadiusArcmin/60.0)/yPixScale))
-            bckOuterScalePix=int(round((bckOuterRadiusArcmin/60.0)/yPixScale))
-            annulus=np.zeros([bckOuterScalePix*2, bckOuterScalePix*2])
-            xRange=np.array([np.arange(annulus.shape[1])-bckOuterScalePix]*annulus.shape[0])
-            yRange=np.array([np.arange(annulus.shape[0])-bckOuterScalePix]*annulus.shape[1]).transpose()
-            rRange=np.sqrt(xRange**2+yRange**2)
-            annulus[np.logical_and(np.greater(rRange, bckInnerScalePix),
-                                        np.less(rRange, bckOuterScalePix))]=1.0
-            numValues=annulus.flatten().nonzero()[0].shape[0]
-                    
-            noise=ndimage.rank_filter(abs(data), int(round(0.683*numValues)), footprint = annulus)
-            data=data/noise # now data is SNMap
-            data[np.isnan(data)]=0.0      
-            data[np.isinf(data)]=0.0            
-        else:
-            raise Exception, "Didn't understand SNMap value '%s'" % (str(SNMap))
 
         # This is for checking contamination
         if invertMap == True:
@@ -117,12 +88,13 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
         objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
 
-        mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
-                                                        np.arange(data.shape[1]), 
-                                                        data, kx = 1, ky = 1)
+        # Found to be not robust elsewhere
+        #mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
+                                                        #np.arange(data.shape[1]), 
+                                                        #data, kx = 1, ky = 1)
                                                         
         # Border around edge where we might throw stuff out just to cut down contamination
-        if areaMask != None:
+        if np.any(areaMask) != None:
             minX=np.where(areaMask > 0)[1].min()
             maxX=np.where(areaMask > 0)[1].max()
             minY=np.where(areaMask > 0)[0].min()
@@ -157,7 +129,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                     objDict['name']=catalogTools.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
                 objDict['numSigPix']=objNumPix[i]
                 objDict['template']=key
-                objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]              
+                objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]             
                 if objDict['x'] > minX and objDict['x'] < maxX and \
                     objDict['y'] > minY and objDict['y'] < maxY:
                     masked=False
@@ -172,23 +144,33 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         imageDict[key]['catalog']=catalog
 
 #------------------------------------------------------------------------------------------------------------
-def getSNValues(imageDict, SNMap = 'file', invertMap = False):
-    """Measures S/N values in maps at catalog positions. Like above, but used by e.g. nemoSPTCheck script
+def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', template = None):
+    """Measures SNR values in maps at catalog positions.
     
     Set invertMap == True, to do a test for estimating the spurious source fraction
     
+    Use prefix to add prefix before SNR in catalog (e.g., fixed_SNR)
+    
+    Use template to select a particular filtered map (i.e., label of mapFilter given in .par file, e.g.,
+    a filter used to measure properties for all objects at fixed scale).
+    
     """
     
-    print ">>> Getting S/N values ..."
-          
+    print ">>> Getting %sSNR values ..." % (prefix)
+    
     # Do search on each filtered map separately
     for key in imageDict.keys():
         
         print "... searching %s ..." % (key)
+        
+        if template == None:
+            mapKey=key
+        else:
+            mapKey=template
 
         if SNMap == 'file':
-            img=pyfits.open(imageDict[key]['SNMap'])
-            wcs=astWCS.WCS(imageDict[key]['SNMap'])
+            img=pyfits.open(imageDict[mapKey]['SNMap'])
+            wcs=astWCS.WCS(imageDict[mapKey]['SNMap'])
             data=img[0].data
         elif SNMap == 'array':
             data=imageDict[key]['SNMap']
@@ -196,36 +178,48 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False):
         else:
             raise Exception, "Didn't understand SNMap value '%s'" % (str(SNMap))
 
-        mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
-                                                        np.arange(data.shape[1]), 
-                                                        data, kx = 1, ky = 1)
+        # Found not to be robust elsewhere
+        #mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
+                                                        #np.arange(data.shape[1]), 
+                                                        #data, kx = 1, ky = 1)
                                             
         for obj in imageDict[key]['catalog']:
             obj['x'], obj['y']=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
             if obj['x'] > 0 and obj['x'] < data.shape[1] and obj['y'] > 0 and obj['y'] < data.shape[0]:
-                #obj['SNR']=data[obj['y'], obj['x']] # read directly off of S/N map
-                obj['SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
+                obj[prefix+'SNR']=data[int(round(obj['y'])), int(round(obj['x']))] # read directly off of S/N map
+                #obj['SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
             else:
-                obj['SNR']=None
+                obj[prefix+'SNR']=0.
        
 #------------------------------------------------------------------------------------------------------------
 def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDict = None):
-    """Add flux measurements to each catalog pointed to in the imageDict. Measured in filtered maps in yc
-    units. The interface for using the unfiltered maps option here is somewhat confused.
+    """Add flux measurements to each catalog pointed to in the imageDict. Measured in 'outputUnits' 
+    specified in the filter definition in the .par file (and written to the image header as 'BUNIT').
     
-    NOTE: Jan 2015, flux is now integrated Y500 assuming R500 as given by the template for each object
-    in the catalog if using the Arnaud profile (i.e., we normalised things there to give Y500).
+    Maps should have been normalised before this stage to make the value of the filtered map at the object
+    position equal to the flux that is wanted (yc, uK or Jy/beam). This includes taking out the effect of
+    the beam.
     
-    Use beamDecrementBias to undo beam smoothing for central yc, deltaTc values
-    Use signalAreaScaling to multiply up map such that pixel at object location gives Y500 
-    (if the cluster did have that mass and redshift)
-    
+    Under 'photometryOptions', use the 'photFilter' key to choose which filtered map in which to make
+    flux measurements at fixed scale (fixed_delta_T_c, fixed_y_c etc.) 
+
     """
 
     # NOTE: I prefer sr to arcmin2 (but arcmin2 is how we define signalAreaScaling for Arnaud model)
     srToArcmin2=np.power(np.radians(1.0/60.0), 2)
     
-    print ">>> Measuring SZ decrements and Y500s ..."
+    print ">>> Doing photometry ..."
+
+    # For fixed filter scale
+    if 'photFilter' in photometryOptions.keys():
+        photFilter=photometryOptions['photFilter']
+    else:
+        photFilter=None
+
+    # Adds fixed_SNR values to catalogs for all maps
+    if photFilter != None:
+        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter)            
+            
     for key in imageDict.keys():
         
         print "--> Map: %s ..." % (imageDict[key]['filteredMap'])
@@ -235,53 +229,58 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
         wcs=astWCS.WCS(imageDict[key]['filteredMap'])
         mapData=img[0].data
 
-        beamDecrementBias=wcs.header['BBIAS']       # multiply map values by this to get intrinsic yc, delta Tc
-        signalAreaScaling=wcs.header['ASCALING']    # multiply map values by this to turn single pixel at object location to Y500
         mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
         
         mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
                                                         np.arange(mapData.shape[1]), 
                                                         mapData, kx = 1, ky = 1) 
-                
-        # Maps must have been normalised such that peak pixel value for an object gives Y500 in arcmin2
+        
+        # For fixed filter scale
+        if 'photFilter' in photometryOptions.keys():
+            photImg=pyfits.open(imageDict[photFilter]['filteredMap'])
+            photMapData=photImg[0].data
+            mapDataList=[mapData, photMapData]
+            prefixList=['', 'fixed_']
+        else:
+            mapDataList=[mapData]
+            prefixList=['']
+            
         for obj in catalog:
             
             if key == obj['template']:
                 
-                # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
-                # i.e., avoid using interpolate.RectBivariateSpline
-                mapValue=mapData[int(round(obj['y'])), int(round(obj['x']))]
-                #mapValue=mapInterpolator(obj['y'], obj['x'])[0][0]
-                #print "photometry"
-                #IPython.embed()
-                #sys.exit()
-                
-                if mapUnits == 'yc':
-                    # NOTE: if using RealSpaceMatchedFilter, we've done the normalisation in there
-                    # Map is in yc, with the effect of the beam taken out
-                    #Y500_sr=mapValue*signalAreaScaling*srToArcmin2
-                    yc=mapValue
-                    deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
-                    #obj['Y500_sr']=Y500_sr
-                    #obj['err_Y500_sr']=Y500_sr/obj['SNR']
-                    obj['y_c']=yc/1e-4                      # So that same units as H13 in output catalogs
-                    obj['err_y_c']=obj['y_c']/obj['SNR']
-                    obj['deltaT_c']=deltaTc
-                    obj['err_deltaT_c']=abs(deltaTc/obj['SNR'])
-                elif mapUnits == 'Y500':
-                    print "add photometry.measureFluxes() for Y500"
-                    IPython.embed()
-                    sys.exit()
-                elif mapUnits == 'uK':
-                    # For this, we want deltaTc to be source amplitude
-                    deltaTc=mapValue*beamDecrementBias
-                    obj['deltaT_c']=deltaTc
-                    obj['err_deltaT_c']=deltaTc/obj['SNR']
-                elif mapUnits == 'Jy/beam':
-                    # For this, we want mapValue to be source amplitude == flux density
-                    print "add photometry.measureFluxes() Jy/beam photometry"
-                    IPython.embed()
-                    sys.exit()
+                for data, prefix in zip(mapDataList, prefixList):
+                    # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
+                    # i.e., avoid using interpolate.RectBivariateSpline
+                    mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
+                    #mapValue=mapInterpolator(obj['y'], obj['x'])[0][0]
+
+                    # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
+                    if mapUnits == 'yc':
+                        # Map is in yc, with the effect of the beam taken out
+                        #Y500_sr=mapValue*signalAreaScaling*srToArcmin2
+                        yc=mapValue
+                        deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
+                        #obj['Y500_sr']=Y500_sr
+                        #obj['err_Y500_sr']=Y500_sr/obj['SNR']
+                        obj[prefix+'y_c']=yc/1e-4                            # So that same units as H13 in output catalogs
+                        obj[prefix+'err_y_c']=obj[prefix+'y_c']/obj[prefix+'SNR']
+                        obj[prefix+'deltaT_c']=deltaTc
+                        obj[prefix+'err_deltaT_c']=abs(deltaTc/obj[prefix+'SNR'])
+                    elif mapUnits == 'Y500':
+                        print "add photometry.measureFluxes() for Y500"
+                        IPython.embed()
+                        sys.exit()
+                    elif mapUnits == 'uK':
+                        # For this, we want deltaTc to be source amplitude
+                        deltaTc=mapValue
+                        obj[prefix+'deltaT_c']=deltaTc
+                        obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']
+                    elif mapUnits == 'Jy/beam':
+                        # For this, we want mapValue to be source amplitude == flux density
+                        print "add photometry.measureFluxes() Jy/beam photometry"
+                        IPython.embed()
+                        sys.exit()
         
 #------------------------------------------------------------------------------------------------------------ 
 def measureApertureFluxes(catalog, apertureRadiusArcmin, mapData, wcs, fluxCorrectionFactor, numBackgrounds = 10, 

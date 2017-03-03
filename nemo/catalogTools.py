@@ -22,6 +22,54 @@ import nemo
 XMATCH_RADIUS_DEG=1.4/60.0  # catalog matching radius, for sim comparisons
 
 #------------------------------------------------------------------------------------------------------------
+# Definitions of table column names and formats that can be written in catalogs
+COLUMN_NAMES    = ['name', 
+                   'RADeg', 
+                   'decDeg', 
+                   'SNR', 
+                   'numSigPix', 
+                   'fractionMapsDetected', 
+                   'template', 
+                   'galacticLatDeg',
+                   'deltaT_c',
+                   'err_deltaT_c',
+                   'y_c',
+                   'err_y_c',
+                   'Y500_sr',
+                   'err_Y500_sr',
+                   'fluxJy',
+                   'err_fluxJy']
+COLUMN_FORMATS  = ['%s',
+                   '%.6f',
+                   '%.6f',
+                   '%.1f',
+                   '%d',
+                   '%.2f',
+                   '%s',
+                   '%.6f',
+                   '%.3f',
+                   '%.3f',
+                   '%.3e',
+                   '%.3e',
+                   '%.3e',
+                   '%.3e',
+                   '%.3f',
+                   '%.3f']
+
+columnsToAdd=[]
+formatsToAdd=[]
+for k in COLUMN_NAMES:
+    if k not in ['name', 'RADeg', 'decDeg', 'galacticLatDeg', 'fractionMapsDetected', 'numSigPix']:
+        i=COLUMN_NAMES.index(k)
+        formatsToAdd.append(COLUMN_FORMATS[i])
+        columnsToAdd.append("fixed_"+k)
+COLUMN_NAMES=COLUMN_NAMES+columnsToAdd
+COLUMN_FORMATS=COLUMN_FORMATS+formatsToAdd
+        
+if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
+    raise exception, "COLUMN_NAMES and COLUMN_FORMATS lists should be same length"
+
+#------------------------------------------------------------------------------------------------------------
 def mergeCatalogs(imageDict):
     """Identifies common objects between catalogs in the imageDict and creates a master catalog with
     one entry per object, but multiple flux measurements where available.
@@ -30,10 +78,19 @@ def mergeCatalogs(imageDict):
     
     # Properties (apart from position, name info) that we keep for each object, if they are present
     # Fix this properly later
-    wantedKeys=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
-                'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
-                'fluxJy', 'err_fluxJy']
-                
+    #wantedKeys=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
+                #'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
+                #'fluxJy', 'err_fluxJy']
+    #keysToAdd=[]
+    #for k in wantedKeys:
+        #keysToAdd.append("fixed_"+k)
+    #wantedKeys=wantedKeys+keysToAdd
+    
+    wantedKeys=[]
+    for k in COLUMN_NAMES:
+        if k not in ['name', 'RADeg', 'decDeg', 'galacticLatDeg']:
+            wantedKeys.append(k)
+    
     # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
     templates=[]
     for key in imageDict.keys():
@@ -69,7 +126,7 @@ def mergeCatalogs(imageDict):
             
             if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
                 for key in wantedKeys:
-                    if key in bestMatch.keys():
+                    if key in bestMatch.keys() and key in c.keys():
                         bestMatch[key].append(c[key])   
             else:
                 # Must be an object not already in list
@@ -96,13 +153,20 @@ def makeOptimalCatalog(imageDict, constraintsList):
     one entry per object, keeping only the highest S/N detection details.
     
     """
-
+    
     # Properties (apart from position, name info) that we keep for each object, if they are present
     # Fix this properly later - duplicated for mergeCatalogs also (urgh)
-    wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
-    wantedKeys=wantedKeys+['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
-                           'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
-                           'fluxJy', 'err_fluxJy']
+    #wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
+    #wantedKeys=wantedKeys+['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
+                           #'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
+                           #'fluxJy', 'err_fluxJy']
+    #keysToAdd=[]
+    #for k in wantedKeys:
+        #if k not in ['name', 'RADeg', 'decDeg', 'galacticLatDeg']:
+            #keysToAdd.append("fixed_"+k)
+    #wantedKeys=wantedKeys+keysToAdd
+    
+    wantedKeys=COLUMN_NAMES
     
     # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
     templates=[]
