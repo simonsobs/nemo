@@ -13,7 +13,8 @@ import astropy.table as atpy
 import mapTools
 import catalogTools
 import photometry
-import numpy
+import gnfw
+import numpy as np
 import os
 import math
 import pylab
@@ -23,7 +24,7 @@ import operator
 import pyximport; pyximport.install()
 import nemoCython
 import IPython
-numpy.random.seed()
+np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
 def parseInputSimCatalog(fileName, wcs):
@@ -74,8 +75,8 @@ def matchAgainstSimCatalog(catalog, inputSimCatalog, simFluxKey = 'fixedAperture
     for s in inputSimCatalog:
         sRAs.append(s['RADeg'])
         sDecs.append(s['decDeg'])
-    sRAs=numpy.array(sRAs)
-    sDecs=numpy.array(sDecs)
+    sRAs=np.array(sRAs)
+    sDecs=np.array(sDecs)
     
     for m in catalog:
         mra=m['RADeg']
@@ -87,7 +88,7 @@ def matchAgainstSimCatalog(catalog, inputSimCatalog, simFluxKey = 'fixedAperture
         # if they passed the Y, z limit cuts. simCatalog still contains every object in map area.
         rs=astCoords.calcAngSepDeg(mra, mdec, sRAs, sDecs)
         rMin=rs.min()
-        rMinIndex=numpy.equal(rs, rMin).nonzero()[0][0]
+        rMinIndex=np.equal(rs, rMin).nonzero()[0][0]
         bestMatch=inputSimCatalog[rMinIndex]
         if bestMatch != None and rMin < catalogTools.XMATCH_RADIUS_DEG:
             # We want to track all matches we detected even if we don't necessarily want to compare flux
@@ -171,9 +172,9 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
                 myFlux.append(obj['flux_arcmin2'])
                 myFluxErr.append(obj['fluxErr_arcmin2'])
                 simFlux.append(obj['inputSim_flux_arcmin2'])
-        simFlux=numpy.array(simFlux)
-        myFlux=numpy.array(myFlux)
-        myFluxErr=numpy.array(myFluxErr)
+        simFlux=np.array(simFlux)
+        myFlux=np.array(myFlux)
+        myFluxErr=np.array(myFluxErr)
         if len(simFlux) > 0:
             if key == 'optimal':
                 pylab.axes(topPlot)
@@ -187,7 +188,7 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
                 pylab.errorbar(simFlux, simFlux-myFlux, yerr=myFluxErr, fmt='.', label = key)
 
     pylab.axes(bottomPlot)
-    plotRange=numpy.linspace(0, 0.02, 10)
+    plotRange=np.linspace(0, 0.02, 10)
     pylab.plot(plotRange, [0]*len(plotRange), 'k--')
     pylab.ylim(-0.0015, 0.0015)
     pylab.xlim(0.0, 0.0015)
@@ -195,7 +196,7 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     pylab.xlabel('Input Sim Catalog Y (arcmin$^2$)')
     
     pylab.axes(topPlot)
-    plotRange=numpy.linspace(0, 0.02, 10)
+    plotRange=np.linspace(0, 0.02, 10)
     pylab.plot(plotRange, plotRange, 'k--')
     pylab.ylabel('Measured Y (arcmin$^2$)')
     pylab.xticks([], [])
@@ -217,8 +218,8 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     # These are in units of 1-sigma error bars
     # So sigmaResidualSigma = 3 would mean that the standard deviation of my fluxes is 3 error bars
     # and medianResidualSigma = 0.3 means that we're reasonably unbiased (within 0.3 error bars)
-    medianResidualSigma=numpy.median((simFlux-myFlux)/myFluxErr)
-    sigmaResidualSigma=numpy.std(((simFlux-myFlux)/myFluxErr))
+    medianResidualSigma=np.median((simFlux-myFlux)/myFluxErr)
+    sigmaResidualSigma=np.std(((simFlux-myFlux)/myFluxErr))
     print ">>> Flux recovery stats:"
     print "... median residual = %.3f error bars" % (medianResidualSigma)
     print "... stdev residual = %.3f error bars" % (sigmaResidualSigma)
@@ -236,18 +237,18 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     simMasses=[]
     for obj in simCatalog:
         simMasses.append(obj['Mvir'])  
-    simMasses=numpy.array(simMasses)
+    simMasses=np.array(simMasses)
     simMasses.sort()
-    simNum=numpy.ones(simMasses.shape[0])
+    simNum=np.ones(simMasses.shape[0])
     
     for key in keysList:
         catalog=catalogsDict[key]
         
         # Completeness
-        detected=numpy.zeros(simMasses.shape[0])
+        detected=np.zeros(simMasses.shape[0])
         for obj in catalog:
             if obj['inputSim_Mvir'] != None:
-                index=numpy.equal(simMasses, obj['inputSim_Mvir']).nonzero()[0][0]
+                index=np.equal(simMasses, obj['inputSim_Mvir']).nonzero()[0][0]
                 detected[index]=detected[index]+1    
         cumTotal=1+simNum.sum()-simNum.cumsum()
         cumDetected=1+detected.sum()-detected.cumsum()
@@ -265,7 +266,7 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
             else:
                 realObjs.append([obj['SNR'], 0])
         realObjs=sorted(realObjs, key=operator.itemgetter(0))
-        realObjs=numpy.array(realObjs).transpose()
+        realObjs=np.array(realObjs).transpose()
         pylab.axes(trueDetAxes)
         if key == 'optimal':
             # yes, +1 is essential
@@ -275,7 +276,7 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
 
         # Purity
         purity=(1+realObjs[1].sum()-realObjs[1].cumsum())/ \
-               (realObjs.shape[1]-numpy.arange(realObjs[1].shape[0], dtype=float))
+               (realObjs.shape[1]-np.arange(realObjs[1].shape[0], dtype=float))
         pylab.axes(purityAxes)
         if key == 'optimal':
             pylab.plot(realObjs[0], purity, 'k', lw=2, label = 'Optimal S/N template')
@@ -420,10 +421,10 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
         if clip.shape[1] == clip.shape[0]:
             obj['RvirPix']=RvirPix
             obj['RvirArcmin']=RvirDeg*60.0
-            x=numpy.arange(-clip.shape[1]/2, clip.shape[1]/2, dtype=float)*localDegPerPix
-            y=numpy.arange(-clip.shape[0]/2, clip.shape[0]/2, dtype=float)*localDegPerPix
-            rDeg=numpy.sqrt(x**2+y**2)            
-            insideApertureMask=numpy.less(rDeg, RvirDeg)
+            x=np.arange(-clip.shape[1]/2, clip.shape[1]/2, dtype=float)*localDegPerPix
+            y=np.arange(-clip.shape[0]/2, clip.shape[0]/2, dtype=float)*localDegPerPix
+            rDeg=np.sqrt(x**2+y**2)            
+            insideApertureMask=np.less(rDeg, RvirDeg)
             obj['fluxFromInputSimMap_arcmin2']=clip[insideApertureMask].sum()*arcmin2PerPix
     
     # Fit for not understood offset between directly measured input map fluxes and the catalog
@@ -433,11 +434,11 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
         if 'fluxFromInputSimMap_arcmin2' in obj.keys():
             fluxesFromMap.append(obj['fluxFromInputSimMap_arcmin2'])
             fluxesFromCatalog.append(obj['fluxFromCatalog_arcmin2'])
-    fluxesFromMap=numpy.array(fluxesFromMap)
-    fluxesFromCatalog=numpy.array(fluxesFromCatalog)
+    fluxesFromMap=np.array(fluxesFromMap)
+    fluxesFromCatalog=np.array(fluxesFromCatalog)
     
     # Clipped OLS fit
-    res=numpy.zeros(fluxesFromMap.shape)
+    res=np.zeros(fluxesFromMap.shape)
     sigma=1e6
     for i in range(10):
         fitData=[]
@@ -446,16 +447,16 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
                 fitData.append([c, m])
         fit=astStats.OLSFit(fitData)
         res=(fluxesFromCatalog*fit['slope']+fit['intercept'])-fluxesFromMap
-        sigma=numpy.std(res)
+        sigma=np.std(res)
 
     # Plot    
     fig=pylab.figure(num=6, figsize=(8,8))
     fig.canvas.set_window_title('Noiseless Input Sim Catalog vs. Map Flux Comparison')
-    fitRange=numpy.arange(0, 0.02, 0.001)
+    fitRange=np.arange(0, 0.02, 0.001)
     fitLine=fit['slope']*fitRange+fit['intercept']
     pylab.plot(fluxesFromCatalog, fluxesFromMap, 'ro')
     pylab.plot(fitRange, fitLine, 'b--', label='fit = %.6f*x + %.6f' % (fit['slope'], fit['intercept']))
-    #pylab.plot(numpy.arange(0, 0.02, 0.001), numpy.arange(0, 0.02, 0.001), 'b--')
+    #pylab.plot(np.arange(0, 0.02, 0.001), np.arange(0, 0.02, 0.001), 'b--')
     pylab.xlabel("Y input sim catalog (arcmin$^2$)")
     pylab.ylabel("Y input sim map (arcmin$^2$)")
     pylab.xlim(0, 0.02)
@@ -520,8 +521,8 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         if profileType not in selFnDict.keys():
             selFnDict[profileType]={}
             for prop, valuesList in zip(propertiesToTrack, propertyValuesLists):
-                selFnDict[profileType][prop]={'recoveredByRun': numpy.zeros([numRuns, len(valuesList)], dtype=float), 
-                                              'totalByRun': numpy.zeros([numRuns, len(valuesList)], dtype=float),
+                selFnDict[profileType][prop]={'recoveredByRun': np.zeros([numRuns, len(valuesList)], dtype=float), 
+                                              'totalByRun': np.zeros([numRuns, len(valuesList)], dtype=float),
                                               'valuesList': valuesList}        
             
         inputYArcmin2=[]
@@ -548,10 +549,10 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
             mapTools.preprocessMapDict(fakeMapDict, diagnosticsDir = diagnosticsDir)
             
             # Stops cython complaining
-            fakeMapDict['data']=numpy.array(fakeMapDict['data'], dtype=numpy.float64) 
+            fakeMapDict['data']=np.array(fakeMapDict['data'], dtype=np.float64) 
             
             # Uncomment out below if want to do noiseless sanity checks on e.g. recovered Y etc.
-            fakeMapDict['data']=numpy.zeros(fakeMapDict['data'].shape, dtype=numpy.float64) 
+            fakeMapDict['data']=np.zeros(fakeMapDict['data'].shape, dtype=np.float64) 
              
             # Generate fake source catalog
             fakeInputCatalog=[]
@@ -559,10 +560,10 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
             xMax=fakeMapDict['data'].shape[1]-rejectBorderPix*2
             yMin=0+rejectBorderPix*2
             yMax=fakeMapDict['data'].shape[0]-rejectBorderPix*2
-            xs=numpy.random.randint(xMin, xMax, sourcesPerRun)
-            ys=numpy.random.randint(yMin, yMax, sourcesPerRun)
+            xs=np.random.randint(xMin, xMax, sourcesPerRun)
+            ys=np.random.randint(yMin, yMax, sourcesPerRun)
             wcsCoords=fakeMapDict['wcs'].pix2wcs(xs, ys)
-            wcsCoords=numpy.array(wcsCoords)
+            wcsCoords=np.array(wcsCoords)
             RAs=wcsCoords[:, 0]
             decs=wcsCoords[:, 1]
             for k in range(sourcesPerRun):
@@ -576,8 +577,8 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
             
             # Insert fake catalog sources into map, add source properties to catalog (integrated Y etc.)
             for obj in fakeInputCatalog:
-                deltaT=deltaTList[numpy.random.randint(len(deltaTList))]
-                scaleArcmin=scalesArcminList[numpy.random.randint(len(scalesArcminList))]
+                deltaT=deltaTList[np.random.randint(len(deltaTList))]
+                scaleArcmin=scalesArcminList[np.random.randint(len(scalesArcminList))]
                 obj['deltaT']=deltaT
                 obj['scaleArcmin']=scaleArcmin
                 fakeMapDict['data'], sourceProperties=insertSourceIntoMap(obj, deltaT, scaleArcmin, 
@@ -645,7 +646,7 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         for prop in propertiesToTrack:
             fraction=selFnDict[profileType][prop]['recoveredByRun']/selFnDict[profileType][prop]['totalByRun']
             mean=fraction.mean(axis=0)
-            stderr=fraction.std(axis=0)/numpy.sqrt(fraction.shape[0])
+            stderr=fraction.std(axis=0)/np.sqrt(fraction.shape[0])
             selFnDict[profileType][prop]['meanRecoveredFraction']=mean
             selFnDict[profileType][prop]['stderrRecoveredFraction']=stderr            
         
@@ -666,14 +667,14 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
             pylab.close()
         
         # Y recovery plot - residual
-        inputYArcmin2=numpy.array(inputYArcmin2)
-        recoveredYArcmin2=numpy.array(recoveredYArcmin2)
+        inputYArcmin2=np.array(inputYArcmin2)
+        recoveredYArcmin2=np.array(recoveredYArcmin2)
         diff=inputYArcmin2-recoveredYArcmin2
         norm=1e-3
         labelString="mean(Y$_{in}$-Y$_{out}$) = %.3f $\\times$ 10$^{-3}$ arcmin$^2$\n$\sigma$(Y$_{in}$-Y$_{out}$) = %.3f $\\times$ 10$^{-3}$ arcmin$^2$" % ((diff/norm).mean(), (diff/norm).std())
         pylab.figure(figsize=(10, 8))
         pylab.plot(inputYArcmin2, diff, 'r.')
-        pylab.plot(numpy.linspace(inputYArcmin2.min()-1, inputYArcmin2.max()+1, 3), [0]*3, 'k--')
+        pylab.plot(np.linspace(inputYArcmin2.min()-1, inputYArcmin2.max()+1, 3), [0]*3, 'k--')
         pylab.xlabel("input Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin']))
         pylab.ylabel("input Y(r<%d') - recovered Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin'], photometryOptions['apertureRadiusArcmin']))
         ax=pylab.gca()
@@ -687,7 +688,7 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         
         # Y recovery plot - correlation
         pylab.figure(figsize=(10, 8))
-        oneToOneRange=numpy.linspace(inputYArcmin2.min()*0.5, inputYArcmin2.max()+1, 5)
+        oneToOneRange=np.linspace(inputYArcmin2.min()*0.5, inputYArcmin2.max()+1, 5)
         pylab.plot(inputYArcmin2, recoveredYArcmin2, 'r.')
         pylab.plot(oneToOneRange, oneToOneRange, 'k--')
         pylab.loglog()
@@ -701,13 +702,13 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         pylab.close()
 
         # Delta T recovery plot - residual
-        inputDeltaTc=numpy.array(inputDeltaTc)
-        recoveredDeltaTc=numpy.array(recoveredDeltaTc)
+        inputDeltaTc=np.array(inputDeltaTc)
+        recoveredDeltaTc=np.array(recoveredDeltaTc)
         diff=inputDeltaTc-recoveredDeltaTc
         labelString="mean($\Delta$T$_{c(in)}$-$\Delta$T$_{c(out)}$) = %.3f $\mu$K\n$\sigma$($\Delta$T$_{c(in)}$-$\Delta$T$_{c(out)}$) = %.3f $\mu$K" % ((diff).mean(), (diff).std())
         pylab.figure(figsize=(10, 8))
         pylab.plot(inputDeltaTc, diff, 'r.')
-        pylab.plot(numpy.linspace(inputDeltaTc.min()-1000, inputDeltaTc.max()+1000, 3), [0]*3, 'k--')
+        pylab.plot(np.linspace(inputDeltaTc.min()-1000, inputDeltaTc.max()+1000, 3), [0]*3, 'k--')
         pylab.xlabel("input $\Delta$T$_c$ ($\mu$K)")
         pylab.ylabel("input $\Delta$T$_c$ - recovered $\Delta$T$_c$ ($\mu$K)")
         ax=pylab.gca()
@@ -722,14 +723,14 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         # Also, work out fudge factor for Y recovery here
         # Insert this into photometry.measureApertureFluxes - obviously we have to turn this off there first
         # if we want to refit this.
-        mask=numpy.greater(recoveredYArcmin2, 0)
+        mask=np.greater(recoveredYArcmin2, 0)
         #slope, intercept, blah1, blah2, blah3=stats.linregress(recoveredYArcmin2[mask], inputYArcmin2[mask])
-        slope, intercept, blah1, blah2, blah3=stats.linregress(numpy.log10(recoveredYArcmin2[mask]), numpy.log10(inputYArcmin2[mask]))
-        #rec2=numpy.power(10.0, numpy.log10(recoveredYArcmin2)*slope+intercept)
+        slope, intercept, blah1, blah2, blah3=stats.linregress(np.log10(recoveredYArcmin2[mask]), np.log10(inputYArcmin2[mask]))
+        #rec2=np.power(10.0, np.log10(recoveredYArcmin2)*slope+intercept)
         
         # Save Y data and fit for this profileType
         outFileName=outDir+os.path.sep+"YRecovery_%s.npz" % (profileType)
-        numpy.savez(outFileName, inputYArcmin2, recoveredYArcmin2)
+        np.savez(outFileName, inputYArcmin2, recoveredYArcmin2)
         
     # Save sel. fn. as pickle
     # May want something to convert this into more readable format
@@ -761,7 +762,7 @@ def insertBetaModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photometryOpti
 
     # beta fixed, for now
     beta=0.86
-    rArcmin=numpy.linspace(0.0, 60.0, 5000)
+    rArcmin=np.linspace(0.0, 60.0, 5000)
     smoothArcmin=scaleArcmin
     profile1d=(1.0+(rArcmin/scaleArcmin)**2)**((1.0-3.0*beta)/2)
     
@@ -769,25 +770,25 @@ def insertBetaModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photometryOpti
     profile1d=profile1d*deltaT
         
     # Apply beam as Gaussian filter to profile
-    #beamSigma=mapDict['beamFWHMArcmin']/numpy.sqrt(8.0*numpy.log(2.0))            
+    #beamSigma=mapDict['beamFWHMArcmin']/np.sqrt(8.0*np.log(2.0))            
     #beamSigmaPix=beamSigma/(rArcmin[1]-rArcmin[0])
     #profile1d=ndimage.gaussian_filter1d(profile1d, beamSigmaPix)
     
     # Truncate beyond 10 times core radius
-    mask=numpy.greater(rArcmin, 10.0*scaleArcmin)
+    mask=np.greater(rArcmin, 10.0*scaleArcmin)
     profile1d[mask]=0.0
     
     # Turn 1d profile into 2d
     rDeg=rArcmin/60.0
     r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    profile2d=numpy.zeros(rDegMap.shape)
-    mask=numpy.less(rDegMap, 1000)
+    profile2d=np.zeros(rDegMap.shape)
+    mask=np.less(rDegMap, 1000)
     profile2d[mask]=r2p(rDegMap[mask])
     
     mapDict['data']=mapDict['data']+profile2d
     
     # What is the integrated Y within the aperture we're using for measuring Ys?
-    mask=numpy.less(rDegMap, photometryOptions['apertureRadiusArcmin']/60.0)    
+    mask=np.less(rDegMap, photometryOptions['apertureRadiusArcmin']/60.0)    
     sumPix=mapTools.convertToY(profile2d[mask], obsFrequencyGHz = mapDict['obsFreqGHz']).sum()
     ra0=objDict['RADeg']
     dec0=objDict['decDeg']
@@ -808,27 +809,27 @@ def insertProjectedNFWModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photom
     """
     
     rs=0.3 # 0.3 Mpc is sensible if R200 = 1.5 Mpc, c = 5, plus Giodini gets that. Koester uses 150 kpc
-    r=numpy.linspace(0.0, 10.0, 4000)
+    r=np.linspace(0.0, 10.0, 4000)
     x=r/rs
-    fx=numpy.zeros(x.shape)
-    mask=numpy.greater(x, 1)
-    fx[mask]=1-(2.0/numpy.sqrt(x[mask]**2-1))*numpy.arctan(numpy.sqrt((x[mask]-1)/(x[mask]+1)))
-    mask=numpy.less(x, 1)
-    fx[mask]=1-(2.0/numpy.sqrt(1-x[mask]**2))*numpy.arctanh(numpy.sqrt((1-x[mask])/(x[mask]+1)))
-    mask=numpy.equal(x, 1)
+    fx=np.zeros(x.shape)
+    mask=np.greater(x, 1)
+    fx[mask]=1-(2.0/np.sqrt(x[mask]**2-1))*np.arctan(np.sqrt((x[mask]-1)/(x[mask]+1)))
+    mask=np.less(x, 1)
+    fx[mask]=1-(2.0/np.sqrt(1-x[mask]**2))*np.arctanh(np.sqrt((1-x[mask])/(x[mask]+1)))
+    mask=np.equal(x, 1)
     fx[mask]=0
-    mask=numpy.greater(x, 20)
+    mask=np.greater(x, 20)
     fx[mask]=0
-    sigmax=numpy.zeros(r.shape)
-    mask=numpy.greater(r, rs)
+    sigmax=np.zeros(r.shape)
+    mask=np.greater(r, rs)
     sigmax[mask]=(2*rs*fx[mask])/(x[mask]**2-1)   # ignoring rho_s, which is arbitrary
     
     # Fit power law for extrapolating in centre (NFW profile undefined here)
-    mask=numpy.logical_and(numpy.greater(r, rs), numpy.less(r, rs*3))
+    mask=np.logical_and(np.greater(r, rs), np.less(r, rs*3))
     deg=1
-    p=numpy.polyfit(numpy.log10(r[mask]), numpy.log10(sigmax[mask]), 1)
-    fittedFunc=numpy.power(10, p[0]*numpy.log10(r)+p[1])
-    sigmax[numpy.less(r, rs)]=fittedFunc[numpy.less(r, rs)]
+    p=np.polyfit(np.log10(r[mask]), np.log10(sigmax[mask]), 1)
+    fittedFunc=np.power(10, p[0]*np.log10(r)+p[1])
+    sigmax[np.less(r, rs)]=fittedFunc[np.less(r, rs)]
     sigmax[0]=sigmax[1] # centre is still infinite
     sigmax=sigmax/sigmax.max()
     tckSigmax=interpolate.splrep(r, sigmax) # Note we defined interpolator in terms or r NOT x here!
@@ -857,7 +858,7 @@ def insertArnaudModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photometryOp
     ipshell()
     sys.exit()
  
-    r=numpy.linspace(0.0001, 3, 1000)    # in Mpc
+    r=np.linspace(0.0001, 3, 1000)    # in Mpc
     r500=1.0                        # in Mpc
     
     x=r/r500
@@ -869,7 +870,7 @@ def insertArnaudModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photometryOp
     beta=5.4905
     
     # dimensionlessP _is_ just the gNFW profile
-    dimensionlessP=P0/(numpy.power(c500*x, gamma)*numpy.power((1+numpy.power(c500*x, alpha)), (beta-gamma)/alpha))
+    dimensionlessP=P0/(np.power(c500*x, gamma)*np.power((1+np.power(c500*x, alpha)), (beta-gamma)/alpha))
         
     # Things get physical here
     z=0.3   # redshift
@@ -878,24 +879,24 @@ def insertArnaudModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photometryOp
     alphaP=0.12
     alphaPPrime=0.10-(alphaP+0.10)*(((x/0.5)**3)/(1.+(x/0.5)**3))
     
-    Pr=1.65e-3*astCalc.Ez(z)*numpy.power((M500/3e14), 2.0/3.0+alphaP+alphaPPrime)*dimensionlessP
+    Pr=1.65e-3*astCalc.Ez(z)*np.power((M500/3e14), 2.0/3.0+alphaP+alphaPPrime)*dimensionlessP
     
     # Turn from radial profile into projected radial cylindrical profile
     tck_Pr=interpolate.splrep(r, Pr)
-    rCyn=numpy.zeros(r.shape)+r
+    rCyn=np.zeros(r.shape)+r
     profCyn=[]
     dr=rCyn[1]-rCyn[0]
     for rc in rCyn:
-        dimensionlessP=P0/(numpy.power(c500*x, gamma)*numpy.power((1+numpy.power(c500*x, alpha)), (beta-gamma)/alpha))
+        dimensionlessP=P0/(np.power(c500*x, gamma)*np.power((1+np.power(c500*x, alpha)), (beta-gamma)/alpha))
 
         dr = r[1] - r[0]
     y0 = array([profile.get((_x0**2+r**2)**0.5).sum() for _x0 in x0]) / dr
     
     # Convert to angular coords, do cylindrical integral
-    rDeg=numpy.degrees(numpy.arctan(r/astCalc.da(z)))
+    rDeg=np.degrees(np.arctan(r/astCalc.da(z)))
     r2p=interpolate.interp1d(rDeg, Pr, bounds_error=False, fill_value=0.0)
-    profile2d=numpy.zeros(rDegMap.shape)
-    mask=numpy.less(rDegMap, 1000)
+    profile2d=np.zeros(rDegMap.shape)
+    mask=np.less(rDegMap, 1000)
     profile2d[mask]=r2p(rDegMap[mask])
     
     
@@ -913,15 +914,15 @@ def simpleCatalogMatch(primary, secondary, matchRadiusArcmin):
     for sobj in secondary:
         sobjRAs.append(sobj['RADeg'])
         sobjDecs.append(sobj['decDeg'])
-    sobjRAs=numpy.array(sobjRAs)
-    sobjDecs=numpy.array(sobjDecs)
+    sobjRAs=np.array(sobjRAs)
+    sobjDecs=np.array(sobjDecs)
     for pobj in primary:   
         pobj['recovered']=False
         rMin=1e6
         match=None
         rs=astCoords.calcAngSepDeg(pobj['RADeg'], pobj['decDeg'], sobjRAs, sobjDecs)
         rMin=rs.min()
-        rMinIndex=numpy.equal(rs, rMin).nonzero()[0][0]
+        rMinIndex=np.equal(rs, rMin).nonzero()[0][0]
         if rMin < xMatchRadiusDeg:
             match=secondary[rMinIndex]
         if match != None:
@@ -959,37 +960,37 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     invertedSNRs=[]
     for obj in invertedDict['optimalCatalog']:
         invertedSNRs.append(obj['SNR'])
-    invertedSNRs=numpy.array(invertedSNRs)
+    invertedSNRs=np.array(invertedSNRs)
     invertedSNRs.sort()
-    numInverted=numpy.arange(len(invertedSNRs))+1
+    numInverted=np.arange(len(invertedSNRs))+1
      
     candidateSNRs=[]
     for obj in imageDict['optimalCatalog']:
         candidateSNRs.append(obj['SNR'])
-    candidateSNRs=numpy.array(candidateSNRs)
+    candidateSNRs=np.array(candidateSNRs)
     candidateSNRs.sort()
-    numCandidates=numpy.arange(len(candidateSNRs))+1
+    numCandidates=np.arange(len(candidateSNRs))+1
     
     binMin=3.0
     binMax=20.0
     binStep=0.2
-    binEdges=numpy.linspace(binMin, binMax, (binMax-binMin)/binStep+1)
+    binEdges=np.linspace(binMin, binMax, (binMax-binMin)/binStep+1)
     binCentres=(binEdges+binStep/2.0)[:-1]
-    candidateSNRHist=numpy.histogram(candidateSNRs, bins = binEdges)
-    invertedSNRHist=numpy.histogram(invertedSNRs, bins = binEdges)    
+    candidateSNRHist=np.histogram(candidateSNRs, bins = binEdges)
+    invertedSNRHist=np.histogram(invertedSNRs, bins = binEdges)    
     
     cumSumCandidates=[]
     cumSumInverted=[]
     for i in range(binCentres.shape[0]):
         cumSumCandidates.append(candidateSNRHist[0][i:].sum())
         cumSumInverted.append(invertedSNRHist[0][i:].sum())
-    cumSumCandidates=numpy.array(cumSumCandidates, dtype = float)
-    cumSumInverted=numpy.array(cumSumInverted, dtype = float)
+    cumSumCandidates=np.array(cumSumCandidates, dtype = float)
+    cumSumInverted=np.array(cumSumInverted, dtype = float)
 
     xtickLabels=[]
     xtickValues=[]
-    fmodMajorTicks=numpy.fmod(binEdges, 5)
-    fmodMinorTicks=numpy.fmod(binEdges, 1)
+    fmodMajorTicks=np.fmod(binEdges, 5)
+    fmodMinorTicks=np.fmod(binEdges, 1)
     for i in range(len(binEdges)):
         if fmodMinorTicks[i] == 0:
             xtickValues.append(binEdges[i])
@@ -1013,7 +1014,7 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     # Plot cumulative contamination estimate (this makes more sense than plotting purity, since we don't know
     # that from what we're doing here, strictly speaking)
     cumContamination=cumSumInverted/cumSumCandidates
-    cumContamination[numpy.isnan(cumContamination)]=0.0
+    cumContamination[np.isnan(cumContamination)]=0.0
     pylab.plot(binEdges[:-1], cumContamination, 'k-')
     pylab.xlabel("SNR")
     pylab.ylabel("Estimated contamination > SNR")
@@ -1041,4 +1042,84 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     contaminTab.write(fitsOutFileName)
     
     return contaminDict
+
+#------------------------------------------------------------------------------------------------------------
+def makeArnaudModelProfile(z, M500, obsFreqGHz):
+    """Given z, M500 (in MSun), returns dictionary containing Arnaud model profile (well, knots from spline 
+    fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
+    (particularly 'y0', 'theta500Arcmin').
+    
+    Used by ArnaudModelFilter
+    
+    """
+
+    bRange=np.linspace(0, 30, 1000)
+    cylPProfile=[]
+    for b in bRange:
+        cylPProfile.append(gnfw.integrated(b))
+    cylPProfile=np.array(cylPProfile)
+    
+    # Normalise to 1 at centre
+    cylPProfile=cylPProfile/cylPProfile.max()
+
+    # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
+    Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
+    Hz=astCalc.Ez(z)*astCalc.H0  
+    G=4.301e-9  # in MSun-1 km2 s-2 Mpc
+    criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+    R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)
+    theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+    
+    # Map between b and angular coordinates for random model
+    # Note we fix c500 here to Arnaud value, we could leave it free
+    c500=1.177
+    thetaDegRange=(bRange*(theta500Arcmin/60.0))/c500
+    tckP=interpolate.splrep(thetaDegRange, cylPProfile)
+    
+    # Get Y500 from M500 according to Arnaud et al. (eq. 25, cylindrical relation)
+    # NOTE: Although sr is better units for comparing to Arnaud plots etc., arcmin2 is easier for rescaling below
+    arnaudY500_arcmin2=calcY500FromM500_Arnaud(M500, z, units = 'arcmin2')
+
+    # The above is the number we want, now normalise the profile to get that inside R500 and what deltaT0 is
+    fidDeltaT0=-500.0
+    yProfile=mapTools.convertToY(fidDeltaT0*cylPProfile, obsFrequencyGHz = obsFreqGHz)
+    tcky=interpolate.splrep(thetaDegRange, yProfile)
+    fineDegRange=np.linspace(0, theta500Arcmin/60.0, 1000)
+    fineyProfile=interpolate.splev(fineDegRange, tcky)    
+    YArcmin2=np.trapz(fineyProfile*np.pi*2*fineDegRange*60, fineDegRange*60)
+    norm=arnaudY500_arcmin2/YArcmin2
+    deltaT0=fidDeltaT0*norm
+    y0=mapTools.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
+
+    return {'tckP': tckP, 'y0': y0, 'deltaT0': deltaT0, 'theta500Arcmin': theta500Arcmin, 
+            'Y500Arcmin2': arnaudY500_arcmin2}
+
+#------------------------------------------------------------------------------------------------------------
+def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
+    """Calculate Y500 (in arcmin2) given M500, z following eq. 25 in Arnaud et al.
+    
+    Units can be 'sr' or 'arcmin2' 
+    
+    NOTE: this is the Y_cyl relation, so offset from Y_sph data (if e.g., looking at Fig. 10 of Arnaud) 
+        
+    """
+    
+    Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
+    Hz=astCalc.Ez(z)*astCalc.H0  
+    
+    # Now we need to adopt a scaling between Y500 (cylindrical for us) and mass
+    # Let's go with Arnaud et al. Section 6.3 (eq. 25)
+    alpha=1.78
+    logBx=-4.665    # for 1 x R500 - read Arnaud more carefully!
+    constantsTimesYSZ=np.power(10, logBx)*np.power(M500/3e14, alpha)
+    YSZ_R500_sr=constantsTimesYSZ/(np.power(Ez, -2.0/3.0)*np.power(astCalc.da(z), 2))   # in steradians
+    srToArcmin2=np.power(np.radians(1.0/60.0), 2)
+    YSZ_R500_arcmin2=YSZ_R500_sr/srToArcmin2
+        
+    if units == 'sr':
+        return YSZ_R500_sr
+    elif units == 'arcmin2':
+        return YSZ_R500_arcmin2
+    else:
+        raise Exception, "didn't understand units"
     

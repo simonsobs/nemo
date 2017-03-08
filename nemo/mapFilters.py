@@ -32,6 +32,7 @@ from scipy import ndimage
 import mapTools
 import photometry
 import catalogTools
+import simsTools
 import gnfw
 import pyfits
 import copy
@@ -733,10 +734,6 @@ class MatchedFilter(MapFilter):
                 # FFT of signal
                 signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
                 signalMap=signalMapDict['signalMap']
-                #rInnerDeg=signalMapDict['normInnerDeg']
-                #rOuterDeg=signalMapDict['normOuterDeg']
-                #powerScaleFactor=signalMapDict['powerScaleFactor']                
-                #signalMap.data=signalMap.data/abs(signalMap.data).max()  # renormalise
                 fftSignal=fftTools.fftFromLiteMap(signalMap)
                 
                 # Toby style -note smoothing noise is essential!
@@ -765,28 +762,36 @@ class MatchedFilter(MapFilter):
                 xPeak=peakCoords[1][0]
                 fSignalMap=fftTools.fftFromLiteMap(signalMap)
                 filteredSignalMap=np.real(fft.ifft2(fSignalMap.kMap*self.G))                          
-                amplitudeIn=signalMap.data[yPeak, xPeak]
-                amplitudeOut=filteredSignalMap[yPeak, xPeak].real
-                filterNormFactor=amplitudeIn/amplitudeOut
                 
-                # Now we normalise such that the filtered signal map peak value would be equal to the input Y signal
-                # But since we work in T and convert to Y later, we convert integrated Y to integrated T here
-                # Since the input signal here wasn't beam smoothed, we have already taken out beam smoothing bias
-                # NOTE: needing input_Y500_arcmin2 here means doesn't work for point source removal
-                # Would need a total flux summed in some aperture key adding to all signal types
-                TeqInputY=mapTools.convertToDeltaT(signalMapDict['signalAreaSum'], obsFrequencyGHz = mapDict['obsFreqGHz'])
-                normFactor=TeqInputY/filteredSignalMap[yPeak, xPeak].sum()
-                signalAreaScaling=normFactor/filterNormFactor
-                #test=np.real(fft.ifft2(self.G*fSignalMap.kMap*normFactor))
-                
-                #print "Should store Y500 and y_c, delta T_c appropriate normalisations here"
-                ##print "Currently trying scaling for Y500 from central filtered map pixel in here"
-                #print "Switched back to original amplitude in/out normalisation"
-                #IPython.embed()
-                #sys.exit()
-                # Filter actual map - checked again that this makes sense Feb 2014
-                # Adjusted normalisation as per above so that peak pixel value == Y500
-                filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=np.real(fft.ifft2(self.G*fMap.kMap*filterNormFactor))
+                #---
+                # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
+                # 1. The high pass filter (bck sub step)
+                # 2. The matched filter itself (includes beam)
+                signalProperties=signalMapDict['inputSignalProperties']
+                if self.params['outputUnits'] == 'yc':
+                    # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
+                    filteredSignalMap=mapTools.convertToY(filteredSignalMap, obsFrequencyGHz = signalProperties['obsFreqGHz'])
+                    signalNorm=signalProperties['y0']/filteredSignalMap.max()
+                elif self.params['outputUnits'] == 'Y500':
+                    # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
+                    # We can get this from yc and the info in signalProperties, so we don't really need this
+                    print "implement signal norm for %s" % (self.params['outputUnits'])
+                    IPython.embed()
+                    sys.exit()
+                elif self.params['outputUnits'] == 'uK':
+                    # Normalise such that peak value in filtered map == peak value of source in uK
+                    signalNorm=1.0/filteredSignalMap.max()
+                elif self.params['outputUnits'] == 'Jy/beam':
+                    # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
+                    print "implement signal norm for %s" % (self.params['outputUnits'])
+                    IPython.embed()
+                    sys.exit()
+                else:
+                    raise Exception, "didn't understand 'outputUnits' given in the .par file"
+
+                #---
+                # Filter actual map
+                filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=np.real(fft.ifft2(self.G*fMap.kMap))*signalNorm
                 
                 # Apply the filter to the noiseless signal only sim - for checking y recovery later
                 # NOTE: This will want fixing up to work in multi-frequency mode...
@@ -800,7 +805,7 @@ class MatchedFilter(MapFilter):
                     lmSim=liteMap.liteMapFromDataAndWCS(mapDict['simData']+mapDict['data'], self.wcs)                               
                     lmSim.data=lmSim.data*apodlm.data
                     fSimMap=fftTools.fftFromLiteMap(lmSim)
-                    filteredSimMap=np.real(fft.ifft2(self.G*fSimMap.kMap*filterNormFactor))
+                    filteredSimMap=np.real(fft.ifft2(self.G*fSimMap.kMap))*signalNorm
                     filteredSimMap=mapTools.convertToY(filteredSimMap, self.params['mapCombination']['rootFreqGHz'])  
                 else:
                     filteredSimMap=None
@@ -868,10 +873,9 @@ class MatchedFilter(MapFilter):
             # Save filter profile in real space
             self.saveRealSpaceFilterProfile()        
             
-        return {'data': combinedMap, 'simData': filteredSimMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
-                'SNMap': SNMap, 'signalMap': signalMap.data, 'beamDecrementBias': signalMapDict['beamDecrementBias'],
-                'signalAreaScaling': signalAreaScaling, 'mapUnits': mapUnits,
-                'inputSignalProperties': signalMapDict['inputSignalProperties']}
+        return {'data': combinedMap, 'simData': filteredSimMap, 'wcs': self.wcs, 
+                'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 'signalMap': signalMap.data, 
+                'mapUnits': mapUnits, 'inputSignalProperties': signalMapDict['inputSignalProperties']}
             
 #------------------------------------------------------------------------------------------------------------
 class RealSpaceMatchedFilter(MapFilter):
@@ -905,7 +909,9 @@ class RealSpaceMatchedFilter(MapFilter):
 
             mapData=mapDict['data']
             wcs=mapDict['wcs']
-                                   
+            surveyMask=mapDict['surveyMask']
+            psMask=mapDict['psMask']
+            
             # Build the matched-filter kernel in a small section of the map
             # Apply the same difference of Gaussians high pass filter here
             # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
@@ -915,7 +921,8 @@ class RealSpaceMatchedFilter(MapFilter):
                         'pointSourceRemoval']
             kernelUnfilteredMapsDict={}
             for k in keysWanted:
-                kernelUnfilteredMapsDict[k]=mapDict[k]
+                if k in mapDict.keys():
+                    kernelUnfilteredMapsDict[k]=mapDict[k]
             kernelUnfilteredMapsDict['RADecSection']=self.params['noiseParams']['RADecSection']
             kernelUnfilteredMapsDictList=[kernelUnfilteredMapsDict]
             kernelLabel="realSpaceKernel_%s" % (self.label)
@@ -960,19 +967,6 @@ class RealSpaceMatchedFilter(MapFilter):
             kern2d=profile2d[yMin:yMax, xMin:xMax]
             kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
             
-            # Kernel normalisation
-            # Tried using sum within R500 of model, doesn't work
-            # Fiddle with this later - doesn't affect S/N
-            #t500=matchedFilter.params['theta500Arcmin']
-            #t500Mask=np.less(kern2dRadiansMap, np.radians(t500/60.))
-            #normFactor=kern2d[t500Mask].sum()
-            #if normFactor < 0:
-                #print "filter normalisation is -ve"
-                #IPython.embed()
-                #sys.exit()
-                ##raise Exception, "filter normalisation is -ve"
-            #kern2d=kern2d/normFactor
-
             # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
             # 1. The high pass filter (bck sub step)
             # 2. The matched filter itself (includes beam)
@@ -993,9 +987,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 sys.exit()
             elif self.params['outputUnits'] == 'uK':
                 # Normalise such that peak value in filtered map == peak value of source in uK
-                print "implement signal norm for %s" % (self.params['outputUnits'])
-                IPython.embed()
-                sys.exit()
+                signalNorm=1.0/filteredSignal.max()
             elif self.params['outputUnits'] == 'Jy/beam':
                 # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
                 print "implement signal norm for %s" % (self.params['outputUnits'])
@@ -1062,12 +1054,6 @@ class RealSpaceMatchedFilter(MapFilter):
             # Apply the normalisation
             mapData=mapData*signalNorm
             
-            # Grab the survey/point source mask to apply if given
-            if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
-                smImg=pyfits.open(mapDict['surveyMask'])
-                surveyMask=smImg[0].data
-            else:
-                surveyMask=np.ones(mapData.shape)
             #filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
             filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=mapData
         
@@ -1174,13 +1160,14 @@ class RealSpaceMatchedFilter(MapFilter):
             #mapRMS=np.std(combinedMap[mask])
 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
+        # Fold point source mask into survey mask here
         edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (gridSize*5.0, gridSize*5.0))
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
         combinedMap=combinedMap*edgeCheck
         apodMask=np.not_equal(combinedMap, 0)
-        surveyMask=edgeCheck*surveyMask
+        surveyMask=edgeCheck*surveyMask*psMask
         del edgeCheck
-        
+
         # Apply final survey mask to signal-to-noise map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
         SNMap=SNMap*surveyMask
@@ -1191,8 +1178,8 @@ class RealSpaceMatchedFilter(MapFilter):
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), mapDict['wcs'])
                 
         return {'data': combinedMap, 'simData': None, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
-                'SNMap': SNMap, 'signalMap': kern2d, 'beamDecrementBias': 1.0,
-                'signalAreaScaling': 1.0, 'mapUnits': mapUnits}
+                'SNMap': SNMap, 'signalMap': kern2d, 'mapUnits': mapUnits,
+                'inputSignalProperties': signalProperties}
             
 #------------------------------------------------------------------------------------------------------------
 class GaussianFilter(MapFilter):
@@ -1341,47 +1328,14 @@ class ArnaudModelFilter(MapFilter):
         be the Y500 inside some area. Hence, we need that area too (signalAreaMask).
         
         """
-                
-        bRange=np.linspace(0, 30, 1000)
-        cylPProfile=[]
-        for b in bRange:
-            cylPProfile.append(gnfw.integrated(b))
-        cylPProfile=np.array(cylPProfile)
         
-        # Normalise to 1 at centre
-        cylPProfile=cylPProfile/cylPProfile.max()
-
-        # Calculate R500Mpc, theta500Arcmin corresponding to random mass and redshift
-        z=self.params['z']
-        M500=self.params['M500MSun']
-        Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
-        Hz=astCalc.Ez(z)*astCalc.H0  
-        G=4.301e-9  # in MSun-1 km2 s-2 Mpc
-        criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
-        R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)
-        theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
-        self.params['theta500Arcmin']=theta500Arcmin     # Useful for cf. Hasselfield
-        
-        # Map between b and angular coordinates for random model
-        # Note we fix c500 here to Arnaud value, we could leave it free
-        c500=1.177
-        thetaDegRange=(bRange*(theta500Arcmin/60.0))/c500
-        tckP=interpolate.splrep(thetaDegRange, cylPProfile)
-        
-        # Get Y500 from M500 according to Arnaud et al. (eq. 25, cylindrical relation)
-        # NOTE: Although sr is better units for comparing to Arnaud plots etc., arcmin2 is easier for rescaling below
-        arnaudY500_arcmin2=self.calcY500FromM500_Arnaud(M500, z, units = 'arcmin2')
-
-        # The above is the number we want, now normalise the profile to get that inside R500 and what deltaT0 is
-        fidDeltaT0=-500.0
-        yProfile=mapTools.convertToY(fidDeltaT0*cylPProfile, obsFrequencyGHz = mapObsFreqGHz)
-        tcky=interpolate.splrep(thetaDegRange, yProfile)
-        fineDegRange=np.linspace(0, theta500Arcmin/60.0, 1000)
-        fineyProfile=interpolate.splev(fineDegRange, tcky)    
-        YArcmin2=np.trapz(fineyProfile*np.pi*2*fineDegRange*60, fineDegRange*60)
-        norm=arnaudY500_arcmin2/YArcmin2
-        deltaT0=fidDeltaT0*norm
-        y0=mapTools.convertToY(deltaT0, obsFrequencyGHz = mapObsFreqGHz)
+        # Broken out the Arnaud model code from here into simsTools
+        signalDict=simsTools.makeArnaudModelProfile(self.params['z'], self.params['M500MSun'], mapObsFreqGHz)
+        tckP=signalDict['tckP']
+        y0=signalDict['y0']
+        theta500Arcmin=signalDict['theta500Arcmin']
+        deltaT0=signalDict['deltaT0']
+        arnaudY500_arcmin2=signalDict['Y500Arcmin2']
         
         # Setup 1d profile
         rDeg=np.linspace(0.0, 1.0, 5000)
@@ -1457,36 +1411,7 @@ class ArnaudModelFilter(MapFilter):
                 'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 
                 'signalAreaSum': arnaudY500_arcmin2,
                 'inputSignalProperties': inputSignalProperties}
-    
-
-    def calcY500FromM500_Arnaud(self, M500, z, units = 'sr'):
-        """Calculate Y500 (in arcmin2) given M500, z following eq. 25 in Arnaud et al.
         
-        Units can be 'sr' or 'arcmin2' 
-        
-        NOTE: this is the Y_cyl relation, so offset from Y_sph data (if e.g., looking at Fig. 10 of Arnaud) 
-            
-        """
-        
-        Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
-        Hz=astCalc.Ez(z)*astCalc.H0  
-        
-        # Now we need to adopt a scaling between Y500 (cylindrical for us) and mass
-        # Let's go with Arnaud et al. Section 6.3 (eq. 25)
-        alpha=1.78
-        logBx=-4.665    # for 1 x R500 - read Arnaud more carefully!
-        constantsTimesYSZ=np.power(10, logBx)*np.power(M500/3e14, alpha)
-        YSZ_R500_sr=constantsTimesYSZ/(np.power(Ez, -2.0/3.0)*np.power(astCalc.da(z), 2))   # in steradians
-        srToArcmin2=np.power(np.radians(1.0/60.0), 2)
-        YSZ_R500_arcmin2=YSZ_R500_sr/srToArcmin2
-            
-        if units == 'sr':
-            return YSZ_R500_sr
-        elif units == 'arcmin2':
-            return YSZ_R500_arcmin2
-        else:
-            raise Exception, "didn't understand units"
-    
 #------------------------------------------------------------------------------------------------------------
 class ProfileFilter(MapFilter):
     """Base class for filters using arbitrary signal profiles stored in text files as per Ryan's code for
