@@ -971,9 +971,9 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     candidateSNRs.sort()
     numCandidates=np.arange(len(candidateSNRs))+1
     
-    binMin=3.0
+    binMin=4.0
     binMax=20.0
-    binStep=0.2
+    binStep=0.1
     binEdges=np.linspace(binMin, binMax, (binMax-binMin)/binStep+1)
     binCentres=(binEdges+binStep/2.0)[:-1]
     candidateSNRHist=np.histogram(candidateSNRs, bins = binEdges)
@@ -1044,6 +1044,31 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     return contaminDict
 
 #------------------------------------------------------------------------------------------------------------
+def calcR500Mpc(z, M500):
+    """Given z, M500 (in MSun), returns R500 in Mpc, with respect to critical density.
+    
+    """
+    
+    Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
+    Hz=astCalc.Ez(z)*astCalc.H0  
+    G=4.301e-9  # in MSun-1 km2 s-2 Mpc
+    criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+    R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)
+    
+    return R500Mpc
+
+#------------------------------------------------------------------------------------------------------------
+def calcTheta500Arcmin(z, M500):
+    """Given z, M500 (in MSun), returns angular size equivalent to R500, with respect to critical density.
+    
+    """
+    
+    R500Mpc=calcR500Mpc(z, M500)
+    theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+    
+    return theta500Arcmin
+    
+#------------------------------------------------------------------------------------------------------------
 def makeArnaudModelProfile(z, M500, obsFreqGHz):
     """Given z, M500 (in MSun), returns dictionary containing Arnaud model profile (well, knots from spline 
     fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
@@ -1063,12 +1088,7 @@ def makeArnaudModelProfile(z, M500, obsFreqGHz):
     cylPProfile=cylPProfile/cylPProfile.max()
 
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
-    Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
-    Hz=astCalc.Ez(z)*astCalc.H0  
-    G=4.301e-9  # in MSun-1 km2 s-2 Mpc
-    criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
-    R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)
-    theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+    theta500Arcmin=calcTheta500Arcmin(z, M500)
     
     # Map between b and angular coordinates for random model
     # Note we fix c500 here to Arnaud value, we could leave it free
@@ -1123,3 +1143,119 @@ def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
     else:
         raise Exception, "didn't understand units"
     
+#------------------------------------------------------------------------------------------------------------
+def calcQ_H13(theta500Arcmin):
+    """Returns Q given theta500Arcmin, using result of a polynomial fit to (theta, Q) given in H13
+    
+    """
+    
+    coeffs=np.array([-1.12816214e-04, 2.37255951e-03, -1.62915564e-02, 9.87118185e-03, 3.50817483e-01, 
+                     -1.38970056e-01])
+    Q=np.poly1d(coeffs)(theta500Arcmin)
+
+    return Q
+
+#------------------------------------------------------------------------------------------------------------
+def calcFRel(z, M500):
+    """Calculates relativistic correction to SZ effect, given z, M500 in MSun, as per H13. 
+    
+    This assumes the Arnaud et al. (2005) M-T relation, and applies formulae of Itoh et al. (1998)
+    
+    See H13 Section 2.2.
+    
+    """
+    
+    #kB=1.38e-23
+    #me=9.11e-31
+    #e=1.6e-19
+    #c=3e8
+    
+    ## Get T in keV from Arnaud et al. 2005
+    #A=3.84e14
+    #B=1.71
+    #TkeV=5.*np.power(((astCalc.Ez(z)*M500)/A), 1/B)
+    #T=(((TkeV*1000)*e)/kB)
+    
+    #t=(kB*T)/(me*c**2)
+
+    # H13
+    m=M500/3e14
+    t=-0.00848*np.power(m*astCalc.Ez(z), -0.585)
+    fRel=1+3.79*t-28.2*t*t
+    
+    return fRel
+
+#------------------------------------------------------------------------------------------------------------
+def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
+                   QFunc = calcQ_H13):
+    """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
+    assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
+    function. The approach followed is described in H13, Section 3.2.
+    
+    Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
+    (in turn using the hmf module).
+    
+    QFunc can be overridden, if, e.g., we calculate our own Q function for different filters/profiles.
+    
+    NOTE: not added marginalisation over z uncertainty yet
+    
+    """
+    
+    PLog10M, log10M=mockSurvey.getPLog10M(z)
+    Py0GivenM=[]
+    for log10M500 in log10M:
+
+        M500=np.power(10, log10M500)
+        theta500Arcmin=calcTheta500Arcmin(z, M500)
+            
+        # UPP relation according to H13
+        # NOTE: m in H13 is M/Mpivot
+        y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*QFunc(theta500Arcmin)*calcFRel(z, M500)
+
+        log_y0=np.log(y0)
+        log_y0Err=np.log(y0+y0Err)-log_y0
+        log_y0pred=np.log(y0pred)
+        lnprob=-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2)))
+        if np.isnan(lnprob) == False:
+            Py0GivenM.append(np.exp(lnprob))
+        else:
+            Py0GivenM.append(0)
+
+    Py0GivenM=np.array(Py0GivenM)
+
+    # Find max likelihood and integrate to get error bars
+    P=Py0GivenM*PLog10M
+    tckP=interpolate.splrep(log10M, P)
+    fineLog10M=np.linspace(log10M.min(), log10M.max(), 1e5)
+    fineP=interpolate.splev(fineLog10M, tckP)
+    fineP=fineP/np.trapz(fineP, fineLog10M)
+    try:
+        index=np.where(fineP == fineP.max())[0][0]
+    except:
+        print "argh"
+        IPython.embed()
+        sys.exit()
+    for n in range(fineP.shape[0]):
+        minIndex=index-n
+        maxIndex=index+n
+        if minIndex < 0 or maxIndex > fineP.shape[0]:
+            # This shouldn't happen; if it does, probably y0 is in the wrong units
+            clusterLogM500=None
+            break            
+        p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
+        if p >= 0.6827:
+            clusterLogM500=fineLog10M[index]
+            clusterLogM500Min=fineLog10M[minIndex]
+            clusterLogM500Max=fineLog10M[maxIndex]
+            break
+        
+    if np.any(clusterLogM500) != None:
+        clusterM500=np.power(10, clusterLogM500)/1e14
+        clusterM500MinusErr=(np.power(10, clusterLogM500)-np.power(10, clusterLogM500Min))/1e14
+        clusterM500PlusErr=(np.power(10, clusterLogM500Max)-np.power(10, clusterLogM500))/1e14
+    else:
+        clusterM500=0.
+        clusterM500MinusErr=0.
+        clusterM500PlusErr=0.
+        
+    return clusterM500, clusterM500PlusErr, clusterM500MinusErr

@@ -1,0 +1,131 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+
+Calculate masses of clusters detected by nemo
+
+Requires 'massOptions' in nemo .par file (keys: 'redshiftCatalog', 'forcedPhotometry', 'Q')
+
+Run this after filtering / detecting objects in a map with nemo itself
+
+Can be used to obtain 'forced photometry', i.e., mass estimates for objects in redshiftCatalog
+(for, e.g., optical stacking)
+
+"""
+
+import os
+import sys
+import numpy as np
+import pylab as plt
+import astropy.table as atpy
+from astLib import *
+from scipy import stats
+from scipy import interpolate
+from nemo import actDict
+from nemo import simsTools
+from nemo import mapTools
+from nemo import MockSurvey
+import time
+import IPython
+plt.matplotlib.interactive(False)
+
+#------------------------------------------------------------------------------------------------------------
+# Main
+if len(sys.argv) < 2:
+    print "Run: % nemoMass < .par file(s)>"
+else:
+    
+    parDictFileNames=sys.argv[1:]
+    
+    for parDictFileName in parDictFileNames:
+    
+        print ">>> Running .par file: %s" % (parDictFileName)
+        parDict=actDict.ACTDict()
+        parDict.read_from_file(parDictFileName)
+
+        # Output dirs
+        if 'outputDir' in parDict.keys():
+            rootOutDir=parDict['outDir']
+        else:
+            if parDictFileName.find(".par") == -1:
+                raise Exception, "File must have .par extension"
+            rootOutDir=sys.argv[1].replace(".par", "")
+        filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
+        filtersDir=rootOutDir+os.path.sep+"filters"
+        diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
+        dirList=[rootOutDir, filteredMapsDir, filtersDir]
+        for d in dirList:
+            if os.path.exists(d) == False:
+                os.makedirs(d)
+        
+        # Load the nemo catalog and match against the z catalog
+        massOptions=parDict['massOptions']
+        optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(rootOutDir)[-1])           
+        nemoTab=atpy.Table().read(optimalCatalogFileName)
+        zTab=atpy.Table().read(massOptions['redshiftCatalog'])
+        if massOptions['forcedPhotometry'] == False:
+            tab=atpy.Table()
+            tab.add_column(nemoTab['name'])
+            tab.add_column(nemoTab['RADeg'])
+            tab.add_column(nemoTab['decDeg'])
+            tab.add_column(nemoTab['fixed_SNR'])
+            tab.add_column(nemoTab['fixed_y_c'])
+            tab.add_column(nemoTab['fixed_err_y_c'])
+            tab.add_column(atpy.Column(np.zeros(len(nemoTab)), 'redshift'))
+            for row in tab:
+                for zrow in zTab:
+                    if zrow['name'] == row['name']:
+                        row['redshift']=zrow['redshift']
+            tab=tab[np.where(tab['redshift'] != 0)]
+        elif massOptions['forcedPhotometry'] == True:
+            print "add forced photometry step"
+            IPython.embed()
+            sys.exit()
+        
+        # Optional fixed SNR cut
+        if 'fixedSNRCut' in massOptions.keys():
+            tab=tab[np.where(tab['fixed_SNR'] > massOptions['fixedSNRCut'])]
+        
+        # Q function (filter mismatch) options
+        if massOptions['Q'] == 'H13':
+            QFunc=simsTools.calcQ_H13
+        elif massOptions['Q'] == 'measure':
+            print "add call to measure Q"
+            IPython.embed()
+            sys.exit()
+        else:
+            raise Exception, "didn't understand choice of Q function in massOptions"
+        
+        # Set-up the mass function stuff
+        # This is for correction of mass bias due to steep cluster mass function
+        # Hence minMass here needs to be set well below the survey mass limit
+        # areaDeg2 we don't care about here
+        minMass=5e13
+        areaDeg2=700.
+        zMin=0.0
+        zMax=2.0
+        H0=70.
+        Om0=0.3
+        Ob0=0.05
+        sigma_8=0.8
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8)
+        
+        # Calc masses
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M500"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errPlus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errMinus"))
+        for row in tab:
+            row['M500'], row['M500_errPlus'], row['M500_errMinus']=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, 
+                                                                                            row['fixed_err_y_c']*1e-4, 
+                                                                                            row['redshift'], 
+                                                                                            mockSurvey, 
+                                                                                            QFunc = QFunc)
+        
+        # Tidy up and save
+        # We delete some columns here to save duplicating in sourcery database
+        tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
+        outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+        tab.write(outFileName)
+
+
