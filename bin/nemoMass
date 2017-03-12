@@ -126,6 +126,8 @@ else:
         # We delete some columns here to save duplicating in sourcery database
         tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
         outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+        if os.path.exists(outFileName) == True:
+            os.remove(outFileName)
         tab.write(outFileName)
 
 
