@@ -915,8 +915,8 @@ class RealSpaceMatchedFilter(MapFilter):
             # Build the matched-filter kernel in a small section of the map
             # Apply the same difference of Gaussians high pass filter here
             # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
-            maxArcmin=self.params['noiseParams']['maxArcmin']
-            mapDict['bckSubScaleArcmin']=maxArcmin
+            kernelMaxArcmin=self.params['noiseParams']['kernelMaxArcmin']
+            #mapDict['bckSubScaleArcmin']=maxArcmin
             keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
                         'pointSourceRemoval']
             kernelUnfilteredMapsDict={}
@@ -941,7 +941,7 @@ class RealSpaceMatchedFilter(MapFilter):
             # This means we have to roll off the kernel to 0 at some radius
             # This is set by maxArcmin in the .par file
             prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
-            rIndex=np.where(arcminRange > maxArcmin)[0][0]
+            rIndex=np.where(arcminRange > kernelMaxArcmin)[0][0]
             # Alternatively, roll off to zero after the second zero crossing
             # NOTE: now setting in the .par file, uncomment below to switch back
             #segProf=ndimage.label(np.greater(prof, 0))[0]
@@ -949,7 +949,7 @@ class RealSpaceMatchedFilter(MapFilter):
             #maxArcmin=arcminRange[rIndex]
 
             # Make 2d kernel
-            mask=np.less(arcminRange, maxArcmin)
+            mask=np.less(arcminRange, kernelMaxArcmin)
             rRadians=np.radians(arcminRange/60.)
             r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
             profile2d=r2p(matchedFilter.radiansMap)
@@ -966,6 +966,9 @@ class RealSpaceMatchedFilter(MapFilter):
                 xMin=xMin+1
             kern2d=profile2d[yMin:yMax, xMin:xMax]
             kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
+
+            # This is what to high pass filter on
+            bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
             
             # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
             # 1. The high pass filter (bck sub step)
@@ -973,7 +976,7 @@ class RealSpaceMatchedFilter(MapFilter):
             signalMap=filteredMapDict['signalMap']      # Note that this has had the beam applied already
             signalProperties=filteredMapDict['inputSignalProperties']
             # Should add an applyKernel function to do all this
-            filteredSignal=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = maxArcmin/60.0)
+            filteredSignal=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = bckSubScaleArcmin/60.0)
             filteredSignal=ndimage.convolve(filteredSignal, kern2d) 
             if self.params['outputUnits'] == 'yc':
                 # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
@@ -987,6 +990,9 @@ class RealSpaceMatchedFilter(MapFilter):
                 sys.exit()
             elif self.params['outputUnits'] == 'uK':
                 # Normalise such that peak value in filtered map == peak value of source in uK
+                # NOTE: for amplitude, the mappers want the amplitude of the delta function, not the beam
+                #signalNorm=signalMap.sum()/filteredSignal.max()
+                # Old
                 signalNorm=1.0/filteredSignal.max()
             elif self.params['outputUnits'] == 'Jy/beam':
                 # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
@@ -1006,7 +1012,9 @@ class RealSpaceMatchedFilter(MapFilter):
             plt.title(self.label)
             plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
             plt.xlim(0, arcminRange[mask].max())
+            plt.plot([bckSubScaleArcmin]*3, np.linspace(-0.2, 1, 3), 'k--')
             plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
+
             plt.close()
 
             # NOTE: at this point we should store the kernel somewhere, get out of this loop, and then add a call to
@@ -1036,7 +1044,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 #catalog=catalog[startIndex:endIndex]
         
             # Apply the high pass filter - subtract background on larger scales using difference of Gaussians  
-            mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = maxArcmin/60.0)
+            mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = bckSubScaleArcmin/60.)
             if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
                 bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
                 #astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
@@ -1101,7 +1109,8 @@ class RealSpaceMatchedFilter(MapFilter):
         # Make SN map by local RMS measurements on a grid, over the whole filtered map
         # We're not making a separate noise map here any more to save memory
         print "... making SN map ..."
-        gridSize=rIndex*3
+        gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/wcs.getPixelSizeDeg()))
+        #gridSize=rIndex*3
         overlapPix=gridSize/2
         numXChunks=combinedMap.shape[1]/gridSize
         numYChunks=combinedMap.shape[0]/gridSize
