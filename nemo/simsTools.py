@@ -1163,7 +1163,6 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         for f in filterList:
             if f['label'] == photFilterLabel:
                 ref=f
-                refFilterIndex=filterList.index(f)
                 
         # Some faffing to get map pixel scale
         img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"_SNMap.fits")
@@ -1181,6 +1180,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 1.0)
 
         # M, z ranges for Q calc
+        # NOTE: ref filter that sets scale we compare to must ALWAYS come first
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
         MRange=MRange+np.logspace(13.7, 15.3, 5).tolist()
@@ -1204,7 +1204,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
                 Q.append(filteredSignal.max())
                 theta500Arcmin.append(modelDict['theta500Arcmin'])
         Q=np.array(Q)
-        Q=Q/Q[refFilterIndex]
+        Q=Q/Q[0]
         theta500Arcmin=np.array(theta500Arcmin)
         t1=time.time()
 
