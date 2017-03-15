@@ -52,7 +52,7 @@ else:
         
         # Measure fluxes
         photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
-        
+                    
         # Merged/optimal catalogs
         catalogTools.mergeCatalogs(imageDict)
         catalogTools.makeOptimalCatalog(imageDict, parDict['catalogCuts'])

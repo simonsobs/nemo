@@ -89,11 +89,9 @@ else:
         
         # Q function (filter mismatch) options
         if massOptions['Q'] == 'H13':
-            QFunc=simsTools.calcQ_H13
-        elif massOptions['Q'] == 'measure':
-            print "add call to measure Q"
-            IPython.embed()
-            sys.exit()
+            QFitCoeffs=simsTools.getQCoeffsH13()
+        elif massOptions['Q'] == 'fit':
+            QFitCoeffs=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
         else:
             raise Exception, "didn't understand choice of Q function in massOptions"
         
@@ -101,7 +99,7 @@ else:
         # This is for correction of mass bias due to steep cluster mass function
         # Hence minMass here needs to be set well below the survey mass limit
         # areaDeg2 we don't care about here
-        minMass=5e13
+        minMass=1e13
         areaDeg2=700.
         zMin=0.0
         zMax=2.0
@@ -115,12 +113,14 @@ else:
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errPlus"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errMinus"))
+        #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q"))
+        #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q_err"))
         for row in tab:
-            row['M500'], row['M500_errPlus'], row['M500_errMinus']=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, 
-                                                                                            row['fixed_err_y_c']*1e-4, 
-                                                                                            row['redshift'], 
-                                                                                            mockSurvey, 
-                                                                                            QFunc = QFunc)
+            massDict=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+                                              row['redshift'], mockSurvey, QFitCoeffs = QFitCoeffs)
+            row['M500']=massDict['M500']
+            row['M500_errPlus']=massDict['M500_errPlus']
+            row['M500_errMinus']=massDict['M500_errMinus']
         
         # Tidy up and save
         # We delete some columns here to save duplicating in sourcery database

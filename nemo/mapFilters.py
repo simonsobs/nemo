@@ -1002,8 +1002,11 @@ class RealSpaceMatchedFilter(MapFilter):
             else:
                 raise Exception, "didn't understand 'outputUnits' given in the .par file"
 
-            # Save 2d kernel in case we want to do anything with it later
-            astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, None)
+            # Save 2d kernel - we need this (at least for the photometry ref scale) to calc Q later
+            # Add bckSubScaleArcmin to the header
+            kernWCS=wcs.copy()
+            kernWCS.header['BCKSCALE']=bckSubScaleArcmin
+            astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, kernWCS)
             
             # Filter profile plot
             plt.plot(arcminRange[mask], prof[mask])

@@ -17,7 +17,7 @@ import gnfw
 import numpy as np
 import os
 import math
-import pylab
+import pylab as plt
 import pickle
 import sys
 import operator
@@ -154,10 +154,10 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
         matchAgainstSimCatalog(catalogsDict[key], simCatalog)
 
     # Flux comparison plot
-    fig=pylab.figure(num=4, figsize=(10,8))
+    fig=plt.figure(num=4, figsize=(10,8))
     fig.canvas.set_window_title('Measured vs. Input Flux Comparison')
-    topPlot=pylab.axes([0.12, 0.35, 0.8, 0.6])
-    bottomPlot=pylab.axes([0.12, 0.1, 0.8, 0.23])
+    topPlot=plt.axes([0.12, 0.35, 0.8, 0.6])
+    bottomPlot=plt.axes([0.12, 0.1, 0.8, 0.23])
     keysList=catalogsDict.keys()
     keysList.reverse()  # so optimal gets plotted first
     for key in keysList:
@@ -177,38 +177,38 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
         myFluxErr=np.array(myFluxErr)
         if len(simFlux) > 0:
             if key == 'optimal':
-                pylab.axes(topPlot)
-                pylab.errorbar(simFlux, myFlux, yerr=myFluxErr, fmt='ko', label = 'Optimal S/N template')
-                pylab.axes(bottomPlot)
-                pylab.errorbar(simFlux, simFlux-myFlux, yerr=myFluxErr, fmt='ko', label = 'Optimal S/N template')
+                plt.axes(topPlot)
+                plt.errorbar(simFlux, myFlux, yerr=myFluxErr, fmt='ko', label = 'Optimal S/N template')
+                plt.axes(bottomPlot)
+                plt.errorbar(simFlux, simFlux-myFlux, yerr=myFluxErr, fmt='ko', label = 'Optimal S/N template')
             else:
-                pylab.axes(topPlot)
-                pylab.errorbar(simFlux, myFlux, yerr=myFluxErr, fmt='.', label = key)
-                pylab.axes(bottomPlot)
-                pylab.errorbar(simFlux, simFlux-myFlux, yerr=myFluxErr, fmt='.', label = key)
+                plt.axes(topPlot)
+                plt.errorbar(simFlux, myFlux, yerr=myFluxErr, fmt='.', label = key)
+                plt.axes(bottomPlot)
+                plt.errorbar(simFlux, simFlux-myFlux, yerr=myFluxErr, fmt='.', label = key)
 
-    pylab.axes(bottomPlot)
+    plt.axes(bottomPlot)
     plotRange=np.linspace(0, 0.02, 10)
-    pylab.plot(plotRange, [0]*len(plotRange), 'k--')
-    pylab.ylim(-0.0015, 0.0015)
-    pylab.xlim(0.0, 0.0015)
-    pylab.ylabel('$\Delta$Y (arcmin$^2$)')
-    pylab.xlabel('Input Sim Catalog Y (arcmin$^2$)')
+    plt.plot(plotRange, [0]*len(plotRange), 'k--')
+    plt.ylim(-0.0015, 0.0015)
+    plt.xlim(0.0, 0.0015)
+    plt.ylabel('$\Delta$Y (arcmin$^2$)')
+    plt.xlabel('Input Sim Catalog Y (arcmin$^2$)')
     
-    pylab.axes(topPlot)
+    plt.axes(topPlot)
     plotRange=np.linspace(0, 0.02, 10)
-    pylab.plot(plotRange, plotRange, 'k--')
-    pylab.ylabel('Measured Y (arcmin$^2$)')
-    pylab.xticks([], [])
-    pylab.xticks(bottomPlot.get_xticks())
-    pylab.xlim(0.0, 0.0015)
-    pylab.ylim(0.0, 0.0015)
-    #legAxes=pylab.axes([0.65, 0.3, 0.2, 0.4], frameon=False)
-    #pylab.xticks([], [])
-    #pylab.yticks([], [])
-    #pylab.legend(loc="center")
-    pylab.legend(loc="best", prop=pylab.matplotlib.font_manager.FontProperties(family='sans-serif', size=10))
-    pylab.savefig(outDir+os.path.sep+"catalogFluxesVsMeasuredFluxes.png")
+    plt.plot(plotRange, plotRange, 'k--')
+    plt.ylabel('Measured Y (arcmin$^2$)')
+    plt.xticks([], [])
+    plt.xticks(bottomPlot.get_xticks())
+    plt.xlim(0.0, 0.0015)
+    plt.ylim(0.0, 0.0015)
+    #legAxes=plt.axes([0.65, 0.3, 0.2, 0.4], frameon=False)
+    #plt.xticks([], [])
+    #plt.yticks([], [])
+    #plt.legend(loc="center")
+    plt.legend(loc="best", prop=plt.matplotlib.font_manager.FontProperties(family='sans-serif', size=10))
+    plt.savefig(outDir+os.path.sep+"catalogFluxesVsMeasuredFluxes.png")
 
     #print "In flux recovery bit"
     #ipshell()
@@ -225,12 +225,12 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     print "... stdev residual = %.3f error bars" % (sigmaResidualSigma)
     
     # Now we want to do completeness and purity as function of S/N and mass
-    fig=pylab.figure(num=5, figsize=(10,8))
+    fig=plt.figure(num=5, figsize=(10,8))
     fig.canvas.set_window_title('Completeness and Purity')
-    pylab.subplots_adjust(left=0.1, bottom=0.07, right=0.95, top=0.95, wspace=0.02, hspace=0.27)
-    compAxes=pylab.subplot(311)
-    trueDetAxes=pylab.subplot(312)
-    purityAxes=pylab.subplot(313)
+    plt.subplots_adjust(left=0.1, bottom=0.07, right=0.95, top=0.95, wspace=0.02, hspace=0.27)
+    compAxes=plt.subplot(311)
+    trueDetAxes=plt.subplot(312)
+    purityAxes=plt.subplot(313)
     keysList.reverse()   # in this case, we want optimal plotted last
 
     # Completeness
@@ -252,11 +252,11 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
                 detected[index]=detected[index]+1    
         cumTotal=1+simNum.sum()-simNum.cumsum()
         cumDetected=1+detected.sum()-detected.cumsum()
-        pylab.axes(compAxes)
+        plt.axes(compAxes)
         if key == 'optimal':
-            pylab.plot(simMasses/1e14, cumDetected/cumTotal, 'k', lw=2, label = 'Optimal S/N template')
+            plt.plot(simMasses/1e14, cumDetected/cumTotal, 'k', lw=2, label = 'Optimal S/N template')
         else:
-            pylab.plot(simMasses/1e14, cumDetected/cumTotal, '--', label = key)
+            plt.plot(simMasses/1e14, cumDetected/cumTotal, '--', label = key)
         
         # True detections
         realObjs=[]
@@ -267,41 +267,41 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
                 realObjs.append([obj['SNR'], 0])
         realObjs=sorted(realObjs, key=operator.itemgetter(0))
         realObjs=np.array(realObjs).transpose()
-        pylab.axes(trueDetAxes)
+        plt.axes(trueDetAxes)
         if key == 'optimal':
             # yes, +1 is essential
-            pylab.plot(realObjs[0], 1+realObjs[1].sum()-realObjs[1].cumsum(), 'k', lw=2, label = 'Optimal S/N template')
+            plt.plot(realObjs[0], 1+realObjs[1].sum()-realObjs[1].cumsum(), 'k', lw=2, label = 'Optimal S/N template')
         else:
-            pylab.plot(realObjs[0], 1+realObjs[1].sum()-realObjs[1].cumsum(), '--', label = key)
+            plt.plot(realObjs[0], 1+realObjs[1].sum()-realObjs[1].cumsum(), '--', label = key)
 
         # Purity
         purity=(1+realObjs[1].sum()-realObjs[1].cumsum())/ \
                (realObjs.shape[1]-np.arange(realObjs[1].shape[0], dtype=float))
-        pylab.axes(purityAxes)
+        plt.axes(purityAxes)
         if key == 'optimal':
-            pylab.plot(realObjs[0], purity, 'k', lw=2, label = 'Optimal S/N template')
+            plt.plot(realObjs[0], purity, 'k', lw=2, label = 'Optimal S/N template')
         else:
-            pylab.plot(realObjs[0], purity, '--', label = key)
+            plt.plot(realObjs[0], purity, '--', label = key)
             
     # Completeness
-    pylab.axes(compAxes)
-    pylab.xlabel("Mass ($\\times 10^{14}$ M$_\odot$)")
-    pylab.ylabel("Completeness > Mass")
-    pylab.ylim(0, 1.1)
+    plt.axes(compAxes)
+    plt.xlabel("Mass ($\\times 10^{14}$ M$_\odot$)")
+    plt.ylabel("Completeness > Mass")
+    plt.ylim(0, 1.1)
     
     # True detections
-    pylab.axes(trueDetAxes)
-    pylab.xlabel("S/N")
-    pylab.ylabel("True Detections > S/N")
-    pylab.legend(loc="upper right", prop=pylab.matplotlib.font_manager.FontProperties(family='sans-serif', size=10))
+    plt.axes(trueDetAxes)
+    plt.xlabel("S/N")
+    plt.ylabel("True Detections > S/N")
+    plt.legend(loc="upper right", prop=plt.matplotlib.font_manager.FontProperties(family='sans-serif', size=10))
     
     # Purity
-    pylab.axes(purityAxes)
-    pylab.xlabel("S/N")
-    pylab.ylabel("Purity > S/N")
-    pylab.ylim(0, 1.1)
+    plt.axes(purityAxes)
+    plt.xlabel("S/N")
+    plt.ylabel("Purity > S/N")
+    plt.ylim(0, 1.1)
     
-    pylab.savefig(outDir+os.path.sep+"completenessAndPurity.png")
+    plt.savefig(outDir+os.path.sep+"completenessAndPurity.png")
         
 #------------------------------------------------------------------------------------------------------------
 def getInputSimApertureFluxes(inputSimCatFileName, inputSimMapFileName, dataMapWCS, 
@@ -450,19 +450,19 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
         sigma=np.std(res)
 
     # Plot    
-    fig=pylab.figure(num=6, figsize=(8,8))
+    fig=plt.figure(num=6, figsize=(8,8))
     fig.canvas.set_window_title('Noiseless Input Sim Catalog vs. Map Flux Comparison')
     fitRange=np.arange(0, 0.02, 0.001)
     fitLine=fit['slope']*fitRange+fit['intercept']
-    pylab.plot(fluxesFromCatalog, fluxesFromMap, 'ro')
-    pylab.plot(fitRange, fitLine, 'b--', label='fit = %.6f*x + %.6f' % (fit['slope'], fit['intercept']))
-    #pylab.plot(np.arange(0, 0.02, 0.001), np.arange(0, 0.02, 0.001), 'b--')
-    pylab.xlabel("Y input sim catalog (arcmin$^2$)")
-    pylab.ylabel("Y input sim map (arcmin$^2$)")
-    pylab.xlim(0, 0.02)
-    pylab.ylim(0, 0.02)
-    pylab.legend()
-    pylab.savefig(outDir+os.path.sep+"noiselessInputSim_catalogVsMapFluxes.png")
+    plt.plot(fluxesFromCatalog, fluxesFromMap, 'ro')
+    plt.plot(fitRange, fitLine, 'b--', label='fit = %.6f*x + %.6f' % (fit['slope'], fit['intercept']))
+    #plt.plot(np.arange(0, 0.02, 0.001), np.arange(0, 0.02, 0.001), 'b--')
+    plt.xlabel("Y input sim catalog (arcmin$^2$)")
+    plt.ylabel("Y input sim map (arcmin$^2$)")
+    plt.xlim(0, 0.02)
+    plt.ylim(0, 0.02)
+    plt.legend()
+    plt.savefig(outDir+os.path.sep+"noiselessInputSim_catalogVsMapFluxes.png")
         
     # Put corrected fluxes into our input catalog
     for obj in inputCatalog:
@@ -651,20 +651,20 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
             selFnDict[profileType][prop]['stderrRecoveredFraction']=stderr            
         
         # Plot for each property
-        pylab.close()
+        plt.close()
         for prop, plotLabel in zip(propertiesToTrack, propertyPlotLabels):
             fraction=selFnDict[profileType][prop]['meanRecoveredFraction']
             errFraction=selFnDict[profileType][prop]['stderrRecoveredFraction']
             valuesList=selFnDict[profileType][prop]['valuesList']
-            pylab.plot(valuesList, fraction, 'b-')
-            pylab.errorbar(valuesList, fraction, yerr=errFraction, fmt='r.')
-            pylab.xlabel(plotLabel)
-            pylab.ylabel("Recovered Fraction")
-            pylab.ylim(0, 1.05)
-            pylab.title("Fake Source Profile = %s" % (profileType))
+            plt.plot(valuesList, fraction, 'b-')
+            plt.errorbar(valuesList, fraction, yerr=errFraction, fmt='r.')
+            plt.xlabel(plotLabel)
+            plt.ylabel("Recovered Fraction")
+            plt.ylim(0, 1.05)
+            plt.title("Fake Source Profile = %s" % (profileType))
             outFileName=outDir+os.path.sep+"recoveredFraction_%s_%s.png" % (profileType, prop)
-            pylab.savefig(outFileName)
-            pylab.close()
+            plt.savefig(outFileName)
+            plt.close()
         
         # Y recovery plot - residual
         inputYArcmin2=np.array(inputYArcmin2)
@@ -672,53 +672,53 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         diff=inputYArcmin2-recoveredYArcmin2
         norm=1e-3
         labelString="mean(Y$_{in}$-Y$_{out}$) = %.3f $\\times$ 10$^{-3}$ arcmin$^2$\n$\sigma$(Y$_{in}$-Y$_{out}$) = %.3f $\\times$ 10$^{-3}$ arcmin$^2$" % ((diff/norm).mean(), (diff/norm).std())
-        pylab.figure(figsize=(10, 8))
-        pylab.plot(inputYArcmin2, diff, 'r.')
-        pylab.plot(np.linspace(inputYArcmin2.min()-1, inputYArcmin2.max()+1, 3), [0]*3, 'k--')
-        pylab.xlabel("input Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin']))
-        pylab.ylabel("input Y(r<%d') - recovered Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin'], photometryOptions['apertureRadiusArcmin']))
-        ax=pylab.gca()
-        pylab.text(0.03, 0.03, labelString, transform = ax.transAxes, fontdict = {"size": 14, "linespacing" : 1.5})
-        pylab.title("Fake Source Profile = %s" % (profileType))
-        pylab.xlim(0, inputYArcmin2.max()*1.1)
-        pylab.ylim(-inputYArcmin2.max(), inputYArcmin2.max())
+        plt.figure(figsize=(10, 8))
+        plt.plot(inputYArcmin2, diff, 'r.')
+        plt.plot(np.linspace(inputYArcmin2.min()-1, inputYArcmin2.max()+1, 3), [0]*3, 'k--')
+        plt.xlabel("input Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin']))
+        plt.ylabel("input Y(r<%d') - recovered Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin'], photometryOptions['apertureRadiusArcmin']))
+        ax=plt.gca()
+        plt.text(0.03, 0.03, labelString, transform = ax.transAxes, fontdict = {"size": 14, "linespacing" : 1.5})
+        plt.title("Fake Source Profile = %s" % (profileType))
+        plt.xlim(0, inputYArcmin2.max()*1.1)
+        plt.ylim(-inputYArcmin2.max(), inputYArcmin2.max())
         outFileName=outDir+os.path.sep+"YRecovery_residual_%s.png" % (profileType)
-        pylab.savefig(outFileName)
-        pylab.close()
+        plt.savefig(outFileName)
+        plt.close()
         
         # Y recovery plot - correlation
-        pylab.figure(figsize=(10, 8))
+        plt.figure(figsize=(10, 8))
         oneToOneRange=np.linspace(inputYArcmin2.min()*0.5, inputYArcmin2.max()+1, 5)
-        pylab.plot(inputYArcmin2, recoveredYArcmin2, 'r.')
-        pylab.plot(oneToOneRange, oneToOneRange, 'k--')
-        pylab.loglog()
-        pylab.xlabel("input Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin']))
-        pylab.ylabel("recovered Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin']))
-        pylab.title("Fake Source Profile = %s" % (profileType))
-        pylab.xlim(inputYArcmin2.min()*0.5, inputYArcmin2.max()*1.5)
-        pylab.ylim(inputYArcmin2.min()*0.5, inputYArcmin2.max()*1.5)
+        plt.plot(inputYArcmin2, recoveredYArcmin2, 'r.')
+        plt.plot(oneToOneRange, oneToOneRange, 'k--')
+        plt.loglog()
+        plt.xlabel("input Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin']))
+        plt.ylabel("recovered Y(r<%d') (arcmin$^2$)" % (photometryOptions['apertureRadiusArcmin']))
+        plt.title("Fake Source Profile = %s" % (profileType))
+        plt.xlim(inputYArcmin2.min()*0.5, inputYArcmin2.max()*1.5)
+        plt.ylim(inputYArcmin2.min()*0.5, inputYArcmin2.max()*1.5)
         outFileName=outDir+os.path.sep+"YRecovery_correlation_%s.png" % (profileType)
-        pylab.savefig(outFileName)
-        pylab.close()
+        plt.savefig(outFileName)
+        plt.close()
 
         # Delta T recovery plot - residual
         inputDeltaTc=np.array(inputDeltaTc)
         recoveredDeltaTc=np.array(recoveredDeltaTc)
         diff=inputDeltaTc-recoveredDeltaTc
         labelString="mean($\Delta$T$_{c(in)}$-$\Delta$T$_{c(out)}$) = %.3f $\mu$K\n$\sigma$($\Delta$T$_{c(in)}$-$\Delta$T$_{c(out)}$) = %.3f $\mu$K" % ((diff).mean(), (diff).std())
-        pylab.figure(figsize=(10, 8))
-        pylab.plot(inputDeltaTc, diff, 'r.')
-        pylab.plot(np.linspace(inputDeltaTc.min()-1000, inputDeltaTc.max()+1000, 3), [0]*3, 'k--')
-        pylab.xlabel("input $\Delta$T$_c$ ($\mu$K)")
-        pylab.ylabel("input $\Delta$T$_c$ - recovered $\Delta$T$_c$ ($\mu$K)")
-        ax=pylab.gca()
-        pylab.text(0.03, 0.03, labelString, transform = ax.transAxes, fontdict = {"size": 14, "linespacing" : 1.5})
-        pylab.title("Fake Source Profile = %s" % (profileType))
-        pylab.xlim(inputDeltaTc.min()*1.1, inputDeltaTc.max()*1.1)
-        pylab.ylim(-(abs(inputDeltaTc).max()*1.1), abs(inputDeltaTc).max()*1.1)
+        plt.figure(figsize=(10, 8))
+        plt.plot(inputDeltaTc, diff, 'r.')
+        plt.plot(np.linspace(inputDeltaTc.min()-1000, inputDeltaTc.max()+1000, 3), [0]*3, 'k--')
+        plt.xlabel("input $\Delta$T$_c$ ($\mu$K)")
+        plt.ylabel("input $\Delta$T$_c$ - recovered $\Delta$T$_c$ ($\mu$K)")
+        ax=plt.gca()
+        plt.text(0.03, 0.03, labelString, transform = ax.transAxes, fontdict = {"size": 14, "linespacing" : 1.5})
+        plt.title("Fake Source Profile = %s" % (profileType))
+        plt.xlim(inputDeltaTc.min()*1.1, inputDeltaTc.max()*1.1)
+        plt.ylim(-(abs(inputDeltaTc).max()*1.1), abs(inputDeltaTc).max()*1.1)
         outFileName=outDir+os.path.sep+"DeltaTc_residual_%s.png" % (profileType)
-        pylab.savefig(outFileName)
-        pylab.close()        
+        plt.savefig(outFileName)
+        plt.close()        
         
         # Also, work out fudge factor for Y recovery here
         # Insert this into photometry.measureApertureFluxes - obviously we have to turn this off there first
@@ -834,7 +834,7 @@ def insertProjectedNFWModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photom
     sigmax=sigmax/sigmax.max()
     tckSigmax=interpolate.splrep(r, sigmax) # Note we defined interpolator in terms or r NOT x here!
 
-    #pylab.plot(r, fittedFunc, 'k--')
+    #plt.plot(r, fittedFunc, 'k--')
     
     ipshell()
     sys.exit()
@@ -1000,30 +1000,30 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
                 xtickLabels.append('')
             
     # Plot cumulative detections > SNR for both inverted map catalog and actual catalog
-    pylab.plot(binEdges[:-1], cumSumInverted, 'r-', label = 'inverted maps')
-    pylab.plot(binEdges[:-1], cumSumCandidates, 'b-', label = 'candidates')
-    pylab.xlabel("SNR")
-    pylab.ylabel("Number > SNR")
-    pylab.semilogx()
-    pylab.xticks(xtickValues, xtickLabels)
-    pylab.xlim(binMin, binMax)
-    pylab.legend()
-    pylab.savefig(diagnosticsDir+os.path.sep+"cumulativeSNR.png")
-    pylab.close()
+    plt.plot(binEdges[:-1], cumSumInverted, 'r-', label = 'inverted maps')
+    plt.plot(binEdges[:-1], cumSumCandidates, 'b-', label = 'candidates')
+    plt.xlabel("SNR")
+    plt.ylabel("Number > SNR")
+    plt.semilogx()
+    plt.xticks(xtickValues, xtickLabels)
+    plt.xlim(binMin, binMax)
+    plt.legend()
+    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeSNR.png")
+    plt.close()
     
     # Plot cumulative contamination estimate (this makes more sense than plotting purity, since we don't know
     # that from what we're doing here, strictly speaking)
     cumContamination=cumSumInverted/cumSumCandidates
     cumContamination[np.isnan(cumContamination)]=0.0
-    pylab.plot(binEdges[:-1], cumContamination, 'k-')
-    pylab.xlabel("SNR")
-    pylab.ylabel("Estimated contamination > SNR")
-    pylab.semilogx()
-    pylab.xticks(xtickValues, xtickLabels)
-    pylab.xlim(binMin, binMax)
-    pylab.ylim(0, 1)
-    pylab.savefig(diagnosticsDir+os.path.sep+"contaminationEstimateSNR.png")
-    pylab.close()    
+    plt.plot(binEdges[:-1], cumContamination, 'k-')
+    plt.xlabel("SNR")
+    plt.ylabel("Estimated contamination > SNR")
+    plt.semilogx()
+    plt.xticks(xtickValues, xtickLabels)
+    plt.xlim(binMin, binMax)
+    plt.ylim(0, 1)
+    plt.savefig(diagnosticsDir+os.path.sep+"contaminationEstimateSNR.png")
+    plt.close()    
     
     # Remember, this is all cumulative (> SNR, so lower bin edges)
     contaminDict={}
@@ -1112,7 +1112,7 @@ def makeArnaudModelProfile(z, M500, obsFreqGHz):
     y0=mapTools.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
 
     return {'tckP': tckP, 'y0': y0, 'deltaT0': deltaT0, 'theta500Arcmin': theta500Arcmin, 
-            'Y500Arcmin2': arnaudY500_arcmin2}
+            'Y500Arcmin2': arnaudY500_arcmin2, 'rDeg': thetaDegRange}
 
 #------------------------------------------------------------------------------------------------------------
 def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
@@ -1142,18 +1142,119 @@ def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
         return YSZ_R500_arcmin2
     else:
         raise Exception, "didn't understand units"
+
+#------------------------------------------------------------------------------------------------------------
+def fitQ(parDict, diagnosticsDir, filteredMapsDir):
+    """Calculates Q on a grid, and then fits (theta, Q) with a polynomial, saving a plot and the coeffs
+    array in the diagnostics dir.
+    
+    This can be generalised, but for now is hard coded to use the Arnaud model.
+    
+    """
+    
+    outFileName=diagnosticsDir+os.path.sep+"QCoeffs.npy"
+    
+    if os.path.exists(outFileName) == False:
+        print ">>> Fitting for Q ..."
+        
+        # Spin through the filter kernels
+        photFilterLabel=parDict['photometryOptions']['photFilter']
+        filterList=parDict['mapFilters']
+        for f in filterList:
+            if f['label'] == photFilterLabel:
+                ref=f
+                refFilterIndex=filterList.index(f)
+                
+        # Some faffing to get map pixel scale
+        img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"_SNMap.fits")
+        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+        RADeg, decDeg=wcs.getCentreWCSCoords()
+        clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 1.0)
+        wcs=clipDict['wcs']
+
+        # Ref kernel
+        kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (photFilterLabel))
+        kern2d=kernImg[0].data
+
+        # Blank map - to make Q calc more accurate, use finer pixel scale
+        signalMap=np.zeros(clipDict['data'].shape)
+        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 1.0)
+
+        # M, z ranges for Q calc
+        MRange=[ref['params']['M500MSun']]
+        zRange=[ref['params']['z']]
+        MRange=MRange+np.logspace(13.7, 15.3, 5).tolist()
+        zRange=zRange+np.arange(0.1, 1.7, 0.2).tolist()
+
+        # Make signal only maps and filter them with the ref kernel
+        t0=time.time()
+        Q=[]
+        theta500Arcmin=[]
+        for z in zRange:
+            for M500MSun in MRange:
+                 # We don't actually care about freq here because y-map returned
+                modelDict=makeArnaudModelProfile(z, M500MSun, 148.0)   
+                rDeg=modelDict['rDeg']
+                profile1d=interpolate.splev(rDeg, modelDict['tckP'])
+                r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+                signalMap=r2p(degreesMap)
+                # Apply high-pass then convolve (high-pass effect seems negligible)
+                signalMap=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = kernImg[0].header['BCKSCALE']/60.)
+                filteredSignal=ndimage.convolve(signalMap, kern2d) 
+                Q.append(filteredSignal.max())
+                theta500Arcmin.append(modelDict['theta500Arcmin'])
+        Q=np.array(Q)
+        Q=Q/Q[refFilterIndex]
+        theta500Arcmin=np.array(theta500Arcmin)
+        t1=time.time()
+
+        # Fit with polynomial
+        coeffs=np.polyfit(theta500Arcmin, Q, 12)
+
+        # Plot
+        plt.figure(figsize=(12, 8))
+        plt.plot(theta500Arcmin, Q, 'r.')
+        thetaArr=np.linspace(0, 10, 100)
+        plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
+        #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
+        plt.xlim(0, 10)
+        plt.xlabel("$\\theta_{500}$ (arcmin)")
+        plt.ylabel("Q")
+        plt.savefig(diagnosticsDir+os.path.sep+"QFit.png")
+        plt.close()
+
+        # Save polynomial fit coeffs
+        np.save(outFileName, coeffs)
+    
+    else:
+        
+        print ">>> Loading previously cached Q fit ..."
+        coeffs=np.load(outFileName)
+    
+    return coeffs
+
+#------------------------------------------------------------------------------------------------------------
+def calcQ(theta500Arcmin, coeffs):
+    """Returns Q, given theta500Arcmin, and a set of polynomial fit coefficients to (theta, Q).
+    
+    """
+    
+    Q=np.poly1d(coeffs)(theta500Arcmin)
+    
+    return Q
     
 #------------------------------------------------------------------------------------------------------------
-def calcQ_H13(theta500Arcmin):
-    """Returns Q given theta500Arcmin, using result of a polynomial fit to (theta, Q) given in H13
+def getQCoeffsH13():
+    """Returns result of a polynomial fit to (theta, Q) given in H13
+    
+    NOTE: this fit is not accurate for theta500Arcmin > 5.9'
     
     """
     
     coeffs=np.array([-1.12816214e-04, 2.37255951e-03, -1.62915564e-02, 9.87118185e-03, 3.50817483e-01, 
                      -1.38970056e-01])
-    Q=np.poly1d(coeffs)(theta500Arcmin)
-
-    return Q
+    
+    return coeffs
 
 #------------------------------------------------------------------------------------------------------------
 def calcFRel(z, M500):
@@ -1187,7 +1288,7 @@ def calcFRel(z, M500):
 
 #------------------------------------------------------------------------------------------------------------
 def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
-                   QFunc = calcQ_H13):
+                   QFitCoeffs = getQCoeffsH13()):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
@@ -1195,7 +1296,7 @@ def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivo
     Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
     (in turn using the hmf module).
     
-    QFunc can be overridden, if, e.g., we calculate our own Q function for different filters/profiles.
+    QFitCoeffs are from a polynomial fit to (theta, Q), with theta given in arcmin.
     
     NOTE: not added marginalisation over z uncertainty yet
     
@@ -1210,8 +1311,7 @@ def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivo
             
         # UPP relation according to H13
         # NOTE: m in H13 is M/Mpivot
-        y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*QFunc(theta500Arcmin)*calcFRel(z, M500)
-
+        y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*calcQ(theta500Arcmin, QFitCoeffs)*calcFRel(z, M500)
         log_y0=np.log(y0)
         log_y0Err=np.log(y0+y0Err)-log_y0
         log_y0pred=np.log(y0pred)
@@ -1257,5 +1357,9 @@ def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivo
         clusterM500=0.
         clusterM500MinusErr=0.
         clusterM500PlusErr=0.
+    
+    #print "return Q, QErr, theta500Arcmin, theta500ArcminErr"
+    #IPython.embed()
+    #sys.exit()
         
-    return clusterM500, clusterM500PlusErr, clusterM500MinusErr
+    return {'M500': clusterM500, 'M500_errPlus': clusterM500PlusErr, 'M500_errMinus': clusterM500MinusErr}
