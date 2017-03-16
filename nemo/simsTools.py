@@ -931,7 +931,7 @@ def simpleCatalogMatch(primary, secondary, matchRadiusArcmin):
             
 #-------------------------------------------------------------------------------------------------------------
 def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, rejectBorder, 
-                                          minSNToIncludeInOptimalCatalog, diagnosticsDir = None):
+                                          minSNToIncludeInOptimalCatalog, photometryOptions, diagnosticsDir = None):
     """Run the whole filtering set up again, on inverted maps.
     
     Writes a DS9. reg file, which contains only the highest SNR contaminants (since these
@@ -939,7 +939,9 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     
     Writes a plot and a .fits table to the diagnostics dir.
     
-    Returns a dictionary containing the results
+    Runs over both SNR and fixed_SNR values.
+    
+    Returns a dictionaries containing the results
     
     """
     
@@ -953,95 +955,112 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     photometry.findObjects(invertedDict, threshold = thresholdSigma, minObjPix = minObjPix,
                            rejectBorder = rejectBorder, diagnosticsDir = diagnosticsDir,
                            invertMap = True, makeDS9Regions = False)    
+
+    # For fixed filter scale
+    # Adds fixed_SNR values to catalogs for all maps
+    if 'photFilter' in photometryOptions.keys():
+        photFilter=photometryOptions['photFilter']
+    else:
+        photFilter=None
+    if photFilter != None:
+        photometry.getSNValues(invertedDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, invertMap = True)   
+    
     catalogTools.mergeCatalogs(invertedDict)
     catalogTools.makeOptimalCatalog(invertedDict, minSNToIncludeInOptimalCatalog)
-    catalogTools.catalog2DS9(invertedDict['optimalCatalog'], diagnosticsDir+os.path.sep+"invertedMapsCatalog.reg", constraintsList = ['SNR > 5'])
     
-    invertedSNRs=[]
-    for obj in invertedDict['optimalCatalog']:
-        invertedSNRs.append(obj['SNR'])
-    invertedSNRs=np.array(invertedSNRs)
-    invertedSNRs.sort()
-    numInverted=np.arange(len(invertedSNRs))+1
-     
-    candidateSNRs=[]
-    for obj in imageDict['optimalCatalog']:
-        candidateSNRs.append(obj['SNR'])
-    candidateSNRs=np.array(candidateSNRs)
-    candidateSNRs.sort()
-    numCandidates=np.arange(len(candidateSNRs))+1
-    
-    binMin=4.0
-    binMax=20.0
-    binStep=0.1
-    binEdges=np.linspace(binMin, binMax, (binMax-binMin)/binStep+1)
-    binCentres=(binEdges+binStep/2.0)[:-1]
-    candidateSNRHist=np.histogram(candidateSNRs, bins = binEdges)
-    invertedSNRHist=np.histogram(invertedSNRs, bins = binEdges)    
-    
-    cumSumCandidates=[]
-    cumSumInverted=[]
-    for i in range(binCentres.shape[0]):
-        cumSumCandidates.append(candidateSNRHist[0][i:].sum())
-        cumSumInverted.append(invertedSNRHist[0][i:].sum())
-    cumSumCandidates=np.array(cumSumCandidates, dtype = float)
-    cumSumInverted=np.array(cumSumInverted, dtype = float)
+    # Do everything else with both SNR and fixed_SNR
+    contaminDictList=[]
+    for SNRKey in ['SNR', 'fixed_SNR']:
+        catalogTools.catalog2DS9(invertedDict['optimalCatalog'], diagnosticsDir+os.path.sep+"invertedMapsCatalog_%s_gtr_5.reg" % (SNRKey), 
+                                constraintsList = ['%s > 5' % (SNRKey)])
+        
+        invertedSNRs=[]
+        for obj in invertedDict['optimalCatalog']:
+            invertedSNRs.append(obj[SNRKey])
+        invertedSNRs=np.array(invertedSNRs)
+        invertedSNRs.sort()
+        numInverted=np.arange(len(invertedSNRs))+1
+        
+        candidateSNRs=[]
+        for obj in imageDict['optimalCatalog']:
+            candidateSNRs.append(obj[SNRKey])
+        candidateSNRs=np.array(candidateSNRs)
+        candidateSNRs.sort()
+        numCandidates=np.arange(len(candidateSNRs))+1
+        
+        binMin=4.0
+        binMax=20.0
+        binStep=0.1
+        binEdges=np.linspace(binMin, binMax, (binMax-binMin)/binStep+1)
+        binCentres=(binEdges+binStep/2.0)[:-1]
+        candidateSNRHist=np.histogram(candidateSNRs, bins = binEdges)
+        invertedSNRHist=np.histogram(invertedSNRs, bins = binEdges)    
+        
+        cumSumCandidates=[]
+        cumSumInverted=[]
+        for i in range(binCentres.shape[0]):
+            cumSumCandidates.append(candidateSNRHist[0][i:].sum())
+            cumSumInverted.append(invertedSNRHist[0][i:].sum())
+        cumSumCandidates=np.array(cumSumCandidates, dtype = float)
+        cumSumInverted=np.array(cumSumInverted, dtype = float)
 
-    xtickLabels=[]
-    xtickValues=[]
-    fmodMajorTicks=np.fmod(binEdges, 5)
-    fmodMinorTicks=np.fmod(binEdges, 1)
-    for i in range(len(binEdges)):
-        if fmodMinorTicks[i] == 0:
-            xtickValues.append(binEdges[i])
-            if fmodMajorTicks[i] == 0:
-                xtickLabels.append('%d' % (binEdges[i]))
-            else:
-                xtickLabels.append('')
-            
-    # Plot cumulative detections > SNR for both inverted map catalog and actual catalog
-    plt.plot(binEdges[:-1], cumSumInverted, 'r-', label = 'inverted maps')
-    plt.plot(binEdges[:-1], cumSumCandidates, 'b-', label = 'candidates')
-    plt.xlabel("SNR")
-    plt.ylabel("Number > SNR")
-    plt.semilogx()
-    plt.xticks(xtickValues, xtickLabels)
-    plt.xlim(binMin, binMax)
-    plt.legend()
-    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeSNR.png")
-    plt.close()
-    
-    # Plot cumulative contamination estimate (this makes more sense than plotting purity, since we don't know
-    # that from what we're doing here, strictly speaking)
-    cumContamination=cumSumInverted/cumSumCandidates
-    cumContamination[np.isnan(cumContamination)]=0.0
-    plt.plot(binEdges[:-1], cumContamination, 'k-')
-    plt.xlabel("SNR")
-    plt.ylabel("Estimated contamination > SNR")
-    plt.semilogx()
-    plt.xticks(xtickValues, xtickLabels)
-    plt.xlim(binMin, binMax)
-    plt.ylim(0, 1)
-    plt.savefig(diagnosticsDir+os.path.sep+"contaminationEstimateSNR.png")
-    plt.close()    
-    
-    # Remember, this is all cumulative (> SNR, so lower bin edges)
-    contaminDict={}
-    contaminDict['SNR']=binEdges[:-1]
-    contaminDict['cumSumCandidates']=cumSumCandidates
-    contaminDict['cumSumInverted']=cumSumInverted
-    contaminDict['cumContamination']=cumContamination       
-    
-    # Wite a .fits table
-    contaminTab=atpy.Table()
-    for key in contaminDict.keys():
-        contaminTab.add_column(atpy.Column(contaminDict[key], key))
-    fitsOutFileName=diagnosticsDir+os.path.sep+"contaminationEstimateSNR.fits"
-    if os.path.exists(fitsOutFileName) == True:
-        os.remove(fitsOutFileName)
-    contaminTab.write(fitsOutFileName)
-    
-    return contaminDict
+        xtickLabels=[]
+        xtickValues=[]
+        fmodMajorTicks=np.fmod(binEdges, 5)
+        fmodMinorTicks=np.fmod(binEdges, 1)
+        for i in range(len(binEdges)):
+            if fmodMinorTicks[i] == 0:
+                xtickValues.append(binEdges[i])
+                if fmodMajorTicks[i] == 0:
+                    xtickLabels.append('%d' % (binEdges[i]))
+                else:
+                    xtickLabels.append('')
+                
+        # Plot cumulative detections > SNR for both inverted map catalog and actual catalog
+        plt.plot(binEdges[:-1], cumSumInverted, 'r-', label = 'inverted maps')
+        plt.plot(binEdges[:-1], cumSumCandidates, 'b-', label = 'candidates')
+        plt.xlabel("%s" % (SNRKey))
+        plt.ylabel("Number > %s" % (SNRKey))
+        plt.semilogx()
+        plt.xticks(xtickValues, xtickLabels)
+        plt.xlim(binMin, binMax)
+        plt.legend()
+        plt.savefig(diagnosticsDir+os.path.sep+"cumulative_%s.png" % (SNRKey))
+        plt.close()
+        
+        # Plot cumulative contamination estimate (this makes more sense than plotting purity, since we don't know
+        # that from what we're doing here, strictly speaking)
+        cumContamination=cumSumInverted/cumSumCandidates
+        cumContamination[np.isnan(cumContamination)]=0.0
+        plt.plot(binEdges[:-1], cumContamination, 'k-')
+        plt.xlabel("%s" % (SNRKey))
+        plt.ylabel("Estimated contamination > %s" % (SNRKey))
+        plt.semilogx()
+        plt.xticks(xtickValues, xtickLabels)
+        plt.xlim(binMin, binMax)
+        plt.ylim(0, 1)
+        plt.savefig(diagnosticsDir+os.path.sep+"contaminationEstimate_%s.png" % (SNRKey))
+        plt.close()    
+        
+        # Remember, this is all cumulative (> SNR, so lower bin edges)
+        contaminDict={}
+        contaminDict['%s' % (SNRKey)]=binEdges[:-1]
+        contaminDict['cumSumCandidates']=cumSumCandidates
+        contaminDict['cumSumInverted']=cumSumInverted
+        contaminDict['cumContamination']=cumContamination       
+        
+        # Wite a .fits table
+        contaminTab=atpy.Table()
+        for key in contaminDict.keys():
+            contaminTab.add_column(atpy.Column(contaminDict[key], key))
+        fitsOutFileName=diagnosticsDir+os.path.sep+"contaminationEstimate_%s.fits" % (SNRKey)
+        if os.path.exists(fitsOutFileName) == True:
+            os.remove(fitsOutFileName)
+        contaminTab.write(fitsOutFileName)
+        
+        contaminDictList.append(contaminDict)
+        
+    return contaminDictList
 
 #------------------------------------------------------------------------------------------------------------
 def calcR500Mpc(z, M500):
@@ -1340,6 +1359,9 @@ def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivo
         maxIndex=index+n
         if minIndex < 0 or maxIndex > fineP.shape[0]:
             # This shouldn't happen; if it does, probably y0 is in the wrong units
+            print "outside M500 range"
+            IPython.embed()
+            sys.exit()
             clusterLogM500=None
             break            
         p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])

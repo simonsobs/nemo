@@ -178,6 +178,10 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
         else:
             raise Exception, "Didn't understand SNMap value '%s'" % (str(SNMap))
 
+        # This is for checking contamination
+        if invertMap == True:
+            data=data*-1
+            
         # Found not to be robust elsewhere
         #mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
                                                         #np.arange(data.shape[1]), 

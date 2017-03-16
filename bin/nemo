@@ -61,7 +61,7 @@ else:
         # Makes a plot and we write a .fits table under diagnostics dir
         contaminationDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
                                                                           parDict['minObjPix'], parDict['rejectBorder'], 
-                                                                          parDict['catalogCuts'],
+                                                                          parDict['catalogCuts'], parDict['photometryOptions'],
                                                                           diagnosticsDir = diagnosticsDir)        
             
         # Sims based on inserting fake cluster profiles into the maps
