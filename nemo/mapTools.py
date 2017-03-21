@@ -10,14 +10,15 @@ from astLib import *
 from scipy import ndimage
 from scipy import interpolate
 import pyfits
-import numpy
+import numpy as np
 import os
 import sys
 import math
 import pyximport; pyximport.install()
 import nemoCython
+import time
 import IPython
-numpy.random.seed()
+np.random.seed()
 
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
@@ -108,8 +109,8 @@ def filterMaps(unfilteredMapsDictList, filtersList, rootOutDir = ".", verbose = 
             filteredMapDict=filterObj.buildAndApply()
             
             # Keywords we need for photometry later
-            filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
-            filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
+            #filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
+            #filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
             filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
             filteredMapDict['wcs'].updateFromHeader()
 
@@ -149,31 +150,31 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
     
     """
         
-    maskMap=numpy.zeros(mapData.shape)
-    maskedMapData=numpy.zeros(mapData.shape, dtype=numpy.float64)+mapData    # otherwise, gets modified in place.
+    maskMap=np.zeros(mapData.shape)
+    maskedMapData=np.zeros(mapData.shape, dtype=np.float64)+mapData    # otherwise, gets modified in place.
     
     bckSubbed=subtractBackground(mapData, wcs, smoothScaleDeg = 1.4/60.0) # for source subtracting
     
-    mapInterpolator=interpolate.RectBivariateSpline(numpy.arange(mapData.shape[0]), 
-                                                numpy.arange(mapData.shape[1]), 
+    mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
+                                                np.arange(mapData.shape[1]), 
                                                 bckSubbed, kx = 1, ky = 1)
 
     for obj in catalog:
         if wcs.coordsAreInImage(obj['RADeg'], obj['decDeg']) == True:
             rRange=nemoCython.makeDegreesDistanceMap(maskedMapData, wcs, obj['RADeg'], obj['decDeg'], 
                                                     20.0/60.0)         
-            circleMask=numpy.less(rRange, radiusArcmin/60.0)
-            grownCircleMask=numpy.less(rRange, (radiusArcmin*growMaskedArea)/60.0)
+            circleMask=np.less(rRange, radiusArcmin/60.0)
+            grownCircleMask=np.less(rRange, (radiusArcmin*growMaskedArea)/60.0)
             maskMap[grownCircleMask]=1.0
             if type(mask) == float or type(mask) == int:
                 maskedMapData[circleMask]=mask
 
             elif mask == 'shuffle':
                 # How about copying random pixels from the vicinity into the area to be masked?
-                annulusMask=numpy.logical_and(numpy.greater(rRange, 5.0/60.0), \
-                                            numpy.less(rRange, 10.0/60.0))
+                annulusMask=np.logical_and(np.greater(rRange, 5.0/60.0), \
+                                            np.less(rRange, 10.0/60.0))
                 annulusValues=mapData[annulusMask].flatten()
-                indices=numpy.random.randint(0, annulusValues.shape[0], circleMask.flatten().nonzero()[0].shape[0])
+                indices=np.random.randint(0, annulusValues.shape[0], circleMask.flatten().nonzero()[0].shape[0])
                 maskedMapData[circleMask]=annulusValues[indices]
                 
             elif mask == 'subtract':         
@@ -183,12 +184,12 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
                     IPython.embed()
                     sys.exit()
                 peakValue=mapData[int(round(obj['y'])), int(round(obj['x']))]
-                sigmaDeg=(1.4/60.0)/numpy.sqrt(8.0*numpy.log(2.0))            
-                profRDeg=numpy.linspace(0.0, 30.0/60.0, 5000)
-                profile1d=peakValue*numpy.exp(-((profRDeg**2)/(2*sigmaDeg**2)))                
+                sigmaDeg=(1.4/60.0)/np.sqrt(8.0*np.log(2.0))            
+                profRDeg=np.linspace(0.0, 30.0/60.0, 5000)
+                profile1d=peakValue*np.exp(-((profRDeg**2)/(2*sigmaDeg**2)))                
                 r2p=interpolate.interp1d(profRDeg, profile1d, bounds_error=False, fill_value=0.0)
-                profile2d=numpy.zeros(rRange.shape)
-                profMask=numpy.less(rRange, 1.0)
+                profile2d=np.zeros(rRange.shape)
+                profMask=np.less(rRange, 1.0)
                 profile2d[profMask]=r2p(rRange[profMask])
                 maskedMapData[profMask]=maskedMapData[profMask]-profile2d[profMask]
                 
@@ -196,21 +197,21 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
                 # 1.3197 is a correction factor for effect of filtering on bckSubbed
                 # Worked out by comparing peak value of bckSubbed profile2d only map
                 #peakValue=mapInterpolator(obj['y'], obj['x'])[0][0]*1.3197   
-                #sigmaDeg=(1.4/60.0)/numpy.sqrt(8.0*numpy.log(2.0))            
-                #profRDeg=numpy.linspace(0.0, 30.0/60.0, 5000)
-                #profile1d=peakValue*numpy.exp(-((profRDeg**2)/(2*sigmaDeg**2)))                
+                #sigmaDeg=(1.4/60.0)/np.sqrt(8.0*np.log(2.0))            
+                #profRDeg=np.linspace(0.0, 30.0/60.0, 5000)
+                #profile1d=peakValue*np.exp(-((profRDeg**2)/(2*sigmaDeg**2)))                
                 #r2p=interpolate.interp1d(profRDeg, profile1d, bounds_error=False, fill_value=0.0)
-                #profile2d=numpy.zeros(rRange.shape)
-                #profMask=numpy.less(rRange, 1.0)
+                #profile2d=np.zeros(rRange.shape)
+                #profMask=np.less(rRange, 1.0)
                 #profile2d[profMask]=r2p(rRange[profMask])
                 #maskedMapData[profMask]=maskedMapData[profMask]-profile2d[profMask]
             
                 
             elif mask == "whiteNoise":
                 # Get pedestal level and white noise level from average between radiusArcmin and  2*radiusArcmin
-                annulusMask=numpy.logical_and(numpy.greater(rRange, 2*radiusArcmin/60.0), \
-                                            numpy.less(rRange, 4*radiusArcmin/60.0))
-                maskedMapData[circleMask]=numpy.random.normal(mapData[annulusMask].mean(), \
+                annulusMask=np.logical_and(np.greater(rRange, 2*radiusArcmin/60.0), \
+                                            np.less(rRange, 4*radiusArcmin/60.0))
+                maskedMapData[circleMask]=np.random.normal(mapData[annulusMask].mean(), \
                                                             mapData[annulusMask].std(),  \
                                                             mapData[circleMask].shape)
     
@@ -225,23 +226,23 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
     img=pyfits.open(maskFileName)
     maskData=img[0].data
 
-    maskedMapData=numpy.zeros(mapData.shape)+mapData    # otherwise, gets modified in place.
+    maskedMapData=np.zeros(mapData.shape)+mapData    # otherwise, gets modified in place.
     
     # Thresholding to identify significant pixels
     threshold=0
-    sigPix=numpy.array(numpy.greater(maskData, threshold), dtype=int)
-    sigPixMask=numpy.equal(sigPix, 1)
+    sigPix=np.array(np.greater(maskData, threshold), dtype=int)
+    sigPixMask=np.equal(sigPix, 1)
     
     # Fast, simple segmentation - don't know about deblending, but doubt that's a problem for us
     segmentationMap, numObjects=ndimage.label(sigPix)
     
     # Get object positions, number of pixels etc.
-    objIDs=numpy.unique(segmentationMap)
+    objIDs=np.unique(segmentationMap)
     objPositions=ndimage.center_of_mass(maskData, labels = segmentationMap, index = objIDs)
     objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
     
     for objID, pos, numPix in zip(objIDs, objPositions, objNumPix):
-        circleMask=numpy.equal(segmentationMap, objID)
+        circleMask=np.equal(segmentationMap, objID)
         if type(mask) == float or type(mask) == int:
             maskedMapData[circleMask]=mask
         elif mask == "subtract":
@@ -250,16 +251,16 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
             sys.exit()
         elif mask == "whiteNoise":
             RADeg, decDeg=mapWCS.pix2wcs(pos[1], pos[0])
-            if numpy.isnan(RADeg) == False and numpy.isnan(decDeg) == False:
+            if np.isnan(RADeg) == False and np.isnan(decDeg) == False:
                 rRange=nemoCython.makeDegreesDistanceMap(mapData, mapWCS, RADeg, decDeg, (radiusArcmin*4)/60.0)        
                 # Get pedestal level and white noise level from average between radiusArcmin and  2*radiusArcmin
-                annulusMask=numpy.logical_and(numpy.greater(rRange, radiusArcmin/60.0), \
-                                              numpy.less(rRange, 2*radiusArcmin/60.0))
+                annulusMask=np.logical_and(np.greater(rRange, radiusArcmin/60.0), \
+                                              np.less(rRange, 2*radiusArcmin/60.0))
                 # Below just does a quick sanity check - we don't bother masking if std == 0, because we're
                 # most likely applying this in the middle of a fake source sim with map set to zero for testing
                 sigma=mapData[annulusMask].std()
                 if sigma > 0:
-                    maskedMapData[circleMask]=numpy.random.normal(mapData[annulusMask].mean(), \
+                    maskedMapData[circleMask]=np.random.normal(mapData[annulusMask].mean(), \
                                                                   sigma,  \
                                                                   mapData[circleMask].shape)
     
@@ -271,7 +272,7 @@ def addWhiteNoise(mapData, noisePerPix):
     
     """
     
-    noise=numpy.random.normal(0, noisePerPix, mapData.shape)
+    noise=np.random.normal(0, noisePerPix, mapData.shape)
     mapData=mapData+noise
     
     return mapData
@@ -371,8 +372,20 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
             wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
             weights=wht[0].data
         else:
-            weights=numpy.ones(data.shape)
-        
+            weights=np.ones(data.shape)
+
+        # Load survey and point source masks, if given
+        if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
+            smImg=pyfits.open(mapDict['surveyMask'])
+            surveyMask=smImg[0].data
+        else:
+            surveyMask=np.ones(data.shape)
+        if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
+            psImg=pyfits.open(mapDict['pointSourceMask'])
+            psMask=psImg[0].data
+        else:
+            psMask=np.ones(data.shape)
+                
         print "... opened map %s ..." % (mapDict['mapFileName'])
         
         # Optional map clipping
@@ -383,6 +396,10 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
             whtClip=astImages.clipUsingRADecCoords(weights, wcs, RAMin, RAMax, decMin, decMax)
             weights=whtClip['data']
             wcs=clip['wcs']
+            psClip=astImages.clipUsingRADecCoords(psMask, wcs, RAMin, RAMax, decMin, decMax)
+            psMask=psClip['data']
+            surveyClip=astImages.clipUsingRADecCoords(surveyMask, wcs, RAMin, RAMax, decMin, decMax)
+            surveyMask=surveyClip['data']
             #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
         
         # Optional adding of white noise
@@ -396,9 +413,71 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
         # or a wavelet decomposition scale image
         if 'bckSubScaleArcmin' in mapDict.keys() and mapDict['bckSubScaleArcmin'] != None:
             data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
-            
+        
+        # Added March 2017 as replacement for older 'pointSourceRemoval' code
+        # Break out from here / tidy up later
+        # NOTE: If we just mask big enough areas, we don't need to bother with this!
+        #if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
+            #psRemovedFileName=diagnosticsDir+os.path.sep+"psMasked_%d.fits" % (mapDict['obsFreqGHz'])
+            #if os.path.exists(psRemovedFileName) == True:
+                #print "... loading cached map %s which has point source masking applied ..." % (psRemovedFileName)
+                #psRemovedImg=pyfits.open(psRemovedFileName)
+                #data=psRemovedImg[0].data
+            #else:
+                #print "... filling in map at masked point source locations ..."
+                #t0=time.time()
+                ## The big smooth method
+                ##smoothed=smoothMap(data, wcs, smoothScaleDeg = 10.0/60.0)
+                ## Find hole locations - we could swap out the mask here for a catalog instead, or add as option
+                ## Measure the average value in an annulus around each hole location
+                #ptSrcData=1-psMask
+                #sigPix=np.array(np.greater(ptSrcData, 0), dtype=int)
+                #sigPixMask=np.equal(sigPix, 1)
+                #segmentationMap, numObjects=ndimage.label(sigPix)
+                #objIDs=np.unique(segmentationMap)
+                #objPositions=ndimage.center_of_mass(ptSrcData, labels = segmentationMap, index = objIDs)
+                #objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
+                #psCat=[]
+                #idNumCount=0
+                #minObjPix=5
+                #for i in range(len(objIDs)):
+                    #if type(objNumPix) != float and objNumPix[i] > minObjPix:
+                        #idNumCount=idNumCount+1
+                        #x=int(round(objPositions[i][1]))
+                        #y=int(round(objPositions[i][0]))
+                        #objDict={}
+                        #objDict['id']=idNumCount
+                        #objDict['x']=x
+                        #objDict['y']=y
+                        #objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
+                        #objDict['numPix']=objNumPix[i]
+                        #rPix=int(round(np.sqrt(objDict['numPix']/np.pi)))
+                        #annulus=photometry.makeAnnulus(rPix, rPix+4)
+                        #yMin=objDict['y']-annulus.shape[0]/2
+                        #yMax=objDict['y']+annulus.shape[0]/2
+                        #xMin=objDict['x']-annulus.shape[1]/2
+                        #xMax=objDict['x']+annulus.shape[1]/2
+                        ## Just skip if too close to map edge - will be cropped out later anyway...
+                        #if yMax > data.shape[0] or yMin < 0 or xMax > data.shape[1] or xMin < 0:
+                            #continue        
+                        ## for testing
+                        ##if x > 6900 and x < 6940 and y >  1240 and y < 1270:
+                        ##if x > 6070 and x < 6133 and y > 601  and y < 648:
+                        #psClip=data[yMin:yMax, xMin:xMax]
+                        #sigma=np.std(psClip[np.not_equal(psClip, 0)*annulus])
+                        #med=np.median(psClip[np.not_equal(psClip, 0)*annulus])
+                        #if sigma > 0:
+                            #pixMask=np.where(segmentationMap == objIDs[i])
+                            ##data[pixMask]=smoothed[pixMask]+np.random.normal(0, sigma, len(smoothed[pixMask]))
+                            #data[pixMask]=np.random.normal(med, sigma, len(data[pixMask]))
+                            #psCat.append(objDict)
+                #t1=time.time()
+                #print "... took %.3f sec ..." % (t1-t0)
+                #astImages.saveFITS(psRemovedFileName, data, wcs)
+        
         # Optional removal of point sources, using GaussianWienerFilter to find them
         # We only do this once, and cache the result in the diagnostics dir
+        # NOTE: see above for new 'pointSourceMask' option - eventually we may remove the below...
         if 'pointSourceRemoval' in mapDict.keys() and mapDict['pointSourceRemoval'] != None:
             outFileName=diagnosticsDir+os.path.sep+"psRemoved_%d.fits" % (mapDict['obsFreqGHz'])
             if os.path.exists(outFileName) == False:
@@ -465,6 +544,8 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
         mapDict['data']=data
         mapDict['weights']=weights
         mapDict['wcs']=wcs
+        mapDict['surveyMask']=surveyMask
+        mapDict['psMask']=psMask
                
         # Save trimmed weights
         if os.path.exists(diagnosticsDir+os.path.sep+"weights.fits") == False:
@@ -520,9 +601,9 @@ def getPixelAreaArcmin2Map(mapData, wcs):
         xPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
         yPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
         pixAreasDeg2.append(xPixScale*yPixScale)
-    pixAreasDeg2=numpy.array(pixAreasDeg2)
+    pixAreasDeg2=np.array(pixAreasDeg2)
     pixAreasArcmin2=pixAreasDeg2*(60**2)
-    pixAreasArcmin2Map=numpy.array([pixAreasArcmin2]*mapData.shape[1]).transpose()
+    pixAreasArcmin2Map=np.array([pixAreasArcmin2]*mapData.shape[1]).transpose()
     
     return pixAreasArcmin2Map    
     

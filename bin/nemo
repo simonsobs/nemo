@@ -52,7 +52,7 @@ else:
         
         # Measure fluxes
         photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
-        
+                    
         # Merged/optimal catalogs
         catalogTools.mergeCatalogs(imageDict)
         catalogTools.makeOptimalCatalog(imageDict, parDict['catalogCuts'])
@@ -61,7 +61,7 @@ else:
         # Makes a plot and we write a .fits table under diagnostics dir
         contaminationDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
                                                                           parDict['minObjPix'], parDict['rejectBorder'], 
-                                                                          parDict['catalogCuts'],
+                                                                          parDict['catalogCuts'], parDict['photometryOptions'],
                                                                           diagnosticsDir = diagnosticsDir)        
             
         # Sims based on inserting fake cluster profiles into the maps
@@ -70,22 +70,6 @@ else:
                                      parDict['thresholdSigma'], parDict['minObjPix'], parDict['rejectBorder'],
                                      parDict['minSNToIncludeInOptimalCatalog'], parDict['photometryOptions'], 
                                      diagnosticsDir)
-                            
-        # Default out catalog keys and formats for merged/optimal catalogs
-        # Base keys, formats, labels used in the big table page
-        baseKeys=['name', 'RADeg', 'decDeg', 'SNR', 'fractionMapsDetected']
-        baseFormats=["%s", "%.6f", "%.6f", "%.1f", "%.2f"]
-        baseLabels=["Name", "R.A. (degrees)", "Dec. (degrees)", "S/N", "Fraction of maps object detected in", ]
-        # Default extra keys etc. shown on individual source pages
-        #outKeys=baseKeys+['template', 'galacticLatDeg', 'deltaT_c', 'y_c', 'flux_arcmin2', 'fluxErr_arcmin2']
-        #outFormats=baseFormats+["%s", "%.3f", "%.3f", "%.3e", "%.3e", "%.3e"]
-        #outLabels=baseLabels+["Signal template","Galactic Latitude (degrees)", "&Delta;T<sub>c</sub> (&mu;K)", "y<sub>c</sub>", "Y (arcmin<sup>2</sup>)", "Y error (arcmin<sup>2</sup>)"]        
-        outKeys=baseKeys+['template', 'galacticLatDeg', 'deltaT_c', 'y_c', 'Y500_sr', 'err_Y500_sr']
-        outFormats=baseFormats+["%s", "%.3f", "%3f", "%.3e", "%.3e", "%.3e"]
-        outLabels=baseLabels+["Signal template", "Galactic Latitude (degrees)", "&Delta;T<sub>c</sub> (&mu;K)", "y<sub>c</sub>", "Y<sub>500</sub> (sr)", "&Delta;Y<sub>500</sub> (sr)"]
-        if len(outKeys) != len(outFormats) and len(outFormats) != len(outLabels):
-            raise Exception, "outKeys, outFormats, outLabels lists must be same length"
-        addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fractionMapsDetected', 'fmt': '%.2f'}]
         
         # If asked for, check against inputs sim catalog
         if 'compareToSim' in parDict.keys() and parDict['compareToSim'] == True:
@@ -100,16 +84,17 @@ else:
                                             clusterProfilesToPlot = [])
             outKeys=outKeys+['inputSim_flux_arcmin2', 'inputSim_RvirMpc', 'inputSim_Mvir']
             outFormats=outFormats+['%.3e', '%.3f', '%.3f']
-                        
+
         # Basic merged/optimal catalog
-        optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(rootOutDir)[-1])
+        optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(rootOutDir)[-1])           
         catalogTools.writeCatalog(imageDict['optimalCatalog'], optimalCatalogFileName, \
-                                outKeys, outFormats, constraintsList = ["SNR > 0.0"], 
-                                headings = True)
+                                  catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
+                                  headings = True)
+        addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fractionMapsDetected', 'fmt': '%.2f'}]
         catalogTools.catalog2DS9(imageDict['optimalCatalog'], \
-                                optimalCatalogFileName.replace(".csv", ".reg"), \
-                                constraintsList = ["SNR > 0.0"], \
-                                addInfo = addInfo, color = "cyan") 
+                                 optimalCatalogFileName.replace(".csv", ".reg"), \
+                                 constraintsList = ["SNR > 0.0"], \
+                                 addInfo = addInfo, color = "cyan") 
 
 
     
