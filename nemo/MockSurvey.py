@@ -7,7 +7,7 @@ import os
 import sys
 import numpy as np
 import IPython
-import atpy
+import astropy.table as atpy
 import pylab as plt
 import subprocess
 import hmf
@@ -15,7 +15,7 @@ import cPickle
 import astropy.cosmology as cosmology
 from scipy import interpolate
 from astLib import *
-plt.matplotlib.interactive(True)
+plt.matplotlib.interactive(False)
 
 class MockSurvey(object):
     

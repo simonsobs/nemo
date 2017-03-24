@@ -1211,12 +1211,15 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         theta500Arcmin=[]
         for z in zRange:
             for M500MSun in MRange:
-                 # We don't actually care about freq here because y-map returned
+                # We don't actually care about freq here because we deal with pressure profile itself
+                # And Q measurement is relative 
                 modelDict=makeArnaudModelProfile(z, M500MSun, 148.0)   
                 rDeg=modelDict['rDeg']
                 profile1d=interpolate.splev(rDeg, modelDict['tckP'])
                 r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
                 signalMap=r2p(degreesMap)
+                #signalNorm=modelDict['y0']/interpolate.splev(0., modelDict['tckP'])
+                #signalMap=signalNorm*signalMap
                 # Apply high-pass then convolve (high-pass effect seems negligible)
                 signalMap=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = kernImg[0].header['BCKSCALE']/60.)
                 filteredSignal=ndimage.convolve(signalMap, kern2d) 
@@ -1385,3 +1388,5 @@ def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivo
     #sys.exit()
         
     return {'M500': clusterM500, 'M500_errPlus': clusterM500PlusErr, 'M500_errMinus': clusterM500MinusErr}
+
+#------------------------------------------------------------------------------------------------------------

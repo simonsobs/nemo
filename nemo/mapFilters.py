@@ -1006,6 +1006,7 @@ class RealSpaceMatchedFilter(MapFilter):
             # Add bckSubScaleArcmin to the header
             kernWCS=wcs.copy()
             kernWCS.header['BCKSCALE']=bckSubScaleArcmin
+            kernWCS.header['SIGNORM']=signalNorm
             astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, kernWCS)
             
             # Filter profile plot
@@ -1121,6 +1122,9 @@ class RealSpaceMatchedFilter(MapFilter):
         xChunks=np.linspace(0, combinedMap.shape[1], numXChunks+1, dtype = int)
         SNMap=np.zeros(combinedMap.shape)
         apodMask=np.not_equal(combinedMap, 0)
+        # We could make below behaviour default if match photFilter? Would need to see photFilter though...
+        if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+            RMSMap=np.zeros(combinedMap.shape)
         t0=time.time()
         for i in range(len(yChunks)-1):
             for k in range(len(xChunks)-1):
@@ -1153,10 +1157,12 @@ class RealSpaceMatchedFilter(MapFilter):
                     chunkRMS=0.
                 if chunkRMS > 0:
                     SNMap[y0:y1, x0:x1]=combinedMap[y0:y1, x0:x1]/chunkRMS
+                    if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+                        RMSMap[y0:y1, x0:x1]=chunkRMS
         t1=time.time()
-        #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
-            #RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
-            #astImages.saveFITS(RMSFileName, mapRMS*surveyMask, mapDict['wcs'])
+        if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
+            astImages.saveFITS(RMSFileName, RMSMap, mapDict['wcs'])
         #print "... took %.3f sec ..." % (t1-t0)
         
         # Below is global RMS, for comparison

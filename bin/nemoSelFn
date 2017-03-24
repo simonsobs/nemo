@@ -1,0 +1,363 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+
+Calculate mass / y completeness limits over the fixed scale filtered map
+
+"""
+
+import os
+import sys
+import glob
+import numpy as np
+import pylab as plt
+import astropy.table as atpy
+from astLib import *
+from scipy import stats
+from scipy import interpolate
+from scipy import ndimage
+from nemo import actDict
+from nemo import simsTools
+from nemo import mapTools
+from nemo import MockSurvey
+from nemo import SelFn
+from nemo import photometry
+import pickle
+import nemoCython
+import pyfits
+import time
+import IPython
+plt.matplotlib.interactive(False)
+
+#------------------------------------------------------------------------------------------------------------
+# Main
+if len(sys.argv) < 2:
+    print "Run: % nemoSelFn < .par file(s)>"
+else:
+    
+    parDictFileNames=sys.argv[1:]
+    
+    for parDictFileName in parDictFileNames:
+    
+        print ">>> Running .par file: %s" % (parDictFileName)
+        parDict=actDict.ACTDict()
+        parDict.read_from_file(parDictFileName)
+
+        # Output dirs
+        if 'outputDir' in parDict.keys():
+            rootOutDir=parDict['outDir']
+        else:
+            if parDictFileName.find(".par") == -1:
+                raise Exception, "File must have .par extension"
+            rootOutDir=sys.argv[1].replace(".par", "")
+        filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
+        filtersDir=rootOutDir+os.path.sep+"filters"
+        diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
+        dirList=[rootOutDir, filteredMapsDir, filtersDir]
+        for d in dirList:
+            if os.path.exists(d) == False:
+                os.makedirs(d)
+
+        # Filter maps - but should already have been done, this is just for easy set up
+        imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], parDict['mapFilters'], rootOutDir = rootOutDir)
+        
+        # We only care about the filter used for fixed_ columns
+        photFilterLabel=parDict['photometryOptions']['photFilter']
+        for filterDict in parDict['mapFilters']:
+            if filterDict['label'] == photFilterLabel:
+                break
+
+        # Focus ONLY on RealSpaceMatchedFilter here... AND assume single-frequency only (kernels saved are anyway)
+        # Convert to y and invert
+        mapDict=imageDict[photFilterLabel]['unfilteredMapsDictList'][0]
+        img=pyfits.open(mapDict['mapFileName'])
+        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+        mapData=img[0].data*-1
+        mapData=mapTools.convertToY(mapData, mapDict['obsFreqGHz'])
+        
+        # Load the kernel
+        kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (photFilterLabel))
+        kern2d=kernImg[0].data
+
+        # Survey mask
+        surveyImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask.fits")
+        surveyMask=surveyImg[0].data
+        #mapShape=[wcs.header['NAXIS2'], wcs.header['NAXIS1']]
+
+        # Unmasked area map, square degrees
+        areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(surveyMask, wcs)*surveyMask)/(60**2)
+        
+        # Noise map
+        RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (photFilterLabel))
+        RMSMap=RMSImg[0].data
+        
+        # Write big sim table - this takes ~9 hours to do on a single core for equD56
+        simTabFileName=diagnosticsDir+os.path.sep+"simTab.fits"
+        zRange=[0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+        MRange=np.linspace(5e13, 1e15, 20)
+        if os.path.exists(simTabFileName) == False:
+            
+            # Compute all the signal templates we want to use... cache for later
+            pickleFileName=diagnosticsDir+os.path.sep+"signalDicts.pickled"
+            if os.path.exists(pickleFileName) == False:
+                t0=time.time()
+                signalDictsByRedshift={}
+                for z in zRange:
+                    signalDictList=[]
+                    for M500MSun in MRange:
+                    
+                        # Some faffing to get a smaller map we can splat model clusters into
+                        RADeg, decDeg=wcs.getCentreWCSCoords()
+                        clipDict=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, 1.0)
+                        signalWCS=clipDict['wcs']
+                        signalShape=list(clipDict['data'].shape)
+                        for ax in [0, 1]:
+                            if signalShape[ax] % 2 != 0:
+                                signalShape[ax]=signalShape[ax]+1            
+                        signalMap=np.zeros(signalShape)
+                        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, signalWCS, RADeg, decDeg, 1.0)
+                    
+                        # Model we'll be inserting - we turn it into yc, so obsFreqGHz shouldn't matter here
+                        modelDict=simsTools.makeArnaudModelProfile(z, M500MSun, 148.)   
+                        rDeg=modelDict['rDeg']
+                        profile1d=modelDict['y0']*interpolate.splev(rDeg, modelDict['tckP'])
+                        r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+                        signalMap=r2p(degreesMap) 
+                        signalDictList.append({'signalMap': signalMap, 'sizeDeg': signalWCS.getFullSizeSkyDeg(), 
+                                               'modelDict': modelDict, 'z': z, 'M500MSun': M500MSun})
+                    signalDictsByRedshift['%.2f' % (z)]=signalDictList
+                t1=time.time()
+                pickleFile=file(pickleFileName, "wb")
+                pickler=pickle.Pickler(pickleFile)
+                pickler.dump(signalDictsByRedshift)
+                pickleFile.close()
+                print "... making models took %.3f sec ..." % (t1-t0)
+            else:
+                print "... loading pickled signal maps ..."
+                pickleFile=file(pickleFileName, "rb")
+                unpickler=pickle.Unpickler(pickleFile)
+                signalDictsByRedshift=unpickler.load()
+                pickleFile.close()
+                
+            clipSizeDeg=float(np.max(signalDictsByRedshift[signalDictsByRedshift.keys()[0]][0]['sizeDeg'])*1.1)
+                    
+            # Do each grid square in noise map in turn
+            # Avoids overlapping sources, and easy to parallelise later
+            # Here we'll just store the raw results as a big table - we'll do the solving for SNR limits later
+            # This will take ~9 hours to run on a single core
+            print ">>> Measuring completeness across map ..."
+            gridSizeArcmin=filterDict['params']['noiseParams']['noiseGridArcmin']
+            gridSize=int(round((gridSizeArcmin/60.)/wcs.getPixelSizeDeg()))
+            overlapPix=0#gridSize/2 # Match the noise map
+            numXChunks=mapData.shape[1]/gridSize
+            numYChunks=mapData.shape[0]/gridSize
+            yChunks=np.linspace(0, mapData.shape[0], numYChunks+1, dtype = int)
+            xChunks=np.linspace(0, mapData.shape[1], numXChunks+1, dtype = int)
+            simTab=atpy.Table()
+            numRows=(len(yChunks)-1)*(len(xChunks)-1)*len(signalDictsByRedshift)*len(MRange)
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'ID'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'y0'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'y1'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'x0'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'x1'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'z'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'M500MSun'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'yc'))
+            simTab.add_column(atpy.Column(np.zeros(numRows), 'SNR'))
+            rowCount=0
+            squareID=0
+            for i in range(len(yChunks)-1):
+                t0=time.time()
+                rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
+                if os.path.exists(rowFileName) == False:
+                    for k in range(len(xChunks)-1):
+                        y0=yChunks[i]-overlapPix
+                        y1=yChunks[i+1]+overlapPix
+                        x0=xChunks[k]-overlapPix
+                        x1=xChunks[k+1]+overlapPix
+                        if y0 < 0:
+                            y0=0
+                        if y1 > mapData.shape[0]:
+                            y1=mapData.shape[0]
+                        if x0 < 0:
+                            x0=0
+                        if x1 > mapData.shape[1]:
+                            x1=mapData.shape[1]
+                        squareID=squareID+1
+                                                                            
+                        # Check if centre of this square actually in survey mask
+                        # If it isn't, try a random coord within the grid square
+                        xCentre=(x1+x0)/2
+                        yCentre=(y1+y0)/2
+                        if surveyMask[yCentre, xCentre] == 0 and surveyMask[y0:y1, x0:x1].sum() > 0:
+                            maskSum=0
+                            tryCount=0
+                            while maskSum == 0:
+                                yCentre, xCentre=np.random.randint(y0, y1), np.random.randint(x0, x1)
+                                maskSum=surveyMask[yCentre-3:yCentre+3, xCentre-3:xCentre+3].sum()
+                                if surveyMask[yCentre, xCentre] == 0:
+                                    maskSum=0
+                                if tryCount > 100:
+                                    maskSum=1
+                                tryCount=tryCount+1
+
+                        if surveyMask[yCentre, xCentre] > 0:
+                            
+                            RADeg, decDeg=wcs.pix2wcs(xCentre, yCentre)
+                            clip=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, clipSizeDeg)
+                            RMSClip=astImages.clipImageSectionWCS(RMSMap, wcs, RADeg, decDeg, clipSizeDeg)
+                            
+                            yCentre=clip['data'].shape[0]/2
+                            xCentre=clip['data'].shape[1]/2
+
+                            for z in zRange:
+                                
+                                for signalDict in signalDictsByRedshift['%.2f' % (z)]:
+
+                                    # Splat in cluster
+                                    sy0=yCentre-signalDict['signalMap'].shape[0]/2
+                                    sy1=yCentre+signalDict['signalMap'].shape[0]/2
+                                    sx0=xCentre-signalDict['signalMap'].shape[1]/2
+                                    sx1=xCentre+signalDict['signalMap'].shape[1]/2
+                                    clipData=np.zeros(clip['data'].shape)+clip['data']
+                                    try:
+                                        clipData[sy0:sy1, sx0:sx1]=clipData[sy0:sy1, sx0:sx1]+signalDict['signalMap']
+                                    except:
+                                        # Edge of map
+                                        break
+                                    
+                                    # Apply kernel - this takes most of the time
+                                    filteredMap=mapTools.subtractBackground(clipData, wcs, smoothScaleDeg = kernImg[0].header['BCKSCALE']/60.)
+                                    filteredMap=ndimage.convolve(filteredMap, kern2d)*kernImg[0].header['SIGNORM'] 
+                                                                        
+                                    # Make SNMap
+                                    SNMap=filteredMap/RMSClip['data']
+                                                                    
+                                    # We know where the object is, within +/- 1 pixel...
+                                    SNR=SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1].max()
+
+                                    simTab[rowCount]['ID']=squareID
+                                    simTab[rowCount]['y0']=y0
+                                    simTab[rowCount]['y1']=y1
+                                    simTab[rowCount]['x0']=x0
+                                    simTab[rowCount]['x1']=x1
+                                    simTab[rowCount]['z']=signalDict['z']
+                                    simTab[rowCount]['M500MSun']=signalDict['M500MSun']
+                                    simTab[rowCount]['yc']=signalDict['modelDict']['y0']
+                                    simTab[rowCount]['SNR']=SNR
+                                    rowCount=rowCount+1
+                                    if SNR > 8: # No point continuing to sim stuff well above any threshold we might set 
+                                        break
+                            t11=time.time()
+                    t1=time.time()
+                    print "... row %d/%d complete (%.3f sec) ..." % (i+1, len(yChunks)-1, t1-t0)
+                    # Save after every row... saves pain when debugging
+                    simTab.write(rowFileName)
+                else:
+                    print "... loaded from checkpoint %s ..." % (rowFileName)
+                    simTab=atpy.Table().read(rowFileName)
+                    rowCount=np.not_equal(simTab['ID'], 0).sum()
+                    squareID=np.max(simTab['ID'])
+                    
+            # Save table
+            simTab=simTab[np.where(simTab['z'] != 0)]
+            simTab.write(simTabFileName)
+            
+            # Clean up the check point files
+            fileList=glob.glob(diagnosticsDir+os.path.sep+"simTab_*.fits")
+            for f in fileList:
+                os.remove(f)
+            
+        else:
+            
+            print "... reading saved sim table ..."
+            simTab=atpy.Table().read(simTabFileName)
+            
+        # Now fit for M500 / y0 limits in each grid square
+        # NOTE: Units change here (10^14 MSun, 1e-4 yc)
+        # Linear regression seems to work okay
+        outFileName=diagnosticsDir+os.path.sep+"fitSimTab.fits"
+        if os.path.exists(outFileName) == False:
+            print ">>> Fitting for M, yc as function of SNR ..."
+            squareIDs=np.unique(simTab['ID'])
+            fitTab=atpy.Table()
+            lenFitTab=len(squareIDs)*len(zRange)
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'ID'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'z'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'y0'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'y1'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'x0'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'x1'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'areaDeg2'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'fracSurveyArea'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'MFitSlope'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'MFitIntercept'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'ycFitSlope'))
+            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'ycFitIntercept'))
+            rowCount=0
+            for sID in squareIDs:
+                for z in zRange:
+                    mask=np.logical_and(np.equal(simTab['ID'], sID), np.equal(simTab['z'], z))
+                    MFitResult=stats.linregress(simTab['SNR'][mask], simTab['M500MSun'][mask]/1e14)
+                    ycFitResult=stats.linregress(simTab['SNR'][mask], simTab['yc'][mask]/1e-4)
+                    fitTab['ID'][rowCount]=sID
+                    fitTab['z'][rowCount]=z
+                    fitTab['y0'][rowCount]=simTab['y0'][mask][0]
+                    fitTab['y1'][rowCount]=simTab['y1'][mask][0]
+                    fitTab['x0'][rowCount]=simTab['x0'][mask][0]
+                    fitTab['x1'][rowCount]=simTab['x1'][mask][0]
+                    squareAreaDeg2=areaMapSqDeg[int(fitTab['y0'][rowCount]):int(fitTab['y1'][rowCount]),
+                                                int(fitTab['x0'][rowCount]):int(fitTab['x1'][rowCount])].sum()
+                    fracSurveyArea=squareAreaDeg2/areaMapSqDeg.sum()
+                    fitTab['areaDeg2'][rowCount]=squareAreaDeg2
+                    fitTab['fracSurveyArea'][rowCount]=fracSurveyArea
+                    fitTab['MFitSlope'][rowCount]=MFitResult.slope
+                    fitTab['MFitIntercept'][rowCount]=MFitResult.intercept
+                    fitTab['ycFitSlope'][rowCount]=ycFitResult.slope
+                    fitTab['ycFitIntercept'][rowCount]=ycFitResult.intercept  
+                    rowCount=rowCount+1
+            fitTab.write(outFileName)
+        else:
+            print "... reading fit results for M, yc as function of SNR ..."
+            fitTab=atpy.Table().read(outFileName)
+        
+        # Some applications of selection function...
+        selFn=SelFn.SelFn(rootOutDir, parDict['selFnOptions']['fixed_SNR_cut'])
+                
+        # Example map of M500 limit at fixed z
+        # Just here for now, because not sure where else to put it
+        #for z in zRange:
+            #selFn.makeM500LimitMap(z, wcs, 'MLimitMap_z%.1f.fits' % (z))
+        
+        # Example of how to calculate M500 completeness at some z
+        #p=selFn.M500Completeness(2.0, 0.5)
+
+        # Example of how to calculate y0~ completeness at some z
+        #p=selFn.y0Completeness(1.0, 0.5)
+        
+        # How to calculate survey 90% completeness limit in M500 for given SNR mass cut
+        # This is a detection probability of 90% at the given mass
+        # For the selection function, we just want to feed in a mass and return the completeness
+        completenessLim=0.9
+        MComplete=np.zeros(len(zRange))
+        testMRange=np.linspace(MRange.min()/1e14, MRange.max()/1e14, 1000)
+        completeness=np.zeros([1000, len(zRange)])
+        for i in range(testMRange.shape[0]):
+            completeness[i]=selFn.M500Completeness(testMRange[i], zRange)
+        MComplete=testMRange[np.argmin(abs(completeness-completenessLim), axis = 0)]
+        fontDict={'size': 18, 'family': 'serif'}
+        plt.figure(figsize=(10, 6))
+        plt.plot(zRange, MComplete, '.')
+        tck=interpolate.splrep(zRange, MComplete)
+        plotRange=np.linspace(0, max(zRange), 100)
+        plt.plot(plotRange, interpolate.splev(plotRange, tck), '-')
+        plt.xlabel("z", fontdict = fontDict)
+        plt.ylim(2, 10)
+        plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
+        labelStr="M$_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
+        plt.ylabel(labelStr, fontdict = fontDict)
+        plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
+        plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.png")
+        plt.close()
+

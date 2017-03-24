@@ -275,3 +275,40 @@ def makeLocalSNMap(np.ndarray[np.float64_t, ndim=2] arr, np.ndarray[np.int64_t, 
                 SNData[y, x]=bckSubData[y, x]/noiseFiltData[y, x]
             
     return SNData
+
+#------------------------------------------------------------------------------------------------------------
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def convolve(np.ndarray[np.float64_t, ndim=2] arr, np.ndarray[np.float64_t, ndim=2] kern):
+    """Convolves image arr with kernel kern. Hopefully faster than ndimage.convolve.
+    
+    Returns 2d array
+    
+    """
+
+    cdef Py_ssize_t y, x, ky, kx, ty, tx, sizeY, sizeX, kSizeX, kSizeY
+    cdef np.ndarray[np.float64_t, ndim=2] filtData
+    
+    # Element-by-element convolution (wraps at edges)
+    sizeY=arr.shape[0]
+    sizeX=arr.shape[1]
+    kSizeY=kern.shape[0]
+    kSizeX=kern.shape[1]
+    #kY, kX=np.where(k != 0)
+    #kY=kY-k.shape[0]/2
+    #kX=kX-k.shape[1]/2
+    filtData=np.zeros([sizeY, sizeX], dtype=np.float64)
+    for y in xrange(sizeY):
+        for x in xrange(sizeX):
+            for ky in xrange(kSizeY):
+                for kx in xrange(kSizeX):
+                    ty=y+ky-kSizeY/2
+                    tx=x+kx-kSizeX/2
+                    if ty > kSizeY-1:
+                        ty=ty-kSizeY
+                    if tx > kSizeX-1:
+                        tx=tx-kSizeX
+                    filtData[y, x]=filtData[y, x]+arr[ty, tx]*kern[ky, kx]
+                
+    return filtData
+
