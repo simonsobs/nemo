@@ -11,122 +11,142 @@ import astropy.table as atpy
 import pylab as plt
 import subprocess
 import hmf
+from hmf import cosmo
+from astropy.cosmology import FlatLambdaCDM
 import cPickle
-import astropy.cosmology as cosmology
 from scipy import interpolate
 from astLib import *
 plt.matplotlib.interactive(False)
 
 class MockSurvey(object):
     
-    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True):
+    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8):
         """Initialise a MockSurvey object. This first calculates the probability of drawing a cluster of 
         given M500, z, assuming the Tinker mass function, and the given (generous) selection limits. 
         An additional selection function can be dialled in later when using drawSample.
         
         NOTE: We've hard coded everything to use M500 wrt critical density at this point.
-        
-        Set enableDrawSample == True to be able to use drawSample() function.
-        
+                
         """
-        # NOTE: beware factors of h - mf.M has h-1 MSun, dndm has h^4 Mpc-3
-        # Below, we think we have cancelled all of those out correctly
-        # For the total number of clusters, we step through the mass function calculation in z
-        # For the survey volume at each z, we use the volume of that z slice
-        #minMass=2e14
-        #zMin=0.2
-        #zMax=1.4
-        #sigma8=0.80
 
-        #mf=hmf.MassFunction(z = 0.2, Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500., sigma_8 = 0.8, cosmo_model = cosmo)
-
-        #zRange=np.linspace(zMin, zMax, 51)
         zRange=np.linspace(zMin, zMax, 201)
         areaSr=np.radians(np.sqrt(areaDeg2))**2
-        
-        cosmo=cosmology.FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0)
+                
+        # Globally change hmf's cosmology - at least, according to the docs...
+        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0)
+        cosmo.Cosmology(cosmo_model = cosmo_model)
         
         self.minMass=minMass
         
         # It's much faster to generate one mass function and then update its parameters (e.g., z)
+        # NOTE: Mmin etc. are log10 MSun h^-1; dndm is h^4 MSun^-1 Mpc^-3
         mf=hmf.MassFunction(z = zRange[0], Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
-                            sigma_8 = sigma_8, cosmo_model = cosmo)#, force_flat = True, cut_fit = False)
-
-        
-        h=H0/100.
-        astCalc.H0=H0
-        astCalc.OMEGA_M0=Om0
-        astCalc.OMEGA_L0=1.-Om0
-
-        numClusters=0
-        totalVolume=0
-        numClustersByRedshift=[]
-        self.tckLog10MByRedshift=[]
-        self.shellVolumeMpc3ByRedshift=[]
-        self.PLog10MByRedshift=[]
-        self.log10MByRedshift=[]
+                            sigma_8 = sigma_8, cosmo_model = cosmo_model)#, force_flat = True, cut_fit = False)
+                        
+        # Number density by z and total cluster count (in redshift shells)
+        # Can use to make P(m, z) plane
+        numberDensity=[]
+        clusterCount=[]
+        totalVolumeMpc3=0.
         for i in range(len(zRange)-1):
             zShellMin=zRange[i]
             zShellMax=zRange[i+1]
-            zShellMid=(zShellMax+zShellMin)/2.
-            dVcdzs=[]
-            zShellRange=np.linspace(zShellMin, zShellMax, 10)
-            for z in zShellRange:
-                dVcdzs.append(astCalc.dVcdz(z))
-            dVcdzs=np.array(dVcdzs)
-            shellVolumeMpc3=(areaSr*np.trapz(dVcdzs, zShellRange))/h**3 # put in units h-3 Mpc3, because dn/dm h^4 Mpc-3 MSun-1 
-            self.shellVolumeMpc3ByRedshift.append(shellVolumeMpc3)
-            totalVolume=totalVolume+shellVolumeMpc3
+            zShellMid=(zShellMax+zShellMin)/2.            
             mf.update(z = zShellMid)
-            mask=np.greater(mf.M, minMass/h)
-            Nmodel=np.trapz(mf.dndm[mask], mf.M[mask])*shellVolumeMpc3
-            numClustersByRedshift.append(Nmodel)
-            numClusters=numClusters+Nmodel
-            # For M500 probability once we've picked a z (see below)
-            # NOTE: commented out below for speed in likelihood, doesn't help much though
-            if enableDrawSample == True:
-                log10M=np.log10(mf.M[mask]/h)
-                fracByM=mf.dndm[mask]/np.sum(mf.dndm[mask])
-                cumFracByM=np.cumsum(fracByM) # tried dtype = longdouble, but splrep doesn't use anyway
-                cMask=np.where(np.gradient(cumFracByM) != 0.0)
-                tck=interpolate.splrep(cumFracByM[cMask], log10M[cMask])
-                self.tckLog10MByRedshift.append(tck)
-                self.PLog10MByRedshift.append(fracByM/np.trapz(fracByM, log10M))
-                self.log10MByRedshift.append(log10M)
-                if np.isnan(tck[1]).sum() > 0:
-                    print "nan in mass interpolation"
-                    IPython.embed()
-                    sys.exit()
-        
+            n=hmf.integrate_hmf.hmf_integral_gtm(mf.m, mf.dndm)     # This is a cumulative integral - not actually what we want!
+            n=abs(np.gradient(n))                                   # Number count via the above 
+            numberDensity.append(n)
+            shellVolumeMpc3=mf.cosmo.comoving_volume(zShellMax).value-mf.cosmo.comoving_volume(zShellMin).value
+            shellVolumeMpc3=shellVolumeMpc3*(areaSr/(4*np.pi))
+            shellVolumeMpc3=shellVolumeMpc3*mf.cosmo_model.h**3     # Volume is (h^-1 Mpc)^3          
+            totalVolumeMpc3=totalVolumeMpc3+shellVolumeMpc3
+            clusterCount.append(n*shellVolumeMpc3)
+        numberDensity=np.array(numberDensity)
+        clusterCount=np.array(clusterCount)
+
         self.mf=mf
         self.areaSr=areaSr
-        self.volumeMpc3=totalVolume
-        self.numClusters=numClusters
-        self.numClustersByRedshift=np.array(numClustersByRedshift)
+        self.volumeMpc3=totalVolumeMpc3
+        self.numberDensity=numberDensity
+        self.clusterCount=clusterCount
+        self.numClusters=np.sum(clusterCount)
+        self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
         self.zBinEdges=zRange
         self.z=(zRange[:-1]+zRange[1:])/2.
+                
+
+    def addSelFn(self, selFn):
+        """Given SelFn object selFn, calculates completeness over the (self.z, self.mf.M) grid.
         
-        # If we have a flat, fixed mass cut, we can use this below for z probability
-        if enableDrawSample == True:
-            fracByRedshift=numClustersByRedshift/np.sum(numClustersByRedshift)
-            self.tckRedshift=interpolate.splrep(np.cumsum(fracByRedshift), self.z)
+        Result stored as self.M500Completeness
         
-        self.enableDrawSample=enableDrawSample
-    
-    
-    def getPLog10M(self, z):
-        """Returns P(log10M), log10M  at closest given z.
+        Can then just multiply by self.clusterCount and sum to get expected number of clusters.
         
         """
         
-        mask=np.where(abs(self.z-z) == abs(self.z-z).min())[0][0]
-        PLog10M=self.PLog10MByRedshift[mask]
-        log10M=self.log10MByRedshift[mask]
-            
+        self.selFn=selFn
+        
+        # This takes ~7.5 sec
+        M500Completeness=[]
+        for m in self.mf.m:
+            M500Completeness.append(selFn.M500Completeness(m/1e14, self.z))
+        self.M500Completeness=np.array(M500Completeness).transpose()
+
+
+    def calcNumClustersExpected(self, M500Limit, zMin = 0.0, zMax = 2.0, applySelFn = False):
+        """Calculate the number of clusters expected above a given mass limit. If applySelFn = True, apply
+        the selection function (in which case M500Limit isn't important, so long as it is low).
+        
+        NOTE: units of M500Limit are 1e14 MSun
+        
+        """
+        
+        if applySelFn == True:
+            numClusters=self.M500Completeness*self.clusterCount
+        else:
+            numClusters=self.clusterCount
+        
+        zMask=np.logical_and(np.greater(self.z, zMin), np.less(self.z, zMax))
+        mMask=np.greater(self.mf.m, M500Limit*1e14)
+        
+        return numClusters[:, mMask][zMask].sum()
+        
+
+    def getPLog10M(self, z):
+        """Returns P(log10M), log10M  at given z.
+        
+        """
+
+        self.mf.update(z = z)
+        numberDensity=hmf.integrate_hmf.hmf_integral_gtm(self.mf.m, self.mf.dndm)
+        PLog10M=numberDensity/np.trapz(numberDensity, self.mf.m)
+        log10M=np.log10(self.mf.m)
+
         return PLog10M, log10M
+    
+    
+    def drawSample(self):
+        """Draw a cluster sample from the MockSurvey. Returns it as a table object, with columns M500, z
+        
+        NOTE: units of M500 are 1e14 MSun
+        
+        """
+        
+        print "new draw sample"
+        IPython.embed()
+        sys.exit()
+        ## Drawing a sample from our mass function
+        #N=100
+        #icdf=interpolate.InterpolatedUnivariateSpline((mf.ngtm / mf.ngtm[0])[::-1], np.log10(mf.m[::-1]), k=3)
+        #x=np.random.random(N)
+        #m=10**icdf(x)
+        ## To do the reverse of the above ^^^
+        #cdf=interpolate.InterpolatedUnivariateSpline(np.log10(mf.m), (mf.ngtm / mf.ngtm[0]), k=3)
+        #PLog10M=cdf(13.5)
+
         
             
-    def drawSample(self, dlog10M = 0.01, dz = 0.001):
+    def drawSample_old(self, dlog10M = 0.01, dz = 0.001):
         """Draws a cluster sample from the MockSurvey. Returns it as an atpy.Table object, with columns
         name, z, dz, M500, dM500.
         
