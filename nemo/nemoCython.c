@@ -1109,6 +1109,8 @@ static CYTHON_INLINE int __pyx_sub_acquisition_count_locked(
 static CYTHON_INLINE void __Pyx_INC_MEMVIEW(__Pyx_memviewslice *, int, int);
 static CYTHON_INLINE void __Pyx_XDEC_MEMVIEW(__Pyx_memviewslice *, int, int);
 
+static CYTHON_INLINE Py_ssize_t __Pyx_div_Py_ssize_t(Py_ssize_t, Py_ssize_t);
+
 static void __Pyx_Raise(PyObject *type, PyObject *value, PyObject *tb, PyObject *cause);
 
 #if PY_MAJOR_VERSION >= 3 && !CYTHON_COMPILING_IN_PYPY
@@ -1144,8 +1146,6 @@ static CYTHON_INLINE int __Pyx_PyUnicode_Equals(PyObject* s1, PyObject* s2, int 
 #else
 #define __Pyx_PyString_Equals __Pyx_PyBytes_Equals
 #endif
-
-static CYTHON_INLINE Py_ssize_t __Pyx_div_Py_ssize_t(Py_ssize_t, Py_ssize_t);
 
 #define UNARY_NEG_WOULD_OVERFLOW(x)\
         (((x) < 0) & ((unsigned long)(x) == 0-(unsigned long)(x)))
@@ -1582,8 +1582,12 @@ static char __pyx_k_Zd[] = "Zd";
 static char __pyx_k_Zf[] = "Zf";
 static char __pyx_k_Zg[] = "Zg";
 static char __pyx_k_id[] = "id";
+static char __pyx_k_kx[] = "kx";
+static char __pyx_k_ky[] = "ky";
 static char __pyx_k_mu[] = "mu";
 static char __pyx_k_np[] = "np";
+static char __pyx_k_tx[] = "tx";
+static char __pyx_k_ty[] = "ty";
 static char __pyx_k_x0[] = "x0";
 static char __pyx_k_xi[] = "xi";
 static char __pyx_k_y0[] = "y0";
@@ -1605,6 +1609,7 @@ static char __pyx_k_data[] = "data";
 static char __pyx_k_dec0[] = "dec0";
 static char __pyx_k_dec1[] = "dec1";
 static char __pyx_k_file[] = "file";
+static char __pyx_k_kern[] = "kern";
 static char __pyx_k_main[] = "__main__";
 static char __pyx_k_math[] = "math";
 static char __pyx_k_maxX[] = "maxX";
@@ -1649,6 +1654,8 @@ static char __pyx_k_decDeg[] = "decDeg";
 static char __pyx_k_encode[] = "encode";
 static char __pyx_k_format[] = "format";
 static char __pyx_k_import[] = "__import__";
+static char __pyx_k_kSizeX[] = "kSizeX";
+static char __pyx_k_kSizeY[] = "kSizeY";
 static char __pyx_k_name_2[] = "__name__";
 static char __pyx_k_pixels[] = "pixels";
 static char __pyx_k_struct[] = "struct";
@@ -1662,6 +1669,7 @@ static char __pyx_k_memview[] = "memview";
 static char __pyx_k_pix2wcs[] = "pix2wcs";
 static char __pyx_k_wcs2pix[] = "wcs2pix";
 static char __pyx_k_Ellipsis[] = "Ellipsis";
+static char __pyx_k_convolve[] = "convolve";
 static char __pyx_k_filtData[] = "filtData";
 static char __pyx_k_itemsize[] = "itemsize";
 static char __pyx_k_xDistPix[] = "xDistPix";
@@ -1771,6 +1779,7 @@ static PyObject *__pyx_n_s_calcAngSepDeg;
 static PyObject *__pyx_n_s_class;
 static PyObject *__pyx_kp_s_contiguous_and_direct;
 static PyObject *__pyx_kp_s_contiguous_and_indirect;
+static PyObject *__pyx_n_s_convolve;
 static PyObject *__pyx_n_s_data;
 static PyObject *__pyx_n_s_dec0;
 static PyObject *__pyx_n_s_dec1;
@@ -1796,6 +1805,11 @@ static PyObject *__pyx_n_s_id;
 static PyObject *__pyx_n_s_import;
 static PyObject *__pyx_n_s_itemsize;
 static PyObject *__pyx_kp_s_itemsize_0_for_cython_array;
+static PyObject *__pyx_n_s_kSizeX;
+static PyObject *__pyx_n_s_kSizeY;
+static PyObject *__pyx_n_s_kern;
+static PyObject *__pyx_n_s_kx;
+static PyObject *__pyx_n_s_ky;
 static PyObject *__pyx_n_s_main;
 static PyObject *__pyx_n_s_makeDegreesDistanceMap;
 static PyObject *__pyx_n_s_makeLocalSNMap;
@@ -1855,6 +1869,8 @@ static PyObject *__pyx_n_s_sum;
 static PyObject *__pyx_n_s_sys;
 static PyObject *__pyx_n_s_test;
 static PyObject *__pyx_n_s_time;
+static PyObject *__pyx_n_s_tx;
+static PyObject *__pyx_n_s_ty;
 static PyObject *__pyx_kp_s_unable_to_allocate_array_data;
 static PyObject *__pyx_kp_s_unable_to_allocate_shape_and_str;
 static PyObject *__pyx_kp_u_unknown_dtype_code_in_numpy_pxd;
@@ -1885,6 +1901,7 @@ static PyObject *__pyx_pf_10nemoCython_2makeXYDegreesDistanceMaps(CYTHON_UNUSED 
 static PyObject *__pyx_pf_10nemoCython_4standardDeviationFilter(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_data, PyObject *__pyx_v_rPix); /* proto */
 static PyObject *__pyx_pf_10nemoCython_6rankFilter(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_arr, float __pyx_v_rank, PyArrayObject *__pyx_v_annulus); /* proto */
 static PyObject *__pyx_pf_10nemoCython_8makeLocalSNMap(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_arr, PyArrayObject *__pyx_v_annulus); /* proto */
+static PyObject *__pyx_pf_10nemoCython_10convolve(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_arr, PyArrayObject *__pyx_v_kern); /* proto */
 static int __pyx_pf_5numpy_7ndarray___getbuffer__(PyArrayObject *__pyx_v_self, Py_buffer *__pyx_v_info, int __pyx_v_flags); /* proto */
 static void __pyx_pf_5numpy_7ndarray_2__releasebuffer__(PyArrayObject *__pyx_v_self, Py_buffer *__pyx_v_info); /* proto */
 static int __pyx_array___pyx_pf_15View_dot_MemoryView_5array___cinit__(struct __pyx_array_obj *__pyx_v_self, PyObject *__pyx_v_shape, Py_ssize_t __pyx_v_itemsize, PyObject *__pyx_v_format, PyObject *__pyx_v_mode, int __pyx_v_allocate_buffer); /* proto */
@@ -1952,15 +1969,17 @@ static PyObject *__pyx_tuple__25;
 static PyObject *__pyx_tuple__27;
 static PyObject *__pyx_tuple__29;
 static PyObject *__pyx_tuple__31;
-static PyObject *__pyx_tuple__32;
 static PyObject *__pyx_tuple__33;
 static PyObject *__pyx_tuple__34;
 static PyObject *__pyx_tuple__35;
+static PyObject *__pyx_tuple__36;
+static PyObject *__pyx_tuple__37;
 static PyObject *__pyx_codeobj__22;
 static PyObject *__pyx_codeobj__24;
 static PyObject *__pyx_codeobj__26;
 static PyObject *__pyx_codeobj__28;
 static PyObject *__pyx_codeobj__30;
+static PyObject *__pyx_codeobj__32;
 
 /* "nemoCython.pyx":17
  * 
@@ -6715,6 +6734,8 @@ static PyObject *__pyx_pf_10nemoCython_8makeLocalSNMap(CYTHON_UNUSED PyObject *_
  *                 SNData[y, x]=bckSubData[y, x]/noiseFiltData[y, x]
  * 
  *     return SNData             # <<<<<<<<<<<<<<
+ * 
+ * #------------------------------------------------------------------------------------------------------------
  */
   __Pyx_XDECREF(__pyx_r);
   __Pyx_INCREF(((PyObject *)__pyx_v_SNData));
@@ -6766,6 +6787,443 @@ static PyObject *__pyx_pf_10nemoCython_8makeLocalSNMap(CYTHON_UNUSED PyObject *_
   __Pyx_XDECREF((PyObject *)__pyx_v_noiseFiltData);
   __Pyx_XDECREF((PyObject *)__pyx_v_bckSubData);
   __Pyx_XDECREF((PyObject *)__pyx_v_SNData);
+  __Pyx_XGIVEREF(__pyx_r);
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+/* "nemoCython.pyx":282
+ * @cython.boundscheck(False)
+ * @cython.wraparound(False)
+ * def convolve(np.ndarray[np.float64_t, ndim=2] arr, np.ndarray[np.float64_t, ndim=2] kern):             # <<<<<<<<<<<<<<
+ *     """Convolves image arr with kernel kern. Hopefully faster than ndimage.convolve.
+ * 
+ */
+
+/* Python wrapper */
+static PyObject *__pyx_pw_10nemoCython_11convolve(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
+static char __pyx_doc_10nemoCython_10convolve[] = "Convolves image arr with kernel kern. Hopefully faster than ndimage.convolve.\n    \n    Returns 2d array\n    \n    ";
+static PyMethodDef __pyx_mdef_10nemoCython_11convolve = {"convolve", (PyCFunction)__pyx_pw_10nemoCython_11convolve, METH_VARARGS|METH_KEYWORDS, __pyx_doc_10nemoCython_10convolve};
+static PyObject *__pyx_pw_10nemoCython_11convolve(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
+  PyArrayObject *__pyx_v_arr = 0;
+  PyArrayObject *__pyx_v_kern = 0;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  PyObject *__pyx_r = 0;
+  __Pyx_RefNannyDeclarations
+  __Pyx_RefNannySetupContext("convolve (wrapper)", 0);
+  {
+    static PyObject **__pyx_pyargnames[] = {&__pyx_n_s_arr,&__pyx_n_s_kern,0};
+    PyObject* values[2] = {0,0};
+    if (unlikely(__pyx_kwds)) {
+      Py_ssize_t kw_args;
+      const Py_ssize_t pos_args = PyTuple_GET_SIZE(__pyx_args);
+      switch (pos_args) {
+        case  2: values[1] = PyTuple_GET_ITEM(__pyx_args, 1);
+        case  1: values[0] = PyTuple_GET_ITEM(__pyx_args, 0);
+        case  0: break;
+        default: goto __pyx_L5_argtuple_error;
+      }
+      kw_args = PyDict_Size(__pyx_kwds);
+      switch (pos_args) {
+        case  0:
+        if (likely((values[0] = PyDict_GetItem(__pyx_kwds, __pyx_n_s_arr)) != 0)) kw_args--;
+        else goto __pyx_L5_argtuple_error;
+        case  1:
+        if (likely((values[1] = PyDict_GetItem(__pyx_kwds, __pyx_n_s_kern)) != 0)) kw_args--;
+        else {
+          __Pyx_RaiseArgtupleInvalid("convolve", 1, 2, 2, 1); {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L3_error;}
+        }
+      }
+      if (unlikely(kw_args > 0)) {
+        if (unlikely(__Pyx_ParseOptionalKeywords(__pyx_kwds, __pyx_pyargnames, 0, values, pos_args, "convolve") < 0)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L3_error;}
+      }
+    } else if (PyTuple_GET_SIZE(__pyx_args) != 2) {
+      goto __pyx_L5_argtuple_error;
+    } else {
+      values[0] = PyTuple_GET_ITEM(__pyx_args, 0);
+      values[1] = PyTuple_GET_ITEM(__pyx_args, 1);
+    }
+    __pyx_v_arr = ((PyArrayObject *)values[0]);
+    __pyx_v_kern = ((PyArrayObject *)values[1]);
+  }
+  goto __pyx_L4_argument_unpacking_done;
+  __pyx_L5_argtuple_error:;
+  __Pyx_RaiseArgtupleInvalid("convolve", 1, 2, 2, PyTuple_GET_SIZE(__pyx_args)); {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L3_error;}
+  __pyx_L3_error:;
+  __Pyx_AddTraceback("nemoCython.convolve", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_RefNannyFinishContext();
+  return NULL;
+  __pyx_L4_argument_unpacking_done:;
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_arr), __pyx_ptype_5numpy_ndarray, 1, "arr", 0))) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_kern), __pyx_ptype_5numpy_ndarray, 1, "kern", 0))) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __pyx_r = __pyx_pf_10nemoCython_10convolve(__pyx_self, __pyx_v_arr, __pyx_v_kern);
+
+  /* function exit code */
+  goto __pyx_L0;
+  __pyx_L1_error:;
+  __pyx_r = NULL;
+  __pyx_L0:;
+  __Pyx_RefNannyFinishContext();
+  return __pyx_r;
+}
+
+static PyObject *__pyx_pf_10nemoCython_10convolve(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_arr, PyArrayObject *__pyx_v_kern) {
+  Py_ssize_t __pyx_v_y;
+  Py_ssize_t __pyx_v_x;
+  Py_ssize_t __pyx_v_ky;
+  Py_ssize_t __pyx_v_kx;
+  Py_ssize_t __pyx_v_ty;
+  Py_ssize_t __pyx_v_tx;
+  Py_ssize_t __pyx_v_sizeY;
+  Py_ssize_t __pyx_v_sizeX;
+  Py_ssize_t __pyx_v_kSizeX;
+  Py_ssize_t __pyx_v_kSizeY;
+  PyArrayObject *__pyx_v_filtData = 0;
+  __Pyx_LocalBuf_ND __pyx_pybuffernd_arr;
+  __Pyx_Buffer __pyx_pybuffer_arr;
+  __Pyx_LocalBuf_ND __pyx_pybuffernd_filtData;
+  __Pyx_Buffer __pyx_pybuffer_filtData;
+  __Pyx_LocalBuf_ND __pyx_pybuffernd_kern;
+  __Pyx_Buffer __pyx_pybuffer_kern;
+  PyObject *__pyx_r = NULL;
+  __Pyx_RefNannyDeclarations
+  PyObject *__pyx_t_1 = NULL;
+  PyObject *__pyx_t_2 = NULL;
+  PyObject *__pyx_t_3 = NULL;
+  PyObject *__pyx_t_4 = NULL;
+  PyObject *__pyx_t_5 = NULL;
+  PyArrayObject *__pyx_t_6 = NULL;
+  int __pyx_t_7;
+  PyObject *__pyx_t_8 = NULL;
+  PyObject *__pyx_t_9 = NULL;
+  PyObject *__pyx_t_10 = NULL;
+  Py_ssize_t __pyx_t_11;
+  Py_ssize_t __pyx_t_12;
+  Py_ssize_t __pyx_t_13;
+  Py_ssize_t __pyx_t_14;
+  Py_ssize_t __pyx_t_15;
+  Py_ssize_t __pyx_t_16;
+  Py_ssize_t __pyx_t_17;
+  Py_ssize_t __pyx_t_18;
+  int __pyx_t_19;
+  Py_ssize_t __pyx_t_20;
+  Py_ssize_t __pyx_t_21;
+  Py_ssize_t __pyx_t_22;
+  Py_ssize_t __pyx_t_23;
+  Py_ssize_t __pyx_t_24;
+  Py_ssize_t __pyx_t_25;
+  Py_ssize_t __pyx_t_26;
+  Py_ssize_t __pyx_t_27;
+  int __pyx_lineno = 0;
+  const char *__pyx_filename = NULL;
+  int __pyx_clineno = 0;
+  __Pyx_RefNannySetupContext("convolve", 0);
+  __pyx_pybuffer_filtData.pybuffer.buf = NULL;
+  __pyx_pybuffer_filtData.refcount = 0;
+  __pyx_pybuffernd_filtData.data = NULL;
+  __pyx_pybuffernd_filtData.rcbuffer = &__pyx_pybuffer_filtData;
+  __pyx_pybuffer_arr.pybuffer.buf = NULL;
+  __pyx_pybuffer_arr.refcount = 0;
+  __pyx_pybuffernd_arr.data = NULL;
+  __pyx_pybuffernd_arr.rcbuffer = &__pyx_pybuffer_arr;
+  __pyx_pybuffer_kern.pybuffer.buf = NULL;
+  __pyx_pybuffer_kern.refcount = 0;
+  __pyx_pybuffernd_kern.data = NULL;
+  __pyx_pybuffernd_kern.rcbuffer = &__pyx_pybuffer_kern;
+  {
+    __Pyx_BufFmt_StackElem __pyx_stack[1];
+    if (unlikely(__Pyx_GetBufferAndValidate(&__pyx_pybuffernd_arr.rcbuffer->pybuffer, (PyObject*)__pyx_v_arr, &__Pyx_TypeInfo_nn___pyx_t_5numpy_float64_t, PyBUF_FORMAT| PyBUF_STRIDES, 2, 0, __pyx_stack) == -1)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  }
+  __pyx_pybuffernd_arr.diminfo[0].strides = __pyx_pybuffernd_arr.rcbuffer->pybuffer.strides[0]; __pyx_pybuffernd_arr.diminfo[0].shape = __pyx_pybuffernd_arr.rcbuffer->pybuffer.shape[0]; __pyx_pybuffernd_arr.diminfo[1].strides = __pyx_pybuffernd_arr.rcbuffer->pybuffer.strides[1]; __pyx_pybuffernd_arr.diminfo[1].shape = __pyx_pybuffernd_arr.rcbuffer->pybuffer.shape[1];
+  {
+    __Pyx_BufFmt_StackElem __pyx_stack[1];
+    if (unlikely(__Pyx_GetBufferAndValidate(&__pyx_pybuffernd_kern.rcbuffer->pybuffer, (PyObject*)__pyx_v_kern, &__Pyx_TypeInfo_nn___pyx_t_5numpy_float64_t, PyBUF_FORMAT| PyBUF_STRIDES, 2, 0, __pyx_stack) == -1)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  }
+  __pyx_pybuffernd_kern.diminfo[0].strides = __pyx_pybuffernd_kern.rcbuffer->pybuffer.strides[0]; __pyx_pybuffernd_kern.diminfo[0].shape = __pyx_pybuffernd_kern.rcbuffer->pybuffer.shape[0]; __pyx_pybuffernd_kern.diminfo[1].strides = __pyx_pybuffernd_kern.rcbuffer->pybuffer.strides[1]; __pyx_pybuffernd_kern.diminfo[1].shape = __pyx_pybuffernd_kern.rcbuffer->pybuffer.shape[1];
+
+  /* "nemoCython.pyx":293
+ * 
+ *     # Element-by-element convolution (wraps at edges)
+ *     sizeY=arr.shape[0]             # <<<<<<<<<<<<<<
+ *     sizeX=arr.shape[1]
+ *     kSizeY=kern.shape[0]
+ */
+  __pyx_v_sizeY = (__pyx_v_arr->dimensions[0]);
+
+  /* "nemoCython.pyx":294
+ *     # Element-by-element convolution (wraps at edges)
+ *     sizeY=arr.shape[0]
+ *     sizeX=arr.shape[1]             # <<<<<<<<<<<<<<
+ *     kSizeY=kern.shape[0]
+ *     kSizeX=kern.shape[1]
+ */
+  __pyx_v_sizeX = (__pyx_v_arr->dimensions[1]);
+
+  /* "nemoCython.pyx":295
+ *     sizeY=arr.shape[0]
+ *     sizeX=arr.shape[1]
+ *     kSizeY=kern.shape[0]             # <<<<<<<<<<<<<<
+ *     kSizeX=kern.shape[1]
+ *     #kY, kX=np.where(k != 0)
+ */
+  __pyx_v_kSizeY = (__pyx_v_kern->dimensions[0]);
+
+  /* "nemoCython.pyx":296
+ *     sizeX=arr.shape[1]
+ *     kSizeY=kern.shape[0]
+ *     kSizeX=kern.shape[1]             # <<<<<<<<<<<<<<
+ *     #kY, kX=np.where(k != 0)
+ *     #kY=kY-k.shape[0]/2
+ */
+  __pyx_v_kSizeX = (__pyx_v_kern->dimensions[1]);
+
+  /* "nemoCython.pyx":300
+ *     #kY=kY-k.shape[0]/2
+ *     #kX=kX-k.shape[1]/2
+ *     filtData=np.zeros([sizeY, sizeX], dtype=np.float64)             # <<<<<<<<<<<<<<
+ *     for y in xrange(sizeY):
+ *         for x in xrange(sizeX):
+ */
+  __pyx_t_1 = __Pyx_GetModuleGlobalName(__pyx_n_s_np); if (unlikely(!__pyx_t_1)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_zeros); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_2);
+  __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+  __pyx_t_1 = PyInt_FromSsize_t(__pyx_v_sizeY); if (unlikely(!__pyx_t_1)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_t_3 = PyInt_FromSsize_t(__pyx_v_sizeX); if (unlikely(!__pyx_t_3)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_3);
+  __pyx_t_4 = PyList_New(2); if (unlikely(!__pyx_t_4)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_4);
+  __Pyx_GIVEREF(__pyx_t_1);
+  PyList_SET_ITEM(__pyx_t_4, 0, __pyx_t_1);
+  __Pyx_GIVEREF(__pyx_t_3);
+  PyList_SET_ITEM(__pyx_t_4, 1, __pyx_t_3);
+  __pyx_t_1 = 0;
+  __pyx_t_3 = 0;
+  __pyx_t_3 = PyTuple_New(1); if (unlikely(!__pyx_t_3)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_3);
+  __Pyx_GIVEREF(__pyx_t_4);
+  PyTuple_SET_ITEM(__pyx_t_3, 0, __pyx_t_4);
+  __pyx_t_4 = 0;
+  __pyx_t_4 = PyDict_New(); if (unlikely(!__pyx_t_4)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_4);
+  __pyx_t_1 = __Pyx_GetModuleGlobalName(__pyx_n_s_np); if (unlikely(!__pyx_t_1)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_t_5 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_float64); if (unlikely(!__pyx_t_5)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_5);
+  __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+  if (PyDict_SetItem(__pyx_t_4, __pyx_n_s_dtype, __pyx_t_5) < 0) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
+  __pyx_t_5 = __Pyx_PyObject_Call(__pyx_t_2, __pyx_t_3, __pyx_t_4); if (unlikely(!__pyx_t_5)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_5);
+  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+  __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
+  __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
+  if (!(likely(((__pyx_t_5) == Py_None) || likely(__Pyx_TypeTest(__pyx_t_5, __pyx_ptype_5numpy_ndarray))))) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __pyx_t_6 = ((PyArrayObject *)__pyx_t_5);
+  {
+    __Pyx_BufFmt_StackElem __pyx_stack[1];
+    __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_filtData.rcbuffer->pybuffer);
+    __pyx_t_7 = __Pyx_GetBufferAndValidate(&__pyx_pybuffernd_filtData.rcbuffer->pybuffer, (PyObject*)__pyx_t_6, &__Pyx_TypeInfo_nn___pyx_t_5numpy_float64_t, PyBUF_FORMAT| PyBUF_STRIDES| PyBUF_WRITABLE, 2, 0, __pyx_stack);
+    if (unlikely(__pyx_t_7 < 0)) {
+      PyErr_Fetch(&__pyx_t_8, &__pyx_t_9, &__pyx_t_10);
+      if (unlikely(__Pyx_GetBufferAndValidate(&__pyx_pybuffernd_filtData.rcbuffer->pybuffer, (PyObject*)__pyx_v_filtData, &__Pyx_TypeInfo_nn___pyx_t_5numpy_float64_t, PyBUF_FORMAT| PyBUF_STRIDES| PyBUF_WRITABLE, 2, 0, __pyx_stack) == -1)) {
+        Py_XDECREF(__pyx_t_8); Py_XDECREF(__pyx_t_9); Py_XDECREF(__pyx_t_10);
+        __Pyx_RaiseBufferFallbackError();
+      } else {
+        PyErr_Restore(__pyx_t_8, __pyx_t_9, __pyx_t_10);
+      }
+    }
+    __pyx_pybuffernd_filtData.diminfo[0].strides = __pyx_pybuffernd_filtData.rcbuffer->pybuffer.strides[0]; __pyx_pybuffernd_filtData.diminfo[0].shape = __pyx_pybuffernd_filtData.rcbuffer->pybuffer.shape[0]; __pyx_pybuffernd_filtData.diminfo[1].strides = __pyx_pybuffernd_filtData.rcbuffer->pybuffer.strides[1]; __pyx_pybuffernd_filtData.diminfo[1].shape = __pyx_pybuffernd_filtData.rcbuffer->pybuffer.shape[1];
+    if (unlikely(__pyx_t_7 < 0)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 300; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  }
+  __pyx_t_6 = 0;
+  __pyx_v_filtData = ((PyArrayObject *)__pyx_t_5);
+  __pyx_t_5 = 0;
+
+  /* "nemoCython.pyx":301
+ *     #kX=kX-k.shape[1]/2
+ *     filtData=np.zeros([sizeY, sizeX], dtype=np.float64)
+ *     for y in xrange(sizeY):             # <<<<<<<<<<<<<<
+ *         for x in xrange(sizeX):
+ *             for ky in xrange(kSizeY):
+ */
+  __pyx_t_11 = __pyx_v_sizeY;
+  for (__pyx_t_12 = 0; __pyx_t_12 < __pyx_t_11; __pyx_t_12+=1) {
+    __pyx_v_y = __pyx_t_12;
+
+    /* "nemoCython.pyx":302
+ *     filtData=np.zeros([sizeY, sizeX], dtype=np.float64)
+ *     for y in xrange(sizeY):
+ *         for x in xrange(sizeX):             # <<<<<<<<<<<<<<
+ *             for ky in xrange(kSizeY):
+ *                 for kx in xrange(kSizeX):
+ */
+    __pyx_t_13 = __pyx_v_sizeX;
+    for (__pyx_t_14 = 0; __pyx_t_14 < __pyx_t_13; __pyx_t_14+=1) {
+      __pyx_v_x = __pyx_t_14;
+
+      /* "nemoCython.pyx":303
+ *     for y in xrange(sizeY):
+ *         for x in xrange(sizeX):
+ *             for ky in xrange(kSizeY):             # <<<<<<<<<<<<<<
+ *                 for kx in xrange(kSizeX):
+ *                     ty=y+ky-kSizeY/2
+ */
+      __pyx_t_15 = __pyx_v_kSizeY;
+      for (__pyx_t_16 = 0; __pyx_t_16 < __pyx_t_15; __pyx_t_16+=1) {
+        __pyx_v_ky = __pyx_t_16;
+
+        /* "nemoCython.pyx":304
+ *         for x in xrange(sizeX):
+ *             for ky in xrange(kSizeY):
+ *                 for kx in xrange(kSizeX):             # <<<<<<<<<<<<<<
+ *                     ty=y+ky-kSizeY/2
+ *                     tx=x+kx-kSizeX/2
+ */
+        __pyx_t_17 = __pyx_v_kSizeX;
+        for (__pyx_t_18 = 0; __pyx_t_18 < __pyx_t_17; __pyx_t_18+=1) {
+          __pyx_v_kx = __pyx_t_18;
+
+          /* "nemoCython.pyx":305
+ *             for ky in xrange(kSizeY):
+ *                 for kx in xrange(kSizeX):
+ *                     ty=y+ky-kSizeY/2             # <<<<<<<<<<<<<<
+ *                     tx=x+kx-kSizeX/2
+ *                     if ty > kSizeY-1:
+ */
+          __pyx_v_ty = ((__pyx_v_y + __pyx_v_ky) - __Pyx_div_Py_ssize_t(__pyx_v_kSizeY, 2));
+
+          /* "nemoCython.pyx":306
+ *                 for kx in xrange(kSizeX):
+ *                     ty=y+ky-kSizeY/2
+ *                     tx=x+kx-kSizeX/2             # <<<<<<<<<<<<<<
+ *                     if ty > kSizeY-1:
+ *                         ty=ty-kSizeY
+ */
+          __pyx_v_tx = ((__pyx_v_x + __pyx_v_kx) - __Pyx_div_Py_ssize_t(__pyx_v_kSizeX, 2));
+
+          /* "nemoCython.pyx":307
+ *                     ty=y+ky-kSizeY/2
+ *                     tx=x+kx-kSizeX/2
+ *                     if ty > kSizeY-1:             # <<<<<<<<<<<<<<
+ *                         ty=ty-kSizeY
+ *                     if tx > kSizeX-1:
+ */
+          __pyx_t_19 = ((__pyx_v_ty > (__pyx_v_kSizeY - 1)) != 0);
+          if (__pyx_t_19) {
+
+            /* "nemoCython.pyx":308
+ *                     tx=x+kx-kSizeX/2
+ *                     if ty > kSizeY-1:
+ *                         ty=ty-kSizeY             # <<<<<<<<<<<<<<
+ *                     if tx > kSizeX-1:
+ *                         tx=tx-kSizeX
+ */
+            __pyx_v_ty = (__pyx_v_ty - __pyx_v_kSizeY);
+
+            /* "nemoCython.pyx":307
+ *                     ty=y+ky-kSizeY/2
+ *                     tx=x+kx-kSizeX/2
+ *                     if ty > kSizeY-1:             # <<<<<<<<<<<<<<
+ *                         ty=ty-kSizeY
+ *                     if tx > kSizeX-1:
+ */
+          }
+
+          /* "nemoCython.pyx":309
+ *                     if ty > kSizeY-1:
+ *                         ty=ty-kSizeY
+ *                     if tx > kSizeX-1:             # <<<<<<<<<<<<<<
+ *                         tx=tx-kSizeX
+ *                     filtData[y, x]=filtData[y, x]+arr[ty, tx]*kern[ky, kx]
+ */
+          __pyx_t_19 = ((__pyx_v_tx > (__pyx_v_kSizeX - 1)) != 0);
+          if (__pyx_t_19) {
+
+            /* "nemoCython.pyx":310
+ *                         ty=ty-kSizeY
+ *                     if tx > kSizeX-1:
+ *                         tx=tx-kSizeX             # <<<<<<<<<<<<<<
+ *                     filtData[y, x]=filtData[y, x]+arr[ty, tx]*kern[ky, kx]
+ * 
+ */
+            __pyx_v_tx = (__pyx_v_tx - __pyx_v_kSizeX);
+
+            /* "nemoCython.pyx":309
+ *                     if ty > kSizeY-1:
+ *                         ty=ty-kSizeY
+ *                     if tx > kSizeX-1:             # <<<<<<<<<<<<<<
+ *                         tx=tx-kSizeX
+ *                     filtData[y, x]=filtData[y, x]+arr[ty, tx]*kern[ky, kx]
+ */
+          }
+
+          /* "nemoCython.pyx":311
+ *                     if tx > kSizeX-1:
+ *                         tx=tx-kSizeX
+ *                     filtData[y, x]=filtData[y, x]+arr[ty, tx]*kern[ky, kx]             # <<<<<<<<<<<<<<
+ * 
+ *     return filtData
+ */
+          __pyx_t_20 = __pyx_v_y;
+          __pyx_t_21 = __pyx_v_x;
+          __pyx_t_22 = __pyx_v_ty;
+          __pyx_t_23 = __pyx_v_tx;
+          __pyx_t_24 = __pyx_v_ky;
+          __pyx_t_25 = __pyx_v_kx;
+          __pyx_t_26 = __pyx_v_y;
+          __pyx_t_27 = __pyx_v_x;
+          *__Pyx_BufPtrStrided2d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_filtData.rcbuffer->pybuffer.buf, __pyx_t_26, __pyx_pybuffernd_filtData.diminfo[0].strides, __pyx_t_27, __pyx_pybuffernd_filtData.diminfo[1].strides) = ((*__Pyx_BufPtrStrided2d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_filtData.rcbuffer->pybuffer.buf, __pyx_t_20, __pyx_pybuffernd_filtData.diminfo[0].strides, __pyx_t_21, __pyx_pybuffernd_filtData.diminfo[1].strides)) + ((*__Pyx_BufPtrStrided2d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_arr.rcbuffer->pybuffer.buf, __pyx_t_22, __pyx_pybuffernd_arr.diminfo[0].strides, __pyx_t_23, __pyx_pybuffernd_arr.diminfo[1].strides)) * (*__Pyx_BufPtrStrided2d(__pyx_t_5numpy_float64_t *, __pyx_pybuffernd_kern.rcbuffer->pybuffer.buf, __pyx_t_24, __pyx_pybuffernd_kern.diminfo[0].strides, __pyx_t_25, __pyx_pybuffernd_kern.diminfo[1].strides))));
+        }
+      }
+    }
+  }
+
+  /* "nemoCython.pyx":313
+ *                     filtData[y, x]=filtData[y, x]+arr[ty, tx]*kern[ky, kx]
+ * 
+ *     return filtData             # <<<<<<<<<<<<<<
+ * 
+ */
+  __Pyx_XDECREF(__pyx_r);
+  __Pyx_INCREF(((PyObject *)__pyx_v_filtData));
+  __pyx_r = ((PyObject *)__pyx_v_filtData);
+  goto __pyx_L0;
+
+  /* "nemoCython.pyx":282
+ * @cython.boundscheck(False)
+ * @cython.wraparound(False)
+ * def convolve(np.ndarray[np.float64_t, ndim=2] arr, np.ndarray[np.float64_t, ndim=2] kern):             # <<<<<<<<<<<<<<
+ *     """Convolves image arr with kernel kern. Hopefully faster than ndimage.convolve.
+ * 
+ */
+
+  /* function exit code */
+  __pyx_L1_error:;
+  __Pyx_XDECREF(__pyx_t_1);
+  __Pyx_XDECREF(__pyx_t_2);
+  __Pyx_XDECREF(__pyx_t_3);
+  __Pyx_XDECREF(__pyx_t_4);
+  __Pyx_XDECREF(__pyx_t_5);
+  { PyObject *__pyx_type, *__pyx_value, *__pyx_tb;
+    __Pyx_ErrFetch(&__pyx_type, &__pyx_value, &__pyx_tb);
+    __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_arr.rcbuffer->pybuffer);
+    __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_filtData.rcbuffer->pybuffer);
+    __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_kern.rcbuffer->pybuffer);
+  __Pyx_ErrRestore(__pyx_type, __pyx_value, __pyx_tb);}
+  __Pyx_AddTraceback("nemoCython.convolve", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __pyx_r = NULL;
+  goto __pyx_L2;
+  __pyx_L0:;
+  __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_arr.rcbuffer->pybuffer);
+  __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_filtData.rcbuffer->pybuffer);
+  __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_kern.rcbuffer->pybuffer);
+  __pyx_L2:;
+  __Pyx_XDECREF((PyObject *)__pyx_v_filtData);
   __Pyx_XGIVEREF(__pyx_r);
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
@@ -21484,6 +21942,7 @@ static __Pyx_StringTabEntry __pyx_string_tab[] = {
   {&__pyx_n_s_class, __pyx_k_class, sizeof(__pyx_k_class), 0, 0, 1, 1},
   {&__pyx_kp_s_contiguous_and_direct, __pyx_k_contiguous_and_direct, sizeof(__pyx_k_contiguous_and_direct), 0, 0, 1, 0},
   {&__pyx_kp_s_contiguous_and_indirect, __pyx_k_contiguous_and_indirect, sizeof(__pyx_k_contiguous_and_indirect), 0, 0, 1, 0},
+  {&__pyx_n_s_convolve, __pyx_k_convolve, sizeof(__pyx_k_convolve), 0, 0, 1, 1},
   {&__pyx_n_s_data, __pyx_k_data, sizeof(__pyx_k_data), 0, 0, 1, 1},
   {&__pyx_n_s_dec0, __pyx_k_dec0, sizeof(__pyx_k_dec0), 0, 0, 1, 1},
   {&__pyx_n_s_dec1, __pyx_k_dec1, sizeof(__pyx_k_dec1), 0, 0, 1, 1},
@@ -21509,6 +21968,11 @@ static __Pyx_StringTabEntry __pyx_string_tab[] = {
   {&__pyx_n_s_import, __pyx_k_import, sizeof(__pyx_k_import), 0, 0, 1, 1},
   {&__pyx_n_s_itemsize, __pyx_k_itemsize, sizeof(__pyx_k_itemsize), 0, 0, 1, 1},
   {&__pyx_kp_s_itemsize_0_for_cython_array, __pyx_k_itemsize_0_for_cython_array, sizeof(__pyx_k_itemsize_0_for_cython_array), 0, 0, 1, 0},
+  {&__pyx_n_s_kSizeX, __pyx_k_kSizeX, sizeof(__pyx_k_kSizeX), 0, 0, 1, 1},
+  {&__pyx_n_s_kSizeY, __pyx_k_kSizeY, sizeof(__pyx_k_kSizeY), 0, 0, 1, 1},
+  {&__pyx_n_s_kern, __pyx_k_kern, sizeof(__pyx_k_kern), 0, 0, 1, 1},
+  {&__pyx_n_s_kx, __pyx_k_kx, sizeof(__pyx_k_kx), 0, 0, 1, 1},
+  {&__pyx_n_s_ky, __pyx_k_ky, sizeof(__pyx_k_ky), 0, 0, 1, 1},
   {&__pyx_n_s_main, __pyx_k_main, sizeof(__pyx_k_main), 0, 0, 1, 1},
   {&__pyx_n_s_makeDegreesDistanceMap, __pyx_k_makeDegreesDistanceMap, sizeof(__pyx_k_makeDegreesDistanceMap), 0, 0, 1, 1},
   {&__pyx_n_s_makeLocalSNMap, __pyx_k_makeLocalSNMap, sizeof(__pyx_k_makeLocalSNMap), 0, 0, 1, 1},
@@ -21568,6 +22032,8 @@ static __Pyx_StringTabEntry __pyx_string_tab[] = {
   {&__pyx_n_s_sys, __pyx_k_sys, sizeof(__pyx_k_sys), 0, 0, 1, 1},
   {&__pyx_n_s_test, __pyx_k_test, sizeof(__pyx_k_test), 0, 0, 1, 1},
   {&__pyx_n_s_time, __pyx_k_time, sizeof(__pyx_k_time), 0, 0, 1, 1},
+  {&__pyx_n_s_tx, __pyx_k_tx, sizeof(__pyx_k_tx), 0, 0, 1, 1},
+  {&__pyx_n_s_ty, __pyx_k_ty, sizeof(__pyx_k_ty), 0, 0, 1, 1},
   {&__pyx_kp_s_unable_to_allocate_array_data, __pyx_k_unable_to_allocate_array_data, sizeof(__pyx_k_unable_to_allocate_array_data), 0, 0, 1, 0},
   {&__pyx_kp_s_unable_to_allocate_shape_and_str, __pyx_k_unable_to_allocate_shape_and_str, sizeof(__pyx_k_unable_to_allocate_shape_and_str), 0, 0, 1, 0},
   {&__pyx_kp_u_unknown_dtype_code_in_numpy_pxd, __pyx_k_unknown_dtype_code_in_numpy_pxd, sizeof(__pyx_k_unknown_dtype_code_in_numpy_pxd), 0, 1, 0, 0},
@@ -21892,6 +22358,18 @@ static int __Pyx_InitCachedConstants(void) {
   __Pyx_GIVEREF(__pyx_tuple__29);
   __pyx_codeobj__30 = (PyObject*)__Pyx_PyCode_New(2, 0, 17, 0, 0, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__29, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_home_matty_Documents_nemo_nemo, __pyx_n_s_makeLocalSNMap, 227, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__30)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 227; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
 
+  /* "nemoCython.pyx":282
+ * @cython.boundscheck(False)
+ * @cython.wraparound(False)
+ * def convolve(np.ndarray[np.float64_t, ndim=2] arr, np.ndarray[np.float64_t, ndim=2] kern):             # <<<<<<<<<<<<<<
+ *     """Convolves image arr with kernel kern. Hopefully faster than ndimage.convolve.
+ * 
+ */
+  __pyx_tuple__31 = PyTuple_Pack(13, __pyx_n_s_arr, __pyx_n_s_kern, __pyx_n_s_y, __pyx_n_s_x, __pyx_n_s_ky, __pyx_n_s_kx, __pyx_n_s_ty, __pyx_n_s_tx, __pyx_n_s_sizeY, __pyx_n_s_sizeX, __pyx_n_s_kSizeX, __pyx_n_s_kSizeY, __pyx_n_s_filtData); if (unlikely(!__pyx_tuple__31)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_tuple__31);
+  __Pyx_GIVEREF(__pyx_tuple__31);
+  __pyx_codeobj__32 = (PyObject*)__Pyx_PyCode_New(2, 0, 13, 0, 0, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__31, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_home_matty_Documents_nemo_nemo, __pyx_n_s_convolve, 282, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__32)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+
   /* "View.MemoryView":278
  *         return self.name
  * 
@@ -21899,9 +22377,9 @@ static int __Pyx_InitCachedConstants(void) {
  * cdef strided = Enum("<strided and direct>") # default
  * cdef indirect = Enum("<strided and indirect>")
  */
-  __pyx_tuple__31 = PyTuple_Pack(1, __pyx_kp_s_strided_and_direct_or_indirect); if (unlikely(!__pyx_tuple__31)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 278; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
-  __Pyx_GOTREF(__pyx_tuple__31);
-  __Pyx_GIVEREF(__pyx_tuple__31);
+  __pyx_tuple__33 = PyTuple_Pack(1, __pyx_kp_s_strided_and_direct_or_indirect); if (unlikely(!__pyx_tuple__33)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 278; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_tuple__33);
+  __Pyx_GIVEREF(__pyx_tuple__33);
 
   /* "View.MemoryView":279
  * 
@@ -21910,9 +22388,9 @@ static int __Pyx_InitCachedConstants(void) {
  * cdef indirect = Enum("<strided and indirect>")
  * 
  */
-  __pyx_tuple__32 = PyTuple_Pack(1, __pyx_kp_s_strided_and_direct); if (unlikely(!__pyx_tuple__32)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 279; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
-  __Pyx_GOTREF(__pyx_tuple__32);
-  __Pyx_GIVEREF(__pyx_tuple__32);
+  __pyx_tuple__34 = PyTuple_Pack(1, __pyx_kp_s_strided_and_direct); if (unlikely(!__pyx_tuple__34)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 279; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_tuple__34);
+  __Pyx_GIVEREF(__pyx_tuple__34);
 
   /* "View.MemoryView":280
  * cdef generic = Enum("<strided and direct or indirect>")
@@ -21921,9 +22399,9 @@ static int __Pyx_InitCachedConstants(void) {
  * 
  * 
  */
-  __pyx_tuple__33 = PyTuple_Pack(1, __pyx_kp_s_strided_and_indirect); if (unlikely(!__pyx_tuple__33)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 280; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
-  __Pyx_GOTREF(__pyx_tuple__33);
-  __Pyx_GIVEREF(__pyx_tuple__33);
+  __pyx_tuple__35 = PyTuple_Pack(1, __pyx_kp_s_strided_and_indirect); if (unlikely(!__pyx_tuple__35)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 280; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_tuple__35);
+  __Pyx_GIVEREF(__pyx_tuple__35);
 
   /* "View.MemoryView":283
  * 
@@ -21932,9 +22410,9 @@ static int __Pyx_InitCachedConstants(void) {
  * cdef indirect_contiguous = Enum("<contiguous and indirect>")
  * 
  */
-  __pyx_tuple__34 = PyTuple_Pack(1, __pyx_kp_s_contiguous_and_direct); if (unlikely(!__pyx_tuple__34)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 283; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
-  __Pyx_GOTREF(__pyx_tuple__34);
-  __Pyx_GIVEREF(__pyx_tuple__34);
+  __pyx_tuple__36 = PyTuple_Pack(1, __pyx_kp_s_contiguous_and_direct); if (unlikely(!__pyx_tuple__36)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 283; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_tuple__36);
+  __Pyx_GIVEREF(__pyx_tuple__36);
 
   /* "View.MemoryView":284
  * 
@@ -21943,9 +22421,9 @@ static int __Pyx_InitCachedConstants(void) {
  * 
  * 
  */
-  __pyx_tuple__35 = PyTuple_Pack(1, __pyx_kp_s_contiguous_and_indirect); if (unlikely(!__pyx_tuple__35)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 284; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
-  __Pyx_GOTREF(__pyx_tuple__35);
-  __Pyx_GIVEREF(__pyx_tuple__35);
+  __pyx_tuple__37 = PyTuple_Pack(1, __pyx_kp_s_contiguous_and_indirect); if (unlikely(!__pyx_tuple__37)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 284; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_tuple__37);
+  __Pyx_GIVEREF(__pyx_tuple__37);
   __Pyx_RefNannyFinishContext();
   return 0;
   __pyx_L1_error:;
@@ -22236,6 +22714,18 @@ PyMODINIT_FUNC PyInit_nemoCython(void)
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_makeLocalSNMap, __pyx_t_2) < 0) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 227; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
+  /* "nemoCython.pyx":282
+ * @cython.boundscheck(False)
+ * @cython.wraparound(False)
+ * def convolve(np.ndarray[np.float64_t, ndim=2] arr, np.ndarray[np.float64_t, ndim=2] kern):             # <<<<<<<<<<<<<<
+ *     """Convolves image arr with kernel kern. Hopefully faster than ndimage.convolve.
+ * 
+ */
+  __pyx_t_2 = PyCFunction_NewEx(&__pyx_mdef_10nemoCython_11convolve, NULL, __pyx_n_s_nemoCython); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_GOTREF(__pyx_t_2);
+  if (PyDict_SetItem(__pyx_d, __pyx_n_s_convolve, __pyx_t_2) < 0) {__pyx_filename = __pyx_f[0]; __pyx_lineno = 282; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+
   /* "nemoCython.pyx":1
  * # Cython routines for nemo             # <<<<<<<<<<<<<<
  * #
@@ -22266,7 +22756,7 @@ PyMODINIT_FUNC PyInit_nemoCython(void)
  * cdef strided = Enum("<strided and direct>") # default
  * cdef indirect = Enum("<strided and indirect>")
  */
-  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__31, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 278; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__33, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 278; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_XGOTREF(generic);
   __Pyx_DECREF_SET(generic, __pyx_t_2);
@@ -22280,7 +22770,7 @@ PyMODINIT_FUNC PyInit_nemoCython(void)
  * cdef indirect = Enum("<strided and indirect>")
  * 
  */
-  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__32, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 279; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__34, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 279; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_XGOTREF(strided);
   __Pyx_DECREF_SET(strided, __pyx_t_2);
@@ -22294,7 +22784,7 @@ PyMODINIT_FUNC PyInit_nemoCython(void)
  * 
  * 
  */
-  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__33, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 280; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__35, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 280; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_XGOTREF(indirect);
   __Pyx_DECREF_SET(indirect, __pyx_t_2);
@@ -22308,7 +22798,7 @@ PyMODINIT_FUNC PyInit_nemoCython(void)
  * cdef indirect_contiguous = Enum("<contiguous and indirect>")
  * 
  */
-  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__34, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 283; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__36, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 283; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_XGOTREF(contiguous);
   __Pyx_DECREF_SET(contiguous, __pyx_t_2);
@@ -22322,7 +22812,7 @@ PyMODINIT_FUNC PyInit_nemoCython(void)
  * 
  * 
  */
-  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__35, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 284; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
+  __pyx_t_2 = __Pyx_PyObject_Call(((PyObject *)__pyx_MemviewEnum_type), __pyx_tuple__37, NULL); if (unlikely(!__pyx_t_2)) {__pyx_filename = __pyx_f[2]; __pyx_lineno = 284; __pyx_clineno = __LINE__; goto __pyx_L1_error;}
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_XGOTREF(indirect_contiguous);
   __Pyx_DECREF_SET(indirect_contiguous, __pyx_t_2);
@@ -23484,6 +23974,13 @@ static CYTHON_INLINE void __Pyx_XDEC_MEMVIEW(__Pyx_memviewslice *memslice,
     }
 }
 
+static CYTHON_INLINE Py_ssize_t __Pyx_div_Py_ssize_t(Py_ssize_t a, Py_ssize_t b) {
+    Py_ssize_t q = a / b;
+    Py_ssize_t r = a - q*b;
+    q -= ((r != 0) & ((r ^ b) < 0));
+    return q;
+}
+
 #if PY_MAJOR_VERSION < 3
 static void __Pyx_Raise(PyObject *type, PyObject *value, PyObject *tb,
                         CYTHON_UNUSED PyObject *cause) {
@@ -23766,13 +24263,6 @@ return_ne:
     #endif
     return (equals == Py_NE);
 #endif
-}
-
-static CYTHON_INLINE Py_ssize_t __Pyx_div_Py_ssize_t(Py_ssize_t a, Py_ssize_t b) {
-    Py_ssize_t q = a / b;
-    Py_ssize_t r = a - q*b;
-    q -= ((r != 0) & ((r ^ b) < 0));
-    return q;
 }
 
 static CYTHON_INLINE PyObject *__Pyx_GetAttr(PyObject *o, PyObject *n) {

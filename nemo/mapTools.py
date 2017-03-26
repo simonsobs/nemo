@@ -407,8 +407,8 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
             data=addWhiteNoise(data, mapDict['addNoise'])
             if diagnosticsDir != None:
                 astImages.saveFITS(diagnosticsDir+os.path.sep+"simMapPlusNoise_%d.fits" \
-                                % (mapDict['obsFreqGHz']), data, wcs)                
-        
+                                % (mapDict['obsFreqGHz']), data, wcs)    
+                
         # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
         # or a wavelet decomposition scale image
         if 'bckSubScaleArcmin' in mapDict.keys() and mapDict['bckSubScaleArcmin'] != None:
