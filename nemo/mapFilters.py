@@ -30,6 +30,7 @@ import os
 from scipy import interpolate
 from scipy import ndimage
 import mapTools
+import simsTools
 import photometry
 import catalogTools
 import simsTools
@@ -1327,108 +1328,17 @@ class ArnaudModelFilter(MapFilter):
     def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz):
         """Makes a model signal template map.
         
-        Returns dictionary of {'signalMap', 'normInnerDeg':, 'normOuterDeg'}. The latter two keys are
-        used to define an annulus in which the signal power is scaled to match the noise power.
-        
-        We now also define 'beamDecrementBias', which gives the ratio by which the beam smoothing
-        decreases the decrement.
-        
-        In this particular case, we add the calculated theta500Arcmin to self.params, for inspection
-        later (useful for comparison with Hasselfield).
-        
-        i.e. beamDecrementBias = beam smoothed deltaT0 / true intrinsic deltaT0
-        (multiply map by beamDecrementBias to get rid of it)
-        
-        This is a bad name...
-        
-        signalAreaSum is used to work out the scaling of filtered map such that the value of single pixel in
-        filtered map gives e.g., a point source flux or a Y500. In the latter case (as here), it should
-        be the Y500 inside some area. Hence, we need that area too (signalAreaMask).
+        Returns dictionary of {'signalMap', 'inputSignalProperties'}
         
         """
         
-        # Broken out the Arnaud model code from here into simsTools
-        signalDict=simsTools.makeArnaudModelProfile(self.params['z'], self.params['M500MSun'], mapObsFreqGHz)
-        tckP=signalDict['tckP']
-        y0=signalDict['y0']
-        theta500Arcmin=signalDict['theta500Arcmin']
-        deltaT0=signalDict['deltaT0']
-        arnaudY500_arcmin2=signalDict['Y500Arcmin2']
+        # NOTE: All of this is now in simsTools.makeArnaudModelSignalMap
+        # Should change this to use that instead
+        signalMap, modelDict=simsTools.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
+                                                                mapObsFreqGHz, np.degrees(self.radiansMap),
+                                                                self.wcs, beamFileName)
         
-        # Setup 1d profile
-        rDeg=np.linspace(0.0, 1.0, 5000)
-        profile1d=deltaT0*interpolate.splev(rDeg, tckP)
-                
-        # Apply beam to profile
-        # NOTE: Do not disable this
-        # Load Matthew's beam profile and interpolate onto signal profile coords
-        beamData=np.loadtxt(beamFileName).transpose()
-        profile1d_beam=beamData[1]
-        rDeg_beam=beamData[0]
-        tck_beam=interpolate.splrep(rDeg_beam, profile1d_beam)
-        profile1d_beam=interpolate.splev(rDeg, tck_beam)
-        
-        ## The ratio by which beam smoothing biases the intrinsic deltaT0
-        #beamDecrementBias=deltaT0/profile1d[0]  # assuming rDeg[0] is at 0
-        
-        # Turn 1d profiles into 2d and convolve signal with beam
-        # Convolving just redistributes the total signal to different spatial scales
-        # So sum should be the same after the convolution - this is how we normalise below
-        # (this ignores some power shifted beyond the boundary of the map if convolution kernel doesn't have
-        # compact support)
-        rRadians=np.radians(rDeg)
-        r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
-        profile2d=r2p(self.radiansMap)
-        r2p_beam=interpolate.interp1d(rRadians, profile1d_beam, bounds_error=False, fill_value=0.0)
-        profile2d_beam=r2p_beam(self.radiansMap)
-        smoothedProfile2d=fft.fftshift(fft.ifft2(fft.fft2(profile2d)*fft.fft2(profile2d_beam))).real
-        normFactor=profile2d.sum()/smoothedProfile2d.sum()
-        smoothedProfile2d=smoothedProfile2d*normFactor
-        signalMap=liteMap.liteMapFromDataAndWCS(smoothedProfile2d, self.wcs)        
-        
-        # Check profile2d integrates to give Arnaud value
-        # Need solid angle map for this
-        # NOTE: this does indeed recover the input Y500 IF we turn the beam smoothing off
-        # With beam smoothing, get less than Arnaud value because the smoothing shifts some signal beyond R500 cut off
-        # This makes sense
-        # NOTE: to do area-type map scaling, we do need the area mask also
-        pixAreaMapArcmin2=mapTools.getPixelAreaArcmin2Map(signalMap.data, self.wcs)
-        R500Radians=np.radians(theta500Arcmin/60.0)
-        mask=np.less(self.radiansMap, R500Radians)
-        #YRec=mapTools.convertToY(np.sum(profile2d[mask]*pixAreaMapArcmin2[mask]), obsFrequencyGHz = mapObsFreqGHz)
-        YRec=mapTools.convertToY(np.sum(smoothedProfile2d[mask]*pixAreaMapArcmin2[mask]), obsFrequencyGHz = mapObsFreqGHz)
-        
-        # Correction factor for signal smeared beyond R500 if cluster really does follow Arnaud profile
-        # We would multiply integrated Ys by this to correct for this bias - if we were actually able to measure
-        # on map within some radius
-        # We could do this for 2' radius aperture or something also if we wanted to
-        Y500BeamCorrection=arnaudY500_arcmin2/YRec
-        
-        # Beam decrement bias: in this case, now in 2d we don't have resolution below pixel size
-        # But that's easy to fix: finer resolution grid interpolating, don't do full map size
-        # 1D convolution for beam decrement bias
-        # NOTE: changed how this is defined, i.e., now multiply by this to get true y0
-        symBeam=np.zeros(profile1d_beam.shape[0]*2)
-        symBeam[:profile1d_beam.shape[0]]=profile1d_beam[::-1]
-        symBeam[profile1d_beam.shape[0]:]=profile1d_beam
-        symProfile=np.zeros(profile1d.shape[0]*2)
-        symProfile[:profile1d.shape[0]]=profile1d[::-1]
-        symProfile[profile1d.shape[0]:]=profile1d
-        smoothedProfile1d=fft.fftshift(fft.ifft(fft.fft(symProfile)*fft.fft(symBeam))).real
-        normFactor=symProfile.sum()/smoothedProfile1d.sum()
-        smoothedProfile1d=normFactor*smoothedProfile1d
-        beamDecrementBias=abs(profile1d).max()/abs(smoothedProfile1d).max()               
-
-        # For sanity checking later, let's dump the input properties of the model into a dictionary
-        # Then we can apply whatever filter we like later and check that we're recovering these
-        # These are BEFORE beam smoothing in this case, i.e., just from the input Arnaud model
-        inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500Arcmin': theta500Arcmin, 
-                               'Y500Arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': mapObsFreqGHz}
-
-        return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None,
-                'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 
-                'signalAreaSum': arnaudY500_arcmin2,
-                'inputSignalProperties': inputSignalProperties}
+        return {'signalMap': signalMap, 'inputSignalProperties': modelDict}
         
 #------------------------------------------------------------------------------------------------------------
 class ProfileFilter(MapFilter):

@@ -75,7 +75,8 @@ else:
         wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
         mapData=img[0].data*-1
         mapData=mapTools.convertToY(mapData, mapDict['obsFreqGHz'])
-        
+        beamFileName=mapDict['beamFileName']
+
         # Load the kernel
         kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (photFilterLabel))
         kern2d=kernImg[0].data
@@ -119,11 +120,9 @@ else:
                         degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, signalWCS, RADeg, decDeg, 1.0)
                     
                         # Model we'll be inserting - we turn it into yc, so obsFreqGHz shouldn't matter here
-                        modelDict=simsTools.makeArnaudModelProfile(z, M500MSun, 148.)   
-                        rDeg=modelDict['rDeg']
-                        profile1d=modelDict['y0']*interpolate.splev(rDeg, modelDict['tckP'])
-                        r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-                        signalMap=r2p(degreesMap) 
+                        signalMap, modelDict=simsTools.makeArnaudModelSignalMap(z, M500MSun, mapDict['obsFreqGHz'], 
+                                                                                degreesMap, signalWCS, beamFileName)
+                        signalMap=mapTools.convertToY(signalMap.data, obsFrequencyGHz = mapDict['obsFreqGHz'])
                         signalDictList.append({'signalMap': signalMap, 'sizeDeg': signalWCS.getFullSizeSkyDeg(), 
                                                'modelDict': modelDict, 'z': z, 'M500MSun': M500MSun})
                     signalDictsByRedshift['%.2f' % (z)]=signalDictList
