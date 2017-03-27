@@ -26,6 +26,8 @@ class MockSurvey(object):
         An additional selection function can be dialled in later when using drawSample.
         
         NOTE: We've hard coded everything to use M500 wrt critical density at this point.
+        
+        NOTE: MockSurvey.mf.m has factor of h^-1 in it.
                 
         """
 
@@ -40,6 +42,8 @@ class MockSurvey(object):
         
         # It's much faster to generate one mass function and then update its parameters (e.g., z)
         # NOTE: Mmin etc. are log10 MSun h^-1; dndm is h^4 MSun^-1 Mpc^-3
+        # Internally, it's better to stick with how hmf does this, i.e., use these units
+        # Externally, we still give  inputs without h^-1
         mf=hmf.MassFunction(z = zRange[0], Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
                             sigma_8 = sigma_8, cosmo_model = cosmo_model)#, force_flat = True, cut_fit = False)
                         
@@ -51,19 +55,18 @@ class MockSurvey(object):
         for i in range(len(zRange)-1):
             zShellMin=zRange[i]
             zShellMax=zRange[i+1]
-            zShellMid=(zShellMax+zShellMin)/2.            
+            zShellMid=(zShellMax+zShellMin)/2.  
             mf.update(z = zShellMid)
-            n=hmf.integrate_hmf.hmf_integral_gtm(mf.m, mf.dndm)     # This is a cumulative integral - not actually what we want!
-            n=abs(np.gradient(n))                                   # Number count via the above 
+            n=hmf.integrate_hmf.hmf_integral_gtm(mf.m/mf.cosmo.h, mf.dndm*(mf.cosmo.h**4))  # Need to account for h^-1 in mass, h^4 in dndm
+            n=abs(np.gradient(n))# Above is cumulative integral (n > m), need this for actual number count 
             numberDensity.append(n)
             shellVolumeMpc3=mf.cosmo.comoving_volume(zShellMax).value-mf.cosmo.comoving_volume(zShellMin).value
             shellVolumeMpc3=shellVolumeMpc3*(areaSr/(4*np.pi))
-            shellVolumeMpc3=shellVolumeMpc3*mf.cosmo_model.h**3     # Volume is (h^-1 Mpc)^3          
             totalVolumeMpc3=totalVolumeMpc3+shellVolumeMpc3
             clusterCount.append(n*shellVolumeMpc3)
         numberDensity=np.array(numberDensity)
-        clusterCount=np.array(clusterCount)
-
+        clusterCount=np.array(clusterCount)      
+        
         self.mf=mf
         self.areaSr=areaSr
         self.volumeMpc3=totalVolumeMpc3
@@ -88,7 +91,7 @@ class MockSurvey(object):
         
         # This takes ~7.5 sec
         M500Completeness=[]
-        for m in self.mf.m:
+        for m in self.mf.m/self.mf.cosmo.h:  
             M500Completeness.append(selFn.M500Completeness(m/1e14, self.z))
         self.M500Completeness=np.array(M500Completeness).transpose()
 
@@ -97,7 +100,7 @@ class MockSurvey(object):
         """Calculate the number of clusters expected above a given mass limit. If applySelFn = True, apply
         the selection function (in which case M500Limit isn't important, so long as it is low).
         
-        NOTE: units of M500Limit are 1e14 MSun
+        NOTE: units of M500Limit are 1e14 MSun.
         
         """
         
@@ -107,7 +110,7 @@ class MockSurvey(object):
             numClusters=self.clusterCount
         
         zMask=np.logical_and(np.greater(self.z, zMin), np.less(self.z, zMax))
-        mMask=np.greater(self.mf.m, M500Limit*1e14)
+        mMask=np.greater(self.mf.m/self.mf.cosmo.h, M500Limit*1e14)
         
         return numClusters[:, mMask][zMask].sum()
         

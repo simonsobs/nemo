@@ -11,10 +11,13 @@ from scipy import stats
 import time
 import astropy.table as atpy
 import mapTools
+from flipper import liteMap
+from flipper import fftTools
 import catalogTools
 import photometry
 import gnfw
 import numpy as np
+import numpy.fft as fft
 import os
 import math
 import pylab as plt
@@ -964,13 +967,16 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         photFilter=None
     if photFilter != None:
         photometry.getSNValues(invertedDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, invertMap = True)   
-    
+        SNRKeys=['SNR', 'fixed_SNR']
+    else:
+        SNRKeys=['SNR']
+        
     catalogTools.mergeCatalogs(invertedDict)
     catalogTools.makeOptimalCatalog(invertedDict, minSNToIncludeInOptimalCatalog)
     
     # Do everything else with both SNR and fixed_SNR
     contaminDictList=[]
-    for SNRKey in ['SNR', 'fixed_SNR']:
+    for SNRKey in SNRKeys:
         catalogTools.catalog2DS9(invertedDict['optimalCatalog'], diagnosticsDir+os.path.sep+"invertedMapsCatalog_%s_gtr_5.reg" % (SNRKey), 
                                 constraintsList = ['%s > 5' % (SNRKey)])
         
@@ -1163,11 +1169,103 @@ def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
         raise Exception, "didn't understand units"
 
 #------------------------------------------------------------------------------------------------------------
+def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName):
+    """Makes a 2d signal only map containing an Arnaud model cluster. Units of M500 are MSun.
+    
+    degreesMap is a 2d array containing radial distance from the centre - the output map will have the same
+    dimensions and pixel scale (see nemoCython.makeDegreesDistanceMap).
+    
+    Returns the map (2d array) and a dictionary containing the properties of the inserted cluster model.
+    
+    """
+        
+    # Broken out the Arnaud model code from here into simsTools
+    signalDict=makeArnaudModelProfile(z, M500, obsFreqGHz)
+    tckP=signalDict['tckP']
+    y0=signalDict['y0']
+    theta500Arcmin=signalDict['theta500Arcmin']
+    deltaT0=signalDict['deltaT0']
+    arnaudY500_arcmin2=signalDict['Y500Arcmin2']
+    
+    # Setup 1d profile
+    rDeg=np.linspace(0.0, 1.0, 5000)
+    profile1d=deltaT0*interpolate.splev(rDeg, tckP)
+            
+    # Apply beam to profile
+    # NOTE: Do not disable this
+    # Load Matthew's beam profile and interpolate onto signal profile coords
+    beamData=np.loadtxt(beamFileName).transpose()
+    profile1d_beam=beamData[1]
+    rDeg_beam=beamData[0]
+    tck_beam=interpolate.splrep(rDeg_beam, profile1d_beam)
+    profile1d_beam=interpolate.splev(rDeg, tck_beam)
+                        
+    # Turn 1d profiles into 2d and convolve signal with beam
+    # Convolving just redistributes the total signal to different spatial scales
+    # So sum should be the same after the convolution - this is how we normalise below
+    # (this ignores some power shifted beyond the boundary of the map if convolution kernel doesn't have
+    # compact support)
+    rRadians=np.radians(rDeg)
+    radiansMap=np.radians(degreesMap)
+    r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
+    profile2d=r2p(radiansMap)
+    r2p_beam=interpolate.interp1d(rRadians, profile1d_beam, bounds_error=False, fill_value=0.0)
+    profile2d_beam=r2p_beam(radiansMap)
+    smoothedProfile2d=fft.fftshift(fft.ifft2(fft.fft2(profile2d)*fft.fft2(profile2d_beam))).real
+    normFactor=profile2d.sum()/smoothedProfile2d.sum()
+    smoothedProfile2d=smoothedProfile2d*normFactor
+    signalMap=liteMap.liteMapFromDataAndWCS(smoothedProfile2d, wcs)        
+    
+    # Check profile2d integrates to give Arnaud value
+    # Need solid angle map for this
+    # NOTE: this does indeed recover the input Y500 IF we turn the beam smoothing off
+    # With beam smoothing, get less than Arnaud value because the smoothing shifts some signal beyond R500 cut off
+    # This makes sense
+    # NOTE: to do area-type map scaling, we do need the area mask also
+    pixAreaMapArcmin2=mapTools.getPixelAreaArcmin2Map(signalMap.data, wcs)
+    R500Radians=np.radians(theta500Arcmin/60.0)
+    mask=np.less(radiansMap, R500Radians)
+    #YRec=mapTools.convertToY(np.sum(profile2d[mask]*pixAreaMapArcmin2[mask]), obsFrequencyGHz = mapObsFreqGHz)
+    YRec=mapTools.convertToY(np.sum(smoothedProfile2d[mask]*pixAreaMapArcmin2[mask]), obsFrequencyGHz = obsFreqGHz)
+    
+    # Correction factor for signal smeared beyond R500 if cluster really does follow Arnaud profile
+    # We would multiply integrated Ys by this to correct for this bias - if we were actually able to measure
+    # on map within some radius
+    # We could do this for 2' radius aperture or something also if we wanted to
+    Y500BeamCorrection=arnaudY500_arcmin2/YRec
+    
+    # Beam decrement bias: in this case, now in 2d we don't have resolution below pixel size
+    # But that's easy to fix: finer resolution grid interpolating, don't do full map size
+    # 1D convolution for beam decrement bias
+    # NOTE: changed how this is defined, i.e., now multiply by this to get true y0
+    symBeam=np.zeros(profile1d_beam.shape[0]*2)
+    symBeam[:profile1d_beam.shape[0]]=profile1d_beam[::-1]
+    symBeam[profile1d_beam.shape[0]:]=profile1d_beam
+    symProfile=np.zeros(profile1d.shape[0]*2)
+    symProfile[:profile1d.shape[0]]=profile1d[::-1]
+    symProfile[profile1d.shape[0]:]=profile1d
+    smoothedProfile1d=fft.fftshift(fft.ifft(fft.fft(symProfile)*fft.fft(symBeam))).real
+    normFactor=symProfile.sum()/smoothedProfile1d.sum()
+    smoothedProfile1d=normFactor*smoothedProfile1d
+    beamDecrementBias=abs(profile1d).max()/abs(smoothedProfile1d).max()               
+
+    # For sanity checking later, let's dump the input properties of the model into a dictionary
+    # Then we can apply whatever filter we like later and check that we're recovering these
+    # These are BEFORE beam smoothing in this case, i.e., just from the input Arnaud model
+    inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500Arcmin': theta500Arcmin, 
+                            'Y500Arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': obsFreqGHz}
+
+    return signalMap, inputSignalProperties
+    
+#------------------------------------------------------------------------------------------------------------
 def fitQ(parDict, diagnosticsDir, filteredMapsDir):
     """Calculates Q on a grid, and then fits (theta, Q) with a polynomial, saving a plot and the coeffs
     array in the diagnostics dir.
     
     This can be generalised, but for now is hard coded to use the Arnaud model.
+    
+    NOTE: This is also currently signal frequency only - we're assuming that beamFileName is given under
+    parDict['unfilteredMaps'].
     
     """
     
@@ -1182,7 +1280,10 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         for f in filterList:
             if f['label'] == photFilterLabel:
                 ref=f
-                
+    
+        # Need the beam - this assumes we are single frequency only
+        beamFileName=parDict['unfilteredMaps'][0]['beamFileName']
+        
         # Some faffing to get map pixel scale
         img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"_SNMap.fits")
         wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
@@ -1218,8 +1319,6 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
                 profile1d=interpolate.splev(rDeg, modelDict['tckP'])
                 r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
                 signalMap=r2p(degreesMap)
-                #signalNorm=modelDict['y0']/interpolate.splev(0., modelDict['tckP'])
-                #signalMap=signalNorm*signalMap
                 # Apply high-pass then convolve (high-pass effect seems negligible)
                 signalMap=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = kernImg[0].header['BCKSCALE']/60.)
                 filteredSignal=ndimage.convolve(signalMap, kern2d) 
