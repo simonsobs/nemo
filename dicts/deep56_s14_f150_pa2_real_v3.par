@@ -4,7 +4,7 @@ unfilteredMaps = [\
                 {'mapFileName': "/home/saiola/act_repos/nemo/dicts/deep56_test/deep56_array_2_season2_iqu_c7v5_night_nomoon_1way_azfilt_pertod_final_srcsub_200_I_srcback.fits", \
                  'weightsFileName': "/home/saiola/act_repos/nemo/dicts/deep56_test/deep56_array_2_season2_iqu_c7v5_night_nomoon_1way_azfilt_pertod_final_srcsub_weights_I.fits", \
                  'obsFreqGHz': 148.0, 'units': 'uK', \
-                 'beamFileName': "/data/saiola/depot/Beams/beams_151107_v1/beam_profile_151107_v1_2014_pa2_jitter_deep56.txt", \
+                 'beamFileName': "/data/saiola/depot/Beams/151107_v1/beam_profile_151107_v1_2014_pa2_jitter_deep56.txt", \
                  'addNoise': None, \
                  #'RADecSection': [169, 235, -3.0, 20], \
                  #'backgroundSubtraction': False, \
