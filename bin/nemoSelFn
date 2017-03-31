@@ -323,40 +323,23 @@ else:
         
         # Some applications of selection function...
         selFn=SelFn.SelFn(rootOutDir, parDict['selFnOptions']['fixed_SNR_cut'])
-                
-        # Example map of M500 limit at fixed z
-        # Just here for now, because not sure where else to put it
-        #for z in zRange:
-            #selFn.makeM500LimitMap(z, wcs, 'MLimitMap_z%.1f.fits' % (z))
         
-        # Example of how to calculate M500 completeness at some z
-        #p=selFn.M500Completeness(2.0, 0.5)
-
-        # Example of how to calculate y0~ completeness at some z
-        #p=selFn.y0Completeness(1.0, 0.5)
+        # Add detection probabilities for clusters here?
         
-        # How to calculate survey 90% completeness limit in M500 for given SNR mass cut
-        # This is a detection probability of 90% at the given mass
-        # For the selection function, we just want to feed in a mass and return the completeness
+        # Survey-averaged 90% completeness mass limit and plot
         completenessLim=0.9
-        MComplete=np.zeros(len(zRange))
-        testMRange=np.linspace(MRange.min()/1e14, MRange.max()/1e14, 1000)
-        completeness=np.zeros([1000, len(zRange)])
-        for i in range(testMRange.shape[0]):
-            completeness[i]=selFn.M500Completeness(testMRange[i], zRange)
-        MComplete=testMRange[np.argmin(abs(completeness-completenessLim), axis = 0)]
+        massLimit_90Complete, zRange=selFn.surveyAverageMLimitAtCompleteness(completenessLim)
         fontDict={'size': 18, 'family': 'serif'}
         plt.figure(figsize=(10, 6))
-        plt.plot(zRange, MComplete, '.')
-        tck=interpolate.splrep(zRange, MComplete)
-        plotRange=np.linspace(0, max(zRange), 100)
-        plt.plot(plotRange, interpolate.splev(plotRange, tck), '-')
-        plt.xlabel("z", fontdict = fontDict)
+        plt.plot(zRange, massLimit_90Complete, 'r.')
+        tck=interpolate.splrep(zRange, massLimit_90Complete)
+        plotRange=np.linspace(0, 2, 100)
+        plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
+        plt.xlabel("z")
         plt.ylim(2, 10)
         plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
         labelStr="M$_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
         plt.ylabel(labelStr, fontdict = fontDict)
         plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
         plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.png")
-        plt.close()
-
+        
