@@ -89,11 +89,19 @@ class MockSurvey(object):
         
         self.selFn=selFn
         
-        # This takes ~7.5 sec
-        M500Completeness=[]
-        for m in self.mf.m/self.mf.cosmo.h:  
-            M500Completeness.append(selFn.M500Completeness(m/1e14, self.z))
-        self.M500Completeness=np.array(M500Completeness).transpose()
+        # This takes 3.4 sec
+        M=(self.mf.m/self.mf.cosmo.h)/1e14
+        logM=np.log10(M)
+        self.M500Completeness=np.zeros(self.clusterCount.shape)
+        for i in range(len(self.z)):
+            z=self.z[i]
+            SNRs=(M-selFn.getSurveyAverageMFitInterceptAtRedshift(z))/selFn.getSurveyAverageMFitSlopeAtRedshift(z)
+            for j in range(M.shape[0]):
+                if SNRs[j] > 0:
+                    # If we use the last option, we end up with detection probability being u-shaped in some zs
+                    #self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.mean(np.diff(logM)))[0]
+                    self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.log10(1+1./selFn.SNRCut))[0]
+                    #self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.log10(1+1./SNRs[j]))[0]
 
 
     def calcNumClustersExpected(self, M500Limit, zMin = 0.0, zMax = 2.0, applySelFn = False):

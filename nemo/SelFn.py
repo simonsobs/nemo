@@ -39,15 +39,24 @@ class SelFn(object):
         self.zRange=np.array(np.unique(self.fitTab['z']))
         
         # Calculate survey-averaged completeness (weighted by area of each cell)
+        # We also do the same with the mass limit vs SNR fit parameters
         self.surveyAverageMLimit=np.zeros(self.zRange.shape)
+        self.surveyAverageMFitSlope=np.zeros(self.zRange.shape)
+        self.surveyAverageMFitIntercept=np.zeros(self.zRange.shape)
         for i in range(self.zRange.shape[0]):
             z=self.zRange[i]
             mask=np.equal(self.fitTab['z'], z)
             self.surveyAverageMLimit[i]=np.average(self.MLimits[mask], weights = self.fitTab['fracSurveyArea'][mask])
+            self.surveyAverageMFitSlope[i]=np.average(self.fitTab['MFitSlope'][mask], weights = self.fitTab['fracSurveyArea'][mask])
+            self.surveyAverageMFitIntercept[i]=np.average(self.fitTab['MFitIntercept'][mask], weights = self.fitTab['fracSurveyArea'][mask])
         
         # Retrieves the survey-averaged mass limit at specified z, using a spline interpolation.
         self.getSurveyAverageMLimitAtRedshift=interpolate.InterpolatedUnivariateSpline(self.zRange, self.surveyAverageMLimit)
 
+        # Similarly for MFitSlope, MFitIntercept (for SNRs of clusters drawn from mass function)
+        self.getSurveyAverageMFitSlopeAtRedshift=interpolate.InterpolatedUnivariateSpline(self.zRange, self.surveyAverageMFitSlope)
+        self.getSurveyAverageMFitInterceptAtRedshift=interpolate.InterpolatedUnivariateSpline(self.zRange, self.surveyAverageMFitIntercept)
+        
 
     def findCell(self, RADeg, decDeg):
         """Returns the ID in self.fitTab of the cell that contains the given RA, dec coordinates.
