@@ -1010,16 +1010,24 @@ class RealSpaceMatchedFilter(MapFilter):
             kernWCS.header['SIGNORM']=signalNorm
             astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, kernWCS)
             
-            # Filter profile plot
-            plt.plot(arcminRange[mask], prof[mask])
-            plt.xlabel("$\\theta$ (arcmin)")
-            plt.ylabel("Amplitude")
-            plt.title(self.label)
-            plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
+            # Filter profile plot        
+            fontDict={'size': 18, 'family': 'serif'}
+            plt.figure(figsize=(9,6.5))
+            ax=plt.axes([0.1, 0.10, 0.88, 0.88])
+            plt.tick_params(axis='both', which='major', labelsize=15)
+            plt.tick_params(axis='both', which='minor', labelsize=15)
+            tck=interpolate.splrep(arcminRange[mask], prof[mask])
+            plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
+            #plt.plot(arcminRange[mask], prof[mask])
+            plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
+            plt.xlabel("$\\theta$ (arcmin)", fontdict = fontDict)
+            plt.ylabel("Amplitude", fontdict = fontDict)
+            #plt.title(self.label)
+            #plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
             plt.xlim(0, arcminRange[mask].max())
-            plt.plot([bckSubScaleArcmin]*3, np.linspace(-0.2, 1, 3), 'k--')
-            plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
-
+            plt.plot([bckSubScaleArcmin]*3, np.linspace(-1, 1.2, 3), 'k--')
+            plt.ylim(-0.2, 1.2)
+            plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.pdf" % (self.label))
             plt.close()
 
             # NOTE: at this point we should store the kernel somewhere, get out of this loop, and then add a call to

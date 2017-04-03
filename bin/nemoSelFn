@@ -88,6 +88,7 @@ else:
 
         # Unmasked area map, square degrees
         areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(surveyMask, wcs)*surveyMask)/(60**2)
+        print "... total unmasked survey area = %.3f square degrees ..." % (areaMapSqDeg.sum())
         
         # Noise map
         RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (photFilterLabel))
@@ -330,16 +331,22 @@ else:
         completenessLim=0.9
         massLimit_90Complete, zRange=selFn.surveyAverageMLimitAtCompleteness(completenessLim)
         fontDict={'size': 18, 'family': 'serif'}
-        plt.figure(figsize=(10, 6))
-        plt.plot(zRange, massLimit_90Complete, 'r.')
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.09, 0.10, 0.88, 0.88])
+        plt.tick_params(axis='both', which='major', labelsize=15)
+        plt.tick_params(axis='both', which='minor', labelsize=15)
+        plt.plot(zRange, massLimit_90Complete, 'kD', ms = 8)
         tck=interpolate.splrep(zRange, massLimit_90Complete)
         plotRange=np.linspace(0, 2, 100)
         plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-        plt.xlabel("z")
+        plt.xlabel("$z$", fontdict = fontDict)
         plt.ylim(2, 10)
         plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
-        labelStr="M$_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
+        labelStr="$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
         plt.ylabel(labelStr, fontdict = fontDict)
-        plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
-        plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.png")
+        #plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
+        plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
+            
+    
+        
         
