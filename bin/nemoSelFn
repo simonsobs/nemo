@@ -346,7 +346,41 @@ else:
         plt.ylabel(labelStr, fontdict = fontDict)
         #plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
         plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
-            
-    
+        plt.close()
         
+        # Cumulative area above mass limit plot
+        # This needs to be for a fixed z, or averaged over a z range - we'll go with [0.2, 1.0] for now
+        zMin=0.2
+        zMax=1.0
+        zMask=np.logical_and(np.greater(selFn.fitTab['z'], zMin), np.less(selFn.fitTab['z'], zMax))
+        IDs=np.unique(selFn.fitTab['ID'])
+        cellMLimits=[]
+        cellFracAreas=[]
+        for i in IDs:
+            idMask=np.equal(selFn.fitTab['ID'], i)
+            cellMLimits.append(np.mean(selFn.MLimits[np.logical_and(zMask, idMask)]))
+            cellFracAreas.append(np.mean(selFn.fitTab['fracSurveyArea'][np.logical_and(zMask, idMask)]))
+        cellMLimits=np.array(cellMLimits)
+        cellFracAreas=np.array(cellFracAreas)
+        areaTab=atpy.Table()
+        areaTab.add_column(atpy.Column(cellMLimits, 'MLimit'))
+        areaTab.add_column(atpy.Column(cellFracAreas, 'fracSurveyArea'))
+        areaTab.sort('MLimit')
+        
+        completenessLim=0.5
+        fontSize=18.
+        fontDict={'size': fontSize, 'family': 'serif'}
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.09, 0.10, 0.88, 0.88])
+        plt.tick_params(axis='both', which='major', labelsize=15)
+        plt.tick_params(axis='both', which='minor', labelsize=15)
+        plt.plot(areaTab['MLimit'], np.cumsum(areaTab['fracSurveyArea']), 'k-')
+        plt.ylabel("Fraction of survey area < $M_{500}$ limit", fontdict = fontDict)
+        plt.xlabel("$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]", fontdict = fontDict)
+        #labelStr="total survey area = %.1f deg$^2$\n$%.1f < z < %.1f$" % (areaMapSqDeg.sum(), zMin, zMax)
+        labelStr="total survey area = %.1f deg$^2$" % (areaMapSqDeg.sum())
+        plt.figtext(0.5, 0.2, labelStr, ha="left", va="center", fontsize = fontSize, family = "serif")
+        plt.savefig(diagnosticsDir+os.path.sep+"cumulativeAreaMLimit_0p2_z_1p0.pdf")
+        plt.close()
+
         
