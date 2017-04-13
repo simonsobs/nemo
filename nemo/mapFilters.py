@@ -1272,18 +1272,21 @@ class BeamFilter(MapFilter):
         # The ratio by which beam smoothing biases the intrinsic deltaT0
         beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
 
-        # For sanity checking later, let's dump the input properties of the model into a dictionary
-        # Then we can apply whatever filter we like later and check that we're recovering these
-        # NOTE: See ArnaudMpdelFilter, where we've started implementing this
+        # Pixel window function
         inputSignalProperties={}
-        #inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500': theta500, 
-                               #'Y500arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': mapObsFreqGHz}
-
-        fineScaleRadiansMap=self.radiansMap*0.01
-        fineScaleProfile2d=r2p(fineScaleRadiansMap)
-        fineScaleArcminMap=np.degrees(fineScaleRadiansMap)*60.
-        fineScaleProfile2d[np.less(fineScaleArcminMap, (self.wcs.getPixelSizeDeg()*60.)/2.)].mean()
-        inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[np.less(fineScaleArcminMap, (self.wcs.getPixelSizeDeg()*60.)/2.)].mean()
+        fineWCS=self.wcs.copy()
+        fineWCS.header['CDELT1']=fineWCS.header['CDELT1']*0.01
+        fineWCS.header['CDELT2']=fineWCS.header['CDELT2']*0.01
+        fineWCS.updateFromHeader()
+        cRA, cDec=fineWCS.getCentreWCSCoords()
+        degXMap, degYMap=nemoCython.makeXYDegreesDistanceMaps(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                              fineWCS, cRA, cDec, 1.0)
+        degRMap=nemoCython.makeDegreesDistanceMap(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                  fineWCS, cRA, cDec, 1.0)
+        fineScaleProfile2d=r2p(np.radians(degRMap))
+        mask=np.logical_and(np.less(abs(degXMap), self.wcs.getXPixelSizeDeg()/2.), 
+                            np.less(abs(degYMap), self.wcs.getYPixelSizeDeg()/2.))
+        inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[mask].mean()
 
         return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None, 
                 'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 'signalAreaSum': 1.0,
