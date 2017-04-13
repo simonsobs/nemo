@@ -1349,7 +1349,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         thetaArr=np.linspace(0, 10, 100)
         plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
         #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
-        plt.xlim(0, 10)
+        plt.xlim(0, 9)
         plt.xlabel("$\\theta_{500}$ (arcmin)", fontdict = fontDict)
         plt.ylabel("$Q$", fontdict = fontDict)
         plt.savefig(diagnosticsDir+os.path.sep+"QFit.pdf")

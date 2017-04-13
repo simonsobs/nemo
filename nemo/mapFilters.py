@@ -991,10 +991,9 @@ class RealSpaceMatchedFilter(MapFilter):
                 sys.exit()
             elif self.params['outputUnits'] == 'uK':
                 # Normalise such that peak value in filtered map == peak value of source in uK
+                # We take out the effect of the pixel window function here - this assumes we're working with sources
                 # NOTE: for amplitude, the mappers want the amplitude of the delta function, not the beam
-                #signalNorm=signalMap.sum()/filteredSignal.max()
-                # Old
-                signalNorm=1.0/filteredSignal.max()
+                signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
             elif self.params['outputUnits'] == 'Jy/beam':
                 # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
                 print "implement signal norm for %s" % (self.params['outputUnits'])
@@ -1279,7 +1278,13 @@ class BeamFilter(MapFilter):
         inputSignalProperties={}
         #inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500': theta500, 
                                #'Y500arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': mapObsFreqGHz}
-        
+
+        fineScaleRadiansMap=self.radiansMap*0.01
+        fineScaleProfile2d=r2p(fineScaleRadiansMap)
+        fineScaleArcminMap=np.degrees(fineScaleRadiansMap)*60.
+        fineScaleProfile2d[np.less(fineScaleArcminMap, (self.wcs.getPixelSizeDeg()*60.)/2.)].mean()
+        inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[np.less(fineScaleArcminMap, (self.wcs.getPixelSizeDeg()*60.)/2.)].mean()
+
         return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None, 
                 'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 'signalAreaSum': 1.0,
                 'inputSignalProperties': inputSignalProperties}
@@ -1340,8 +1345,6 @@ class ArnaudModelFilter(MapFilter):
         
         """
         
-        # NOTE: All of this is now in simsTools.makeArnaudModelSignalMap
-        # Should change this to use that instead
         signalMap, modelDict=simsTools.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
                                                                 mapObsFreqGHz, np.degrees(self.radiansMap),
                                                                 self.wcs, beamFileName)
