@@ -996,7 +996,7 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         
         binMin=4.0
         binMax=20.0
-        binStep=0.1
+        binStep=0.2
         binEdges=np.linspace(binMin, binMax, (binMax-binMin)/binStep+1)
         binCentres=(binEdges+binStep/2.0)[:-1]
         candidateSNRHist=np.histogram(candidateSNRs, bins = binEdges)
@@ -1038,14 +1038,20 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         # that from what we're doing here, strictly speaking)
         cumContamination=cumSumInverted/cumSumCandidates
         cumContamination[np.isnan(cumContamination)]=0.0
+        fontSize=18.0
+        fontDict={'size': fontSize, 'family': 'serif'}
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.10, 0.10, 0.88, 0.88])
+        plt.tick_params(axis='both', which='major', labelsize=15)
+        plt.tick_params(axis='both', which='minor', labelsize=15)        
         plt.plot(binEdges[:-1], cumContamination, 'k-')
-        plt.xlabel("%s" % (SNRKey))
-        plt.ylabel("Estimated contamination > %s" % (SNRKey))
-        plt.semilogx()
+        plt.xlabel("%s" % (SNRKey), fontdict = fontDict)
+        plt.ylabel("Contamination fraction > %s" % (SNRKey), fontdict = fontDict)
+        #plt.semilogx()
         plt.xticks(xtickValues, xtickLabels)
-        plt.xlim(binMin, binMax)
-        plt.ylim(0, 1)
-        plt.savefig(diagnosticsDir+os.path.sep+"contaminationEstimate_%s.png" % (SNRKey))
+        plt.xlim(binMin, 10.01)#binMax)
+        #plt.ylim(0, 1)
+        plt.savefig(diagnosticsDir+os.path.sep+"contaminationEstimate_%s.pdf" % (SNRKey))
         plt.close()    
         
         # Remember, this is all cumulative (> SNR, so lower bin edges)
@@ -1333,15 +1339,20 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         coeffs=np.polyfit(theta500Arcmin, Q, 12)
 
         # Plot
-        plt.figure(figsize=(12, 8))
-        plt.plot(theta500Arcmin, Q, 'r.')
+        fontSize=18.0
+        fontDict={'size': fontSize, 'family': 'serif'}
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.10, 0.10, 0.88, 0.88])
+        plt.tick_params(axis='both', which='major', labelsize=15)
+        plt.tick_params(axis='both', which='minor', labelsize=15)       
+        plt.plot(theta500Arcmin, Q, 'kD', ms = 8)
         thetaArr=np.linspace(0, 10, 100)
         plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
         #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
-        plt.xlim(0, 10)
-        plt.xlabel("$\\theta_{500}$ (arcmin)")
-        plt.ylabel("Q")
-        plt.savefig(diagnosticsDir+os.path.sep+"QFit.png")
+        plt.xlim(0, 9)
+        plt.xlabel("$\\theta_{500}$ (arcmin)", fontdict = fontDict)
+        plt.ylabel("$Q$", fontdict = fontDict)
+        plt.savefig(diagnosticsDir+os.path.sep+"QFit.pdf")
         plt.close()
 
         # Save polynomial fit coeffs

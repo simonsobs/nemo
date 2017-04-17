@@ -991,10 +991,9 @@ class RealSpaceMatchedFilter(MapFilter):
                 sys.exit()
             elif self.params['outputUnits'] == 'uK':
                 # Normalise such that peak value in filtered map == peak value of source in uK
+                # We take out the effect of the pixel window function here - this assumes we're working with sources
                 # NOTE: for amplitude, the mappers want the amplitude of the delta function, not the beam
-                #signalNorm=signalMap.sum()/filteredSignal.max()
-                # Old
-                signalNorm=1.0/filteredSignal.max()
+                signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
             elif self.params['outputUnits'] == 'Jy/beam':
                 # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
                 print "implement signal norm for %s" % (self.params['outputUnits'])
@@ -1010,16 +1009,24 @@ class RealSpaceMatchedFilter(MapFilter):
             kernWCS.header['SIGNORM']=signalNorm
             astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, kernWCS)
             
-            # Filter profile plot
-            plt.plot(arcminRange[mask], prof[mask])
-            plt.xlabel("$\\theta$ (arcmin)")
-            plt.ylabel("Amplitude")
-            plt.title(self.label)
-            plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
+            # Filter profile plot        
+            fontDict={'size': 18, 'family': 'serif'}
+            plt.figure(figsize=(9,6.5))
+            ax=plt.axes([0.1, 0.10, 0.88, 0.88])
+            plt.tick_params(axis='both', which='major', labelsize=15)
+            plt.tick_params(axis='both', which='minor', labelsize=15)
+            tck=interpolate.splrep(arcminRange[mask], prof[mask])
+            plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
+            #plt.plot(arcminRange[mask], prof[mask])
+            plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
+            plt.xlabel("$\\theta$ (arcmin)", fontdict = fontDict)
+            plt.ylabel("Amplitude", fontdict = fontDict)
+            #plt.title(self.label)
+            #plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
             plt.xlim(0, arcminRange[mask].max())
-            plt.plot([bckSubScaleArcmin]*3, np.linspace(-0.2, 1, 3), 'k--')
-            plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.png" % (self.label))
-
+            plt.plot([bckSubScaleArcmin]*3, np.linspace(-1, 1.2, 3), 'k--')
+            plt.ylim(-0.2, 1.2)
+            plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.pdf" % (self.label))
             plt.close()
 
             # NOTE: at this point we should store the kernel somewhere, get out of this loop, and then add a call to
@@ -1265,13 +1272,22 @@ class BeamFilter(MapFilter):
         # The ratio by which beam smoothing biases the intrinsic deltaT0
         beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
 
-        # For sanity checking later, let's dump the input properties of the model into a dictionary
-        # Then we can apply whatever filter we like later and check that we're recovering these
-        # NOTE: See ArnaudMpdelFilter, where we've started implementing this
+        # Pixel window function
         inputSignalProperties={}
-        #inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500': theta500, 
-                               #'Y500arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': mapObsFreqGHz}
-        
+        fineWCS=self.wcs.copy()
+        fineWCS.header['CDELT1']=fineWCS.header['CDELT1']*0.01
+        fineWCS.header['CDELT2']=fineWCS.header['CDELT2']*0.01
+        fineWCS.updateFromHeader()
+        cRA, cDec=fineWCS.getCentreWCSCoords()
+        degXMap, degYMap=nemoCython.makeXYDegreesDistanceMaps(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                              fineWCS, cRA, cDec, 1.0)
+        degRMap=nemoCython.makeDegreesDistanceMap(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                  fineWCS, cRA, cDec, 1.0)
+        fineScaleProfile2d=r2p(np.radians(degRMap))
+        mask=np.logical_and(np.less(abs(degXMap), self.wcs.getXPixelSizeDeg()/2.), 
+                            np.less(abs(degYMap), self.wcs.getYPixelSizeDeg()/2.))
+        inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[mask].mean()
+
         return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None, 
                 'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 'signalAreaSum': 1.0,
                 'inputSignalProperties': inputSignalProperties}
@@ -1332,8 +1348,6 @@ class ArnaudModelFilter(MapFilter):
         
         """
         
-        # NOTE: All of this is now in simsTools.makeArnaudModelSignalMap
-        # Should change this to use that instead
         signalMap, modelDict=simsTools.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
                                                                 mapObsFreqGHz, np.degrees(self.radiansMap),
                                                                 self.wcs, beamFileName)
