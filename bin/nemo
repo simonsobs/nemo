@@ -44,7 +44,8 @@ else:
         for d in dirList:
             if os.path.exists(d) == False:
                 os.makedirs(d)
-                
+
+      
         # Filter maps
         imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], parDict['mapFilters'], rootOutDir = rootOutDir)
         
@@ -65,7 +66,7 @@ else:
         contaminationDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
                                                                           parDict['minObjPix'], parDict['rejectBorder'], 
                                                                           parDict['catalogCuts'], parDict['photometryOptions'],
-                                                                          diagnosticsDir = diagnosticsDir)        
+                                                                          diagnosticsDir = diagnosticsDir, findCenterOfMass = parDict['findCenterOfMass'])        
             
         # Sims based on inserting fake cluster profiles into the maps
         if 'fakeSourceSimOptions' in parDict.keys():
