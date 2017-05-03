@@ -68,6 +68,7 @@ class MockSurvey(object):
         clusterCount=np.array(clusterCount)      
         
         self.mf=mf
+        self.log10M=np.log10(self.mf.m/self.mf.cosmo.h)
         self.areaSr=areaSr
         self.volumeMpc3=totalVolumeMpc3
         self.numberDensity=numberDensity
@@ -124,16 +125,15 @@ class MockSurvey(object):
         
 
     def getPLog10M(self, z):
-        """Returns P(log10M), log10M  at given z.
+        """Returns P(log10M) at given z, which corresponds to self.log10M.
         
         """
 
         self.mf.update(z = z)
         numberDensity=hmf.integrate_hmf.hmf_integral_gtm(self.mf.m, self.mf.dndm)
         PLog10M=numberDensity/np.trapz(numberDensity, self.mf.m)
-        log10M=np.log10(self.mf.m)
 
-        return PLog10M, log10M
+        return PLog10M
     
     
     def drawSample(self):

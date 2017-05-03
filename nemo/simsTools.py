@@ -1419,44 +1419,13 @@ def calcFRel(z, M500):
     return fRel
 
 #------------------------------------------------------------------------------------------------------------
-def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
-                   QFitCoeffs = getQCoeffsH13()):
-    """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
-    assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
-    function. The approach followed is described in H13, Section 3.2.
-    
-    Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
-    (in turn using the hmf module).
-    
-    QFitCoeffs are from a polynomial fit to (theta, Q), with theta given in arcmin.
-    
-    NOTE: not added marginalisation over z uncertainty yet
+def getM500FromP(P, log10M):
+    """Returns M500 as the maximum likelihood value from given P(log10M) distribution, together with 
+    1-sigma error bars (M500, -M500Err, +M500 err).
     
     """
-    
-    PLog10M, log10M=mockSurvey.getPLog10M(z)
-    Py0GivenM=[]
-    for log10M500 in log10M:
-
-        M500=np.power(10, log10M500)
-        theta500Arcmin=calcTheta500Arcmin(z, M500)
-            
-        # UPP relation according to H13
-        # NOTE: m in H13 is M/Mpivot
-        y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*calcQ(theta500Arcmin, QFitCoeffs)*calcFRel(z, M500)
-        log_y0=np.log(y0)
-        log_y0Err=np.log(y0+y0Err)-log_y0
-        log_y0pred=np.log(y0pred)
-        lnprob=-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2)))
-        if np.isnan(lnprob) == False:
-            Py0GivenM.append(np.exp(lnprob))
-        else:
-            Py0GivenM.append(0)
-
-    Py0GivenM=np.array(Py0GivenM)
 
     # Find max likelihood and integrate to get error bars
-    P=Py0GivenM*PLog10M
     tckP=interpolate.splrep(log10M, P)
     fineLog10M=np.linspace(log10M.min(), log10M.max(), 1e5)
     fineP=interpolate.splev(fineLog10M, tckP)
@@ -1493,10 +1462,71 @@ def calcM500Fromy0(y0, y0Err, z, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivo
         clusterM500MinusErr=0.
         clusterM500PlusErr=0.
     
-    #print "return Q, QErr, theta500Arcmin, theta500ArcminErr"
-    #IPython.embed()
-    #sys.exit()
+    return clusterM500, clusterM500MinusErr, clusterM500PlusErr
+    
+#------------------------------------------------------------------------------------------------------------
+def calcM500Fromy0(y0, y0Err, z, zErr, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
+                   QFitCoeffs = getQCoeffsH13()):
+    """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
+    assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
+    function. The approach followed is described in H13, Section 3.2.
+    
+    Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
+    (in turn using the hmf module).
+    
+    QFitCoeffs are from a polynomial fit to (theta, Q), with theta given in arcmin.
         
-    return {'M500': clusterM500, 'M500_errPlus': clusterM500PlusErr, 'M500_errMinus': clusterM500MinusErr}
+    """
+        
+    log10M=mockSurvey.log10M
+        
+    # For marginalising over photo-z errors
+    if zErr > 0:
+        zRange=mockSurvey.z
+        Pz=np.exp(-np.power(z-zRange, 2)/(2*(np.power(zErr, 2))))
+        Pz=Pz/np.trapz(Pz, zRange)
+    else:
+        zRange=[z]
+        Pz=np.ones(len(zRange))
+
+    # M500
+    PLog10M=mockSurvey.getPLog10M(z)
+    Py0GivenM=[]
+    for log10M500 in log10M:
+        lnPy0=np.zeros(len(zRange))
+        for i in range(len(zRange)):
+            zi=zRange[i]
+            M500=np.power(10, log10M500)
+            theta500Arcmin=calcTheta500Arcmin(zi, M500)
+            # UPP relation according to H13
+            # NOTE: m in H13 is M/Mpivot
+            # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
+            y0pred=tenToA0*np.power(astCalc.Ez(zi), 2)*np.power(M500/Mpivot, 1+B0)*calcQ(theta500Arcmin, QFitCoeffs)*calcFRel(zi, M500)
+            if y0pred > 0:
+                log_y0=np.log(y0)
+                log_y0Err=np.log(y0+y0Err)-log_y0
+                log_y0pred=np.log(y0pred)
+                lnprob=-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2)))
+            else:
+                lnprob=-np.inf
+            lnPy0[i]=lnprob
+        Py0GivenM.append(np.sum(np.exp(lnPy0)*Pz))
+    Py0GivenM=np.array(Py0GivenM)
+    if np.any(np.isnan(Py0GivenM)) == True:
+        print "nan"
+        IPython.embed()
+        sys.exit()
+    
+    # Normalise
+    Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10M)
+    PLog10M=PLog10M/np.trapz(PLog10M, log10M)
+    
+    # M500 with and without de-biasing for mass function shape (this gives the ~15% offset compared to Planck)
+    M500, errM500Minus, errM500Plus=getM500FromP(Py0GivenM*PLog10M, log10M)
+    M500Uncorr, errM500UncorrMinus, errM500UncorrPlus=getM500FromP(Py0GivenM, log10M)
+    
+    return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus,
+            'M500Uncorr': M500Uncorr, 'M500Uncorr_errPlus': errM500UncorrPlus, 
+            'M500Uncorr_errMinus': errM500UncorrMinus}
 
 #------------------------------------------------------------------------------------------------------------
