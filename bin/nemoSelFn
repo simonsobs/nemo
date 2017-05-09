@@ -44,6 +44,18 @@ else:
         parDict=actDict.ACTDict()
         parDict.read_from_file(parDictFileName)
 
+        MPIEnabled=parDict['useMPI']
+        
+        if MPIEnabled ==True:
+            from mpi4py import MPI
+            comm=MPI.COMM_WORLD
+            size=comm.Get_size()
+            rank=comm.Get_rank()
+            #if size == 1:
+                #raise Exception, "if you want to use MPI, run with e.g. mpirun --np 4 nemoSelFn ..."
+        else:
+            rank=0
+
         # Output dirs
         if 'outputDir' in parDict.keys():
             rootOutDir=parDict['outDir']
@@ -56,7 +68,7 @@ else:
         diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
         dirList=[rootOutDir, filteredMapsDir, filtersDir]
         for d in dirList:
-            if os.path.exists(d) == False:
+            if os.path.exists(d) == False and rank == 0:
                 os.makedirs(d)
 
         # Filter maps - but should already have been done, this is just for easy set up
@@ -165,9 +177,23 @@ else:
             simTab.add_column(atpy.Column(np.zeros(numRows), 'M500MSun'))
             simTab.add_column(atpy.Column(np.zeros(numRows), 'yc'))
             simTab.add_column(atpy.Column(np.zeros(numRows), 'SNR'))
-            rowCount=0
-            squareID=0
-            for i in range(len(yChunks)-1):
+            
+            # If we have MPI, divide things up
+            if MPIEnabled == True:
+                yChunksPerNode=(len(yChunks)-1)/size
+                startIndex=yChunksPerNode*rank
+                if rank == size-1:
+                    endIndex=len(yChunks-1)
+                else:
+                    endIndex=yChunksPerNode*(rank+1)
+            else:
+                startIndex=0
+                endIndex=len(yChunks)
+                
+            rowCount=startIndex*(len(xChunks)-1)*len(zRange)*len(signalDictsByRedshift)
+            squareID=startIndex*(len(xChunks)-1)
+            
+            for i in range(len(yChunks)-1)[startIndex:endIndex]:
                 t0=time.time()
                 rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
                 if os.path.exists(rowFileName) == False:
@@ -184,7 +210,7 @@ else:
                             x0=0
                         if x1 > mapData.shape[1]:
                             x1=mapData.shape[1]
-                        squareID=squareID+1
+                        squareID=i*(len(xChunks)-1)+k
                                                                             
                         # Check if centre of this square actually in survey mask
                         # If it isn't, try a random coord within the grid square
@@ -244,7 +270,7 @@ else:
                                     simTab[rowCount]['x1']=x1
                                     simTab[rowCount]['z']=signalDict['z']
                                     simTab[rowCount]['M500MSun']=signalDict['M500MSun']
-                                    simTab[rowCount]['yc']=signalDict['modelDict']['y0']
+                                    simTab[rowCount]['yc']=signalDict['modelDict']['y0']    #NOTE: this is wrong, needs to be y0~ from filtered map
                                     simTab[rowCount]['SNR']=SNR
                                     rowCount=rowCount+1
                                     if SNR > 8: # No point continuing to sim stuff well above any threshold we might set 
@@ -254,12 +280,26 @@ else:
                     print "... row %d/%d complete (%.3f sec) ..." % (i+1, len(yChunks)-1, t1-t0)
                     # Save after every row... saves pain when debugging
                     simTab.write(rowFileName)
-                else:
-                    print "... loaded from checkpoint %s ..." % (rowFileName)
-                    simTab=atpy.Table().read(rowFileName)
-                    rowCount=np.not_equal(simTab['ID'], 0).sum()
-                    squareID=np.max(simTab['ID'])
-                    
+                #else:
+                    #print "... loaded from checkpoint %s ..." % (rowFileName)
+                    #simTab=atpy.Table().read(rowFileName)
+                    ##print "check what rowCount, squareID should be for MPI"
+                    #rowCount=i*(len(xChunks)-1)*len(zRange)*len(signalDictsByRedshift)+1
+                    #squareID=i*(len(xChunks)-1)+1
+                    ## Old, serial version
+                    ##rowCount=np.not_equal(simTab['ID'], 0).sum()
+                    ##squareID=np.max(simTab['ID'])
+            
+            # Combine all the tables for each yChunk row
+            print "Add code to gather tables"
+            sys.exit()
+            if rank == 0:
+                print "gather tables"
+                IPython.embed()
+                sys.exit()
+            else:
+                sys.exit()
+                
             # Save table
             simTab=simTab[np.where(simTab['z'] != 0)]
             simTab.write(simTabFileName)
