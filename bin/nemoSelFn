@@ -230,33 +230,56 @@ else:
                                                                             
                         # Check if centre of this square actually in survey mask
                         # If it isn't, try a random coord within the grid square
-                        xCentre=(x1+x0)/2
-                        yCentre=(y1+y0)/2
-                        if surveyMask[yCentre, xCentre] == 0 and surveyMask[y0:y1, x0:x1].sum() > 0:
+                        #xCentre=(x1+x0)/2
+                        #yCentre=(y1+y0)/2
+                        #if surveyMask[yCentre, xCentre] == 0 and surveyMask[y0:y1, x0:x1].sum() > 0:
+                            #maskSum=0
+                            #tryCount=0
+                            #while maskSum == 0:
+                                #yCentre, xCentre=np.random.randint(y0, y1), np.random.randint(x0, x1)
+                                #maskSum=surveyMask[yCentre-3:yCentre+3, xCentre-3:xCentre+3].sum()
+                                #if surveyMask[yCentre, xCentre] == 0:
+                                    #maskSum=0
+                                #if tryCount > 100:
+                                    #maskSum=1
+                                #tryCount=tryCount+1
+                                
+                        # Generate a bunch of random positions - remember default squares are 20' on a side
+                        numPositions=50
+                        xPositions, yPositions=[], []
+                        for n in range(numPositions):
                             maskSum=0
                             tryCount=0
                             while maskSum == 0:
-                                yCentre, xCentre=np.random.randint(y0, y1), np.random.randint(x0, x1)
-                                maskSum=surveyMask[yCentre-3:yCentre+3, xCentre-3:xCentre+3].sum()
-                                if surveyMask[yCentre, xCentre] == 0:
+                                yPosition, xPosition=np.random.randint(y0, y1), np.random.randint(x0, x1)
+                                maskSum=surveyMask[yPosition-3:yPosition+3, xPosition-3:xPosition+3].sum()
+                                if surveyMask[yPosition, xPosition] == 0:
                                     maskSum=0
                                 if tryCount > 100:
                                     maskSum=1
                                 tryCount=tryCount+1
-
-                        if surveyMask[yCentre, xCentre] > 0:
+                            if tryCount < 100:
+                                xPositions.append(xPosition)
+                                yPositions.append(yPosition)
+                        
+                        # Skip on if all masked
+                        if len(xPositions) == 0:
+                            continue
+                        
+                        # Here we average over many pixels in a cell
+                        for z in zRange:
+                            for signalDict in signalDictsByRedshift['%.2f' % (z)]:
+                                SNRs=[]
+                                ycs=[]
+                                for xPosition, yPosition in zip(xPositions, yPositions):
+                                    
+                                    RADeg, decDeg=wcs.pix2wcs(xPosition, yPosition)
+                                    clip=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, clipSizeDeg)
+                                    RMSClip=astImages.clipImageSectionWCS(RMSMap, wcs, RADeg, decDeg, clipSizeDeg)
+                                    
+                                    yCentre=clip['data'].shape[0]/2
+                                    xCentre=clip['data'].shape[1]/2
                             
-                            RADeg, decDeg=wcs.pix2wcs(xCentre, yCentre)
-                            clip=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, clipSizeDeg)
-                            RMSClip=astImages.clipImageSectionWCS(RMSMap, wcs, RADeg, decDeg, clipSizeDeg)
-                            
-                            yCentre=clip['data'].shape[0]/2
-                            xCentre=clip['data'].shape[1]/2
-
-                            for z in zRange:
-                                
-                                for signalDict in signalDictsByRedshift['%.2f' % (z)]:
-
                                     # Splat in cluster
                                     sy0=yCentre-signalDict['signalMap'].shape[0]/2
                                     sy1=yCentre+signalDict['signalMap'].shape[0]/2
@@ -277,20 +300,24 @@ else:
                                     SNMap=filteredMap/RMSClip['data']
                                                                     
                                     # We know where the object is, within +/- 1 pixel...
-                                    SNR=SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1].max()
+                                    peakCoords=np.where(SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1] == \
+                                                        SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1].max())
+                                    SNRs.append(SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1][peakCoords][0])
+                                    ycs.append(filteredMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1][peakCoords][0]/1e-4)
 
-                                    simTab[rowCount]['ID']=squareID
-                                    simTab[rowCount]['y0']=y0
-                                    simTab[rowCount]['y1']=y1
-                                    simTab[rowCount]['x0']=x0
-                                    simTab[rowCount]['x1']=x1
-                                    simTab[rowCount]['z']=signalDict['z']
-                                    simTab[rowCount]['M500MSun']=signalDict['M500MSun']
-                                    simTab[rowCount]['yc']=signalDict['modelDict']['y0']    #NOTE: this is wrong, needs to be y0~ from filtered map
-                                    simTab[rowCount]['SNR']=SNR
-                                    rowCount=rowCount+1
-                                    if SNR > 8: # No point continuing to sim stuff well above any threshold we might set 
-                                        break
+                                # Average and store
+                                simTab[rowCount]['ID']=squareID
+                                simTab[rowCount]['y0']=y0
+                                simTab[rowCount]['y1']=y1
+                                simTab[rowCount]['x0']=x0
+                                simTab[rowCount]['x1']=x1
+                                simTab[rowCount]['z']=signalDict['z']
+                                simTab[rowCount]['M500MSun']=signalDict['M500MSun']
+                                simTab[rowCount]['yc']=np.median(ycs)
+                                simTab[rowCount]['SNR']=np.median(SNRs)
+                                rowCount=rowCount+1
+                                if np.median(SNRs) > 8: # No point continuing to sim stuff well above any threshold we might set 
+                                    break
                             t11=time.time()
                     t1=time.time()
                     print "... row %d/%d complete (%.3f sec) ..." % (i+1, len(yChunks)-1, t1-t0)
@@ -304,6 +331,9 @@ else:
             # We need to add something here to wait for all the other jobs to terminate
             # We can't just send/receive without changing stuff above (we'd need to make rank 0 just collect stuff)
             if rank == 0:
+                #print "add chunk check"
+                #IPython.embed()
+                #sys.exit()
                 print ">>> Gathering chunk tables:"
                 simTab=makeSimTab(0)
                 for i in range(len(yChunks)-1):
@@ -316,7 +346,7 @@ else:
                         simTab=atpy.operations.vstack([simTab, rowTab])
                 simTab.write(simTabFileName)
                 print "... saved sim table %s ..." % (simTabFileName)
-                ## Clean up the check point files
+                ## Clean up the chunk files
                 #fileList=glob.glob(diagnosticsDir+os.path.sep+"simTab_*.fits")
                 #for f in fileList:
                     #os.remove(f)
@@ -326,6 +356,7 @@ else:
         # Now fit for M500 / y0 limits in each grid square
         # NOTE: Units change here (10^14 MSun, 1e-4 yc)
         # Linear regression seems to work okay
+        # This is slow (takes ~1 hour) and could be parallelised
         outFileName=diagnosticsDir+os.path.sep+"fitSimTab.fits"
         if os.path.exists(outFileName) == False:
             print ">>> Fitting for M, yc as function of SNR ..."
