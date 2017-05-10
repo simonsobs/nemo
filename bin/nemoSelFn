@@ -31,6 +31,25 @@ import IPython
 plt.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
+def makeSimTab(numRows):
+    """Returns a blank table object with given number of rows. Used to store selection function output.
+    
+    """
+    
+    simTab=atpy.Table()
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'ID'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'y0'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'y1'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'x0'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'x1'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'z'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'M500MSun'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'yc'))
+    simTab.add_column(atpy.Column(np.zeros(numRows), 'SNR'))
+    
+    return simTab
+
+#------------------------------------------------------------------------------------------------------------
 # Main
 if len(sys.argv) < 2:
     print "Run: % nemoSelFn < .par file(s)>"
@@ -110,7 +129,15 @@ else:
         simTabFileName=diagnosticsDir+os.path.sep+"simTab.fits"
         zRange=[0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
         MRange=np.linspace(5e13, 1e15, 20)
-        if os.path.exists(simTabFileName) == False:
+        
+        # Only making the big sim table is parallelised
+        if os.path.exists(simTabFileName) == True:
+            if MPIEnabled == True and rank != 0:       
+                sys.exit()
+            print "... reading saved sim table ..."
+            simTab=atpy.Table().read(simTabFileName)
+            
+        else:
             
             # Compute all the signal templates we want to use... cache for later
             pickleFileName=diagnosticsDir+os.path.sep+"signalDicts.pickled"
@@ -166,18 +193,7 @@ else:
             numYChunks=mapData.shape[0]/gridSize
             yChunks=np.linspace(0, mapData.shape[0], numYChunks+1, dtype = int)
             xChunks=np.linspace(0, mapData.shape[1], numXChunks+1, dtype = int)
-            simTab=atpy.Table()
-            numRows=(len(yChunks)-1)*(len(xChunks)-1)*len(signalDictsByRedshift)*len(MRange)
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'ID'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'y0'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'y1'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'x0'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'x1'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'z'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'M500MSun'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'yc'))
-            simTab.add_column(atpy.Column(np.zeros(numRows), 'SNR'))
-            
+
             # If we have MPI, divide things up
             if MPIEnabled == True:
                 yChunksPerNode=(len(yChunks)-1)/size
@@ -189,14 +205,14 @@ else:
             else:
                 startIndex=0
                 endIndex=len(yChunks)
-                
-            rowCount=startIndex*(len(xChunks)-1)*len(zRange)*len(signalDictsByRedshift)
-            squareID=startIndex*(len(xChunks)-1)
             
             for i in range(len(yChunks)-1)[startIndex:endIndex]:
-                t0=time.time()
                 rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
                 if os.path.exists(rowFileName) == False:
+                    t0=time.time()
+                    numRows=(endIndex-startIndex)*(len(xChunks)-1)*len(signalDictsByRedshift)*len(MRange)
+                    simTab=makeSimTab(numRows)
+                    rowCount=0
                     for k in range(len(xChunks)-1):
                         y0=yChunks[i]-overlapPix
                         y1=yChunks[i+1]+overlapPix
@@ -278,42 +294,33 @@ else:
                             t11=time.time()
                     t1=time.time()
                     print "... row %d/%d complete (%.3f sec) ..." % (i+1, len(yChunks)-1, t1-t0)
-                    # Save after every row... saves pain when debugging
+                    # Save after every row... saves pain when debugging and makes MPI easier
+                    simTab=simTab[np.where(simTab['z'] != 0)]
                     simTab.write(rowFileName)
-                #else:
-                    #print "... loaded from checkpoint %s ..." % (rowFileName)
-                    #simTab=atpy.Table().read(rowFileName)
-                    ##print "check what rowCount, squareID should be for MPI"
-                    #rowCount=i*(len(xChunks)-1)*len(zRange)*len(signalDictsByRedshift)+1
-                    #squareID=i*(len(xChunks)-1)+1
-                    ## Old, serial version
-                    ##rowCount=np.not_equal(simTab['ID'], 0).sum()
-                    ##squareID=np.max(simTab['ID'])
+                else:
+                    print "... already made %s ..." % (rowFileName)
             
             # Combine all the tables for each yChunk row
-            print "Add code to gather tables"
-            sys.exit()
             if rank == 0:
-                print "gather tables"
-                IPython.embed()
-                sys.exit()
+                print ">>> Gathering chunk tables:"
+                simTab=makeSimTab(0)
+                for i in range(len(yChunks)-1):
+                    print "... %d/%d ..." % (i+1, len(yChunks)-1)
+                    rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
+                    rowTab=atpy.Table().read(rowFileName)
+                    mask=np.greater(rowTab['z'], 0)
+                    if mask.sum() > 0:
+                        rowTab=rowTab[np.where(mask)]
+                        simTab=atpy.operations.vstack([simTab, rowTab])
+                simTab.write(simTabFileName)
+                print "... saved sim table %s ..." % (simTabFileName)
+                ## Clean up the check point files
+                #fileList=glob.glob(diagnosticsDir+os.path.sep+"simTab_*.fits")
+                #for f in fileList:
+                    #os.remove(f)
             else:
                 sys.exit()
-                
-            # Save table
-            simTab=simTab[np.where(simTab['z'] != 0)]
-            simTab.write(simTabFileName)
-            
-            # Clean up the check point files
-            fileList=glob.glob(diagnosticsDir+os.path.sep+"simTab_*.fits")
-            for f in fileList:
-                os.remove(f)
-            
-        else:
-            
-            print "... reading saved sim table ..."
-            simTab=atpy.Table().read(simTabFileName)
-            
+                                                                
         # Now fit for M500 / y0 limits in each grid square
         # NOTE: Units change here (10^14 MSun, 1e-4 yc)
         # Linear regression seems to work okay
