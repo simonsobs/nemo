@@ -245,7 +245,7 @@ else:
                                 #tryCount=tryCount+1
                                 
                         # Generate a bunch of random positions - remember default squares are 20' on a side
-                        numPositions=50
+                        numPositions=parDict['selFnOptions']['maxPositionsPerSquare']
                         xPositions, yPositions=[], []
                         for n in range(numPositions):
                             maskSum=0
@@ -328,18 +328,21 @@ else:
                     print "... already made %s ..." % (rowFileName)
             
             # Combine all the tables for each yChunk row
-            # We need to add something here to wait for all the other jobs to terminate
             # We can't just send/receive without changing stuff above (we'd need to make rank 0 just collect stuff)
             if rank == 0:
-                #print "add chunk check"
-                #IPython.embed()
-                #sys.exit()
                 print ">>> Gathering chunk tables:"
                 simTab=makeSimTab(0)
                 for i in range(len(yChunks)-1):
                     print "... %d/%d ..." % (i+1, len(yChunks)-1)
                     rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
-                    rowTab=atpy.Table().read(rowFileName)
+                    loadedTab=False
+                    while loadedTab == False:
+                        if os.path.exists(rowFileName) == True:
+                            rowTab=atpy.Table().read(rowFileName)
+                            loadedTab=True
+                        else:
+                            print "... not found %s - waiting 60 sec ..." % (rowFileName)
+                            time.sleep(60)
                     mask=np.greater(rowTab['z'], 0)
                     if mask.sum() > 0:
                         rowTab=rowTab[np.where(mask)]
