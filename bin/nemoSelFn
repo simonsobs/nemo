@@ -70,8 +70,8 @@ else:
             comm=MPI.COMM_WORLD
             size=comm.Get_size()
             rank=comm.Get_rank()
-            #if size == 1:
-                #raise Exception, "if you want to use MPI, run with e.g. mpirun --np 4 nemoSelFn ..."
+            if size == 1:
+                raise Exception, "if you want to use MPI, run with e.g., mpirun --np 4 nemoSelFn ..."
         else:
             rank=0
 
@@ -301,6 +301,8 @@ else:
                     print "... already made %s ..." % (rowFileName)
             
             # Combine all the tables for each yChunk row
+            # We need to add something here to wait for all the other jobs to terminate
+            # We can't just send/receive without changing stuff above (we'd need to make rank 0 just collect stuff)
             if rank == 0:
                 print ">>> Gathering chunk tables:"
                 simTab=makeSimTab(0)
@@ -327,6 +329,7 @@ else:
         outFileName=diagnosticsDir+os.path.sep+"fitSimTab.fits"
         if os.path.exists(outFileName) == False:
             print ">>> Fitting for M, yc as function of SNR ..."
+            t0=time.time()
             squareIDs=np.unique(simTab['ID'])
             fitTab=atpy.Table()
             lenFitTab=len(squareIDs)*len(zRange)
@@ -365,6 +368,8 @@ else:
                     fitTab['ycFitIntercept'][rowCount]=ycFitResult.intercept  
                     rowCount=rowCount+1
             fitTab.write(outFileName)
+            t1=time.time()
+            print "... took %.3f sec ..." % (t1-t0)
         else:
             print "... reading fit results for M, yc as function of SNR ..."
             fitTab=atpy.Table().read(outFileName)
