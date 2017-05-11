@@ -193,27 +193,33 @@ else:
             numYChunks=mapData.shape[0]/gridSize
             yChunks=np.linspace(0, mapData.shape[0], numYChunks+1, dtype = int)
             xChunks=np.linspace(0, mapData.shape[1], numXChunks+1, dtype = int)
-
+            
+            # We can use this to skip near-empty squares
+            minNotMaskedPix=0#int(round(0.25*gridSize*gridSize))
+            
             # If we have MPI, divide things up
             if MPIEnabled == True:
-                yChunksPerNode=(len(yChunks)-1)/size
-                startIndex=yChunksPerNode*rank
+                xChunksPerNode=(len(xChunks)-1)/size
+                startIndex=xChunksPerNode*rank
                 if rank == size-1:
-                    endIndex=len(yChunks-1)
+                    endIndex=len(xChunks-1)
                 else:
-                    endIndex=yChunksPerNode*(rank+1)
+                    endIndex=xChunksPerNode*(rank+1)
             else:
                 startIndex=0
-                endIndex=len(yChunks)
+                endIndex=len(xChunks)
             
-            for i in range(len(yChunks)-1)[startIndex:endIndex]:
-                rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
+            # In future we may want to break down by squares directly rather than rows or columns...
+            numSquares=(len(xChunks)-1)*(len(yChunks)-1)
+            
+            for k in range(len(xChunks)-1)[startIndex:endIndex]:
+                rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (k)
                 if os.path.exists(rowFileName) == False:
                     t0=time.time()
-                    numRows=(endIndex-startIndex)*(len(xChunks)-1)*len(signalDictsByRedshift)*len(MRange)
+                    numRows=(endIndex-startIndex)*(len(yChunks)-1)*len(signalDictsByRedshift)*len(MRange)
                     simTab=makeSimTab(numRows)
                     rowCount=0
-                    for k in range(len(xChunks)-1):
+                    for i in range(len(yChunks)-1):
                         y0=yChunks[i]-overlapPix
                         y1=yChunks[i+1]+overlapPix
                         x0=xChunks[k]-overlapPix
@@ -227,7 +233,11 @@ else:
                         if x1 > mapData.shape[1]:
                             x1=mapData.shape[1]
                         squareID=i*(len(xChunks)-1)+k
-                                                                            
+                        
+                        # Quickly skip near-empty squares
+                        if surveyMask[y0:y1, x0:x1].sum() <= minNotMaskedPix:
+                            continue
+                        
                         # Check if centre of this square actually in survey mask
                         # If it isn't, try a random coord within the grid square
                         #xCentre=(x1+x0)/2
@@ -246,19 +256,22 @@ else:
                                 
                         # Generate a bunch of random positions - remember default squares are 20' on a side
                         numPositions=parDict['selFnOptions']['maxPositionsPerSquare']
+                        possiblePositions=np.where(surveyMask[y0:y1, x0:x1] == 1)
+                        maxTries=10
                         xPositions, yPositions=[], []
                         for n in range(numPositions):
                             maskSum=0
                             tryCount=0
                             while maskSum == 0:
-                                yPosition, xPosition=np.random.randint(y0, y1), np.random.randint(x0, x1)
+                                randIndex=np.random.randint(len(possiblePositions[0]))
+                                yPosition, xPosition=possiblePositions[0][randIndex]+y0, possiblePositions[1][randIndex]+x0
                                 maskSum=surveyMask[yPosition-3:yPosition+3, xPosition-3:xPosition+3].sum()
                                 if surveyMask[yPosition, xPosition] == 0:
                                     maskSum=0
-                                if tryCount > 100:
+                                if tryCount > maxTries:
                                     maskSum=1
                                 tryCount=tryCount+1
-                            if tryCount < 100:
+                            if tryCount < maxTries:
                                 xPositions.append(xPosition)
                                 yPositions.append(yPosition)
                         
@@ -267,12 +280,16 @@ else:
                             continue
                         
                         # Here we average over many pixels in a cell
+                        # Takes ~5 sec to run all M, z models over one position
+                        t00=time.time()
                         for z in zRange:
                             for signalDict in signalDictsByRedshift['%.2f' % (z)]:
                                 SNRs=[]
                                 ycs=[]
+                                t000=time.time()
+                                # Each position takes 0.03 sec
                                 for xPosition, yPosition in zip(xPositions, yPositions):
-                                    
+
                                     RADeg, decDeg=wcs.pix2wcs(xPosition, yPosition)
                                     clip=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, clipSizeDeg)
                                     RMSClip=astImages.clipImageSectionWCS(RMSMap, wcs, RADeg, decDeg, clipSizeDeg)
@@ -292,10 +309,10 @@ else:
                                         # Edge of map
                                         break
                                     
-                                    # Apply kernel - this takes most of the time
+                                    # Apply kernel - convolution takes most of the time (0.02 sec)
                                     filteredMap=mapTools.subtractBackground(clipData, wcs, smoothScaleDeg = kernImg[0].header['BCKSCALE']/60.)
-                                    filteredMap=ndimage.convolve(filteredMap, kern2d)*kernImg[0].header['SIGNORM'] 
-                                                                        
+                                    filteredMap=ndimage.convolve(filteredMap, kern2d, mode = 'constant')*kernImg[0].header['SIGNORM'] 
+                                    
                                     # Make SNMap
                                     SNMap=filteredMap/RMSClip['data']
                                                                     
@@ -318,9 +335,12 @@ else:
                                 rowCount=rowCount+1
                                 if np.median(SNRs) > 8: # No point continuing to sim stuff well above any threshold we might set 
                                     break
-                            t11=time.time()
+                                t111=time.time()
+                                #print t111-t000
+                        t11=time.time()
+                        #print t11-t00
                     t1=time.time()
-                    print "... row %d/%d complete (%.3f sec) ..." % (i+1, len(yChunks)-1, t1-t0)
+                    print "... row %d/%d complete (%.3f sec) ..." % (k+1, len(xChunks)-1, t1-t0)
                     # Save after every row... saves pain when debugging and makes MPI easier
                     simTab=simTab[np.where(simTab['z'] != 0)]
                     simTab.write(rowFileName)
@@ -332,8 +352,8 @@ else:
             if rank == 0:
                 print ">>> Gathering chunk tables:"
                 simTab=makeSimTab(0)
-                for i in range(len(yChunks)-1):
-                    print "... %d/%d ..." % (i+1, len(yChunks)-1)
+                for k in range(len(xChunks)-1):
+                    print "... %d/%d ..." % (k+1, len(xChunks)-1)
                     rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
                     loadedTab=False
                     while loadedTab == False:
