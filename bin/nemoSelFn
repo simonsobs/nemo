@@ -354,7 +354,7 @@ else:
                 simTab=makeSimTab(0)
                 for k in range(len(xChunks)-1):
                     print "... %d/%d ..." % (k+1, len(xChunks)-1)
-                    rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (i)
+                    rowFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (k)
                     loadedTab=False
                     while loadedTab == False:
                         if os.path.exists(rowFileName) == True:
