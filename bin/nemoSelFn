@@ -320,9 +320,15 @@ else:
                                     peakCoords=np.where(SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1] == \
                                                         SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1].max())
                                     SNRs.append(SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1][peakCoords][0])
-                                    ycs.append(filteredMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1][peakCoords][0]/1e-4)
+                                    ycs.append(filteredMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1][peakCoords][0])
 
                                 # Average and store
+                                medSNR=np.median(SNRs)
+                                medyc=np.median(ycs)
+                                if np.isnan(medSNR) == True:
+                                    medSNR=0.
+                                if np.isnan(medyc) == True:
+                                    medyc=0.
                                 simTab[rowCount]['ID']=squareID
                                 simTab[rowCount]['y0']=y0
                                 simTab[rowCount]['y1']=y1
@@ -330,10 +336,10 @@ else:
                                 simTab[rowCount]['x1']=x1
                                 simTab[rowCount]['z']=signalDict['z']
                                 simTab[rowCount]['M500MSun']=signalDict['M500MSun']
-                                simTab[rowCount]['yc']=np.median(ycs)
-                                simTab[rowCount]['SNR']=np.median(SNRs)
+                                simTab[rowCount]['yc']=medyc
+                                simTab[rowCount]['SNR']=medSNR
                                 rowCount=rowCount+1
-                                if np.median(SNRs) > 8: # No point continuing to sim stuff well above any threshold we might set 
+                                if medSNR > 8: # No point continuing to sim stuff well above any threshold we might set 
                                     break
                                 t111=time.time()
                                 #print t111-t000
@@ -404,7 +410,7 @@ else:
                 for z in zRange:
                     mask=np.logical_and(np.equal(simTab['ID'], sID), np.equal(simTab['z'], z))
                     MFitResult=stats.linregress(simTab['SNR'][mask], simTab['M500MSun'][mask]/1e14)
-                    ycFitResult=stats.linregress(simTab['SNR'][mask], simTab['yc'][mask]/1e-4)
+                    ycFitResult=stats.linregress(simTab['SNR'][mask], simTab['yc'][mask])
                     fitTab['ID'][rowCount]=sID
                     fitTab['z'][rowCount]=z
                     fitTab['y0'][rowCount]=simTab['y0'][mask][0]
