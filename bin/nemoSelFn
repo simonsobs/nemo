@@ -340,7 +340,7 @@ else:
                         t11=time.time()
                         #print t11-t00
                     t1=time.time()
-                    print "... row %d/%d complete (%.3f sec) ..." % (k+1, len(xChunks)-1, t1-t0)
+                    print "... row %d/%d complete (%.3f sec; rank = %d) ..." % (k+1, len(xChunks)-1, t1-t0, rank)
                     # Save after every row... saves pain when debugging and makes MPI easier
                     simTab=simTab[np.where(simTab['z'] != 0)]
                     simTab.write(rowFileName)
