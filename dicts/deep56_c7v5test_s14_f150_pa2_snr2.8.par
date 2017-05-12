@@ -19,6 +19,7 @@ rejectBorder = 0 #would be nice to calibrate this.
 objIdent = 'D56-PA2'
 longNames = False
 catalogCuts=['SNR > 2.8']
+findCenterOfMass = False
 
 mapFilters = [\
                	{'label': "Beam", 'class': "BeamRealSpaceMatchedFilter", \
