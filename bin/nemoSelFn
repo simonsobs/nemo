@@ -348,10 +348,7 @@ else:
             
             # Write one simTab_*.fits file per processor (if MPI), and merge afterwards
             nodeFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (rank)
-            startIndex=0
-            endIndex=201
             if os.path.exists(nodeFileName) == False:
-                
                 count=0
                 simTab=makeSimTab(0)
                 for squareID, i, k in zip(squareIDs[startIndex:endIndex], iList[startIndex:endIndex], kList[startIndex:endIndex]):
@@ -377,7 +374,7 @@ else:
                     t1=time.time()
                     count=count+1
                     
-                    print "... rank %d / squareID = %d (%d/%d) / RAM = %.3f Gb / time taken = %.3f sec ..." % (rank, squareID, count, numSquares,
+                    print "... rank %d / squareID = %d (%d/%d) / RAM = %.3f Gb / time taken = %.3f sec ..." % (rank, squareID, count, endIndex-startIndex,
                                                                                           resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1e6, t1-t0)
                     
                 # Save this node's work (bad if running in serial... but suspect we won't want to)
