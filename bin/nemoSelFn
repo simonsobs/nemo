@@ -51,11 +51,13 @@ def makeSimTab(numRows):
     return simTab
 
 #------------------------------------------------------------------------------------------------------------
-def getSNRyc(mapData, RMSMap, wcs, xPosition, yPosition, clipSizeDeg, signalDict):
+def getSNRyc(mapData, RMSMap, wcs, xPosition, yPosition, clipSizeDeg, signalDict, kern2d, bckScaleDeg, sigNorm):
     """Inserts a cluster into the map at given x, y position, and then returns recovered SNR and yc.
     
-    """
+    NOTE: this assumes we're doing everything using RealSpaceMatchedFilter scheme
     
+    """
+
     RADeg, decDeg=wcs.pix2wcs(xPosition, yPosition)
     clip=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, clipSizeDeg)
     RMSClip=astImages.clipImageSectionWCS(RMSMap, wcs, RADeg, decDeg, clipSizeDeg)
@@ -68,7 +70,8 @@ def getSNRyc(mapData, RMSMap, wcs, xPosition, yPosition, clipSizeDeg, signalDict
     sy1=yCentre+signalDict['signalMap'].shape[0]/2
     sx0=xCentre-signalDict['signalMap'].shape[1]/2
     sx1=xCentre+signalDict['signalMap'].shape[1]/2
-    clipData=clip['data']
+    # NOTE: essential to do it this way or we keep adding signal (weirdly) - but then we leak memory. Urgh.
+    clipData=np.zeros(clip['data'].shape)+clip['data']  
     try:
         clipData[sy0:sy1, sx0:sx1]=clipData[sy0:sy1, sx0:sx1]+signalDict['signalMap']
     except:
@@ -76,8 +79,8 @@ def getSNRyc(mapData, RMSMap, wcs, xPosition, yPosition, clipSizeDeg, signalDict
         return None, None
     
     # Apply kernel - convolution takes most of the time (0.02 sec)
-    filteredMap=mapTools.subtractBackground(clipData, wcs, smoothScaleDeg = kernImg[0].header['BCKSCALE']/60.)
-    filteredMap=ndimage.convolve(filteredMap, kern2d, mode = 'constant')*kernImg[0].header['SIGNORM'] 
+    filteredMap=mapTools.subtractBackground(clipData, wcs, smoothScaleDeg = bckScaleDeg)
+    filteredMap=ndimage.convolve(filteredMap, kern2d, mode = 'constant')*sigNorm 
     
     # Make SNMap
     SNMap=filteredMap/RMSClip['data']
@@ -87,7 +90,7 @@ def getSNRyc(mapData, RMSMap, wcs, xPosition, yPosition, clipSizeDeg, signalDict
                         SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1].max())
     SNR=SNMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1][peakCoords][0]
     yc=filteredMap[yCentre-1:yCentre+1, xCentre-1:xCentre+1][peakCoords][0]
-
+    
     return SNR, yc
 
 #------------------------------------------------------------------------------------------------------------
@@ -118,7 +121,7 @@ def generatePositions(numPositions, surveyMask, x0, x1, y0, y1, maxTries = 10):
 
 #------------------------------------------------------------------------------------------------------------
 def doSquare(mapData, RMSMap, surveyMask, wcs, numPositions, squareID, x0, x1, y0, y1, clipSizeDeg, zRange, MRange, 
-             signalDictsByRedshift, minNotMaskedPix = 0):
+             signalDictsByRedshift, kern2d, bckScaleDeg, sigNorm, minNotMaskedPix = 0):
     """Returns simTab containing results for this square only. If masked or empty, returns []
     
     """
@@ -140,12 +143,11 @@ def doSquare(mapData, RMSMap, surveyMask, wcs, numPositions, squareID, x0, x1, y
     rowCount=0
     for z in zRange:
         for signalDict in signalDictsByRedshift['%.2f' % (z)]:
-
             # Each position takes 0.03 sec
             SNRs=[]
             ycs=[]
             for xPosition, yPosition in zip(xPositions, yPositions):
-                SNR, yc=getSNRyc(mapData, RMSMap, wcs, xPosition, yPosition, clipSizeDeg, signalDict)
+                SNR, yc=getSNRyc(mapData, RMSMap, wcs, xPosition, yPosition, clipSizeDeg, signalDict, kern2d, bckScaleDeg, sigNorm)
                 if SNR != None:
                     SNRs.append(SNR)
                     ycs.append(yc)                                    
@@ -169,8 +171,8 @@ def doSquare(mapData, RMSMap, surveyMask, wcs, numPositions, squareID, x0, x1, y
                         break
     
     # Throw out empty rows
-    simTab=simTab[np.where(simTab['SNR'] > 0)]
-    
+    simTab=simTab[np.where(simTab['ID'] != 0)]
+
     return simTab
                     
 #------------------------------------------------------------------------------------------------------------
@@ -235,7 +237,9 @@ else:
         # Load the kernel
         kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (photFilterLabel))
         kern2d=kernImg[0].data
-
+        bckScaleDeg=kernImg[0].header['BCKSCALE']/60.
+        sigNorm=kernImg[0].header['SIGNORM']
+    
         # Survey mask
         surveyImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask.fits")
         surveyMask=surveyImg[0].data
@@ -346,6 +350,31 @@ else:
                     kList.append(k)
                     iList.append(i)
             
+            # A map of where the squares are, to ease debugging
+            squaresMapPath=diagnosticsDir+os.path.sep+"squaresMap.fits"
+            if rank == 0 and os.path.exists(squaresMapPath) == False:
+                squaresMap=np.zeros(mapData.shape)
+                for squareID, i, k in zip(squareIDs[startIndex:endIndex], iList[startIndex:endIndex], kList[startIndex:endIndex]):
+                        y0=yChunks[i]-overlapPix
+                        y1=yChunks[i+1]+overlapPix
+                        x0=xChunks[k]-overlapPix
+                        x1=xChunks[k+1]+overlapPix
+                        if y0 < 0:
+                            y0=0
+                        if y1 > mapData.shape[0]:
+                            y1=mapData.shape[0]
+                        if x0 < 0:
+                            x0=0
+                        if x1 > mapData.shape[1]:
+                            x1=mapData.shape[1]
+                        squaresMap[y0:y1, x0:x1]=squareID
+                astImages.saveFITS(squaresMapPath, squaresMap*surveyMask, wcs)
+             
+            # Uncomment if want to select a specific square for testing
+            #wantedSquareID=5785
+            #startIndex=squareIDs.index(wantedSquareID)
+            #endIndex=startIndex+5
+            
             # Write one simTab_*.fits file per processor (if MPI), and merge afterwards
             nodeFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (rank)
             if os.path.exists(nodeFileName) == False:
@@ -368,7 +397,7 @@ else:
                         
                     t0=time.time()
                     squareTab=doSquare(mapData, RMSMap, surveyMask, wcs, numPositions, squareID, x0, x1, y0, y1, clipSizeDeg, zRange, MRange, 
-                                       signalDictsByRedshift, minNotMaskedPix = 0)
+                                       signalDictsByRedshift, kern2d, bckScaleDeg, sigNorm, minNotMaskedPix = 0)
                     if len(squareTab) > 0:
                         simTab=atpy.operations.vstack([simTab, squareTab])
                     t1=time.time()
