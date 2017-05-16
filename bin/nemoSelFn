@@ -354,7 +354,7 @@ else:
             squaresMapPath=diagnosticsDir+os.path.sep+"squaresMap.fits"
             if rank == 0 and os.path.exists(squaresMapPath) == False:
                 squaresMap=np.zeros(mapData.shape)
-                for squareID, i, k in zip(squareIDs[startIndex:endIndex], iList[startIndex:endIndex], kList[startIndex:endIndex]):
+                for squareID, i, k in zip(squareIDs, iList, kList):
                         y0=yChunks[i]-overlapPix
                         y1=yChunks[i+1]+overlapPix
                         x0=xChunks[k]-overlapPix
