@@ -94,9 +94,10 @@ else:
         
         # Q function (filter mismatch) options
         if massOptions['Q'] == 'H13':
-            QFitCoeffs=simsTools.getQCoeffsH13()
+            raise Exception, 'H13 option depreciated - need to replace polynomial with spline fit'
+            tckQFit=simsTools.getQCoeffsH13()
         elif massOptions['Q'] == 'fit':
-            QFitCoeffs=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+            tckQFit=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
         else:
             raise Exception, "didn't understand choice of Q function in massOptions"
         
@@ -126,8 +127,9 @@ else:
         for row in tab:
             print "... %s (%.3f +/- %.3f) ..." % (row['name'], row['redshift'], row['redshiftErr'])
             massDict=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                              row['redshift'], row['redshiftErr'], mockSurvey, 
-                                              QFitCoeffs = QFitCoeffs)
+                                              row['redshift'], row['redshiftErr'], 
+                                              tckQFit = tckQFit, mockSurvey = mockSurvey, 
+                                              applyMFDebiasCorrection = True)
             row['M500']=massDict['M500']
             row['M500_errPlus']=massDict['M500_errPlus']
             row['M500_errMinus']=massDict['M500_errMinus']
@@ -137,7 +139,7 @@ else:
         
         # Tidy up and save
         # We delete some columns here to save duplicating in sourcery database
-        tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
+        #tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
         outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
         if os.path.exists(outFileName) == True:
             os.remove(outFileName)

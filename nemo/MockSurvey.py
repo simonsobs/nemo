@@ -13,8 +13,10 @@ import subprocess
 import hmf
 from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
+from nemo import simsTools
 import cPickle
 from scipy import interpolate
+from scipy import stats
 from astLib import *
 plt.matplotlib.interactive(False)
 
@@ -89,20 +91,19 @@ class MockSurvey(object):
         """
         
         self.selFn=selFn
-        
-        # This takes 3.4 sec
-        M=(self.mf.m/self.mf.cosmo.h)/1e14
+
+        # This takes ~7.5 sec
+        M=(self.mf.m/self.mf.cosmo.h)
         logM=np.log10(M)
         self.M500Completeness=np.zeros(self.clusterCount.shape)
         for i in range(len(self.z)):
             z=self.z[i]
-            SNRs=(M-selFn.getSurveyAverageMFitInterceptAtRedshift(z))/selFn.getSurveyAverageMFitSlopeAtRedshift(z)
+            ycLimitAtClusterRedshift=selFn.getSurveyAverage_ycLimitAtRedshift(z)
             for j in range(M.shape[0]):
-                if SNRs[j] > 0:
-                    # If we use the last option, we end up with detection probability being u-shaped in some zs
-                    #self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.mean(np.diff(logM)))[0]
-                    self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.log10(1+1./selFn.SNRCut))[0]
-                    #self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.log10(1+1./SNRs[j]))[0]
+                yc, theta500Arcmin, Q=simsTools.y0FromLogM500(logM[j], z, selFn.tckQFit)
+                ycErr=ycLimitAtClusterRedshift/selFn.SNRCut
+                detP=stats.norm.sf(ycLimitAtClusterRedshift, loc = yc, scale = ycErr)
+                self.M500Completeness[i, j]=detP
 
 
     def calcNumClustersExpected(self, M500Limit, zMin = 0.0, zMax = 2.0, applySelFn = False):

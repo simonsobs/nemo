@@ -156,13 +156,14 @@ def doSquare(mapData, RMSMap, surveyMask, wcs, numPositions, squareID, x0, x1, y
             if len(SNRs) > 0:
                 medSNR=np.median(SNRs)
                 medyc=np.median(ycs)
-                if np.isnan(medSNR) == False:
+                if np.isnan(medSNR) == False and medyc > 0:
                     simTab[rowCount]['ID']=squareID
                     simTab[rowCount]['y0']=y0
                     simTab[rowCount]['y1']=y1
                     simTab[rowCount]['x0']=x0
                     simTab[rowCount]['x1']=x1
                     simTab[rowCount]['z']=signalDict['z']
+                    # NOTE: Below this is a label for the template shape, NOT a 'real' mass - need actual yc-M relation for that (see SelFn.py)
                     simTab[rowCount]['M500MSun']=signalDict['M500MSun']
                     simTab[rowCount]['yc']=medyc
                     simTab[rowCount]['SNR']=medSNR
@@ -255,8 +256,8 @@ else:
         
         # Write big sim table - this takes ~9 hours to do on a single core for equD56
         simTabFileName=diagnosticsDir+os.path.sep+"simTab.fits"
-        zRange=[0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-        MRange=np.linspace(5e13, 1e15, 20)
+        zRange=SelFn.zRange
+        MRange=SelFn.MRange
         
         # Only making the big sim table is parallelised
         if os.path.exists(simTabFileName) == True:
@@ -494,13 +495,33 @@ else:
             fitTab=atpy.Table().read(outFileName)
         
         # Some applications of selection function...
-        selFn=SelFn.SelFn(rootOutDir, parDict['selFnOptions']['fixed_SNR_cut'])
+        SNRCut=parDict['selFnOptions']['fixed_SNR_cut']
+        selFn=SelFn.SelFn(rootOutDir, parDict, SNRCut)
         
-        # Add detection probabilities for clusters here?
-        
+        # Add detection probabilities for clusters
+        realTab=atpy.Table().read(rootOutDir+os.path.sep+"%s_M500.fits" % (rootOutDir))
+        detP=[]
+        ycSelectionLimit=[]
+        MSelectionLimit=[]
+        for row in realTab:
+            yc=row['fixed_y_c']*1e-4
+            ycErr=row['fixed_err_y_c']*1e-4
+            P, ycLimit, MLimit=selFn.detectionProbability(yc, row['redshift'], ycErr, RADeg = row['RADeg'], decDeg = row['decDeg'])
+            ycSelectionLimit.append(ycLimit)
+            MSelectionLimit.append(MLimit)
+            detP.append(P)
+        detP=np.array(detP)
+        realTab.add_column(atpy.Column(detP, 'detP_SNRCut%.1f' % (SNRCut)))
+        realTab.add_column(atpy.Column(ycSelectionLimit, 'ycLimit_SNRCut%.1f' % (SNRCut)))      
+        realTab.add_column(atpy.Column(MSelectionLimit, 'M500Limit_SNRCut%.1f' % (SNRCut)))  
+        outFileName=rootOutDir+os.path.sep+rootOutDir+"_detP.fits"
+        if os.path.exists(outFileName) == True:
+            os.remove(outFileName)
+        realTab.write(outFileName)
+                
         # Survey-averaged 90% completeness mass limit and plot
         completenessLim=0.9
-        massLimit_90Complete, zRange=selFn.surveyAverageMLimitAtCompleteness(completenessLim)
+        massLimit_90Complete, zRange=selFn.surveyAverage_MLimitAtCompleteness(completenessLim)
         fontDict={'size': 18, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.09, 0.10, 0.88, 0.88])
@@ -521,6 +542,7 @@ else:
         
         # Cumulative area above mass limit plot
         # This needs to be for a fixed z, or averaged over a z range - we'll go with [0.2, 1.0] for now
+        selFn.calcMLimits()
         zMin=0.2
         zMax=1.0
         zMask=np.logical_and(np.greater(selFn.fitTab['z'], zMin), np.less(selFn.fitTab['z'], zMax))
