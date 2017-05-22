@@ -356,19 +356,19 @@ else:
             if rank == 0 and os.path.exists(squaresMapPath) == False:
                 squaresMap=np.zeros(mapData.shape)
                 for squareID, i, k in zip(squareIDs, iList, kList):
-                        y0=yChunks[i]-overlapPix
-                        y1=yChunks[i+1]+overlapPix
-                        x0=xChunks[k]-overlapPix
-                        x1=xChunks[k+1]+overlapPix
-                        if y0 < 0:
-                            y0=0
-                        if y1 > mapData.shape[0]:
-                            y1=mapData.shape[0]
-                        if x0 < 0:
-                            x0=0
-                        if x1 > mapData.shape[1]:
-                            x1=mapData.shape[1]
-                        squaresMap[y0:y1, x0:x1]=squareID
+                    y0=yChunks[i]-overlapPix
+                    y1=yChunks[i+1]+overlapPix
+                    x0=xChunks[k]-overlapPix
+                    x1=xChunks[k+1]+overlapPix
+                    if y0 < 0:
+                        y0=0
+                    if y1 > mapData.shape[0]:
+                        y1=mapData.shape[0]
+                    if x0 < 0:
+                        x0=0
+                    if x1 > mapData.shape[1]:
+                        x1=mapData.shape[1]
+                    squaresMap[y0:y1, x0:x1]=squareID
                 astImages.saveFITS(squaresMapPath, squaresMap*surveyMask, wcs)
              
             # Uncomment if want to select a specific square for testing

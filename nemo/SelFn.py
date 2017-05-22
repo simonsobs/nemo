@@ -87,13 +87,12 @@ class SelFn(object):
                 count=0
                 self.MLimits=np.zeros(self.ycLimits.shape[0])
                 for i in range(self.ycLimits.shape[0]):
-                    t00=time.time()
                     count=count+1
                     print "... %d/%d ..." % (count, len(self.ycLimits))
                     yc=self.ycLimits[i]
-                    M500Dict=simsTools.calcM500Fromy0(yc, yc/self.SNRCut, 
-                                                    z, 0.0, tckQFit = self.tckQFit, mockSurvey = None, 
-                                                    applyMFDebiasCorrection = False, calcErrors = False)
+                    M500Dict=simsTools.calcM500Fromy0(yc, yc/self.SNRCut, self.fitTab['z'][i], 0.0, 
+                                                      tckQFit = self.tckQFit, mockSurvey = None, 
+                                                      applyMFDebiasCorrection = False, calcErrors = False)
                     self.MLimits[i]=M500Dict['M500Uncorr']
                 np.save(MLimitsPath, self.MLimits)
             else:
