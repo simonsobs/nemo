@@ -496,6 +496,7 @@ else:
         selFn=SelFn.SelFn(rootOutDir, parDict, SNRCut)
         
         # Add detection probabilities for clusters
+        SNRStr=('%.1f' % (SNRCut)).replace(".", "p")
         realTab=atpy.Table().read(rootOutDir+os.path.sep+"%s_M500.fits" % (rootOutDir))
         detP=[]
         ycSelectionLimit=[]
@@ -508,9 +509,9 @@ else:
             MSelectionLimit.append(MLimit)
             detP.append(P)
         detP=np.array(detP)
-        realTab.add_column(atpy.Column(detP, 'detP_SNRCut%.1f' % (SNRCut)))
-        realTab.add_column(atpy.Column(ycSelectionLimit, 'ycLimit_SNRCut%.1f' % (SNRCut)))      
-        realTab.add_column(atpy.Column(MSelectionLimit, 'M500Limit_SNRCut%.1f' % (SNRCut)))  
+        realTab.add_column(atpy.Column(detP, 'detP_SNRCut%s' % (SNRStr)))
+        realTab.add_column(atpy.Column(ycSelectionLimit, 'ycLimit_SNRCut%s' % (SNRStr)))  
+        realTab.add_column(atpy.Column(MSelectionLimit, 'M500Limit_SNRCut%s' % (SNRStr)))
         outFileName=rootOutDir+os.path.sep+rootOutDir+"_detP.fits"
         if os.path.exists(outFileName) == True:
             os.remove(outFileName)
@@ -577,7 +578,7 @@ else:
         
         # For folks who like mass limit maps
         if 'makeMLimitMaps' in parDict['selFnOptions'].keys() and parDict['selFnOptions']['makeMLimitMaps'] == True:
-            MLimitDir=diagnosticsDir+os.path.sep+"MLimitMaps"
+            MLimitDir=diagnosticsDir+os.path.sep+"MLimitMaps_SNRCut%.1f" % (SNRCut)
             if os.path.exists(MLimitDir) == False:
                 os.makedirs(MLimitDir)
             print "... making MLimit maps ..."

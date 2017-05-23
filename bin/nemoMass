@@ -122,6 +122,12 @@ else:
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr_errPlus"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr_errMinus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m_errPlus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m_errMinus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr_errPlus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr_errMinus"))
         #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q"))
         #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q_err"))
         for row in tab:
@@ -136,7 +142,14 @@ else:
             row['M500Uncorr']=massDict['M500Uncorr']
             row['M500Uncorr_errPlus']=massDict['M500Uncorr_errPlus']
             row['M500Uncorr_errMinus']=massDict['M500Uncorr_errMinus']
-        
+            # Mass conversion
+            row['M200m']=simsTools.convertM500cToM200m(massDict['M500']*1e14, row['redshift'])/1e14
+            row['M200m_errPlus']=(row['M500_errPlus']/row['M500'])*row['M200m']
+            row['M200m_errMinus']=(row['M500_errMinus']/row['M500'])*row['M200m']
+            row['M200mUncorr']=simsTools.convertM500cToM200m(massDict['M500Uncorr']*1e14, row['redshift'])/1e14
+            row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
+            row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
+
         # Tidy up and save
         # We delete some columns here to save duplicating in sourcery database
         #tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
