@@ -536,10 +536,9 @@ else:
         #plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
         plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
         plt.close()
-        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(selFn.zRange, 0.1), np.less(selFn.zRange, 1.0))].mean()
-        print "... survey-average 90 per cent completeness limit (0.1 < z < 1) = %.3f x 10^14 MSun ..." % (averageMassLimit_90Complete)
+        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(selFn.zRange, 0.2), np.less(selFn.zRange, 1.0))].mean()
+        print "... survey-average 90 per cent completeness limit (0.2 < z < 1) = %.3f x 10^14 MSun ..." % (averageMassLimit_90Complete)
 
-        
         # Cumulative area above mass limit plot
         # This needs to be for a fixed z, or averaged over a z range - we'll go with [0.2, 1.0] for now
         selFn.calcMLimits()
@@ -575,5 +574,17 @@ else:
         plt.figtext(0.5, 0.2, labelStr, ha="left", va="center", fontsize = fontSize, family = "serif")
         plt.savefig(diagnosticsDir+os.path.sep+"cumulativeAreaMLimit_0p2_z_1p0.pdf")
         plt.close()
+        
+        # For folks who like mass limit maps
+        if 'makeMLimitMaps' in parDict['selFnOptions'].keys() and parDict['selFnOptions']['makeMLimitMaps'] == True:
+            MLimitDir=diagnosticsDir+os.path.sep+"MLimitMaps"
+            if os.path.exists(MLimitDir) == False:
+                os.makedirs(MLimitDir)
+            print "... making MLimit maps ..."
+            for z in selFn.zRange:
+                print "... z = %.2f ..." % (z)
+                #ycLimitMap=selFn.ycLimitMap(0.4, wcs, 'ycLimitMap_z%.1f.fits' % (0.4))
+                selFn.makeM500LimitMap(z, wcs, MLimitDir+os.path.sep+'MLimitMap_z%.2f.fits' % (z))
+        
 
         
