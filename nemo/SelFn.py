@@ -38,11 +38,40 @@ class SelFn(object):
         
         self.fitTab=atpy.Table().read(nemoOutputDir+os.path.sep+"diagnostics"+os.path.sep+"fitSimTab.fits")
         self.wcs=astWCS.WCS(nemoOutputDir+os.path.sep+"diagnostics"+os.path.sep+"areaMask.fits")
-        #self.MLimits=self.fitTab['MFitSlope']*SNRCut+self.fitTab['MFitIntercept']
+        self.diagnosticsDir=nemoOutputDir+os.path.sep+"diagnostics"
         self.ycLimits=self.fitTab['ycFitSlope']*SNRCut+self.fitTab['ycFitIntercept']
         self.SNRCut=SNRCut
         self.zRange=np.array(np.unique(self.fitTab['z']))
         
+        # If we ran nemoSelFn with enough numPositions, ycLimits should not vary with z, so we can collapse the table down
+        # Takes 110 sec
+        ycLimitTabFileName=self.diagnosticsDir+os.path.sep+"ycLimitTab.fits"
+        if os.path.exists(ycLimitTabFileName) == False:
+            print "... making ycLimitTab ..."
+            squareIDs=np.unique(self.fitTab['ID'])
+            ycLimitTab=atpy.Table()
+            ycLimitTab.add_column(atpy.Column(np.zeros(len(squareIDs)), 'ID'))
+            ycLimitTab.add_column(atpy.Column(np.zeros(len(squareIDs)), 'y0'))
+            ycLimitTab.add_column(atpy.Column(np.zeros(len(squareIDs)), 'y1'))
+            ycLimitTab.add_column(atpy.Column(np.zeros(len(squareIDs)), 'x0'))
+            ycLimitTab.add_column(atpy.Column(np.zeros(len(squareIDs)), 'x1'))
+            ycLimitTab.add_column(atpy.Column(np.zeros(len(squareIDs)), 'fracSurveyArea'))
+            ycLimitTab.add_column(atpy.Column(np.zeros(len(squareIDs)), 'ycLimit'))
+            for i in range(len(squareIDs)):
+                sID=squareIDs[i]
+                mask=np.equal(self.fitTab['ID'], sID)
+                ycLimitTab['ID'][i]=sID
+                ycLimitTab['y0'][i]=self.fitTab['y0'][mask][0]
+                ycLimitTab['y1'][i]=self.fitTab['y1'][mask][0]
+                ycLimitTab['x0'][i]=self.fitTab['x0'][mask][0]
+                ycLimitTab['x1'][i]=self.fitTab['x1'][mask][0]
+                ycLimitTab['fracSurveyArea'][i]=self.fitTab['fracSurveyArea'][mask][0]
+                ycLimitTab['ycLimit'][i]=np.median(self.ycLimits[mask])
+            ycLimitTab.write(ycLimitTabFileName)
+        else:
+            ycLimitTab=atpy.Table().read(ycLimitTabFileName)
+        self.ycLimitTab=ycLimitTab
+            
         # Calculate survey-averaged completeness (weighted by area of each cell)
         # We also do the same with the yc limit vs SNR fit parameters
         self.ycLimit_surveyAverage=np.zeros(self.zRange.shape)
@@ -63,12 +92,10 @@ class SelFn(object):
         self.getSurveyAverage_ycFitInterceptAtRedshift=interpolate.InterpolatedUnivariateSpline(self.zRange, self.ycFitIntercept_surveyAverage)
 
         # For mass calculations
-        diagnosticsDir=nemoOutputDir+os.path.sep+"diagnostics"
         filteredMapsDir=nemoOutputDir+os.path.sep+"filteredMaps"
-        self.tckQFit=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+        self.tckQFit=simsTools.fitQ(parDict, self.diagnosticsDir, filteredMapsDir)
 
         # For caching of MLimits_ tables
-        self.diagnosticsDir=diagnosticsDir
         self.MLimits=[]
         
         
@@ -166,9 +193,9 @@ class SelFn(object):
             tck=interpolate.splrep(self.zRange, cellLimits)
             ycLimitAtClusterRedshift=interpolate.splev(z, tck)
             # Sanity check plot
-            plt.plot(np.unique(self.fitTab['z']), cellLimits, 'r.')
-            plotRange=np.linspace(0, 2, 100)
-            plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
+            #plt.plot(np.unique(self.fitTab['z']), cellLimits, 'r.')
+            #plotRange=np.linspace(0, 2, 100)
+            #plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
             
         # Survey-wide average
         else:
@@ -185,8 +212,11 @@ class SelFn(object):
         return detP, ycLimitAtClusterRedshift, M500Dict['M500Uncorr']
         
 
-    def ycLimitMap(self, z, wcs, outFileName = None):
+    def ycLimitMap(self, wcs, z = 0.4, outFileName = None):
         """Returns an image of the yc completeness limit. Writes to a .fits file if outFileName is given. 
+        
+        NOTE: z should not matter for this kind of map. If it does, something is wrong - can check by
+        making these for different zs.
         
         By definition, the limit is 50% completeness at whatever SNRCut was initially specified for the
         selFn object.
@@ -195,6 +225,8 @@ class SelFn(object):
         
         limitMap=np.zeros([wcs.header['NAXIS2'], wcs.header['NAXIS1']])
         mask=np.equal(self.fitTab['z'], z)
+        if z not in self.zRange:
+            raise Exception, "need to add interpolation step for z not in self.zRange"
         for row, yc in zip(self.fitTab[mask], self.ycLimits[mask]):
             limitMap[int(row['y0']):int(row['y1']), int(row['x0']):int(row['x1'])]=yc
         
@@ -204,20 +236,20 @@ class SelFn(object):
         return limitMap
     
         
-    def makeM500LimitMap(self, z, wcs, outFileName = None):
+    def makeM500LimitMap(self, wcs, z, outFileName = None):
         """Makes a .fits image map of the M500 completeness limit. 
         
         By definition, the limit is 50% completeness at whatever SNRCut was initially specified for the
         selFn object.
-        
-        NOTE: this is slow - takes ~500 sec per map on E-D56.
-        
+               
         """
         
         self.calcMLimits()
         
         limitMap=np.zeros([wcs.header['NAXIS2'], wcs.header['NAXIS1']])
         mask=np.equal(self.fitTab['z'], z)
+        if z not in self.zRange:
+            raise Exception, "need to add interpolation step for z not in self.zRange"
         for row, M in zip(self.fitTab[mask], self.MLimits[mask]):
             limitMap[int(row['y0']):int(row['y1']), int(row['x0']):int(row['x1'])]=M
         
@@ -225,33 +257,4 @@ class SelFn(object):
             astImages.saveFITS(outFileName, limitMap, wcs)
         
         return limitMap
-        
-        #---
-        # Or...
-        #ycLimitMap=self.ycLimitMap(z, wcs, outFileName = None)
-                
-        ## Slow... takes ~500 sec on E-D56
-        #t0=time.time()
-        #ycs=np.unique(ycLimitMap)
-        #ycs=ycs[np.where(ycs != 0)]
-        #MLimitMap=np.zeros(ycLimitMap.shape)
-        #count=0
-        #for yc in ycs:
-            #t00=time.time()
-            #count=count+1
-            #print "... %d/%d ..." % (count, len(ycs))
-            #M500Dict=simsTools.calcM500Fromy0(yc, yc/self.SNRCut, 
-                                              #z, 0.0, tckQFit = self.tckQFit, mockSurvey = None, 
-                                              #applyMFDebiasCorrection = False, calcErrors = False)
-            #t11=time.time()
-            #MLimitMap[np.equal(ycLimitMap, yc)]=M500Dict['M500Uncorr']
-            #t22=time.time()
-            #print t22-t00, t22-t11, t11-t00
-        #t1=time.time()
-        #print "total", t1-t0
-        
-        #if outFileName != None:
-            #astImages.saveFITS(outFileName, MLimitMap, wcs)
-            
-        #return MLimitMap
 

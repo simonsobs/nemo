@@ -1540,8 +1540,7 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
             zi=zRange[i]
             # UPP relation according to H13
             # NOTE: m in H13 is M/Mpivot
-            # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
-            y0pred, theta500Arcmin, Q=y0FromLogM500(log10M500, zi, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2)
+            y0pred, theta500Arcmin, Q=y0FromLogM500(log10M500, zi, tckQFit, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int)
             theta500ArcminArr.append(theta500Arcmin)
             QArr.append(Q)
             if y0pred > 0:

@@ -584,8 +584,64 @@ else:
             print "... making MLimit maps ..."
             for z in selFn.zRange:
                 print "... z = %.2f ..." % (z)
-                #ycLimitMap=selFn.ycLimitMap(0.4, wcs, 'ycLimitMap_z%.1f.fits' % (0.4))
-                selFn.makeM500LimitMap(z, wcs, MLimitDir+os.path.sep+'MLimitMap_z%.2f.fits' % (z))
+                selFn.makeM500LimitMap(wcs, z, MLimitDir+os.path.sep+'MLimitMap_z%.2f.fits' % (z))
+        
+        # Make yc limit map - as expected, these are all the same whichever z you choose (if we averaged over enough points)
+        ycLimitMap=selFn.ycLimitMap(wcs, z = 0.4, outFileName = diagnosticsDir+os.path.sep+"ycLimitMap.fits")
+        ycLimitMap=ycLimitMap/1e-4
+        fontSize=18.0*1.33
+        figSize=(22.2, 5.2)
+        axesLabels="sexagesimal"
+        axes=[0.065,0.17,0.93,0.88]
+        fig=plt.figure(figsize = figSize)
+        p=astPlots.ImagePlot(ycLimitMap, wcs, cutLevels = [0, ycLimitMap.max()], title = None, axes = axes, 
+                            axesLabels = axesLabels, colorMapName = 'cubehelix', 
+                            RATickSteps = {'deg': 15.0, 'unit': 'h'}, decTickSteps = {'deg': 5.0, 'unit': 'd'},
+                            axesFontSize = fontSize)
+        cbShrink=0.7
+        cbAspect=40
+        cbLabel="$\\tilde{y}_{0}$ ($10^{-4}$)"
+        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.25, 
+                        shrink = cbShrink, aspect = cbAspect)
+        plt.figtext(0.53, 0.045, cbLabel, ha="center", va="center", fontsize = fontSize, family = "serif")
+        plt.savefig(diagnosticsDir+os.path.sep+"ycLimitMap.pdf")
+
+        # 2d M500, z versus detection probability plot     
+        #print "make yc M500 z sel fn 2d image plot"
+        #IPython.embed()
+        #sys.exit()
+        
+        #minMass=5e13
+        #areaDeg2=areaMapSqDeg.sum()
+        #zMin=0.0
+        #zMax=2.0
+        #H0=70.
+        #Om0=0.30
+        #Ob0=0.05
+        #sigma_8=0.80
+        #mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8)
+        #mockSurvey.addSelFn(selFn)
+        
+        #fontDict={'size': 18, 'family': 'serif'}
+        #plt.figure(figsize=(9,6.5))
+        #ax=plt.axes([0.09, 0.10, 0.88, 0.88])
+        
+        
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)
+        #plt.plot(zRange, massLimit_90Complete, 'kD', ms = 8)
+        #tck=interpolate.splrep(zRange, massLimit_90Complete)
+        #plotRange=np.linspace(0, 2, 100)
+        #plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
+        #plt.xlabel("$z$", fontdict = fontDict)
+        #plt.ylim(2, 10)
+        #plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
+        #labelStr="$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
+        #plt.ylabel(labelStr, fontdict = fontDict)
+        ##plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
+        #plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
+        #plt.close()
+        
         
 
         
