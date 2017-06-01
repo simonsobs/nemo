@@ -185,7 +185,7 @@ class SelFn(object):
         
         """
         
-        # Given position - NOTE: this can be very noisy as function of z if numPositions is small in nemoSelFn?
+        # Given position - we should really average yc here over all zs rather than interpolate
         if np.any(RADeg) != None and np.any(decDeg) != None:
             # These are over the range of zs in the tile we're trying
             cellID=self.findCell(RADeg, decDeg)
@@ -196,7 +196,6 @@ class SelFn(object):
             #plt.plot(np.unique(self.fitTab['z']), cellLimits, 'r.')
             #plotRange=np.linspace(0, 2, 100)
             #plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-            
         # Survey-wide average
         else:
             ycLimitAtClusterRedshift=self.getSurveyAverage_ycLimitAtRedshift(z)
