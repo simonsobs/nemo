@@ -26,6 +26,8 @@ from nemo import actDict
 from nemo import simsTools
 from nemo import mapTools
 from nemo import MockSurvey
+from nemo import photometry
+import pyfits
 import time
 import IPython
 plt.matplotlib.interactive(False)
@@ -83,10 +85,51 @@ else:
                         else:
                             row['redshiftErr']=0.
             tab=tab[np.where(tab['redshift'] != 0)]
+        
         elif massOptions['forcedPhotometry'] == True:
-            print "add forced photometry step"
-            IPython.embed()
-            sys.exit()
+            
+            # We need this to check if objects in the catalog are actually in the footprint
+            areaMaskImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask.fits")
+            areaMask=areaMaskImg[0].data
+            wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
+            
+            # Filter maps - but should already have been done, this is just for easy set up
+            photFilterLabel=parDict['photometryOptions']['photFilter']
+            photFilterList=[]
+            for filterDict in parDict['mapFilters']:
+                if filterDict['label'] == photFilterLabel:
+                    photFilterList.append(filterDict)
+            imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], photFilterList, rootOutDir = rootOutDir)
+            
+            # Re-jig the catalog into the appropriate format before feeding through photometry routine
+            catalog=[]
+            for row in zTab:
+                objDict={}
+                for key in zTab.keys():
+                    objDict[key]=row[key]
+                objDict['template']=photFilterLabel
+                objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
+                x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
+                if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
+                    if areaMask[int(round(y)), int(round(x))] == 1:
+                        catalog.append(objDict)
+            imageDict[photFilterLabel]['catalog']=catalog
+            photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
+            
+            # Make into an atpy table
+            wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr']
+            catalog=imageDict[photFilterLabel]['catalog']
+            tab=atpy.Table()
+            for key in wantedKeys:
+                arr=[]
+                for objDict in catalog:
+                    if key in objDict.keys():
+                        arr.append(objDict[key])
+                    else:
+                        arr.append(0)
+                tab.add_column(atpy.Column(np.array(arr), key))
+            tab=tab[np.where(tab['redshift'] != 0)]
+            tab=tab[np.where(tab['fixed_y_c'] > 0)]
         
         # Optional fixed SNR cut
         if 'fixedSNRCut' in massOptions.keys():
@@ -153,7 +196,10 @@ else:
         # Tidy up and save
         # We delete some columns here to save duplicating in sourcery database
         #tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
-        outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+        if massOptions['forcedPhotometry'] == False:
+            outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+        else:
+            outFileName=rootOutDir+os.path.sep+os.path.split(massOptions['redshiftCatalog'])[-1].replace(".fits", "_M500.fits")
         if os.path.exists(outFileName) == True:
             os.remove(outFileName)
         tab.write(outFileName)
