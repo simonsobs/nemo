@@ -129,6 +129,11 @@ else:
                         arr.append(0)
                 tab.add_column(atpy.Column(np.array(arr), key))
             tab=tab[np.where(tab['redshift'] != 0)]
+            
+            # Flag things with -ve y0~, which we can't do anything with (unless we add stacking / averaging mode)
+            for row in tab:
+                if row['fixed_y_c'] < 0:
+                    print "... %s has fixed_y_c < 0 (and is removed) ..." % (row['name'])
             tab=tab[np.where(tab['fixed_y_c'] > 0)]
         
         # Optional fixed SNR cut
