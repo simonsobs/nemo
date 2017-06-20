@@ -15,7 +15,7 @@ args = parser.parse_args()
 
 N     = args.N
 beta  = args.beta
-alim  =  args.alim
+alim  = args.alim
 sigma = args.beam*utils.fwhm*utils.arcmin
 ntot  = args.numsrc
 
