@@ -395,11 +395,11 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
             data=clip['data']
             whtClip=astImages.clipUsingRADecCoords(weights, wcs, RAMin, RAMax, decMin, decMax)
             weights=whtClip['data']
-            wcs=clip['wcs']
             psClip=astImages.clipUsingRADecCoords(psMask, wcs, RAMin, RAMax, decMin, decMax)
             psMask=psClip['data']
             surveyClip=astImages.clipUsingRADecCoords(surveyMask, wcs, RAMin, RAMax, decMin, decMax)
             surveyMask=surveyClip['data']
+            wcs=clip['wcs']
             #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
         
         # Optional adding of white noise
@@ -546,7 +546,7 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
         mapDict['wcs']=wcs
         mapDict['surveyMask']=surveyMask
         mapDict['psMask']=psMask
-               
+        
         # Save trimmed weights
         if os.path.exists(diagnosticsDir+os.path.sep+"weights.fits") == False:
             astImages.saveFITS(diagnosticsDir+os.path.sep+"weights.fits", weights, wcs)

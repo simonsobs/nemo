@@ -1265,8 +1265,8 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName)
     
 #------------------------------------------------------------------------------------------------------------
 def fitQ(parDict, diagnosticsDir, filteredMapsDir):
-    """Calculates Q on a grid, and then fits (theta, Q) with a polynomial, saving a plot and the coeffs
-    array in the diagnostics dir.
+    """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot and the (theta, Q) array
+    as a table in the diagnostics dir.
     
     This can be generalised, but for now is hard coded to use the Arnaud model.
     
@@ -1275,7 +1275,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
     
     """
     
-    outFileName=diagnosticsDir+os.path.sep+"QCoeffs.npy"
+    outFileName=diagnosticsDir+os.path.sep+"QFit.fits"
     
     if os.path.exists(outFileName) == False:
         print ">>> Fitting for Q ..."
@@ -1309,7 +1309,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         # NOTE: ref filter that sets scale we compare to must ALWAYS come first
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
-        MRange=MRange+np.logspace(13.7, 15.3, 5).tolist()
+        MRange=MRange+np.logspace(13.5, 16.0, 10).tolist()
         zRange=zRange+np.arange(0.1, 1.7, 0.2).tolist()
 
         # Make signal only maps and filter them with the ref kernel
@@ -1334,10 +1334,20 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         Q=Q/Q[0]
         theta500Arcmin=np.array(theta500Arcmin)
         t1=time.time()
-
-        # Fit with polynomial
-        coeffs=np.polyfit(theta500Arcmin, Q, 12)
-
+        
+        # Sort and do spline fit... save .fits table of theta, Q
+        QTab=atpy.Table()
+        QTab.add_column(atpy.Column(Q, 'Q'))
+        QTab.add_column(atpy.Column(theta500Arcmin, 'theta500Arcmin'))
+        QTab.sort('theta500Arcmin')
+        if os.path.exists(outFileName) == True:
+            os.remove(outFileName)
+        QTab.write(outFileName)
+        
+        # Fit with spline
+        #coeffs=np.polyfit(theta500Arcmin, Q, 16)
+        tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
+        
         # Plot
         fontSize=18.0
         fontDict={'size': fontSize, 'family': 'serif'}
@@ -1346,32 +1356,33 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         plt.tick_params(axis='both', which='major', labelsize=15)
         plt.tick_params(axis='both', which='minor', labelsize=15)       
         plt.plot(theta500Arcmin, Q, 'kD', ms = 8)
-        thetaArr=np.linspace(0, 10, 100)
-        plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
+        thetaArr=np.linspace(0, 30, 300)
+        #plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
+        plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
         #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
-        plt.xlim(0, 9)
+        #plt.xlim(0, 9)
         plt.xlabel("$\\theta_{500}$ (arcmin)", fontdict = fontDict)
         plt.ylabel("$Q$", fontdict = fontDict)
         plt.savefig(diagnosticsDir+os.path.sep+"QFit.pdf")
         plt.close()
-
-        # Save polynomial fit coeffs
-        np.save(outFileName, coeffs)
     
     else:
         
         print ">>> Loading previously cached Q fit ..."
-        coeffs=np.load(outFileName)
+        #coeffs=np.load(outFileName)
+        QTab=atpy.Table().read(outFileName)
+        tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
     
-    return coeffs
+    return tck
 
 #------------------------------------------------------------------------------------------------------------
-def calcQ(theta500Arcmin, coeffs):
-    """Returns Q, given theta500Arcmin, and a set of polynomial fit coefficients to (theta, Q).
+def calcQ(theta500Arcmin, tck):
+    """Returns Q, given theta500Arcmin, and a set of spline fit knots for (theta, Q).
     
     """
     
-    Q=np.poly1d(coeffs)(theta500Arcmin)
+    #Q=np.poly1d(coeffs)(theta500Arcmin)
+    Q=interpolate.splev(theta500Arcmin, tck)
     
     return Q
     
@@ -1419,7 +1430,7 @@ def calcFRel(z, M500):
     return fRel
 
 #------------------------------------------------------------------------------------------------------------
-def getM500FromP(P, log10M):
+def getM500FromP(P, log10M, calcErrors = True):
     """Returns M500 as the maximum likelihood value from given P(log10M) distribution, together with 
     1-sigma error bars (M500, -M500Err, +M500 err).
     
@@ -1436,37 +1447,54 @@ def getM500FromP(P, log10M):
         print "argh"
         IPython.embed()
         sys.exit()
-    for n in range(fineP.shape[0]):
-        minIndex=index-n
-        maxIndex=index+n
-        if minIndex < 0 or maxIndex > fineP.shape[0]:
-            # This shouldn't happen; if it does, probably y0 is in the wrong units
-            print "outside M500 range"
-            IPython.embed()
-            sys.exit()
-            clusterLogM500=None
-            break            
-        p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
-        if p >= 0.6827:
-            clusterLogM500=fineLog10M[index]
-            clusterLogM500Min=fineLog10M[minIndex]
-            clusterLogM500Max=fineLog10M[maxIndex]
-            break
-        
-    if np.any(clusterLogM500) != None:
-        clusterM500=np.power(10, clusterLogM500)/1e14
+    
+    clusterLogM500=fineLog10M[index]
+    clusterM500=np.power(10, clusterLogM500)/1e14
+
+    if calcErrors == True:
+        for n in range(fineP.shape[0]):
+            minIndex=index-n
+            maxIndex=index+n
+            if minIndex < 0 or maxIndex > fineP.shape[0]:
+                # This shouldn't happen; if it does, probably y0 is in the wrong units
+                print "WARNING: outside M500 range"
+                clusterLogM500=None
+                break            
+            p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
+            if p >= 0.6827:
+                clusterLogM500Min=fineLog10M[minIndex]
+                clusterLogM500Max=fineLog10M[maxIndex]
+                break        
         clusterM500MinusErr=(np.power(10, clusterLogM500)-np.power(10, clusterLogM500Min))/1e14
         clusterM500PlusErr=(np.power(10, clusterLogM500Max)-np.power(10, clusterLogM500))/1e14
     else:
-        clusterM500=0.
         clusterM500MinusErr=0.
         clusterM500PlusErr=0.
     
     return clusterM500, clusterM500MinusErr, clusterM500PlusErr
-    
+
 #------------------------------------------------------------------------------------------------------------
-def calcM500Fromy0(y0, y0Err, z, zErr, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
-                   QFitCoeffs = getQCoeffsH13()):
+def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2):
+    """Predict y0~ given logM500 (in MSun) and redshift. Default scaling relation parameters are A10 (as in
+    H13).
+    
+    Returns y0~, theta500Arcmin, Q
+    
+    """
+    
+    M500=np.power(10, log10M500)
+    theta500Arcmin=calcTheta500Arcmin(z, M500)
+    Q=calcQ(theta500Arcmin, tckQFit)
+    # UPP relation according to H13
+    # NOTE: m in H13 is M/Mpivot
+    # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
+    y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*calcFRel(z, M500)
+    
+    return y0pred, theta500Arcmin, Q
+            
+#------------------------------------------------------------------------------------------------------------
+def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
+                   tckQFit = None, mockSurvey = None, applyMFDebiasCorrection = True, calcErrors = True):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
@@ -1474,15 +1502,28 @@ def calcM500Fromy0(y0, y0Err, z, zErr, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08,
     Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
     (in turn using the hmf module).
     
-    QFitCoeffs are from a polynomial fit to (theta, Q), with theta given in arcmin.
-        
+    tckQFit is a set of spline knots, as returned by fitQ.
+    
+    If applyMFDebiasCorrection == True, apply correction that accounts for steepness of mass function.
+    
+    If calcErrors == False, error bars are not calculated, they are just set to zero.
+    
     """
-        
-    log10M=mockSurvey.log10M
+    
+    if y0 < 0:
+        raise Exception, 'y0 cannot be negative'
+    
+    if mockSurvey == None and applyMFDebiasCorrection == True:
+        raise Exception, 'MockSurvey object must be supplied for the mass function shape de-bias correction to work'
+    
+    try:
+        log10M=mockSurvey.log10M
+    except:
+        log10M=np.linspace(13., 16., 300)
         
     # For marginalising over photo-z errors
     if zErr > 0:
-        zRange=mockSurvey.z
+        zRange=np.linspace(0, 2.0, 401)
         Pz=np.exp(-np.power(z-zRange, 2)/(2*(np.power(zErr, 2))))
         Pz=Pz/np.trapz(Pz, zRange)
     else:
@@ -1490,18 +1531,18 @@ def calcM500Fromy0(y0, y0Err, z, zErr, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08,
         Pz=np.ones(len(zRange))
 
     # M500
-    PLog10M=mockSurvey.getPLog10M(z)
     Py0GivenM=[]
+    QArr=[]
+    theta500ArcminArr=[]
     for log10M500 in log10M:
         lnPy0=np.zeros(len(zRange))
         for i in range(len(zRange)):
             zi=zRange[i]
-            M500=np.power(10, log10M500)
-            theta500Arcmin=calcTheta500Arcmin(zi, M500)
             # UPP relation according to H13
             # NOTE: m in H13 is M/Mpivot
-            # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
-            y0pred=tenToA0*np.power(astCalc.Ez(zi), 2)*np.power(M500/Mpivot, 1+B0)*calcQ(theta500Arcmin, QFitCoeffs)*calcFRel(zi, M500)
+            y0pred, theta500Arcmin, Q=y0FromLogM500(log10M500, zi, tckQFit, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int)
+            theta500ArcminArr.append(theta500Arcmin)
+            QArr.append(Q)
             if y0pred > 0:
                 log_y0=np.log(y0)
                 log_y0Err=np.log(y0+y0Err)-log_y0
@@ -1519,14 +1560,126 @@ def calcM500Fromy0(y0, y0Err, z, zErr, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08,
     
     # Normalise
     Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10M)
-    PLog10M=PLog10M/np.trapz(PLog10M, log10M)
+    if applyMFDebiasCorrection == True and mockSurvey != None:
+        PLog10M=mockSurvey.getPLog10M(z)
+        PLog10M=PLog10M/np.trapz(PLog10M, log10M)
+        M500, errM500Minus, errM500Plus=getM500FromP(Py0GivenM*PLog10M, log10M, calcErrors = calcErrors)
+    else:
+        M500, errM500Minus, errM500Plus=0.0, 0.0, 0.0
+
+    # M500 without de-biasing for mass function shape (this gives the ~15% offset compared to Planck)
+    M500Uncorr, errM500UncorrMinus, errM500UncorrPlus=getM500FromP(Py0GivenM, log10M, calcErrors = calcErrors)
     
-    # M500 with and without de-biasing for mass function shape (this gives the ~15% offset compared to Planck)
-    M500, errM500Minus, errM500Plus=getM500FromP(Py0GivenM*PLog10M, log10M)
-    M500Uncorr, errM500UncorrMinus, errM500UncorrPlus=getM500FromP(Py0GivenM, log10M)
-    
+    if M500Uncorr == 0:
+        print "M500 fail"
+        IPython.embed()
+        sys.exit()
+        
     return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus,
             'M500Uncorr': M500Uncorr, 'M500Uncorr_errPlus': errM500UncorrPlus, 
             'M500Uncorr_errMinus': errM500UncorrMinus}
 
 #------------------------------------------------------------------------------------------------------------
+# Mass conversion routines
+
+# For getting x(f) - see Hu & Kravtsov
+x=np.linspace(1e-3, 10, 1000)
+fx=(x**3)*(np.log(1+1./x)-np.power(1+x, -1))
+XF_TCK=interpolate.splrep(fx, x)
+FX_TCK=interpolate.splrep(x, fx)
+
+#------------------------------------------------------------------------------------------------------------
+def gz(zIn, zMax = 1000, dz = 0.1):
+    """Calculates linear growth factor at redshift z. Use Dz if you want normalised to D(z) = 1.0 at z = 0.
+    
+    See http://www.astronomy.ohio-state.edu/~dhw/A873/notes8.pdf for some notes on this.
+    
+    """
+    
+    zRange=np.arange(zIn, zMax, dz)
+    HzPrime=[]
+    for zPrime in zRange:
+        HzPrime.append(astCalc.Ez(zPrime)*astCalc.H0)
+    HzPrime=np.array(HzPrime)
+    gz=astCalc.Ez(zIn)*np.trapz((np.gradient(zRange)*(1+zRange)) / np.power(HzPrime, 3), zRange)
+    
+    return gz
+
+#------------------------------------------------------------------------------------------------------------
+def calcDz(zIn):
+    """Calculate linear growth factor, normalised to D(z) = 1.0 at z = 0.
+    
+    """
+    return gz(zIn)/gz(0.0)
+
+#------------------------------------------------------------------------------------------------------------
+def criticalDensity(z):
+    """Returns the critical density at the given z.
+    
+    """
+    
+    G=4.301e-9  # in MSun-1 km2 s-2 Mpc, see Robotham GAMA groups paper
+    Hz=astCalc.H0*astCalc.Ez(z)
+    rho_crit=((3*np.power(Hz, 2))/(8*np.pi*G))
+    
+    return rho_crit
+
+#------------------------------------------------------------------------------------------------------------
+def meanDensity(z):
+    """Returns the mean density at the given z.
+    
+    """
+    
+    rho_mean=astCalc.OmegaMz(z)*criticalDensity(z)
+    
+    return rho_mean  
+
+#------------------------------------------------------------------------------------------------------------
+def convertM200mToM500c(M200m, z):
+    """Returns M500c (MSun), R500c (Mpc) for given M200m and redshift. Uses the Bhattacharya et al. c-M
+    relation: http://adsabs.harvard.edu/abs/2013ApJ...766...32B
+
+    See also Hu & Kravtsov: http://iopscience.iop.org/article/10.1086/345846/pdf
+    
+    """
+        
+    # c-M relation for full cluster sample
+    Dz=calcDz(z)    # <--- this is the slow part. 3 seconds!
+    nu200m=(1./Dz)*(1.12*np.power(M200m / (5e13 * np.power(astCalc.H0/100., -1)), 0.3)+0.53)
+    c200m=np.power(Dz, 1.15)*9.0*np.power(nu200m, -0.29)
+    
+    rho_crit=criticalDensity(z)
+    rho_mean=meanDensity(z)
+    R200m=np.power((3*M200m)/(4*np.pi*200*rho_mean), 1/3.)
+
+    rs=R200m/c200m
+    
+    f_rsOverR500c=((500*rho_crit) / (200*rho_mean)) * interpolate.splev(1./c200m, FX_TCK)
+    x_rsOverR500c=interpolate.splev(f_rsOverR500c, XF_TCK)
+    R500c=rs/x_rsOverR500c
+
+    M500c=(4/3.0)*np.pi*R500c**3*(500*rho_crit)
+        
+    return M500c, R500c
+
+#------------------------------------------------------------------------------------------------------------
+def convertM500cToM200m(M500c, z):
+    """Returns M200m given M500c
+    
+    """
+    
+    tolerance=1e-5
+    scaleFactor=3.0
+    ratio=1e6
+    count=0
+    while abs(1.0-ratio) > tolerance:
+        testM500c, testR500c=convertM200mToM500c(scaleFactor*M500c, z)
+        ratio=M500c/testM500c
+        scaleFactor=scaleFactor*ratio
+        count=count+1
+        if count > 10:
+            raise Exception, "M500c -> M200m conversion didn't converge quickly enough"
+        
+    M200m=scaleFactor*M500c
+    
+    return M200m

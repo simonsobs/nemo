@@ -1054,7 +1054,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 #else:
                     #endIndex=objsPerNode*(rank+1)
                 #catalog=catalog[startIndex:endIndex]
-        
+            
             # Apply the high pass filter - subtract background on larger scales using difference of Gaussians  
             mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = bckSubScaleArcmin/60.)
             if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
