@@ -5,9 +5,7 @@ in the two-season ACTPol cluster catalog paper. This uses nemo's
 RealSpaceMatchedFilter method. Here is a link to an advanced draft
 of the paper on the ACTPol wiki:
 
-```
-https://phy-wiki.princeton.edu/polwiki/pmwiki.php?n=Papers.D56Clusters?action=download&upname=equD56Paper_AAS_20170622.pdf
-```
+<https://phy-wiki.princeton.edu/polwiki/pmwiki.php?n=Papers.D56Clusters?action=download&upname=equD56Paper_AAS_20170622.pdf>
 
 ## Step 1:
 
@@ -74,9 +72,7 @@ The output is written as a .fits table, `equD56/equD56_M500.fits`.
 If you wanted to extract a catalog containing redshifts from the web 
 database, this link shows the query needed:
 
-```
-http://www.acru.ukzn.ac.za/actpol-sourcery/updateQueryParams?queryRADeg=0%3A360&queryDecDeg=-90%3A90&querySearchBoxArcmin=&queryOtherConstraints=sourceList+%3D+equD56-MJH+and+redshift+%3E+0&queryApply=Apply
-```
+<http://www.acru.ukzn.ac.za/actpol-sourcery/updateQueryParams?queryRADeg=0%3A360&queryDecDeg=-90%3A90&querySearchBoxArcmin=&queryOtherConstraints=sourceList+%3D+equD56-MJH+and+redshift+%3E+0&queryApply=Apply>
 
 (you may need to enter 'act', 'atacamallama' to see the web database).
 You could download the catalog (in .fits format) using the links at
@@ -86,9 +82,7 @@ Similarly, if you wanted everything flagged as a cluster (i.e., the
 sample of 182 clusters in the two-season ACTPol catalog), you can use
 this query:
 
-```
-http://www.acru.ukzn.ac.za/actpol-sourcery/updateQueryParams?queryRADeg=0%3A360&queryDecDeg=-90%3A90&querySearchBoxArcmin=&queryOtherConstraints=sourceList+%3D+equD56-MJH+and+classification+%3D+%27cluster%27&queryApply=Apply
-```
+<http://www.acru.ukzn.ac.za/actpol-sourcery/updateQueryParams?queryRADeg=0%3A360&queryDecDeg=-90%3A90&querySearchBoxArcmin=&queryOtherConstraints=sourceList+%3D+equD56-MJH+and+classification+%3D+%27cluster%27&queryApply=Apply>
 
 This should match the `ACTPol_clusters.fits` file included in the 
 current directory.
@@ -96,9 +90,7 @@ current directory.
 If you're interested in measuring photo-zs for clusters detected with
 `nemo`, check out `zCluster`: 
 
-```
-https://github.com/ACTCollaboration/zCluster
-```
+<https://github.com/ACTCollaboration/zCluster>
 
 This can take the `equD56/equD56_optimalCatalog.fits` file as input.
 
