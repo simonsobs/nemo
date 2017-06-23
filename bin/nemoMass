@@ -170,6 +170,10 @@ else:
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr_errPlus"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr_errMinus"))
+        if 'rescaleFactor' in massOptions.keys():
+            tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Cal"))
+            tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Cal_errPlus"))
+            tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Cal_errMinus"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m_errPlus"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m_errMinus"))
@@ -197,7 +201,13 @@ else:
             row['M200mUncorr']=simsTools.convertM500cToM200m(massDict['M500Uncorr']*1e14, row['redshift'])/1e14
             row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
             row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
-
+            # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
+            row['M500Cal']=massDict['M500']/massOptions['rescaleFactor']
+            row['M500Cal_errPlus']=np.sqrt(np.power(row['M500_errPlus']/row['M500'], 2) + \
+                                           np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
+            row['M500Cal_errMinus']=np.sqrt(np.power(row['M500_errMinus']/row['M500'], 2) + \
+                                            np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
+            
         # Tidy up and save
         # We delete some columns here to save duplicating in sourcery database
         #tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
