@@ -24,6 +24,7 @@ from nemo import mapTools
 from nemo import MockSurvey
 from nemo import SelFn
 from nemo import photometry
+from nemo import plotSettings
 import pickle
 import nemoCython
 import pyfits
@@ -518,22 +519,24 @@ else:
         realTab.write(outFileName)
                 
         # Survey-averaged 90% completeness mass limit and plot
+        plotSettings.update_rcParams()
         completenessLim=0.9
         massLimit_90Complete, zRange=selFn.surveyAverage_MLimitAtCompleteness(completenessLim)
-        fontDict={'size': 18, 'family': 'serif'}
+        #fontDict={'size': 18, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.09, 0.10, 0.88, 0.88])
-        plt.tick_params(axis='both', which='major', labelsize=15)
-        plt.tick_params(axis='both', which='minor', labelsize=15)
-        plt.plot(zRange, massLimit_90Complete, 'kD', ms = 8)
+        ax=plt.axes([0.11, 0.12, 0.87, 0.86])
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)
         tck=interpolate.splrep(zRange, massLimit_90Complete)
         plotRange=np.linspace(0, 2, 100)
         plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-        plt.xlabel("$z$", fontdict = fontDict)
-        plt.ylim(2, 10)
+        plt.plot(zRange, massLimit_90Complete, 'D', ms = 8)
+        plt.xlabel("$z$")
+        plt.ylim(1.5, 10)
         plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
+        plt.xlim(0, 2)
         labelStr="$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
-        plt.ylabel(labelStr, fontdict = fontDict)
+        plt.ylabel(labelStr)
         #plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
         plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
         plt.close()
@@ -561,18 +564,20 @@ else:
         areaTab.sort('MLimit')
         
         completenessLim=0.5
-        fontSize=18.
-        fontDict={'size': fontSize, 'family': 'serif'}
+        #fontSize=18.
+        #fontDict={'size': fontSize, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.09, 0.10, 0.88, 0.88])
-        plt.tick_params(axis='both', which='major', labelsize=15)
-        plt.tick_params(axis='both', which='minor', labelsize=15)
+        ax=plt.axes([0.11, 0.12, 0.87, 0.86])
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)
         plt.plot(areaTab['MLimit'], np.cumsum(areaTab['fracSurveyArea']), 'k-')
-        plt.ylabel("Fraction of survey area < $M_{500}$ limit", fontdict = fontDict)
-        plt.xlabel("$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]", fontdict = fontDict)
+        plt.ylabel("Fraction of survey area < $M_{500}$ limit")
+        plt.xlabel("$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]")
         #labelStr="total survey area = %.1f deg$^2$\n$%.1f < z < %.1f$" % (areaMapSqDeg.sum(), zMin, zMax)
         labelStr="total survey area = %.1f deg$^2$" % (areaMapSqDeg.sum())
-        plt.figtext(0.5, 0.2, labelStr, ha="left", va="center", fontsize = fontSize, family = "serif")
+        plt.ylim(0, 1.05)
+        plt.xlim(1.5, areaTab['MLimit'].max())
+        plt.figtext(0.4, 0.2, labelStr, ha="left", va="center")
         plt.savefig(diagnosticsDir+os.path.sep+"cumulativeAreaMLimit_0p2_z_1p0.pdf")
         plt.close()
         
@@ -595,15 +600,15 @@ else:
         axes=[0.065,0.17,0.93,0.88]
         fig=plt.figure(figsize = figSize)
         p=astPlots.ImagePlot(ycLimitMap, wcs, cutLevels = [0, ycLimitMap.max()], title = None, axes = axes, 
-                            axesLabels = axesLabels, colorMapName = 'cubehelix', 
+                            axesLabels = axesLabels, colorMapName = 'cubehelix', axesFontFamily = 'sans-serif',
                             RATickSteps = {'deg': 15.0, 'unit': 'h'}, decTickSteps = {'deg': 5.0, 'unit': 'd'},
                             axesFontSize = fontSize)
-        cbShrink=0.7
-        cbAspect=40
+        cbShrink=0.64
+        cbAspect=34
         cbLabel="$\\tilde{y}_{0}$ ($10^{-4}$)"
-        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.25, 
+        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.08, pad = 0.22, 
                         shrink = cbShrink, aspect = cbAspect)
-        plt.figtext(0.53, 0.045, cbLabel, ha="center", va="center", fontsize = fontSize, family = "serif")
+        plt.figtext(0.53, 0.045, cbLabel, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
         plt.savefig(diagnosticsDir+os.path.sep+"ycLimitMap.pdf")
 
         # 2d M500, z versus detection probability plot     

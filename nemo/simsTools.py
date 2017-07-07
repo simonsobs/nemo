@@ -16,6 +16,7 @@ from flipper import fftTools
 import catalogTools
 import photometry
 import gnfw
+import plotSettings
 import numpy as np
 import numpy.fft as fft
 import os
@@ -1023,6 +1024,8 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
                     xtickLabels.append('')
                 
         # Plot cumulative detections > SNR for both inverted map catalog and actual catalog
+        plotSettings.update_rcParams()
+        
         plt.plot(binEdges[:-1], cumSumInverted, 'r-', label = 'inverted maps')
         plt.plot(binEdges[:-1], cumSumCandidates, 'b-', label = 'candidates')
         plt.xlabel("%s" % (SNRKey))
@@ -1038,15 +1041,15 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         # that from what we're doing here, strictly speaking)
         cumContamination=cumSumInverted/cumSumCandidates
         cumContamination[np.isnan(cumContamination)]=0.0
-        fontSize=18.0
-        fontDict={'size': fontSize, 'family': 'serif'}
+        #fontSize=18.0
+        #fontDict={'size': fontSize, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.10, 0.10, 0.88, 0.88])
-        plt.tick_params(axis='both', which='major', labelsize=15)
-        plt.tick_params(axis='both', which='minor', labelsize=15)        
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)        
         plt.plot(binEdges[:-1], cumContamination, 'k-')
-        plt.xlabel("%s" % (SNRKey), fontdict = fontDict)
-        plt.ylabel("Contamination fraction > %s" % (SNRKey), fontdict = fontDict)
+        plt.xlabel("%s" % (SNRKey))#, fontdict = fontDict)
+        plt.ylabel("Contamination fraction > %s" % (SNRKey))#, fontdict = fontDict)
         #plt.semilogx()
         plt.xticks(xtickValues, xtickLabels)
         plt.xlim(binMin, 10.01)#binMax)
@@ -1349,20 +1352,23 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
         
         # Plot
-        fontSize=18.0
-        fontDict={'size': fontSize, 'family': 'serif'}
+        plotSettings.update_rcParams()
+        #fontSize=18.0
+        #fontDict={'size': fontSize, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.10, 0.10, 0.88, 0.88])
-        plt.tick_params(axis='both', which='major', labelsize=15)
-        plt.tick_params(axis='both', which='minor', labelsize=15)       
-        plt.plot(theta500Arcmin, Q, 'kD', ms = 8)
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)       
         thetaArr=np.linspace(0, 30, 300)
         #plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
         plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
+        plt.plot(theta500Arcmin, Q, 'D', ms = 8)
         #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
         #plt.xlim(0, 9)
-        plt.xlabel("$\\theta_{500}$ (arcmin)", fontdict = fontDict)
-        plt.ylabel("$Q$", fontdict = fontDict)
+        plt.ylim(0, Q.max()*1.05)
+        plt.xlim(0, thetaArr.max())
+        plt.xlabel("$\\theta_{500}$ (arcmin)")
+        plt.ylabel("$Q$")
         plt.savefig(diagnosticsDir+os.path.sep+"QFit.pdf")
         plt.close()
     

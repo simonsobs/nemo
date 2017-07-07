@@ -34,6 +34,7 @@ import simsTools
 import photometry
 import catalogTools
 import simsTools
+import plotSettings
 import gnfw
 import pyfits
 import copy
@@ -1009,18 +1010,19 @@ class RealSpaceMatchedFilter(MapFilter):
             kernWCS.header['SIGNORM']=signalNorm
             astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, kernWCS)
             
-            # Filter profile plot        
-            fontDict={'size': 18, 'family': 'serif'}
+            # Filter profile plot       
+            plotSettings.update_rcParams()
+            #fontDict={'size': 18, 'family': 'serif'}
             plt.figure(figsize=(9,6.5))
-            ax=plt.axes([0.1, 0.10, 0.88, 0.88])
-            plt.tick_params(axis='both', which='major', labelsize=15)
-            plt.tick_params(axis='both', which='minor', labelsize=15)
+            ax=plt.axes([0.13, 0.12, 0.86, 0.86])
+            #plt.tick_params(axis='both', which='major', labelsize=15)
+            #plt.tick_params(axis='both', which='minor', labelsize=15)
             tck=interpolate.splrep(arcminRange[mask], prof[mask])
             plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
             #plt.plot(arcminRange[mask], prof[mask])
             plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-            plt.xlabel("$\\theta$ (arcmin)", fontdict = fontDict)
-            plt.ylabel("Amplitude", fontdict = fontDict)
+            plt.xlabel("$\\theta$ (arcmin)")
+            plt.ylabel("Amplitude")
             #plt.title(self.label)
             #plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
             plt.xlim(0, arcminRange[mask].max())
@@ -1187,7 +1189,7 @@ class RealSpaceMatchedFilter(MapFilter):
 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # Fold point source mask into survey mask here
-        edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (gridSize*5.0, gridSize*5.0))
+        edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (int(round(gridSize*5.0)), int(round(gridSize*5.0))))
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
         combinedMap=combinedMap*edgeCheck
         apodMask=np.not_equal(combinedMap, 0)
