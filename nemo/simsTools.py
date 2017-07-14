@@ -1044,15 +1044,15 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         #fontSize=18.0
         #fontDict={'size': fontSize, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.10, 0.10, 0.88, 0.88])
-        #plt.tick_params(axis='both', which='major', labelsize=15)
-        #plt.tick_params(axis='both', which='minor', labelsize=15)        
+        ax=plt.axes([0.10, 0.10, 0.87, 0.88])      
         plt.plot(binEdges[:-1], cumContamination, 'k-')
         plt.xlabel("%s" % (SNRKey))#, fontdict = fontDict)
         plt.ylabel("Contamination fraction > %s" % (SNRKey))#, fontdict = fontDict)
-        #plt.semilogx()
-        plt.xticks(xtickValues, xtickLabels)
-        plt.xlim(binMin, 10.01)#binMax)
+        allLabels=['4.0', '', '', '', '', '5.0', '', '', '', '', '6.0', '', '', '', '', '7.0', '', '', '', '', '8.0']
+        allTicks=np.arange(4.0, 8.2, 0.2)
+        plt.xticks(allTicks, allLabels)
+        plt.xlim(4, 8)
+        #plt.xlim(binMin, 10.01)#binMax)
         #plt.ylim(0, 1)
         plt.savefig(diagnosticsDir+os.path.sep+"contaminationEstimate_%s.pdf" % (SNRKey))
         plt.close()    
