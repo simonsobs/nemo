@@ -9,5 +9,6 @@ import mapFilters
 import photometry
 import simsTools
 import actDict
+import plotSettings
 
 __version__ = "git"
