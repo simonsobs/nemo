@@ -21,8 +21,8 @@ np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                makeDS9Regions = True, writeSegmentationMap = False, diagnosticsDir = None,
-                invertMap = False, objIdent = 'ACT-CL', longNames = False, verbose = True):
+                findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
+                diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, verbose = True):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
     
@@ -87,7 +87,13 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         
         # Get object positions, number of pixels etc.
         objIDs=np.unique(segmentationMap)
-        objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
+        if findCenterOfMass == True:
+           print "... working with center of mass method ..."
+           objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
+        else:
+           print "... working with maximum position method ..."
+           objPositions=ndimage.maximum_position(data, labels = segmentationMap, index = objIDs)
+
         objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
 
         # Found to be not robust elsewhere
@@ -292,16 +298,17 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 def measureApertureFluxes(catalog, apertureRadiusArcmin, mapData, wcs, fluxCorrectionFactor, numBackgrounds = 10, 
                           maxBackgroundSepArcmin = 30.0, minBackgroundSepArcmin = 10.0,
                           allowOverlappingBackgrounds = True):
-    """This is now doing the 'aperture-flux-of-signal-template-multiplied-by-norm-from-central-pixel thing.
-    We assume here we already have SNR (we can use this and peak flux to estimate statistical uncertainty).
+   """This is now doing the 'aperture-flux-of-signal-template-multiplied-by-norm-from-central-pixel thing.
+   We assume here we already have SNR (we can use this and peak flux to estimate statistical uncertainty).
     
-    Also measure delta T here, so should rename this
-    """
+   Also measure delta T here, so should rename this
+   """
 
-    mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
+   mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
                                                     np.arange(mapData.shape[1]), 
                                                     mapData, kx = 1, ky = 1)                                                    
-    for obj in catalog:
+    
+   for obj in catalog:
 
         # y_c, delta T c - assuming 148 GHz here
         yc=mapInterpolator(obj['y'], obj['x'])[0][0]

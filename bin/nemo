@@ -44,14 +44,15 @@ else:
         for d in dirList:
             if os.path.exists(d) == False:
                 os.makedirs(d)
-                
+
+      
         # Filter maps
         imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], parDict['mapFilters'], rootOutDir = rootOutDir)
         
         # Find objects in filtered maps
-        photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'],
-                               rejectBorder = parDict['rejectBorder'], diagnosticsDir = diagnosticsDir,
-                               objIdent = parDict['objIdent'], longNames = parDict['longNames'])
+        photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'], 
+                               findCenterOfMass = parDict['findCenterOfMass'], rejectBorder = parDict['rejectBorder'], 
+                               diagnosticsDir = diagnosticsDir, objIdent = parDict['objIdent'], longNames = parDict['longNames'])
         
         # Measure fluxes
         photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
@@ -65,7 +66,7 @@ else:
         contaminationDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
                                                                           parDict['minObjPix'], parDict['rejectBorder'], 
                                                                           parDict['catalogCuts'], parDict['photometryOptions'],
-                                                                          diagnosticsDir = diagnosticsDir)        
+                                                                          diagnosticsDir = diagnosticsDir, findCenterOfMass = parDict['findCenterOfMass'])        
             
         # Sims based on inserting fake cluster profiles into the maps
         if 'fakeSourceSimOptions' in parDict.keys():

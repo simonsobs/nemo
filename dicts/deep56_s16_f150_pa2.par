@@ -1,25 +1,25 @@
 #In this test I consider the full map, better pick noise rather than missing point sources at the edges.
 
 unfilteredMaps = [\                                                            
-                {'mapFileName': "/data/saiola/depot/src_lists/nemo/deep56_test/maps/deep56_array_2_season2_iqu_c7v5_night_nomoon_1way_azfilt_pertod_final_srcsub_200_I_srcback.fits", \
-             'weightsFileName': "/data/saiola/depot/src_lists/nemo/deep56_test/maps/deep56_array_2_season2_iqu_c7v5_night_nomoon_1way_azfilt_pertod_final_srcsub_weights_I.fits", \
-                 'obsFreqGHz': 148.0, 'units': 'uK', \
-                 'beamFileName': "/data/saiola/depot/Beams/beams_151107_v1/beam_profile_151107_v1_2014_pa2_jitter_deep56.txt", \
-                 'addNoise': None, \
-                 #'RADecSection': [169, 235, -3.0, 20], \
-                 #'backgroundSubtraction': False, \
-                 'pointSourceRemoval': None} \
+           {'mapFileName': "/data/saiola/maps/sigurd/s4test3/cmb_huge/cmb_night_pa2_150_2way_tot_sky_map0100_mono_0_deep56_cut.fits", \
+        'weightsFileName': "/data/saiola/maps/sigurd/s4test3/cmb_huge/cmb_night_pa2_150_2way_tot_sky_hits_mono_deep56_cut.fits", \
+            'obsFreqGHz': 148.0, 'units': 'uK', \
+            'beamFileName': "/data/saiola/depot/Beams/151107_v1/beam_profile_151107_v1_2014_pa2_jitter_deep56.txt", \
+            'addNoise': None, \
+            #'RADecSection': [169, 235, -3.0, 20], \
+            #'backgroundSubtraction': False, \
+            'pointSourceRemoval': None} \
                   ]
 
 
 # Detection options
-thresholdSigma = 2.8
+thresholdSigma = 4.0
 minObjPix = 1
 rejectBorder = 0 #would be nice to calibrate this.
-objIdent = 'D56-PA2'
+objIdent = 'D56-S14-f150-PA2'
 longNames = False
-catalogCuts=['SNR > 2.8']
-findCenterOfMass = False
+catalogCuts=['SNR > 4']
+center_of_mass=False
 
 mapFilters = [\
                	{'label': "Beam", 'class': "BeamRealSpaceMatchedFilter", \
@@ -35,12 +35,6 @@ mapFilters = [\
                             'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
              ]
 
-#mapFilters = [\
-#               {'label': "Beam", 'class': "BeamRealSpaceMatchedFilter", \
-#                'params': {'noiseParams': {'method': "dataMap"}, \
-#                           'outputUnits': 'uK', \
-#                           'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
-#             ]
 
 # Photometry options
 # NOTE: these don't do anything at the moment
