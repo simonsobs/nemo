@@ -224,8 +224,8 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 
     # Adds fixed_SNR values to catalogs for all maps
     if photFilter != None:
-        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter)            
-            
+        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter)
+
     for key in imageDict.keys():
         
         print "--> Map: %s ..." % (imageDict[key]['filteredMap'])

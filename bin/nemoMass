@@ -26,6 +26,8 @@ from nemo import actDict
 from nemo import simsTools
 from nemo import mapTools
 from nemo import MockSurvey
+from nemo import photometry
+import pyfits
 import time
 import IPython
 plt.matplotlib.interactive(False)
@@ -73,15 +75,66 @@ else:
             tab.add_column(nemoTab['fixed_y_c'])
             tab.add_column(nemoTab['fixed_err_y_c'])
             tab.add_column(atpy.Column(np.zeros(len(nemoTab)), 'redshift'))
+            tab.add_column(atpy.Column(np.zeros(len(nemoTab)), 'redshiftErr'))
             for row in tab:
                 for zrow in zTab:
                     if zrow['name'] == row['name']:
                         row['redshift']=zrow['redshift']
+                        if 'redshiftErr' in zTab.keys():
+                            row['redshiftErr']=zrow['redshiftErr']
+                        else:
+                            row['redshiftErr']=0.
             tab=tab[np.where(tab['redshift'] != 0)]
+        
         elif massOptions['forcedPhotometry'] == True:
-            print "add forced photometry step"
-            IPython.embed()
-            sys.exit()
+            
+            # We need this to check if objects in the catalog are actually in the footprint
+            areaMaskImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask.fits")
+            areaMask=areaMaskImg[0].data
+            wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
+            
+            # Filter maps - but should already have been done, this is just for easy set up
+            photFilterLabel=parDict['photometryOptions']['photFilter']
+            photFilterList=[]
+            for filterDict in parDict['mapFilters']:
+                if filterDict['label'] == photFilterLabel:
+                    photFilterList.append(filterDict)
+            imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], photFilterList, rootOutDir = rootOutDir)
+            
+            # Re-jig the catalog into the appropriate format before feeding through photometry routine
+            catalog=[]
+            for row in zTab:
+                objDict={}
+                for key in zTab.keys():
+                    objDict[key]=row[key]
+                objDict['template']=photFilterLabel
+                objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
+                x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
+                if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
+                    if areaMask[int(round(y)), int(round(x))] == 1:
+                        catalog.append(objDict)
+            imageDict[photFilterLabel]['catalog']=catalog
+            photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
+            
+            # Make into an atpy table
+            wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr']
+            catalog=imageDict[photFilterLabel]['catalog']
+            tab=atpy.Table()
+            for key in wantedKeys:
+                arr=[]
+                for objDict in catalog:
+                    if key in objDict.keys():
+                        arr.append(objDict[key])
+                    else:
+                        arr.append(0)
+                tab.add_column(atpy.Column(np.array(arr), key))
+            tab=tab[np.where(tab['redshift'] != 0)]
+            
+            # Flag things with -ve y0~, which we can't do anything with (unless we add stacking / averaging mode)
+            for row in tab:
+                if row['fixed_y_c'] < 0:
+                    print "... %s has fixed_y_c < 0 (and is removed) ..." % (row['name'])
+            tab=tab[np.where(tab['fixed_y_c'] > 0)]
         
         # Optional fixed SNR cut
         if 'fixedSNRCut' in massOptions.keys():
@@ -89,9 +142,10 @@ else:
         
         # Q function (filter mismatch) options
         if massOptions['Q'] == 'H13':
-            QFitCoeffs=simsTools.getQCoeffsH13()
+            raise Exception, 'H13 option depreciated - need to replace polynomial with spline fit'
+            tckQFit=simsTools.getQCoeffsH13()
         elif massOptions['Q'] == 'fit':
-            QFitCoeffs=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+            tckQFit=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
         else:
             raise Exception, "didn't understand choice of Q function in massOptions"
         
@@ -113,19 +167,54 @@ else:
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errPlus"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errMinus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr_errPlus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Uncorr_errMinus"))
+        if 'rescaleFactor' in massOptions.keys():
+            tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Cal"))
+            tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Cal_errPlus"))
+            tab.add_column(atpy.Column(np.zeros(len(tab)), "M500Cal_errMinus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m_errPlus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200m_errMinus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr_errPlus"))
+        tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr_errMinus"))
         #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q"))
         #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q_err"))
         for row in tab:
+            print "... %s (%.3f +/- %.3f) ..." % (row['name'], row['redshift'], row['redshiftErr'])
             massDict=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                              row['redshift'], mockSurvey, QFitCoeffs = QFitCoeffs)
+                                              row['redshift'], row['redshiftErr'], 
+                                              tckQFit = tckQFit, mockSurvey = mockSurvey, 
+                                              applyMFDebiasCorrection = True)
             row['M500']=massDict['M500']
             row['M500_errPlus']=massDict['M500_errPlus']
             row['M500_errMinus']=massDict['M500_errMinus']
-        
+            row['M500Uncorr']=massDict['M500Uncorr']
+            row['M500Uncorr_errPlus']=massDict['M500Uncorr_errPlus']
+            row['M500Uncorr_errMinus']=massDict['M500Uncorr_errMinus']
+            # Mass conversion
+            row['M200m']=simsTools.convertM500cToM200m(massDict['M500']*1e14, row['redshift'])/1e14
+            row['M200m_errPlus']=(row['M500_errPlus']/row['M500'])*row['M200m']
+            row['M200m_errMinus']=(row['M500_errMinus']/row['M500'])*row['M200m']
+            row['M200mUncorr']=simsTools.convertM500cToM200m(massDict['M500Uncorr']*1e14, row['redshift'])/1e14
+            row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
+            row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
+            # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
+            row['M500Cal']=massDict['M500']/massOptions['rescaleFactor']
+            row['M500Cal_errPlus']=np.sqrt(np.power(row['M500_errPlus']/row['M500'], 2) + \
+                                           np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
+            row['M500Cal_errMinus']=np.sqrt(np.power(row['M500_errMinus']/row['M500'], 2) + \
+                                            np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
+            
         # Tidy up and save
         # We delete some columns here to save duplicating in sourcery database
-        tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
-        outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+        #tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
+        if massOptions['forcedPhotometry'] == False:
+            outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+        else:
+            outFileName=rootOutDir+os.path.sep+os.path.split(massOptions['redshiftCatalog'])[-1].replace(".fits", "_M500.fits")
         if os.path.exists(outFileName) == True:
             os.remove(outFileName)
         tab.write(outFileName)

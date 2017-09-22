@@ -13,9 +13,12 @@ import subprocess
 import hmf
 from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
+from nemo import simsTools
 import cPickle
 from scipy import interpolate
+from scipy import stats
 from astLib import *
+import time
 plt.matplotlib.interactive(False)
 
 class MockSurvey(object):
@@ -44,9 +47,34 @@ class MockSurvey(object):
         # NOTE: Mmin etc. are log10 MSun h^-1; dndm is h^4 MSun^-1 Mpc^-3
         # Internally, it's better to stick with how hmf does this, i.e., use these units
         # Externally, we still give  inputs without h^-1
-        mf=hmf.MassFunction(z = zRange[0], Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
+        self.mf=hmf.MassFunction(z = zRange[0], Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
                             sigma_8 = sigma_8, cosmo_model = cosmo_model)#, force_flat = True, cut_fit = False)
-                        
+            
+        self.log10M=np.log10(self.mf.m/self.mf.cosmo.h)
+        self.areaSr=areaSr
+        self.zBinEdges=zRange
+        self.z=(zRange[:-1]+zRange[1:])/2.
+
+        self._doClusterCount()
+                
+
+    def update(self, H0, Om0, Ob0, sigma_8):
+        """Recalculate cluster counts if cosmological parameters updated.
+        
+        """
+        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0)
+        self.mf.update(cosmo_model = cosmo_model, sigma_8 = sigma_8)
+        self._doClusterCount()
+        
+
+    def _doClusterCount(self):
+        """Updates cluster count etc. after mass function object is updated.
+        
+        """
+        
+        mf=self.mf
+        zRange=self.zBinEdges
+    
         # Number density by z and total cluster count (in redshift shells)
         # Can use to make P(m, z) plane
         numberDensity=[]
@@ -61,24 +89,19 @@ class MockSurvey(object):
             n=abs(np.gradient(n))# Above is cumulative integral (n > m), need this for actual number count 
             numberDensity.append(n)
             shellVolumeMpc3=mf.cosmo.comoving_volume(zShellMax).value-mf.cosmo.comoving_volume(zShellMin).value
-            shellVolumeMpc3=shellVolumeMpc3*(areaSr/(4*np.pi))
+            shellVolumeMpc3=shellVolumeMpc3*(self.areaSr/(4*np.pi))
             totalVolumeMpc3=totalVolumeMpc3+shellVolumeMpc3
             clusterCount.append(n*shellVolumeMpc3)
         numberDensity=np.array(numberDensity)
-        clusterCount=np.array(clusterCount)      
-        
-        self.mf=mf
-        self.areaSr=areaSr
+        clusterCount=np.array(clusterCount)  
         self.volumeMpc3=totalVolumeMpc3
         self.numberDensity=numberDensity
         self.clusterCount=clusterCount
         self.numClusters=np.sum(clusterCount)
         self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
-        self.zBinEdges=zRange
-        self.z=(zRange[:-1]+zRange[1:])/2.
-                
-
-    def addSelFn(self, selFn):
+        
+        
+    def addSelFn(self, selFn, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2):
         """Given SelFn object selFn, calculates completeness over the (self.z, self.mf.M) grid.
         
         Result stored as self.M500Completeness
@@ -88,23 +111,42 @@ class MockSurvey(object):
         """
         
         self.selFn=selFn
+
+        # We should apply the intrinsic scatter in M500 at fixed y0~ somewhere here
         
-        # This takes 3.4 sec
-        M=(self.mf.m/self.mf.cosmo.h)/1e14
+        # This takes ~95 sec
+        print "... calculating (M, z) detection probabilities in each tile (takes ~100 sec on E-D56) ..."
+        self.M500Completeness=np.zeros([len(self.selFn.ycLimitTab), self.clusterCount.shape[0], self.clusterCount.shape[1]])
+        t0=time.time()        
+        ycLimits=self.selFn.ycLimitTab['ycLimit']
+        ycErr=ycLimits/self.selFn.SNRCut
+        M=(self.mf.m/self.mf.cosmo.h)
         logM=np.log10(M)
-        self.M500Completeness=np.zeros(self.clusterCount.shape)
         for i in range(len(self.z)):
             z=self.z[i]
-            SNRs=(M-selFn.getSurveyAverageMFitInterceptAtRedshift(z))/selFn.getSurveyAverageMFitSlopeAtRedshift(z)
             for j in range(M.shape[0]):
-                if SNRs[j] > 0:
-                    # If we use the last option, we end up with detection probability being u-shaped in some zs
-                    #self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.mean(np.diff(logM)))[0]
-                    self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.log10(1+1./selFn.SNRCut))[0]
-                    #self.M500Completeness[i, j]=selFn.logM500DetectionProbability(logM[j], z, np.log10(1+1./SNRs[j]))[0]
+                yc, theta500Arcmin, Q=simsTools.y0FromLogM500(logM[j], z, self.selFn.tckQFit, tenToA0 = tenToA0,
+                                                              B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int)
+                self.M500Completeness[:, i, j]=stats.norm.sf(ycLimits, loc = yc, scale = ycErr)
+        t1=time.time()
+        
+        # This takes ~7.5 sec
+        M=(self.mf.m/self.mf.cosmo.h)
+        logM=np.log10(M)
+        self.M500Completeness_surveyAverage=np.zeros(self.clusterCount.shape)
+        for i in range(len(self.z)):
+            z=self.z[i]
+            ycLimitAtClusterRedshift=selFn.getSurveyAverage_ycLimitAtRedshift(z)
+            for j in range(M.shape[0]):
+                yc, theta500Arcmin, Q=simsTools.y0FromLogM500(logM[j], z, selFn.tckQFit, tenToA0 = tenToA0,
+                                                              B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int)
+                ycErr=ycLimitAtClusterRedshift/selFn.SNRCut
+                detP=stats.norm.sf(ycLimitAtClusterRedshift, loc = yc, scale = ycErr)
+                self.M500Completeness_surveyAverage[i, j]=detP
 
 
-    def calcNumClustersExpected(self, M500Limit, zMin = 0.0, zMax = 2.0, applySelFn = False):
+    def calcNumClustersExpected(self, M500Limit = 0.1, zMin = 0.0, zMax = 2.0, applySelFn = False, 
+                                useSurveyAverageSelFn = True):
         """Calculate the number of clusters expected above a given mass limit. If applySelFn = True, apply
         the selection function (in which case M500Limit isn't important, so long as it is low).
         
@@ -113,7 +155,12 @@ class MockSurvey(object):
         """
         
         if applySelFn == True:
-            numClusters=self.M500Completeness*self.clusterCount
+            if useSurveyAverageSelFn == True:
+                numClusters=self.M500Completeness_surveyAverage*self.clusterCount
+            else:
+                numClusters=0
+                for i in range(len(self.selFn.ycLimitTab)):
+                    numClusters=numClusters+self.M500Completeness[i]*self.clusterCount*self.selFn.ycLimitTab['fracSurveyArea'][i]
         else:
             numClusters=self.clusterCount
         
@@ -124,16 +171,15 @@ class MockSurvey(object):
         
 
     def getPLog10M(self, z):
-        """Returns P(log10M), log10M  at given z.
+        """Returns P(log10M) at given z, which corresponds to self.log10M.
         
         """
 
         self.mf.update(z = z)
         numberDensity=hmf.integrate_hmf.hmf_integral_gtm(self.mf.m, self.mf.dndm)
         PLog10M=numberDensity/np.trapz(numberDensity, self.mf.m)
-        log10M=np.log10(self.mf.m)
 
-        return PLog10M, log10M
+        return PLog10M
     
     
     def drawSample(self):

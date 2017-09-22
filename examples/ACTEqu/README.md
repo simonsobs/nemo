@@ -18,6 +18,10 @@ all of the season / array maps and run on that to use the full available depth.
 There are two examples .par files - one for clusters (`equClusters.par`), and another for point 
 sources (`equPointSources.par`).
 
+**Note that flux or y measurements extracted with the filters used here will not be normalized
+correctly. If you require photometry, check out `examples/AdvACT/` and `examples/equD56/`, which
+use the RealSpaceMatchedFilter.**
+
 ## Clusters (equClusters.par)
 
 This example runs only a single cluster model, but you can add as many more as you like - they 
