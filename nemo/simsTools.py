@@ -1356,7 +1356,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         #fontSize=18.0
         #fontDict={'size': fontSize, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.10, 0.10, 0.88, 0.88])
+        ax=plt.axes([0.10, 0.11, 0.88, 0.88])
         #plt.tick_params(axis='both', which='major', labelsize=15)
         #plt.tick_params(axis='both', which='minor', labelsize=15)       
         thetaArr=np.linspace(0, 30, 300)
@@ -1367,8 +1367,8 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         #plt.xlim(0, 9)
         plt.ylim(0, Q.max()*1.05)
         plt.xlim(0, thetaArr.max())
-        plt.xlabel("$\\theta_{500}$ (arcmin)")
-        plt.ylabel("$Q$")
+        plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
+        plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
         plt.savefig(diagnosticsDir+os.path.sep+"QFit.pdf")
         plt.close()
     
@@ -1580,7 +1580,11 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
         print "M500 fail"
         IPython.embed()
         sys.exit()
-        
+
+    #print "Add Q"
+    #IPython.embed()
+    #sys.exit()
+    
     return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus,
             'M500Uncorr': M500Uncorr, 'M500Uncorr_errPlus': errM500UncorrPlus, 
             'M500Uncorr_errMinus': errM500UncorrMinus}

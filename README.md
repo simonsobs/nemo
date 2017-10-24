@@ -4,7 +4,7 @@ Map filtering and SZ cluster detection and characterization pipeline. *Not* the 
 for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), but should 
 give similar results for signal-to-noise, given the same map (or at least it did in the past).
 *It is* the pipeline, that has been used for the two-season ACTPol cluster catalog 
-([paper draft](https://phy-wiki.princeton.edu/polwiki/pmwiki.php?n=Papers.D56Clusters?action=download&upname=equD56Paper_AAS_20170622.pdf)).
+[paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
 See `examples/equD56/README.md` if you would like to re-create the cluster catalog produced for the
 E-D56 field.
 

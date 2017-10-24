@@ -700,7 +700,7 @@ class MatchedFilter(MapFilter):
                 maskedData=mapDict['data']
                 
                 # FFT - note using flipper 0.1.3 Gaussian apodization
-                # The apodization here is only used if we're estimation noise power directly from the map itself
+                # The apodization here is only used if we're estimating noise power directly from the map itself
                 # otherwise, the FFT here is just so we have the modThetaMap etc. which we would use if
                 # using e.g. beta model templates where we're setting our own normalisation, rather than
                 # using e.g. the profile models.
@@ -716,20 +716,6 @@ class MatchedFilter(MapFilter):
                     NP=fftTools.powerFromFFT(fMaskedMap)
                 elif self.params['noiseParams']['method'] == '4WayMaps':
                     NP=self.noisePowerFrom4WayMaps(mapDict['weights'], mapDict['obsFreqGHz'])
-                elif self.params['noiseParams']['method'] == 'newNoise':
-                    # Effectively make noise from low-pass filtered data - this will leave in striping, unless we
-                    # do something like try to include noise from scales << clusters
-                    bckSubbed=mapTools.subtractBackground(mapDict['data'], mapDict['wcs'], smoothScaleDeg = 1.4/2.35/60.0*5)
-                    largeScaleNoise=mapDict['data']-bckSubbed
-                    smallScaleNoise=mapTools.subtractBackground(mapDict['data'], mapDict['wcs'], smoothScaleDeg = 1.4/2.35/60.0)
-                    largeScaleNoise=largeScaleNoise+smallScaleNoise #np.random.normal(0, bckSubbed.std(), largeScaleNoise.shape)
-                    lmLargeScaleNoise=liteMap.liteMapFromDataAndWCS(largeScaleNoise, mapDict['wcs'])
-                    # Need to add white noise or this doesn't FFT very well
-                    lmLargeScaleNoise.data=lmLargeScaleNoise.data*np.sqrt(mapDict['weights']/mapDict['weights'].max()) # this appears to make no difference
-                    apodlmls=lmLargeScaleNoise.createGaussianApodization()               
-                    lmLargeScaleNoise.data=lmLargeScaleNoise.data*apodlmls.data               
-                    fLargeScaleNoise=fftTools.fftFromLiteMap(lmLargeScaleNoise)
-                    NP=fftTools.powerFromFFT(fLargeScaleNoise)
                 else:
                     raise Exception, "noise method must be either 'dataMap' or '4WayMaps'"
                 
@@ -978,7 +964,10 @@ class RealSpaceMatchedFilter(MapFilter):
             signalMap=filteredMapDict['signalMap']      # Note that this has had the beam applied already
             signalProperties=filteredMapDict['inputSignalProperties']
             # Should add an applyKernel function to do all this
-            filteredSignal=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = bckSubScaleArcmin/60.0)
+            if self.params['bckSub'] == True:
+                filteredSignal=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = bckSubScaleArcmin/60.0)
+            else:
+                filteredSignal=np.zeros(signalMap.shape)+signalMap
             filteredSignal=ndimage.convolve(filteredSignal, kern2d) 
             if self.params['outputUnits'] == 'yc':
                 # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
@@ -1006,11 +995,15 @@ class RealSpaceMatchedFilter(MapFilter):
             # Save 2d kernel - we need this (at least for the photometry ref scale) to calc Q later
             # Add bckSubScaleArcmin to the header
             kernWCS=wcs.copy()
-            kernWCS.header['BCKSCALE']=bckSubScaleArcmin
+            if self.params['bckSub'] == True:
+                kernWCS.header['BCKSCALE']=bckSubScaleArcmin
             kernWCS.header['SIGNORM']=signalNorm
             astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, kernWCS)
             
-            # Filter profile plot       
+            # Filter profile plot   
+            # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
+            np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s.npz" % (self.label), 
+                     arcminRange = arcminRange, prof = prof, mask = mask, bckSubScaleArcmin = bckSubScaleArcmin)
             plotSettings.update_rcParams()
             #fontDict={'size': 18, 'family': 'serif'}
             plt.figure(figsize=(9,6.5))
@@ -1058,7 +1051,8 @@ class RealSpaceMatchedFilter(MapFilter):
                 #catalog=catalog[startIndex:endIndex]
             
             # Apply the high pass filter - subtract background on larger scales using difference of Gaussians  
-            mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = bckSubScaleArcmin/60.)
+            if self.params['bckSub'] == True:
+                mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = bckSubScaleArcmin/60.)
             if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
                 bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
                 #astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])

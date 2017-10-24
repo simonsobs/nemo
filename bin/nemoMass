@@ -185,7 +185,11 @@ else:
         for row in tab:
             print "... %s (%.3f +/- %.3f) ..." % (row['name'], row['redshift'], row['redshiftErr'])
             massDict=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                              row['redshift'], row['redshiftErr'], 
+                                              row['redshift'], row['redshiftErr'],
+                                              tenToA0 = massOptions['tenToA0'],
+                                              B0 = massOptions['B0'], 
+                                              Mpivot = massOptions['Mpivot'], 
+                                              sigma_int = massOptions['sigma_int'],
                                               tckQFit = tckQFit, mockSurvey = mockSurvey, 
                                               applyMFDebiasCorrection = True)
             row['M500']=massDict['M500']

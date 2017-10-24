@@ -29,8 +29,12 @@ import pickle
 import nemoCython
 import pyfits
 import time
+import matplotlib.cm as cm
+import matplotlib
 import IPython
 plt.matplotlib.interactive(False)
+
+cm.register_cmap("planck", matplotlib.colors.LinearSegmentedColormap.from_list("planck",[(0,"#0000ff"),(0.332,"#00d7ff"),(0.5,"#ffedd9"),(0.664,"#ffb400"),(0.828,"#ff4b00"),(1,"#640000")]))
 
 #------------------------------------------------------------------------------------------------------------
 def makeSimTab(numRows):
@@ -535,7 +539,7 @@ else:
         plt.ylim(1.5, 10)
         plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
         plt.xlim(0, 2)
-        labelStr="$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
+        labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
         plt.ylabel(labelStr)
         #plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
         plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
@@ -571,8 +575,8 @@ else:
         #plt.tick_params(axis='both', which='major', labelsize=15)
         #plt.tick_params(axis='both', which='minor', labelsize=15)
         plt.plot(areaTab['MLimit'], np.cumsum(areaTab['fracSurveyArea']), 'k-')
-        plt.ylabel("Fraction of survey area < $M_{500}$ limit")
-        plt.xlabel("$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]")
+        plt.ylabel("Fraction of survey area < $M_{\\rm 500c}$ limit")
+        plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]")
         #labelStr="total survey area = %.1f deg$^2$\n$%.1f < z < %.1f$" % (areaMapSqDeg.sum(), zMin, zMax)
         labelStr="total survey area = %.1f deg$^2$" % (areaMapSqDeg.sum())
         plt.ylim(0, 1.05)
@@ -594,13 +598,14 @@ else:
         # Make yc limit map - as expected, these are all the same whichever z you choose (if we averaged over enough points)
         ycLimitMap=selFn.ycLimitMap(wcs, z = 0.4, outFileName = diagnosticsDir+os.path.sep+"ycLimitMap.fits")
         ycLimitMap=ycLimitMap/1e-4
+        ycLimitMap=np.ma.masked_where(ycLimitMap == 0, ycLimitMap)
         fontSize=18.0*1.33
         figSize=(22.2, 5.2)
         axesLabels="sexagesimal"
         axes=[0.065,0.17,0.93,0.88]
         fig=plt.figure(figsize = figSize)
-        p=astPlots.ImagePlot(ycLimitMap, wcs, cutLevels = [0, ycLimitMap.max()], title = None, axes = axes, 
-                            axesLabels = axesLabels, colorMapName = 'cubehelix', axesFontFamily = 'sans-serif',
+        p=astPlots.ImagePlot(ycLimitMap, wcs, cutLevels = [ycLimitMap.min(), np.percentile(ycLimitMap, 99)], title = None, axes = axes, 
+                            axesLabels = axesLabels, colorMapName = 'gray', axesFontFamily = 'sans-serif',
                             RATickSteps = {'deg': 15.0, 'unit': 'h'}, decTickSteps = {'deg': 5.0, 'unit': 'd'},
                             axesFontSize = fontSize)
         cbShrink=0.64
