@@ -1,11 +1,9 @@
 # Re-creating the ACTPol two-season cluster catalog
 
 Here is an example of how to re-create the cluster catalog presented 
-in the two-season ACTPol cluster catalog paper. This uses nemo's
-RealSpaceMatchedFilter method. Here is a link to an advanced draft
-of the paper on the ACTPol wiki:
+in the [two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H). 
+This uses nemo's RealSpaceMatchedFilter method.
 
-<https://phy-wiki.princeton.edu/polwiki/pmwiki.php?n=Papers.D56Clusters?action=download&upname=equD56Paper_AAS_20170622.pdf>
 
 ## Step 1:
 
