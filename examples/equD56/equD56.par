@@ -12,8 +12,8 @@ unfilteredMaps = [\
                   'beamFileName': "profiles_ACT/profile_AR1_2009_pixwin_130224.txt", \
                   'addNoise': None, \
                   'RADecSection': None, \
-                  'pointSourceMask': 'surveyAndPointSourceMask/pointSourceMask.fits', \
-                  'surveyMask': 'surveyAndPointSourceMask/surveyMask.fits'} \
+                  'pointSourceMask': 'pointSourceMask.fits.gz', \
+                  'surveyMask': 'surveyMask.fits.gz'} \
 ]
 
 # MPI? Used only by nemoSelFn for now
