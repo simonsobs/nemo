@@ -353,7 +353,7 @@ else:
                     kList.append(k)
                     iList.append(i)
             
-            # A map of where the squares are, to ease debugging
+            # A map of where the squares are - both eases debugging AND makes finding intersections with other masks fast
             squaresMapPath=diagnosticsDir+os.path.sep+"squaresMap.fits"
             if rank == 0 and os.path.exists(squaresMapPath) == False:
                 squaresMap=np.zeros(mapData.shape)
