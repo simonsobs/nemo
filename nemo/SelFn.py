@@ -93,13 +93,22 @@ class SelFn(object):
             if wcsOkay == False:
                 raise Exception, "custom mask pointed to by maskImgFileName must have same pixelisation as used in nemo run"
             customMask=img[0].data
+            customMask=np.round(img[0].data)
             sImg=pyfits.open(self.diagnosticsDir+os.path.sep+"squaresMap.fits")
-            squaresMap=sImg[0].data
-            intersection=np.array(squaresMap*customMask, dtype = int)
-            cellList=np.unique(intersection)[1:]    # ignore 0
-            for c in cellList:
-                mask=np.equal(self.fitTab['ID'], c)
-                self.fitTab['fracSurveyArea'][mask]=0.
+            squaresMap=np.array(sImg[0].data, dtype = int)
+            intersection=np.array(squaresMap*customMask)
+            cellList=np.unique(intersection)[1:]    # ignore 0; these are the cells we want to keep - zap the others
+            # The checkMap bit below is just to make sure we masked the right bits...
+            #checkMap=np.zeros(squaresMap.shape)+squaresMap
+            #count=0
+            allIDs=np.unique(self.fitTab['ID'])
+            for i in allIDs:
+                #count=count+1
+                #print "%d/%d" % (count, len(allIDs))
+                if i not in cellList:
+                    self.fitTab['fracSurveyArea'][np.equal(self.fitTab['ID'], i)]=0.
+                    #checkMap[np.equal(checkMap, i)]=0.
+            #astImages.saveFITS("checkMap.fits", checkMap, self.wcs)
             
         # Calculate survey-averaged completeness (weighted by area of each cell)
         # We also do the same with the yc limit vs SNR fit parameters
