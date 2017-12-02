@@ -888,6 +888,146 @@ class RealSpaceMatchedFilter(MapFilter):
         
     """
 
+    def buildKernel(self, mapDict, RADecSection, RADeg = 'centre', decDeg = 'centre'):
+        """Builds the real space kernel itself. 
+        
+        RADeg, decDeg are used for figuring out pixel scales for background subtraction
+        
+        Returns kern2d, signalNorm, bckSubScaleArcmin, signalProperties
+        
+        """
+        
+        wcs=mapDict['wcs']
+            
+        # Build the matched-filter kernel in a small section of the map
+        # Apply the same difference of Gaussians high pass filter here
+        # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
+        kernelMaxArcmin=self.params['noiseParams']['kernelMaxArcmin']
+        #mapDict['bckSubScaleArcmin']=maxArcmin
+        keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
+                    'pointSourceRemoval']
+        kernelUnfilteredMapsDict={}
+        for k in keysWanted:
+            if k in mapDict.keys():
+                kernelUnfilteredMapsDict[k]=mapDict[k]
+        kernelUnfilteredMapsDict['RADecSection']=RADecSection
+        kernelUnfilteredMapsDictList=[kernelUnfilteredMapsDict]
+        kernelLabel="realSpaceKernel_%s" % (self.label)
+        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
+        if os.path.exists(matchedFilterDir) == False:
+            os.makedirs(matchedFilterDir)
+        if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
+            os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
+        matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
+        matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
+                                            outDir = matchedFilterDir, 
+                                            diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
+        filteredMapDict=matchedFilter.buildAndApply()
+                
+        # Turn the matched filter into a smaller real space convolution kernel
+        # This means we have to roll off the kernel to 0 at some radius
+        # This is set by maxArcmin in the .par file
+        prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
+        rIndex=np.where(arcminRange > kernelMaxArcmin)[0][0]
+        # Alternatively, roll off to zero after the second zero crossing
+        # NOTE: now setting in the .par file, uncomment below to switch back
+        #segProf=ndimage.label(np.greater(prof, 0))[0]
+        #rIndex=np.where(segProf == 2)[0][0]
+        #maxArcmin=arcminRange[rIndex]
+
+        # Make 2d kernel
+        mask=np.less(arcminRange, kernelMaxArcmin)
+        rRadians=np.radians(arcminRange/60.)
+        r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
+        profile2d=r2p(matchedFilter.radiansMap)
+        y, x=np.where(profile2d == profile2d.max())
+        y=y[0]
+        x=x[0]
+        yMin=y-rIndex
+        yMax=y+rIndex
+        xMin=x-rIndex
+        xMax=x+rIndex
+        if (yMax-yMin) % 2 == 0:
+            yMin=yMin+1
+        if (xMax-xMin) % 2 == 0:
+            xMin=xMin+1
+        kern2d=profile2d[yMin:yMax, xMin:xMax]
+        kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
+
+        # This is what to high pass filter on
+        bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
+        
+        # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
+        # 1. The high pass filter (bck sub step)
+        # 2. The matched filter itself (includes beam)
+        signalMap=filteredMapDict['signalMap']      # Note that this has had the beam applied already
+        signalProperties=filteredMapDict['inputSignalProperties']
+        # Should add an applyKernel function to do all this
+        if self.params['bckSub'] == True:
+            filteredSignal=mapTools.subtractBackground(signalMap, wcs, RADeg = RADeg, decDeg = decDeg,
+                                                       smoothScaleDeg = bckSubScaleArcmin/60.0)
+        else:
+            filteredSignal=np.zeros(signalMap.shape)+signalMap
+        filteredSignal=ndimage.convolve(filteredSignal, kern2d) 
+        if self.params['outputUnits'] == 'yc':
+            # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
+            filteredSignal=mapTools.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
+            signalNorm=signalProperties['y0']/filteredSignal.max()
+        elif self.params['outputUnits'] == 'Y500':
+            # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
+            # We can get this from yc and the info in signalProperties, so we don't really need this
+            print "implement signal norm for %s" % (self.params['outputUnits'])
+            IPython.embed()
+            sys.exit()
+        elif self.params['outputUnits'] == 'uK':
+            # Normalise such that peak value in filtered map == peak value of source in uK
+            # We take out the effect of the pixel window function here - this assumes we're working with sources
+            # NOTE: for amplitude, the mappers want the amplitude of the delta function, not the beam
+            signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
+        elif self.params['outputUnits'] == 'Jy/beam':
+            # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
+            print "implement signal norm for %s" % (self.params['outputUnits'])
+            IPython.embed()
+            sys.exit()
+        else:
+            raise Exception, "didn't understand 'outputUnits' given in the .par file"
+
+        # Save 2d kernel - we need this (at least for the photometry ref scale) to calc Q later
+        # Add bckSubScaleArcmin to the header
+        kernWCS=wcs.copy()
+        if self.params['bckSub'] == True:
+            kernWCS.header['BCKSCALE']=bckSubScaleArcmin
+        kernWCS.header['SIGNORM']=signalNorm
+        RADecLabel=str(RADecSection).replace(",", "_").replace(" ", "").replace("[", "").replace("]", "").replace(".", "p")
+        astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s_%s.fits" % (self.label, RADecLabel), kern2d, kernWCS)
+        
+        # Filter profile plot   
+        # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
+        np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s.npz" % (self.label), 
+                    arcminRange = arcminRange, prof = prof, mask = mask, bckSubScaleArcmin = bckSubScaleArcmin)
+        plotSettings.update_rcParams()
+        #fontDict={'size': 18, 'family': 'serif'}
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.13, 0.12, 0.86, 0.86])
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)
+        tck=interpolate.splrep(arcminRange[mask], prof[mask])
+        plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
+        #plt.plot(arcminRange[mask], prof[mask])
+        plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
+        plt.xlabel("$\\theta$ (arcmin)")
+        plt.ylabel("Amplitude")
+        #plt.title(self.label)
+        #plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
+        plt.xlim(0, arcminRange[mask].max())
+        plt.plot([bckSubScaleArcmin]*3, np.linspace(-1, 1.2, 3), 'k--')
+        plt.ylim(-0.2, 1.2)
+        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.pdf" % (self.label))
+        plt.close()
+        
+        return kern2d, signalNorm, bckSubScaleArcmin, signalProperties
+            
+            
     def buildAndApply(self):
         
         print ">>> Building filter %s ..." % (self.label)
@@ -900,175 +1040,90 @@ class RealSpaceMatchedFilter(MapFilter):
             surveyMask=mapDict['surveyMask']
             psMask=mapDict['psMask']
             
-            # Build the matched-filter kernel in a small section of the map
-            # Apply the same difference of Gaussians high pass filter here
-            # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
-            kernelMaxArcmin=self.params['noiseParams']['kernelMaxArcmin']
-            #mapDict['bckSubScaleArcmin']=maxArcmin
-            keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
-                        'pointSourceRemoval']
-            kernelUnfilteredMapsDict={}
-            for k in keysWanted:
-                if k in mapDict.keys():
-                    kernelUnfilteredMapsDict[k]=mapDict[k]
-            kernelUnfilteredMapsDict['RADecSection']=self.params['noiseParams']['RADecSection']
-            kernelUnfilteredMapsDictList=[kernelUnfilteredMapsDict]
-            kernelLabel="realSpaceKernel_%s" % (self.label)
-            matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
-            if os.path.exists(matchedFilterDir) == False:
-                os.makedirs(matchedFilterDir)
-            if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
-                os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
-            matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
-            matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
-                                                outDir = matchedFilterDir, 
-                                                diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
-            filteredMapDict=matchedFilter.buildAndApply()
-                    
-            # Turn the matched filter into a smaller real space convolution kernel
-            # This means we have to roll off the kernel to 0 at some radius
-            # This is set by maxArcmin in the .par file
-            prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
-            rIndex=np.where(arcminRange > kernelMaxArcmin)[0][0]
-            # Alternatively, roll off to zero after the second zero crossing
-            # NOTE: now setting in the .par file, uncomment below to switch back
-            #segProf=ndimage.label(np.greater(prof, 0))[0]
-            #rIndex=np.where(segProf == 2)[0][0]
-            #maxArcmin=arcminRange[rIndex]
-
-            # Make 2d kernel
-            mask=np.less(arcminRange, kernelMaxArcmin)
-            rRadians=np.radians(arcminRange/60.)
-            r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
-            profile2d=r2p(matchedFilter.radiansMap)
-            y, x=np.where(profile2d == profile2d.max())
-            y=y[0]
-            x=x[0]
-            yMin=y-rIndex
-            yMax=y+rIndex
-            xMin=x-rIndex
-            xMax=x+rIndex
-            if (yMax-yMin) % 2 == 0:
-                yMin=yMin+1
-            if (xMax-xMin) % 2 == 0:
-                xMin=xMin+1
-            kern2d=profile2d[yMin:yMax, xMin:xMax]
-            kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
-
-            # This is what to high pass filter on
-            bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
-            
-            # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
-            # 1. The high pass filter (bck sub step)
-            # 2. The matched filter itself (includes beam)
-            signalMap=filteredMapDict['signalMap']      # Note that this has had the beam applied already
-            signalProperties=filteredMapDict['inputSignalProperties']
-            # Should add an applyKernel function to do all this
-            if self.params['bckSub'] == True:
-                filteredSignal=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = bckSubScaleArcmin/60.0)
+            # Make kernels at different decs (can add RA needed later if necessary)
+            # Copes with CAR distortion at large | dec |
+            # NOTE: the way this is done currently means we should pick something contiguous in dec direction at fixed RA
+            RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
+            if self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
+                numDecSteps=float(self.params['noiseParams']['RADecSection'][3])
+                decEdges=np.linspace(decMin, decMax, numDecSteps+1)
+                RADecSectionDictList=[]
+                for i in range(len(decEdges)-1):
+                    RADecSectionDict={'RADecSection': [self.params['noiseParams']['RADecSection'][0],
+                                                       self.params['noiseParams']['RADecSection'][1],
+                                                       decEdges[i], decEdges[i+1]],
+                                      'applyDecMin': decEdges[i], 'applyDecMax': decEdges[i+1],
+                                      'applyRAMin': RAMin, 'applyRAMax': RAMax}
+                    RADecSectionDictList.append(RADecSectionDict)
             else:
-                filteredSignal=np.zeros(signalMap.shape)+signalMap
-            filteredSignal=ndimage.convolve(filteredSignal, kern2d) 
-            if self.params['outputUnits'] == 'yc':
-                # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-                filteredSignal=mapTools.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
-                signalNorm=signalProperties['y0']/filteredSignal.max()
-            elif self.params['outputUnits'] == 'Y500':
-                # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
-                # We can get this from yc and the info in signalProperties, so we don't really need this
-                print "implement signal norm for %s" % (self.params['outputUnits'])
-                IPython.embed()
-                sys.exit()
-            elif self.params['outputUnits'] == 'uK':
-                # Normalise such that peak value in filtered map == peak value of source in uK
-                # We take out the effect of the pixel window function here - this assumes we're working with sources
-                # NOTE: for amplitude, the mappers want the amplitude of the delta function, not the beam
-                signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
-            elif self.params['outputUnits'] == 'Jy/beam':
-                # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
-                print "implement signal norm for %s" % (self.params['outputUnits'])
-                IPython.embed()
-                sys.exit()
-            else:
-                raise Exception, "didn't understand 'outputUnits' given in the .par file"
-
-            # Save 2d kernel - we need this (at least for the photometry ref scale) to calc Q later
-            # Add bckSubScaleArcmin to the header
-            kernWCS=wcs.copy()
-            if self.params['bckSub'] == True:
-                kernWCS.header['BCKSCALE']=bckSubScaleArcmin
-            kernWCS.header['SIGNORM']=signalNorm
-            astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label), kern2d, kernWCS)
+                RADecSectionDictList=[{'RADecSection': self.params['noiseParams']['RADecSection'],
+                                       'applyDecMin': decMin, 'applyDecMax': decMax,
+                                       'applyRAMin': RAMin, 'applyRAMax': RAMax}]
             
-            # Filter profile plot   
-            # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
-            np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s.npz" % (self.label), 
-                     arcminRange = arcminRange, prof = prof, mask = mask, bckSubScaleArcmin = bckSubScaleArcmin)
-            plotSettings.update_rcParams()
-            #fontDict={'size': 18, 'family': 'serif'}
-            plt.figure(figsize=(9,6.5))
-            ax=plt.axes([0.13, 0.12, 0.86, 0.86])
-            #plt.tick_params(axis='both', which='major', labelsize=15)
-            #plt.tick_params(axis='both', which='minor', labelsize=15)
-            tck=interpolate.splrep(arcminRange[mask], prof[mask])
-            plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
-            #plt.plot(arcminRange[mask], prof[mask])
-            plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-            plt.xlabel("$\\theta$ (arcmin)")
-            plt.ylabel("Amplitude")
-            #plt.title(self.label)
-            #plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
-            plt.xlim(0, arcminRange[mask].max())
-            plt.plot([bckSubScaleArcmin]*3, np.linspace(-1, 1.2, 3), 'k--')
-            plt.ylim(-0.2, 1.2)
-            plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.pdf" % (self.label))
-            plt.close()
-
-            # NOTE: at this point we should store the kernel somewhere, get out of this loop, and then add a call to
-            # something that will chunk up the maps and apply the kernel / calculate the SN map in parallel.
-            # We'd do that with all the different frequencies, so mapCombination step will go into that also.
-            #print "implement chunking of maps here?"
-            #IPython.embed()
-            #sys.exit()
-            # Below is how we'd start sticking in MPI-based parallisation (see zCluster)
-            #if MPIEnabled ==True:
-                #from mpi4py import MPI
-                #comm=MPI.COMM_WORLD
-                #size=comm.Get_size()
-                #rank=comm.Get_rank()
-                #if size == 1:
-                    #raise Exception, "if you want to use MPI, run with mpirun --np 4 nemo -M ..."
-            #else:
-                #rank=0
-            # ... some more stuff ..."
-            #if MPIEnabled == True:
-                #objsPerNode=len(catalog)/size
-                #startIndex=objsPerNode*rank
-                #if rank == size-1:
-                    #endIndex=len(catalog)
-                #else:
-                    #endIndex=objsPerNode*(rank+1)
-                #catalog=catalog[startIndex:endIndex]
+            # Building the filter in different regions (e.g., dec strips to handle CAR distortion)
+            # NOTE: RADecSectionDictList is something we could pickle instead of saving individual kern2d files etc.?
+            for RADecSectionDict in RADecSectionDictList:
+                
+                # We need this for the background subtraction x, y pixel scales
+                applyDecCentre=(RADecSectionDict['applyDecMax']+RADecSectionDict['applyDecMin'])/2.
+                applyRACentre=(RADecSectionDict['applyRAMax']+RADecSectionDict['applyRAMin'])/2.
+                
+                # For now we'll just restrict the y-range (dec) on which we do filtering... can add RA blocks later
+                x, yMin=wcs.wcs2pix(applyRACentre, RADecSectionDict['applyDecMin'])
+                yMin=int(round(yMin))
+                x, yMax=wcs.wcs2pix(applyRACentre, RADecSectionDict['applyDecMax'])
+                yMax=int(round(yMax))
+                
+                # Build the matched-filter kernel in a small section of the map
+                kern2d, signalNorm, bckSubScaleArcmin, signalProperties=self.buildKernel(mapDict, RADecSectionDict['RADecSection'],
+                                                                                         RADeg = applyRACentre, decDeg = applyDecCentre)
+                RADecSectionDict['kern2d']=kern2d
+                RADecSectionDict['signalNorm']=signalNorm
+                RADecSectionDict['bckSubScaleArcmin']=bckSubScaleArcmin
+                RADecSectionDict['signalProperties']=signalProperties
+                RADecSectionDict['applyRACentre']=applyRACentre
+                RADecSectionDict['applyDecCentre']=applyDecCentre
+                RADecSectionDict['yMin']=yMin
+                RADecSectionDict['yMax']=yMax
+                if yMax+RADecSectionDict['kern2d'].shape[0] < mapData.shape[0]:
+                    yOverlap=RADecSectionDict['kern2d'].shape[0]
+                else:
+                    yOverlap=0
+                RADecSectionDict['yOverlap']=yOverlap
             
             # Apply the high pass filter - subtract background on larger scales using difference of Gaussians  
-            if self.params['bckSub'] == True:
-                mapData=mapTools.subtractBackground(mapData, wcs, smoothScaleDeg = bckSubScaleArcmin/60.)
+            for RADecSectionDict in RADecSectionDictList:
+                yMin=RADecSectionDict['yMin']
+                yMax=RADecSectionDict['yMax']
+                yOverlap=RADecSectionDict['yOverlap']
+                buff=np.zeros(mapData[yMax:yMax+yOverlap].shape)+mapData[yMax:yMax+yOverlap]
+                if self.params['bckSub'] == True:
+                    mapData[yMin:yMax+yOverlap, :]=mapTools.subtractBackground(mapData[yMin:yMax+yOverlap, :], wcs, 
+                                                                      RADeg = RADecSectionDict['applyRACentre'], 
+                                                                      decDeg = RADecSectionDict['applyDecCentre'],
+                                                                      smoothScaleDeg = RADecSectionDict['bckSubScaleArcmin']/60.)
+                    mapData[yMax:yMax+yOverlap]=buff
             if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
                 bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
                 #astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
                 astImages.saveFITS(bckSubFileName, mapData, mapDict['wcs'])
-                
-            # Apply the kernel
-            t0=time.time()
-            print "... convolving map with kernel ..."
-            #filteredMap=ndimage.convolve(bckSubData, kern2d)           
-            mapData=ndimage.convolve(mapData, kern2d)           
-            #filteredMap=ndimage.correlate(bckSubData, kern2d)  # takes same amount of time, output almost identical
-            t1=time.time()
-            print "... took %.3f sec ..." % (t1-t0)
             
-            # Apply the normalisation
-            mapData=mapData*signalNorm
+            # Apply the kernel
+            backupData=np.zeros(mapData.shape)+mapData
+            for RADecSectionDict in RADecSectionDictList:
+                yMin=RADecSectionDict['yMin']
+                yMax=RADecSectionDict['yMax']
+                yOverlap=RADecSectionDict['yOverlap']
+                buff=np.zeros(mapData[yMax:yMax+yOverlap].shape)+mapData[yMax:yMax+yOverlap]
+                t0=time.time()
+                print "... convolving map with kernel [%d:%d] ..." % (yMin, yMax)
+                mapData[yMin:yMax+yOverlap, :]=ndimage.convolve(mapData[yMin:yMax+yOverlap, :], RADecSectionDict['kern2d'])   
+                filtBuff=np.zeros(mapData[yMax:yMax+yOverlap].shape)+mapData[yMax:yMax+yOverlap]
+                mapData[yMax:yMax+yOverlap]=buff
+                t1=time.time()
+                print "... took %.3f sec ..." % (t1-t0)
+                # Apply the normalisation
+                mapData[yMin:yMax, :]=mapData[yMin:yMax, :]*RADecSectionDict['signalNorm']
             
             #filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
             filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=mapData
