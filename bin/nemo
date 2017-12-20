@@ -59,11 +59,25 @@ else:
         
         # Estimate of contamination from running cluster finding over inverted map (this takes no time really)
         # Makes a plot and we write a .fits table under diagnostics dir
-        contaminationDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
+        contaminationTabDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
                                                                           parDict['minObjPix'], parDict['rejectBorder'], 
                                                                           parDict['catalogCuts'], parDict['photometryOptions'],
-                                                                          diagnosticsDir = diagnosticsDir)        
-            
+                                                                          diagnosticsDir)        
+        
+        # Estimate of contamination by generating a fake sky with noise, and running detection algorithm over it
+        # Ultimately we want this and the above ^^^ to appear on the same plot for comparison
+        if 'estimateContaminationFromSkySim' in parDict.keys() and parDict['estimateContaminationFromSkySim'] == True:
+            skySimContaminationTabDict=simsTools.estimateContaminationFromSkySim(imageDict, parDictFileName,
+                                                                                 parDict['numSkySims'],
+                                                                                 diagnosticsDir)
+        else:
+            skySimContaminationTabDict={}
+        
+        # Plot contamination together
+        for k in skySimContaminationTabDict.keys():
+            contaminationTabDict[k]=skySimContaminationTabDict[k]
+        simsTools.plotContamination(contaminationTabDict, diagnosticsDir)
+        
         # Sims based on inserting fake cluster profiles into the maps
         if 'fakeSourceSimOptions' in parDict.keys():
             simsTools.fakeSourceSims(parDict['fakeSourceSimOptions'], parDict['unfilteredMaps'], parDict['mapFilters'],

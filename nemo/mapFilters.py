@@ -1309,38 +1309,12 @@ class BeamFilter(MapFilter):
         
         """
         
-        # Load Matthew's beam profile
-        beamData=np.loadtxt(beamFileName).transpose()
-        profile1d=beamData[1]
-        rArcmin=beamData[0]*60.0
-                    
-        # Turn 1d profile into 2d
-        rRadians=np.radians(rArcmin/60.0)
-        r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
-        profile2d=r2p(self.radiansMap)
-        signalMap=liteMap.liteMapFromDataAndWCS(profile2d, self.wcs)
-                
-        # The ratio by which beam smoothing biases the intrinsic deltaT0
-        beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
-
-        # Pixel window function
-        inputSignalProperties={}
-        fineWCS=self.wcs.copy()
-        fineWCS.header['CDELT1']=fineWCS.header['CDELT1']*0.01
-        fineWCS.header['CDELT2']=fineWCS.header['CDELT2']*0.01
-        fineWCS.updateFromHeader()
-        cRA, cDec=fineWCS.getCentreWCSCoords()
-        degXMap, degYMap=nemoCython.makeXYDegreesDistanceMaps(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
-                                                              fineWCS, cRA, cDec, 1.0)
-        degRMap=nemoCython.makeDegreesDistanceMap(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
-                                                  fineWCS, cRA, cDec, 1.0)
-        fineScaleProfile2d=r2p(np.radians(degRMap))
-        mask=np.logical_and(np.less(abs(degXMap), self.wcs.getXPixelSizeDeg()/2.), 
-                            np.less(abs(degYMap), self.wcs.getYPixelSizeDeg()/2.))
-        inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[mask].mean()
+        signalMap, inputSignalProperties=simsTools.makeBeamModelSignalOnlyMap(obsFreqGHz, np.degrees(self.radiansMap),
+                                                                              self.wcs, 
+                                                                              beamFileName)
 
         return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None, 
-                'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias, 'signalAreaSum': 1.0,
+                'powerScaleFactor': None, 'beamDecrementBias': 1.0, 'signalAreaSum': 1.0,
                 'inputSignalProperties': inputSignalProperties}
     
 #------------------------------------------------------------------------------------------------------------
