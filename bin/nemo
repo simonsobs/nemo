@@ -3,9 +3,6 @@
 #
 # nemo driver script: for filtering maps and finding clusters
 
-import matplotlib
-matplotlib.use('Agg')
-
 import sys
 import os
 import datetime
