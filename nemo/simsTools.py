@@ -1074,7 +1074,7 @@ def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diag
 
 #-------------------------------------------------------------------------------------------------------------
 def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, rejectBorder, 
-                                          minSNToIncludeInOptimalCatalog, photometryOptions, diagnosticsDir):
+                                          minSNToIncludeInOptimalCatalog, photometryOptions, diagnosticsDir, findCenterOfMass = True):
     """Run the whole filtering set up again, on inverted maps.
     
     Writes a DS9. reg file, which contains only the highest SNR contaminants (since these
@@ -1097,7 +1097,7 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
     photometry.findObjects(invertedDict, threshold = thresholdSigma, minObjPix = minObjPix,
                            rejectBorder = rejectBorder, diagnosticsDir = diagnosticsDir,
-                           invertMap = True, makeDS9Regions = False)    
+                           invertMap = True, makeDS9Regions = False, findCenterOfMass = findCenterOfMass)    
 
     # For fixed filter scale
     # Adds fixed_SNR values to catalogs for all maps

@@ -1309,7 +1309,7 @@ class BeamFilter(MapFilter):
         
         """
         
-        signalMap, inputSignalProperties=simsTools.makeBeamModelSignalOnlyMap(obsFreqGHz, np.degrees(self.radiansMap),
+        signalMap, inputSignalProperties=simsTools.makeBeamModelSignalMap(mapObsFreqGHz, np.degrees(self.radiansMap),
                                                                               self.wcs, 
                                                                               beamFileName)
 
