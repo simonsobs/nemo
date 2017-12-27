@@ -40,7 +40,8 @@ mapFilters = [\
                                             'maxArcmin': 1.8, \
                                             'saveHighPassMap': True, \
                                             'saveRMSMap': True}, \
-                            'outputUnits': 'uK', \
+                            'bckSub': True, \
+			    'outputUnits': 'uK', \
                             'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}} \
                 }, \                    
 ]

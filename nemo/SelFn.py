@@ -12,6 +12,7 @@ import IPython
 import astropy.table as atpy
 from astLib import *
 import pylab as plt
+import pyfits
 from scipy import interpolate
 from scipy import stats
 from astLib import *
@@ -24,7 +25,7 @@ MRange=np.linspace(5e13, 1e15, 20)
         
 class SelFn(object):
     
-    def __init__(self, nemoOutputDir, parDict, SNRCut):
+    def __init__(self, nemoOutputDir, parDict, SNRCut, maskImgFileName = None):
         """Creates a SelFn object, which enables calculation of completeness (or detection probability) for
         given M500, z, SNR etc.
         
@@ -33,6 +34,10 @@ class SelFn(object):
         e.g., selFnOptions = {'fixed_SNR_cut': 5.0}
         
         Uses output from nemoSelFn, which is currently dumped in nemo diagnostics dir.
+        
+        maskImgFileName can be used to supply a .fits image with 1 for regions wanted, 0 for regions masked
+        (use to calculate completeness in e.g. HSC region, for example). This should have the same 
+        pixelisation (and WCS) as the map on which nemo was ran.
         
         """
         
@@ -71,6 +76,39 @@ class SelFn(object):
         else:
             ycLimitTab=atpy.Table().read(ycLimitTabFileName)
         self.ycLimitTab=ycLimitTab
+        
+        # Optionally apply a different survey mask - implemented by setting fracSurveyArea = 0 for masked regions
+        # Use this to pull out survey average mass limit versus z for e.g. deeper HSC regions
+        # It'll be faster to look for intersection of cells map and the custom mask
+        # We can't guarantee they have the same pixelisation... but we check and throw error if not
+        # NOTE: we're doing this with cells for now, but we could correct for area of overlap of cells with mask
+        if maskImgFileName != None:
+            img=pyfits.open(maskImgFileName)
+            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            wcsOkay=False
+            if self.wcs.getCentreWCSCoords() == wcs.getCentreWCSCoords() \
+                and self.wcs.getFullSizeSkyDeg() == wcs.getFullSizeSkyDeg() \
+                    and self.wcs.getYPixelSizeDeg() == wcs.getYPixelSizeDeg():
+                wcsOkay=True
+            if wcsOkay == False:
+                raise Exception, "custom mask pointed to by maskImgFileName must have same pixelisation as used in nemo run"
+            customMask=img[0].data
+            customMask=np.round(img[0].data)
+            sImg=pyfits.open(self.diagnosticsDir+os.path.sep+"squaresMap.fits")
+            squaresMap=np.array(sImg[0].data, dtype = int)
+            intersection=np.array(squaresMap*customMask)
+            cellList=np.unique(intersection)[1:]    # ignore 0; these are the cells we want to keep - zap the others
+            # The checkMap bit below is just to make sure we masked the right bits...
+            #checkMap=np.zeros(squaresMap.shape)+squaresMap
+            #count=0
+            allIDs=np.unique(self.fitTab['ID'])
+            for i in allIDs:
+                #count=count+1
+                #print "%d/%d" % (count, len(allIDs))
+                if i not in cellList:
+                    self.fitTab['fracSurveyArea'][np.equal(self.fitTab['ID'], i)]=0.
+                    #checkMap[np.equal(checkMap, i)]=0.
+            #astImages.saveFITS("checkMap.fits", checkMap, self.wcs)
             
         # Calculate survey-averaged completeness (weighted by area of each cell)
         # We also do the same with the yc limit vs SNR fit parameters
@@ -132,12 +170,12 @@ class SelFn(object):
         
         """
         x, y=self.wcs.wcs2pix(RADeg, decDeg)
-        xMask=np.logical_and(np.greater(x, self.fitTab['x0']), np.less(x, self.fitTab['x1']))
-        yMask=np.logical_and(np.greater(y, self.fitTab['y0']), np.less(y, self.fitTab['y1']))
+        xMask=np.logical_and(np.greater_equal(x, self.fitTab['x0']), np.less(x, self.fitTab['x1']))
+        yMask=np.logical_and(np.greater_equal(y, self.fitTab['y0']), np.less(y, self.fitTab['y1']))
         mask=np.logical_and(xMask, yMask)
-        
-        return int(self.fitTab['ID'][mask][0])
 
+        return int(self.fitTab['ID'][mask][0])
+            
 
     def surveyAverage_ycLimitAtCompleteness(self, completenessLim):
         """Returns the survey-averaged yc limit and the corresponding zs at which it is evaluated at the 

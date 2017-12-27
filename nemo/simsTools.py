@@ -27,6 +27,9 @@ import sys
 import operator
 import pyximport; pyximport.install()
 import nemoCython
+import nemo
+import actDict
+import glob
 import IPython
 np.random.seed()
 
@@ -932,10 +935,146 @@ def simpleCatalogMatch(primary, secondary, matchRadiusArcmin):
         if match != None:
             pobj['recovered']=True
             pobj['recoveredMatch']=match
+
+#-------------------------------------------------------------------------------------------------------------
+def generateCMBOnlySim(parDict):
+    """Generates a signal-only CMB sky, convolved with the beam.
+    
+    Returns beam-smoothed map (2d array) and wcs
+    
+    """
+    
+    # CAMB power spec with Planck 2015 parameters (ish)
+    tab=atpy.Table().read(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", format = 'ascii')
+    ell=tab['L']
+    DEll=tab['TT']
+    Cl_uK2=(DEll*2*np.pi)/(ell*(ell+1))
+    
+    # NOTE: assuming the first map is the only one, used for getting dimensions... this will break if this isn't the case 
+    # See here for flipper docs: http://www.hep.anl.gov/sdas/flipperDocumentation/map_manipulations.html
+    img=pyfits.open(parDict['unfilteredMaps'][0]['mapFileName'])
+    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+    d=np.zeros(img[0].data.shape, dtype = float)
+    grfMap=liteMap.liteMapFromDataAndWCS(d, wcs)
+    grfMap.fillWithGaussianRandomField(ell, Cl_uK2)
+    
+    # Convolve with beam - NOTE: beam map only 4 x HWHM on a side (otherwise convolution very slow)
+    beamData=np.loadtxt(parDict['unfilteredMaps'][0]['beamFileName']).transpose()
+    profile1d=beamData[1]
+    rArcmin=beamData[0]*60.0
+    HWHMDeg=rArcmin[np.where(profile1d <= 0.5)[0][0]]/60.
+    radiusDeg=HWHMDeg*4
+    RADeg, decDeg=grfMap.wcs.getCentreWCSCoords()
+    clip=astImages.clipUsingRADecCoords(grfMap.data, grfMap.wcs, RADeg+radiusDeg, RADeg-radiusDeg, decDeg-radiusDeg, decDeg+radiusDeg)
+    RADeg, decDeg=clip['wcs'].getCentreWCSCoords()
+    degreesMap=nemoCython.makeDegreesDistanceMap(clip['data'], clip['wcs'], RADeg, decDeg, 0.5)
+    beamSignalMap, inputSignalProperties=makeBeamModelSignalMap(parDict['unfilteredMaps'][0]['obsFreqGHz'], degreesMap, 
+                                                                clip['wcs'], parDict['unfilteredMaps'][0]['beamFileName'])
+    beamSmoothedMap=ndimage.convolve(grfMap.data, beamSignalMap.data/beamSignalMap.data.sum()) 
+    
+    return beamSmoothedMap, grfMap.wcs
+
+#-------------------------------------------------------------------------------------------------------------
+def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diagnosticsDir):
+    """Run the whole filtering set up again, on sky simulation, with noise, that we generate here.
+    
+    Turns out we need to run many realisations, as results can vary by a lot.
+    
+    We will want to combine the output from this with the inverted maps test (which is quicker and easier).
+    
+    Writes a plot and a .fits table to the diagnostics dir.
+    
+    Runs over both SNR and fixed_SNR values.
+    
+    Returns a dictionaries containing the results
+    
+    """
+    
+    resultsList=[]
+    for i in range(numSkySims):
+        
+        print "... sky sim %d/%d ..." % (i+1, numSkySims)
+        simParDict=actDict.ACTDict()
+        simParDict.read_from_file(parDictFileName)
             
+        simFileName=diagnosticsDir+os.path.sep+"signalOnlyCMBSim.fits"
+        print "... generating CMB-only sim ..."
+        simMap, wcs=generateCMBOnlySim(simParDict)
+        #astImages.saveFITS(simFileName, simMap, wcs)
+        
+        # Add noise...
+        # Rather than using the 'noiseBoostFactor', and issuing a warning about inv var only weight maps, we could
+        # just solve for the noiseBoostFactor needed to make the RMS map match the actual one
+        print "... adding noise (WARNING: for this to work, the weight map must be an inverse variance map) ..."
+        iVarImg=pyfits.open(simParDict['unfilteredMaps'][0]['weightsFileName'])
+        iVarMap=iVarImg[0].data
+        footprint=np.where(iVarMap != 0)
+        blank=np.where(iVarMap == 0)
+        noiseMap=np.zeros(iVarMap.shape)
+        noiseMap[footprint]=np.random.normal(0, np.sqrt(1/iVarMap[footprint]))
+        noiseMap=noiseMap*simParDict['noiseBoostFactor'] # test if reasonable: RMSMap of real data and sim should agree
+        simMap[blank]=0.
+        simMap=simMap+noiseMap
+        astImages.saveFITS(simFileName.replace(".fits", "_withNoise.fits"), simMap, wcs)
+
+        # After we get out sky sim map into this, we want to do the filtering again...
+        # NOTE: redirect rootOutDir here as well
+        simParDict['unfilteredMaps'][0]['mapFileName']=simFileName.replace(".fits", "_withNoise.fits")
+        rootOutDir=diagnosticsDir+os.path.sep+"skySim"
+        if os.path.exists(rootOutDir) == True:
+            mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*.fits")
+            for m in mapFileNames:
+                os.remove(m)
+        simImageDict=mapTools.filterMaps(simParDict['unfilteredMaps'], simParDict['mapFilters'], rootOutDir = rootOutDir)
+            
+        # Below here is same as inverted maps right now....
+        # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
+        photometry.findObjects(simImageDict, threshold = simParDict['thresholdSigma'], minObjPix = simParDict['minObjPix'],
+                            rejectBorder = simParDict['rejectBorder'], diagnosticsDir = diagnosticsDir,
+                            invertMap = False, makeDS9Regions = True)    
+
+        # For fixed filter scale
+        # Adds fixed_SNR values to catalogs for all maps
+        photometryOptions=simParDict['photometryOptions']
+        if 'photFilter' in photometryOptions.keys():
+            photFilter=photometryOptions['photFilter']
+        else:
+            photFilter=None
+        if photFilter != None:
+            photometry.getSNValues(simImageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, invertMap = False)   
+            SNRKeys=['SNR', 'fixed_SNR']
+        else:
+            SNRKeys=['SNR']
+        
+        minSNToIncludeInOptimalCatalog=simParDict['catalogCuts']
+        catalogTools.mergeCatalogs(simImageDict)
+        catalogTools.makeOptimalCatalog(simImageDict, minSNToIncludeInOptimalCatalog)
+            
+        contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', diagnosticsDir)
+        resultsList.append(contaminTabDict)
+    
+    # Average results
+    avContaminTabDict={}
+    for k in resultsList[0].keys():
+        avContaminTabDict[k]=atpy.Table()
+        for kk in resultsList[0][k].keys():
+            avContaminTabDict[k].add_column(atpy.Column(np.zeros(len(resultsList[0][k])), kk))
+            for i in range(len(resultsList)):
+                avContaminTabDict[k][kk]=avContaminTabDict[k][kk]+resultsList[i][k][kk]
+            avContaminTabDict[k][kk]=avContaminTabDict[k][kk]/float(len(resultsList))
+
+    for k in avContaminTabDict.keys():
+        fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate.fits" % (k)
+        if os.path.exists(fitsOutFileName) == True:
+            os.remove(fitsOutFileName)
+        contaminTab=avContaminTabDict[k]
+        contaminTab.write(fitsOutFileName)
+        
+    return avContaminTabDict
+
 #-------------------------------------------------------------------------------------------------------------
 def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, rejectBorder, 
-                                          minSNToIncludeInOptimalCatalog, photometryOptions, diagnosticsDir = None, findCenterOfMass = True):
+                                          minSNToIncludeInOptimalCatalog, photometryOptions, diagnosticsDir, findCenterOfMass = True):
     """Run the whole filtering set up again, on inverted maps.
     
     Writes a DS9. reg file, which contains only the highest SNR contaminants (since these
@@ -975,11 +1114,62 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     catalogTools.mergeCatalogs(invertedDict)
     catalogTools.makeOptimalCatalog(invertedDict, minSNToIncludeInOptimalCatalog)
     
-    # Do everything else with both SNR and fixed_SNR
-    contaminDictList=[]
+    contaminTabDict=estimateContamination(invertedDict, imageDict, SNRKeys, 'invertedMap', diagnosticsDir)
+
+    for k in contaminTabDict.keys():
+        fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate.fits" % (k)
+        if os.path.exists(fitsOutFileName) == True:
+            os.remove(fitsOutFileName)
+        contaminTab=contaminTabDict[k]
+        contaminTab.write(fitsOutFileName)
+        
+    return contaminTabDict
+
+#------------------------------------------------------------------------------------------------------------
+def plotContamination(contaminTabDict, diagnosticsDir):
+    """Makes contamination rate plots, output stored under diagnosticsDir
+    
+    """
+
+    plotSettings.update_rcParams()
+
+    for k in contaminTabDict.keys():
+        if k.find('fixed') != -1:
+            SNRKey="fixed_SNR"
+            SNRLabel="SNR$_{\\rm 2.4}$"
+        else:
+            SNRKey="SNR"
+            SNRLabel="SNR"
+        binEdges=contaminTabDict[k][SNRKey]
+        cumContamination=contaminTabDict[k]['cumContamination']
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.10, 0.11, 0.87, 0.87])  
+        plt.plot(binEdges, cumContamination, 'k-')# % (l))#, label = legl)
+        plt.xlabel("%s" % (SNRLabel))#, fontdict = fontDict)
+        plt.ylabel("Contamination fraction > %s" % (SNRLabel))#, fontdict = fontDict)
+        allLabels=['4.0', '', '', '', '', '5.0', '', '', '', '', '6.0', '', '', '', '', '7.0', '', '', '', '', '8.0']
+        allTicks=np.arange(4.0, 8.2, 0.2)
+        plt.xticks(allTicks, allLabels)
+        plt.xlim(4, 8)
+        #plt.xlim(binMin, 10.01)#binMax)
+        plt.ylim(-0.05, 0.6)
+        #plt.legend()
+        plt.savefig(diagnosticsDir+os.path.sep+"%s_contaminationEstimate.pdf" % (k))
+        plt.close()  
+        
+#------------------------------------------------------------------------------------------------------------
+def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsDir):
+    """Performs the actual contamination estimate, makes output under diagnosticsDir.
+        
+    Use label to set a prefix for output (plots / .fits tables), e.g., label = "skySim"
+    
+    """
+    
+    invertedDict=contamSimDict
+    contaminTabDict={}
     for SNRKey in SNRKeys:
-        catalogTools.catalog2DS9(invertedDict['optimalCatalog'], diagnosticsDir+os.path.sep+"invertedMapsCatalog_%s_gtr_5.reg" % (SNRKey), 
-                                constraintsList = ['%s > 5' % (SNRKey)])
+        #catalogTools.catalog2DS9(invertedDict['optimalCatalog'], rootOutDir+os.path.sep+"skySimCatalog_%s_gtr_5.reg" % (SNRKey), 
+                                 #constraintsList = ['%s > 5' % (SNRKey)])
         
         invertedSNRs=[]
         for obj in invertedDict['optimalCatalog']:
@@ -1010,52 +1200,12 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
             cumSumInverted.append(invertedSNRHist[0][i:].sum())
         cumSumCandidates=np.array(cumSumCandidates, dtype = float)
         cumSumInverted=np.array(cumSumInverted, dtype = float)
-
-        xtickLabels=[]
-        xtickValues=[]
-        fmodMajorTicks=np.fmod(binEdges, 5)
-        fmodMinorTicks=np.fmod(binEdges, 1)
-        for i in range(len(binEdges)):
-            if fmodMinorTicks[i] == 0:
-                xtickValues.append(binEdges[i])
-                if fmodMajorTicks[i] == 0:
-                    xtickLabels.append('%d' % (binEdges[i]))
-                else:
-                    xtickLabels.append('')
-                
-        # Plot cumulative detections > SNR for both inverted map catalog and actual catalog
-        plotSettings.update_rcParams()
-        
-        plt.plot(binEdges[:-1], cumSumInverted, 'r-', label = 'inverted maps')
-        plt.plot(binEdges[:-1], cumSumCandidates, 'b-', label = 'candidates')
-        plt.xlabel("%s" % (SNRKey))
-        plt.ylabel("Number > %s" % (SNRKey))
-        plt.semilogx()
-        plt.xticks(xtickValues, xtickLabels)
-        plt.xlim(binMin, binMax)
-        plt.legend()
-        plt.savefig(diagnosticsDir+os.path.sep+"cumulative_%s.png" % (SNRKey))
-        plt.close()
         
         # Plot cumulative contamination estimate (this makes more sense than plotting purity, since we don't know
         # that from what we're doing here, strictly speaking)
-        cumContamination=cumSumInverted/cumSumCandidates
-        cumContamination[np.isnan(cumContamination)]=0.0
-        #fontSize=18.0
-        #fontDict={'size': fontSize, 'family': 'serif'}
-        plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.10, 0.10, 0.87, 0.88])      
-        plt.plot(binEdges[:-1], cumContamination, 'k-')
-        plt.xlabel("%s" % (SNRKey))#, fontdict = fontDict)
-        plt.ylabel("Contamination fraction > %s" % (SNRKey))#, fontdict = fontDict)
-        allLabels=['4.0', '', '', '', '', '5.0', '', '', '', '', '6.0', '', '', '', '', '7.0', '', '', '', '', '8.0']
-        allTicks=np.arange(4.0, 8.2, 0.2)
-        plt.xticks(allTicks, allLabels)
-        plt.xlim(4, 8)
-        #plt.xlim(binMin, 10.01)#binMax)
-        #plt.ylim(0, 1)
-        plt.savefig(diagnosticsDir+os.path.sep+"contaminationEstimate_%s.pdf" % (SNRKey))
-        plt.close()    
+        cumContamination=np.zeros(cumSumCandidates.shape)
+        mask=np.greater(cumSumCandidates, 0)
+        cumContamination[mask]=cumSumInverted[mask]/cumSumCandidates[mask]
         
         # Remember, this is all cumulative (> SNR, so lower bin edges)
         contaminDict={}
@@ -1064,18 +1214,14 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
         contaminDict['cumSumInverted']=cumSumInverted
         contaminDict['cumContamination']=cumContamination       
         
-        # Wite a .fits table
+        # Convert to .fits table
         contaminTab=atpy.Table()
         for key in contaminDict.keys():
             contaminTab.add_column(atpy.Column(contaminDict[key], key))
-        fitsOutFileName=diagnosticsDir+os.path.sep+"contaminationEstimate_%s.fits" % (SNRKey)
-        if os.path.exists(fitsOutFileName) == True:
-            os.remove(fitsOutFileName)
-        contaminTab.write(fitsOutFileName)
         
-        contaminDictList.append(contaminDict)
+        contaminTabDict['%s_%s' % (label, SNRKey)]=contaminTab
         
-    return contaminDictList
+    return contaminTabDict
 
 #------------------------------------------------------------------------------------------------------------
 def calcR500Mpc(z, M500):
@@ -1177,6 +1323,46 @@ def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
     else:
         raise Exception, "didn't understand units"
 
+#------------------------------------------------------------------------------------------------------------
+def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
+    """Makes a 2d signal only map containing the given beam.
+    
+    Returns signalMap, inputSignalProperties
+    
+    """
+    
+    # Load Matthew's beam profile
+    beamData=np.loadtxt(beamFileName).transpose()
+    profile1d=beamData[1]
+    rArcmin=beamData[0]*60.0
+                
+    # Turn 1d profile into 2d
+    rRadians=np.radians(rArcmin/60.0)
+    r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
+    profile2d=r2p(np.radians(degreesMap))
+    signalMap=liteMap.liteMapFromDataAndWCS(profile2d, wcs)
+            
+    # The ratio by which beam smoothing biases the intrinsic deltaT0
+    beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
+
+    # Pixel window function
+    inputSignalProperties={}
+    fineWCS=wcs.copy()
+    fineWCS.header['CDELT1']=fineWCS.header['CDELT1']*0.01
+    fineWCS.header['CDELT2']=fineWCS.header['CDELT2']*0.01
+    fineWCS.updateFromHeader()
+    cRA, cDec=fineWCS.getCentreWCSCoords()
+    degXMap, degYMap=nemoCython.makeXYDegreesDistanceMaps(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                            fineWCS, cRA, cDec, 1.0)
+    degRMap=nemoCython.makeDegreesDistanceMap(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                fineWCS, cRA, cDec, 1.0)
+    fineScaleProfile2d=r2p(np.radians(degRMap))
+    mask=np.logical_and(np.less(abs(degXMap), wcs.getXPixelSizeDeg()/2.), 
+                        np.less(abs(degYMap), wcs.getYPixelSizeDeg()/2.))
+    inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[mask].mean()
+    
+    return signalMap, inputSignalProperties
+    
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName):
     """Makes a 2d signal only map containing an Arnaud model cluster. Units of M500 are MSun.
@@ -1356,7 +1542,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         #fontSize=18.0
         #fontDict={'size': fontSize, 'family': 'serif'}
         plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.10, 0.10, 0.88, 0.88])
+        ax=plt.axes([0.10, 0.11, 0.88, 0.88])
         #plt.tick_params(axis='both', which='major', labelsize=15)
         #plt.tick_params(axis='both', which='minor', labelsize=15)       
         thetaArr=np.linspace(0, 30, 300)
@@ -1367,8 +1553,8 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         #plt.xlim(0, 9)
         plt.ylim(0, Q.max()*1.05)
         plt.xlim(0, thetaArr.max())
-        plt.xlabel("$\\theta_{500}$ (arcmin)")
-        plt.ylabel("$Q$")
+        plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
+        plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
         plt.savefig(diagnosticsDir+os.path.sep+"QFit.pdf")
         plt.close()
     
@@ -1580,7 +1766,11 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
         print "M500 fail"
         IPython.embed()
         sys.exit()
-        
+
+    #print "Add Q"
+    #IPython.embed()
+    #sys.exit()
+    
     return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus,
             'M500Uncorr': M500Uncorr, 'M500Uncorr_errPlus': errM500UncorrPlus, 
             'M500Uncorr_errMinus': errM500UncorrMinus}

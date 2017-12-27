@@ -554,23 +554,37 @@ def preprocessMapDict(mapDict, diagnosticsDir = None):
     return mapDict
     
 #-------------------------------------------------------------------------------------------------------------
-def subtractBackground(data, wcs, smoothScaleDeg = 30.0/60.0):
+def subtractBackground(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 30.0/60.0):
     """Smoothes map with Gaussian of given scale and subtracts it, to get rid of large scale power.
+    
+    If RADeg, decDeg = 'centre', then the pixel scales used to set the kernel shape will be set from that at the
+    centre of the WCS. Otherwise, they will be taken at the given coords.
+    
+    Note that wcs is only used to figure out the pixel scales here.
     
     """
             
-    smoothedData=smoothMap(data, wcs, smoothScaleDeg=smoothScaleDeg)
+    smoothedData=smoothMap(data, wcs, RADeg = RADeg, decDeg = decDeg, smoothScaleDeg = smoothScaleDeg)
     data=data-smoothedData
     
     return data
 
 #-------------------------------------------------------------------------------------------------------------
-def smoothMap(data, wcs, smoothScaleDeg = 5.0/60.0):
+def smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 5.0/60.0):
     """Smoothes map with Gaussian of given scale.
     
+    If RADeg, decDeg = 'centre', then the pixel scales used to set the kernel shape will be set from that at the
+    centre of the WCS. Otherwise, they will be taken at the given coords.
+    
+    Note that wcs is only used to figure out the pixel scales here.
+    
     """
-            
+    
     ra0, dec0=wcs.getCentreWCSCoords()
+    if RADeg != 'centre':
+        ra0=float(RADeg)
+    if decDeg != 'centre':
+        dec0=float(decDeg)
     x0, y0=wcs.wcs2pix(ra0, dec0)
     x1=x0+1
     y1=y0+1
