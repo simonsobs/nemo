@@ -90,51 +90,76 @@ def filterMaps(unfilteredMapsDictList, filtersList, rootOutDir = ".", verbose = 
             
     # Dictionary to keep track of images we're going to make
     imageDict={}
-        
+    
+    # Gather list of extensions (for tileDeck files)
+    # NOTE: we're assuming all files in unfilteredMapsDictList have the same extensions...
+    img=pyfits.open(unfilteredMapsDictList[0]['mapFileName'])
+    extNames=[]
+    for ext in img:
+        extNames.append(ext.name)
+    img.close() 
+    imageDict['extNames']=extNames
+    
+    # Since we're putting stuff like extNames in the top level, let's keep a separate list of mapDicts
+    imageDict['mapKeys']=[]
+    
     # Make filtered maps for each filter
     if verbose == True: print ">>> Making filtered maps and S/N maps ..."
     for f in filtersList:
         
-        filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (f['label'])
-        SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (f['label'])
-        signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (f['label'])
-        #transferFnFileName=filteredMapsDir+os.path.sep+"%s_transferFunction.fits" % (f['label'])
-
-        if os.path.exists(filteredMapFileName) == False:
+        # Iterate over all extensions (for tileDeck files)...
+        for extName in extNames:
             
-            print "... making filtered map %s ..." % (f['label']) 
-            filterClass=eval('mapFilters.%s' % (f['class']))
-            filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
-                                  outDir = filtersDir, diagnosticsDir = diagnosticsDir)
-            filteredMapDict=filterObj.buildAndApply()
+            print "... extName = %s ..." % (extName)
+            label=f['label']+"#"+extName
             
-            # Keywords we need for photometry later
-            #filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
-            #filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
-            filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
-            filteredMapDict['wcs'].updateFromHeader()
+            filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
+            SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
+            signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
+            #transferFnFileName=filteredMapsDir+os.path.sep+"%s_transferFunction.fits" % (f['label'])
 
-            #if filteredMapDict['obsFreqGHz'] != 'yc':
-                #filteredMapDict['data']=convertToY(filteredMapDict['data'], \
-                                                   #obsFrequencyGHz = filteredMapDict['obsFreqGHz'])
-                                               
-            astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-            astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
-            #astImages.saveFITS(signalMapFileName, filteredMapDict['signalMap'], filteredMapDict['wcs'])            
+            if os.path.exists(filteredMapFileName) == False:
+                
+                print "... making filtered map %s ..." % (label) 
+                filterClass=eval('mapFilters.%s' % (f['class']))
+                filterObj=filterClass(label, unfilteredMapsDictList, f['params'], \
+                                      extName = extName, outDir = filtersDir, 
+                                      diagnosticsDir = diagnosticsDir)
+                filteredMapDict=filterObj.buildAndApply()
+                    
+                # Keywords we need for photometry later
+                #filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
+                #filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
+                filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
+                filteredMapDict['wcs'].updateFromHeader()
 
-        else:
-            print "... filtered map %s already made ..." % (f['label']) 
-        
-        # Add file names to imageDict
-        if f['label'] not in imageDict:
-            imageDict[f['label']]={}
-        imageDict[f['label']]['filteredMap']=filteredMapFileName
-        imageDict[f['label']]['SNMap']=SNMapFileName
-        imageDict[f['label']]['signalMap']=signalMapFileName
-        
-        # May be handy to keep track of for plotting etc. later
-        imageDict[f['label']]['unfilteredMapsDictList']=unfilteredMapsDictList  
-        
+                #if filteredMapDict['obsFreqGHz'] != 'yc':
+                    #filteredMapDict['data']=convertToY(filteredMapDict['data'], \
+                                                    #obsFrequencyGHz = filteredMapDict['obsFreqGHz'])
+                                                
+                astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
+                #astImages.saveFITS(signalMapFileName, filteredMapDict['signalMap'], filteredMapDict['wcs'])            
+
+            else:
+                print "... filtered map %s already made ..." % (label) 
+            
+            # Add file names to imageDict
+            if label not in imageDict:
+                imageDict[label]={}
+            imageDict[label]['filteredMap']=filteredMapFileName
+            imageDict[label]['SNMap']=SNMapFileName
+            imageDict[label]['signalMap']=signalMapFileName
+            
+            # Track e.g. reference filter scale with this key
+            imageDict[label]['template']=f['label']
+            
+            # Track which keys have filtered maps that we might want to iterate over
+            imageDict['mapKeys'].append(label)
+            
+            # May be handy to keep track of for plotting etc. later
+            imageDict[label]['unfilteredMapsDictList']=unfilteredMapsDictList  
+            
     return imageDict
     
 #-------------------------------------------------------------------------------------------------------------
@@ -347,209 +372,208 @@ def clipUsingRADecCoords(imageData, imageWCS, RAMin, RAMax, decMin, decMax, retu
     return {'data': clippedData, 'wcs': clippedWCS, 'clippedSection': [X[0], X[1], Y[0], Y[1]]}
     
 #-------------------------------------------------------------------------------------------------------------
-def preprocessMapDict(mapDict, diagnosticsDir = None):
+def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     """Does preprocessing steps according to parameters in mapDict, returns the mapDict with additional
     keys added ['data', 'weights', 'wcs'].
     
     """
-    
-    # Load data map, if we don't already have one (e.g. if removing point sources)
-    if 'data' not in mapDict.keys():   
-        img=pyfits.open(mapDict['mapFileName'], memmap = True)
-        wcs=astWCS.WCS(mapDict['mapFileName'])
-        data=img[0].data
-        if mapDict['units'] == 'Jy/sr':
-            if mapDict['obsFreqGHz'] == 148:
-                data=(data/1.072480e+09)*2.726*1e6
-            elif mapDict['obsFreqGHz'] == 219:
-                data=(data/1.318837e+09)*2.726*1e6
-            else:
-                raise Exception, "no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
-                        % (mapDict['obsFreqGHz'])
-
-        # Load weight map if given
-        if 'weightsFileName' in mapDict.keys() and mapDict['weightsFileName'] != None:
-            wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
-            weights=wht[0].data
-        else:
-            weights=np.ones(data.shape)
-
-        # Load survey and point source masks, if given
-        if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
-            smImg=pyfits.open(mapDict['surveyMask'])
-            surveyMask=smImg[0].data
-        else:
-            surveyMask=np.ones(data.shape)
-        if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
-            psImg=pyfits.open(mapDict['pointSourceMask'])
-            psMask=psImg[0].data
-        else:
-            psMask=np.ones(data.shape)
-                
-        print "... opened map %s ..." % (mapDict['mapFileName'])
-        
-        # Optional map clipping
-        if 'RADecSection' in mapDict.keys() and mapDict['RADecSection'] != None:
-            RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
-            clip=astImages.clipUsingRADecCoords(data, wcs, RAMin, RAMax, decMin, decMax)
-            data=clip['data']
-            whtClip=astImages.clipUsingRADecCoords(weights, wcs, RAMin, RAMax, decMin, decMax)
-            weights=whtClip['data']
-            psClip=astImages.clipUsingRADecCoords(psMask, wcs, RAMin, RAMax, decMin, decMax)
-            psMask=psClip['data']
-            surveyClip=astImages.clipUsingRADecCoords(surveyMask, wcs, RAMin, RAMax, decMin, decMax)
-            surveyMask=surveyClip['data']
-            wcs=clip['wcs']
-            #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
-        
-        # Optional adding of white noise
-        if 'addNoise' in mapDict.keys() and mapDict['addNoise'] != None:
-            data=addWhiteNoise(data, mapDict['addNoise'])
-            if diagnosticsDir != None:
-                astImages.saveFITS(diagnosticsDir+os.path.sep+"simMapPlusNoise_%d.fits" \
-                                % (mapDict['obsFreqGHz']), data, wcs)    
-                
-        # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
-        # or a wavelet decomposition scale image
-        if 'bckSubScaleArcmin' in mapDict.keys() and mapDict['bckSubScaleArcmin'] != None:
-            data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
-        
-        # Added March 2017 as replacement for older 'pointSourceRemoval' code
-        # Break out from here / tidy up later
-        # NOTE: If we just mask big enough areas, we don't need to bother with this!
-        #if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
-            #psRemovedFileName=diagnosticsDir+os.path.sep+"psMasked_%d.fits" % (mapDict['obsFreqGHz'])
-            #if os.path.exists(psRemovedFileName) == True:
-                #print "... loading cached map %s which has point source masking applied ..." % (psRemovedFileName)
-                #psRemovedImg=pyfits.open(psRemovedFileName)
-                #data=psRemovedImg[0].data
-            #else:
-                #print "... filling in map at masked point source locations ..."
-                #t0=time.time()
-                ## The big smooth method
-                ##smoothed=smoothMap(data, wcs, smoothScaleDeg = 10.0/60.0)
-                ## Find hole locations - we could swap out the mask here for a catalog instead, or add as option
-                ## Measure the average value in an annulus around each hole location
-                #ptSrcData=1-psMask
-                #sigPix=np.array(np.greater(ptSrcData, 0), dtype=int)
-                #sigPixMask=np.equal(sigPix, 1)
-                #segmentationMap, numObjects=ndimage.label(sigPix)
-                #objIDs=np.unique(segmentationMap)
-                #objPositions=ndimage.center_of_mass(ptSrcData, labels = segmentationMap, index = objIDs)
-                #objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
-                #psCat=[]
-                #idNumCount=0
-                #minObjPix=5
-                #for i in range(len(objIDs)):
-                    #if type(objNumPix) != float and objNumPix[i] > minObjPix:
-                        #idNumCount=idNumCount+1
-                        #x=int(round(objPositions[i][1]))
-                        #y=int(round(objPositions[i][0]))
-                        #objDict={}
-                        #objDict['id']=idNumCount
-                        #objDict['x']=x
-                        #objDict['y']=y
-                        #objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
-                        #objDict['numPix']=objNumPix[i]
-                        #rPix=int(round(np.sqrt(objDict['numPix']/np.pi)))
-                        #annulus=photometry.makeAnnulus(rPix, rPix+4)
-                        #yMin=objDict['y']-annulus.shape[0]/2
-                        #yMax=objDict['y']+annulus.shape[0]/2
-                        #xMin=objDict['x']-annulus.shape[1]/2
-                        #xMax=objDict['x']+annulus.shape[1]/2
-                        ## Just skip if too close to map edge - will be cropped out later anyway...
-                        #if yMax > data.shape[0] or yMin < 0 or xMax > data.shape[1] or xMin < 0:
-                            #continue        
-                        ## for testing
-                        ##if x > 6900 and x < 6940 and y >  1240 and y < 1270:
-                        ##if x > 6070 and x < 6133 and y > 601  and y < 648:
-                        #psClip=data[yMin:yMax, xMin:xMax]
-                        #sigma=np.std(psClip[np.not_equal(psClip, 0)*annulus])
-                        #med=np.median(psClip[np.not_equal(psClip, 0)*annulus])
-                        #if sigma > 0:
-                            #pixMask=np.where(segmentationMap == objIDs[i])
-                            ##data[pixMask]=smoothed[pixMask]+np.random.normal(0, sigma, len(smoothed[pixMask]))
-                            #data[pixMask]=np.random.normal(med, sigma, len(data[pixMask]))
-                            #psCat.append(objDict)
-                #t1=time.time()
-                #print "... took %.3f sec ..." % (t1-t0)
-                #astImages.saveFITS(psRemovedFileName, data, wcs)
-        
-        # Optional removal of point sources, using GaussianWienerFilter to find them
-        # We only do this once, and cache the result in the diagnostics dir
-        # NOTE: see above for new 'pointSourceMask' option - eventually we may remove the below...
-        if 'pointSourceRemoval' in mapDict.keys() and mapDict['pointSourceRemoval'] != None:
-            outFileName=diagnosticsDir+os.path.sep+"psRemoved_%d.fits" % (mapDict['obsFreqGHz'])
-            if os.path.exists(outFileName) == False:
-                psRemovalMapDict={}
-                psRemovalMapDict['data']=subtractBackground(data, wcs, smoothScaleDeg = 3.0/60.0)
-                psRemovalMapDict['wcs']=wcs
-                psRemovalMapDict['weights']=weights
-                psRemovalMapDict['obsFreqGHz']=mapDict['obsFreqGHz']
-                if 'beamFWHMArcmin' in mapDict.keys():
-                    psRemovalMapDict['beamFWHMArcmin']=mapDict['beamFWHMArcmin']
-                    psRemovalClass=mapFilters.GaussianMatchedFilter
-                if 'beamFileName' in mapDict.keys():
-                    psRemovalMapDict['beamFileName']=mapDict['beamFileName']
-                    psRemovalClass=mapFilters.BeamMatchedFilter
-                psRemovalParams=mapDict['pointSourceRemoval']
-                psRemovalParams['FWHMArcmin']=1.4
-                psRemovalParams['noiseParams']={'method': 'dataMap'}
-                gaussFilter=psRemovalClass('psremoval-%d' % (psRemovalMapDict['obsFreqGHz']), \
-                                                             [psRemovalMapDict], psRemovalParams, \
-                                                             diagnosticsDir = diagnosticsDir)
-                psRemoved=gaussFilter.buildAndApply()
-                SNMap=psRemoved['SNMap']
-                imageDict={'psRemoved': {}}
-                imageDict['psRemoved']['SNMap']=SNMap
-                imageDict['psRemoved']['wcs']=psRemoved['wcs']
-                photometry.findObjects(imageDict, SNMap = 'array', 
-                                    threshold = mapDict['pointSourceRemoval']['threshold'],
-                                    minObjPix = mapDict['pointSourceRemoval']['minObjPix'], 
-                                    rejectBorder = mapDict['pointSourceRemoval']['rejectBorder'], 
-                                    makeDS9Regions = False, 
-                                    writeSegmentationMap = False)            
-                if diagnosticsDir != None:
-                    outFileName=diagnosticsDir+os.path.sep+"pointSources-%d.reg" % \
-                                (psRemovalMapDict['obsFreqGHz'])
-                    catalogTools.catalog2DS9(imageDict['psRemoved']['catalog'], outFileName)
-                    baseKeys=['name', 'RADeg', 'decDeg']
-                    baseFormats=["%s", "%.6f", "%.6f"]
-                    catalogTools.writeCatalog(imageDict['psRemoved']['catalog'], 
-                                              outFileName.replace(".reg", ".csv"), baseKeys, baseFormats, 
-                                              [], headings = True, writeNemoInfo = False)
-                maskedDict=maskOutSources(data, psRemoved['wcs'], imageDict['psRemoved']['catalog'],
-                                          radiusArcmin = psRemovalParams['radiusArcmin'], 
-                                          mask = psRemovalParams['masking'])
-                if diagnosticsDir != None:
-                    astImages.saveFITS(diagnosticsDir+os.path.sep+"psRemoved_%d.fits" \
-                                % (mapDict['obsFreqGHz']), maskedDict['data'], wcs)
-                    astImages.saveFITS(diagnosticsDir+os.path.sep+"psMask_%d.fits" \
-                                % (mapDict['obsFreqGHz']), maskedDict['mask'], wcs)
-                data=maskedDict['data']
-            else:
-                # Do we need this? Probably not.
-                img=pyfits.open(outFileName)
-                data=img[0].data
-        
-        # Optional masking of point sources from external catalog - needed, e.g., for point source subtracted
-        # maps from Jon's pipeline, because otherwise we get negative bits that are detected as spurious 
-        # clusters
-        if 'maskPointSourcesFromCatalog' in mapDict.keys() and mapDict['maskPointSourcesFromCatalog'] != None:
-            print "Add code for masking point sources in a catalog"
-            IPython.embed()
-            sys.exit()
             
-        # Add the map data to the dict
-        mapDict['data']=data
-        mapDict['weights']=weights
-        mapDict['wcs']=wcs
-        mapDict['surveyMask']=surveyMask
-        mapDict['psMask']=psMask
+    img=pyfits.open(mapDict['mapFileName'], memmap = True)
+    wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
+    data=img[extName].data
+    if mapDict['units'] == 'Jy/sr':
+        if mapDict['obsFreqGHz'] == 148:
+            data=(data/1.072480e+09)*2.726*1e6
+        elif mapDict['obsFreqGHz'] == 219:
+            data=(data/1.318837e+09)*2.726*1e6
+        else:
+            raise Exception, "no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
+                    % (mapDict['obsFreqGHz'])
+
+    # Load weight map if given
+    if 'weightsFileName' in mapDict.keys() and mapDict['weightsFileName'] != None:
+        wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
+        weights=wht[extName].data
+    else:
+        weights=np.ones(data.shape)
+
+    # Load survey and point source masks, if given
+    if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
+        smImg=pyfits.open(mapDict['surveyMask'])
+        surveyMask=smImg[0].data
+    else:
+        surveyMask=np.ones(data.shape)
+    if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
+        psImg=pyfits.open(mapDict['pointSourceMask'])
+        psMask=psImg[0].data
+    else:
+        psMask=np.ones(data.shape)
+            
+    print "... opened map %s ..." % (mapDict['mapFileName'])
+    
+    # Optional map clipping
+    if 'RADecSection' in mapDict.keys() and mapDict['RADecSection'] != None:
+        RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
+        clip=astImages.clipUsingRADecCoords(data, wcs, RAMin, RAMax, decMin, decMax)
+        data=clip['data']
+        whtClip=astImages.clipUsingRADecCoords(weights, wcs, RAMin, RAMax, decMin, decMax)
+        weights=whtClip['data']
+        psClip=astImages.clipUsingRADecCoords(psMask, wcs, RAMin, RAMax, decMin, decMax)
+        psMask=psClip['data']
+        surveyClip=astImages.clipUsingRADecCoords(surveyMask, wcs, RAMin, RAMax, decMin, decMax)
+        surveyMask=surveyClip['data']
+        wcs=clip['wcs']
+        #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
+    
+    # Optional adding of white noise
+    if 'addNoise' in mapDict.keys() and mapDict['addNoise'] != None:
+        data=addWhiteNoise(data, mapDict['addNoise'])
+        if diagnosticsDir != None:
+            astImages.saveFITS(diagnosticsDir+os.path.sep+"simMapPlusNoise_%d.fits" \
+                            % (mapDict['obsFreqGHz']), data, wcs)    
+            
+    # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
+    # or a wavelet decomposition scale image
+    if 'bckSubScaleArcmin' in mapDict.keys() and mapDict['bckSubScaleArcmin'] != None:
+        data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
+    
+    # Added March 2017 as replacement for older 'pointSourceRemoval' code
+    # Break out from here / tidy up later
+    # NOTE: If we just mask big enough areas, we don't need to bother with this!
+    #if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
+        #psRemovedFileName=diagnosticsDir+os.path.sep+"psMasked_%d.fits" % (mapDict['obsFreqGHz'])
+        #if os.path.exists(psRemovedFileName) == True:
+            #print "... loading cached map %s which has point source masking applied ..." % (psRemovedFileName)
+            #psRemovedImg=pyfits.open(psRemovedFileName)
+            #data=psRemovedImg[0].data
+        #else:
+            #print "... filling in map at masked point source locations ..."
+            #t0=time.time()
+            ## The big smooth method
+            ##smoothed=smoothMap(data, wcs, smoothScaleDeg = 10.0/60.0)
+            ## Find hole locations - we could swap out the mask here for a catalog instead, or add as option
+            ## Measure the average value in an annulus around each hole location
+            #ptSrcData=1-psMask
+            #sigPix=np.array(np.greater(ptSrcData, 0), dtype=int)
+            #sigPixMask=np.equal(sigPix, 1)
+            #segmentationMap, numObjects=ndimage.label(sigPix)
+            #objIDs=np.unique(segmentationMap)
+            #objPositions=ndimage.center_of_mass(ptSrcData, labels = segmentationMap, index = objIDs)
+            #objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
+            #psCat=[]
+            #idNumCount=0
+            #minObjPix=5
+            #for i in range(len(objIDs)):
+                #if type(objNumPix) != float and objNumPix[i] > minObjPix:
+                    #idNumCount=idNumCount+1
+                    #x=int(round(objPositions[i][1]))
+                    #y=int(round(objPositions[i][0]))
+                    #objDict={}
+                    #objDict['id']=idNumCount
+                    #objDict['x']=x
+                    #objDict['y']=y
+                    #objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
+                    #objDict['numPix']=objNumPix[i]
+                    #rPix=int(round(np.sqrt(objDict['numPix']/np.pi)))
+                    #annulus=photometry.makeAnnulus(rPix, rPix+4)
+                    #yMin=objDict['y']-annulus.shape[0]/2
+                    #yMax=objDict['y']+annulus.shape[0]/2
+                    #xMin=objDict['x']-annulus.shape[1]/2
+                    #xMax=objDict['x']+annulus.shape[1]/2
+                    ## Just skip if too close to map edge - will be cropped out later anyway...
+                    #if yMax > data.shape[0] or yMin < 0 or xMax > data.shape[1] or xMin < 0:
+                        #continue        
+                    ## for testing
+                    ##if x > 6900 and x < 6940 and y >  1240 and y < 1270:
+                    ##if x > 6070 and x < 6133 and y > 601  and y < 648:
+                    #psClip=data[yMin:yMax, xMin:xMax]
+                    #sigma=np.std(psClip[np.not_equal(psClip, 0)*annulus])
+                    #med=np.median(psClip[np.not_equal(psClip, 0)*annulus])
+                    #if sigma > 0:
+                        #pixMask=np.where(segmentationMap == objIDs[i])
+                        ##data[pixMask]=smoothed[pixMask]+np.random.normal(0, sigma, len(smoothed[pixMask]))
+                        #data[pixMask]=np.random.normal(med, sigma, len(data[pixMask]))
+                        #psCat.append(objDict)
+            #t1=time.time()
+            #print "... took %.3f sec ..." % (t1-t0)
+            #astImages.saveFITS(psRemovedFileName, data, wcs)
+    
+    # Optional removal of point sources, using GaussianWienerFilter to find them
+    # We only do this once, and cache the result in the diagnostics dir
+    # NOTE: see above for new 'pointSourceMask' option - eventually we may remove the below...
+    if 'pointSourceRemoval' in mapDict.keys() and mapDict['pointSourceRemoval'] != None:
+        outFileName=diagnosticsDir+os.path.sep+"psRemoved_%d.fits" % (mapDict['obsFreqGHz'])
+        if os.path.exists(outFileName) == False:
+            psRemovalMapDict={}
+            psRemovalMapDict['data']=subtractBackground(data, wcs, smoothScaleDeg = 3.0/60.0)
+            psRemovalMapDict['wcs']=wcs
+            psRemovalMapDict['weights']=weights
+            psRemovalMapDict['obsFreqGHz']=mapDict['obsFreqGHz']
+            if 'beamFWHMArcmin' in mapDict.keys():
+                psRemovalMapDict['beamFWHMArcmin']=mapDict['beamFWHMArcmin']
+                psRemovalClass=mapFilters.GaussianMatchedFilter
+            if 'beamFileName' in mapDict.keys():
+                psRemovalMapDict['beamFileName']=mapDict['beamFileName']
+                psRemovalClass=mapFilters.BeamMatchedFilter
+            psRemovalParams=mapDict['pointSourceRemoval']
+            psRemovalParams['FWHMArcmin']=1.4
+            psRemovalParams['noiseParams']={'method': 'dataMap'}
+            gaussFilter=psRemovalClass('psremoval-%d' % (psRemovalMapDict['obsFreqGHz']), \
+                                                            [psRemovalMapDict], psRemovalParams, \
+                                                            diagnosticsDir = diagnosticsDir)
+            psRemoved=gaussFilter.buildAndApply()
+            SNMap=psRemoved['SNMap']
+            imageDict={'psRemoved': {}}
+            imageDict['psRemoved']['SNMap']=SNMap
+            imageDict['psRemoved']['wcs']=psRemoved['wcs']
+            photometry.findObjects(imageDict, SNMap = 'array', 
+                                threshold = mapDict['pointSourceRemoval']['threshold'],
+                                minObjPix = mapDict['pointSourceRemoval']['minObjPix'], 
+                                rejectBorder = mapDict['pointSourceRemoval']['rejectBorder'], 
+                                makeDS9Regions = False, 
+                                writeSegmentationMap = False)            
+            if diagnosticsDir != None:
+                outFileName=diagnosticsDir+os.path.sep+"pointSources-%d.reg" % \
+                            (psRemovalMapDict['obsFreqGHz'])
+                catalogTools.catalog2DS9(imageDict['psRemoved']['catalog'], outFileName)
+                baseKeys=['name', 'RADeg', 'decDeg']
+                baseFormats=["%s", "%.6f", "%.6f"]
+                catalogTools.writeCatalog(imageDict['psRemoved']['catalog'], 
+                                            outFileName.replace(".reg", ".csv"), baseKeys, baseFormats, 
+                                            [], headings = True, writeNemoInfo = False)
+            maskedDict=maskOutSources(data, psRemoved['wcs'], imageDict['psRemoved']['catalog'],
+                                        radiusArcmin = psRemovalParams['radiusArcmin'], 
+                                        mask = psRemovalParams['masking'])
+            if diagnosticsDir != None:
+                astImages.saveFITS(diagnosticsDir+os.path.sep+"psRemoved_%d.fits" \
+                            % (mapDict['obsFreqGHz']), maskedDict['data'], wcs)
+                astImages.saveFITS(diagnosticsDir+os.path.sep+"psMask_%d.fits" \
+                            % (mapDict['obsFreqGHz']), maskedDict['mask'], wcs)
+            data=maskedDict['data']
+        else:
+            # Do we need this? Probably not.
+            img=pyfits.open(outFileName)
+            data=img[0].data
+    
+    # Optional masking of point sources from external catalog - needed, e.g., for point source subtracted
+    # maps from Jon's pipeline, because otherwise we get negative bits that are detected as spurious 
+    # clusters
+    if 'maskPointSourcesFromCatalog' in mapDict.keys() and mapDict['maskPointSourcesFromCatalog'] != None:
+        print "Add code for masking point sources in a catalog"
+        IPython.embed()
+        sys.exit()
         
-        # Save trimmed weights
-        if os.path.exists(diagnosticsDir+os.path.sep+"weights.fits") == False:
-            astImages.saveFITS(diagnosticsDir+os.path.sep+"weights.fits", weights, wcs)
+    # Add the map data to the dict
+    mapDict['data']=data
+    mapDict['weights']=weights
+    mapDict['wcs']=wcs
+    mapDict['surveyMask']=surveyMask
+    mapDict['psMask']=psMask
+    mapDict['extName']=extName
+    
+    # Save trimmed weights
+    if os.path.exists(diagnosticsDir+os.path.sep+"weights.fits") == False:
+        astImages.saveFITS(diagnosticsDir+os.path.sep+"weights.fits", weights, wcs)
         
     return mapDict
     

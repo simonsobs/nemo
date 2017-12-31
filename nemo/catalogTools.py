@@ -93,7 +93,7 @@ def mergeCatalogs(imageDict):
     
     # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
     templates=[]
-    for key in imageDict.keys():
+    for key in imageDict['mapKeys']:
         if key != "mergedCatalog" and key != "optimalCatalog":
             templates.append(key)
             
@@ -146,7 +146,7 @@ def mergeCatalogs(imageDict):
             obj['fractionMapsDetected']=float(len(obj['template']))/float(len(templates))
         
     imageDict['mergedCatalog']=mergedCatalog
-
+        
 #------------------------------------------------------------------------------------------------------------
 def makeOptimalCatalog(imageDict, constraintsList):
     """Identifies common objects between catalogs in the imageDict and creates a master catalog with
@@ -170,7 +170,7 @@ def makeOptimalCatalog(imageDict, constraintsList):
     
     # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
     templates=[]
-    for key in imageDict.keys():
+    for key in imageDict['mapKeys']:
         if key != "mergedCatalog" and key != "optimalCatalog":
             templates.append(key)
             

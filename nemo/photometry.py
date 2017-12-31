@@ -57,7 +57,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         areaMask=None
             
     # Do search on each filtered map separately
-    for key in imageDict.keys():
+    for key in imageDict['mapKeys']:
         
         if verbose == True:
             print "... searching %s ..." % (key)
@@ -167,7 +167,7 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
     print ">>> Getting %sSNR values ..." % (prefix)
     
     # Do search on each filtered map separately
-    for key in imageDict.keys():
+    for key in imageDict['mapKeys']:
         
         print "... searching %s ..." % (key)
         
@@ -196,8 +196,8 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
                                                         #data, kx = 1, ky = 1)
                                             
         for obj in imageDict[key]['catalog']:
-            obj['x'], obj['y']=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
-            if obj['x'] > 0 and obj['x'] < data.shape[1] and obj['y'] > 0 and obj['y'] < data.shape[0]:
+            x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
+            if x > 0 and x < data.shape[1] and y > 0 and y < data.shape[0]:
                 obj[prefix+'SNR']=data[int(round(obj['y'])), int(round(obj['x']))] # read directly off of S/N map
                 #obj['SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
             else:
@@ -230,9 +230,12 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 
     # Adds fixed_SNR values to catalogs for all maps
     if photFilter != None:
-        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter)
+        # Adapted to work with tileDeck images
+        for key in imageDict.keys():
+            if key.split("#")[0] == photFilter:
+                getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = key)
 
-    for key in imageDict.keys():
+    for key in imageDict['mapKeys']:
         
         print "--> Map: %s ..." % (imageDict[key]['filteredMap'])
         catalog=imageDict[key]['catalog']        
@@ -247,15 +250,16 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                                                         np.arange(mapData.shape[1]), 
                                                         mapData, kx = 1, ky = 1) 
         
-        # For fixed filter scale
+        # Add fixed filter scale maps
+        # NOTE: adapted for tileDeck files, but this set-up will eat all the memory...
+        mapDataList=[mapData]
+        prefixList=['']
         if 'photFilter' in photometryOptions.keys():
-            photImg=pyfits.open(imageDict[photFilter]['filteredMap'])
-            photMapData=photImg[0].data
-            mapDataList=[mapData, photMapData]
-            prefixList=['', 'fixed_']
-        else:
-            mapDataList=[mapData]
-            prefixList=['']
+            for extName in imageDict['extNames']:
+                photImg=pyfits.open(imageDict[photFilter+"#"+extName]['filteredMap'])
+                photMapData=photImg[0].data
+                mapDataList.append(photMapData)
+                prefixList.append('fixed_')
             
         for obj in catalog:
             
@@ -264,7 +268,12 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                 for data, prefix in zip(mapDataList, prefixList):
                     # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
                     # i.e., avoid using interpolate.RectBivariateSpline
-                    mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
+                    try:
+                        mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
+                    except:
+                        print "weird coords"
+                        IPython.embed()
+                        sys.exit()
                     #mapValue=mapInterpolator(obj['y'], obj['x'])[0][0]
 
                     # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!

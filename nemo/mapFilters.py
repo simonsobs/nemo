@@ -51,8 +51,8 @@ class MapFilter:
     """Generic map filter base class. Defines common interface.
     
     """
-    def __init__(self, label, unfilteredMapsDictList, paramsDict, writeFilter = False, forceRebuild = False,
-                 outDir = ".", diagnosticsDir = None):
+    def __init__(self, label, unfilteredMapsDictList, paramsDict, extName = 'PRIMARY', writeFilter = False, 
+                 forceRebuild = False, outDir = ".", diagnosticsDir = None):
         """Initialises a MapFilter. unfilteredMapsDictList describes the input maps, paramsDict describes
         the filter options. The convention is that single frequency only filters (e.g. GaussianWienerFilter)
         only operate on the first map in the unfilteredMapDictList.
@@ -65,20 +65,21 @@ class MapFilter:
         
         self.label=label
         self.params=paramsDict
-        
+                
         # Prepare all the unfilteredMaps (in terms of cutting sections, adding noise etc.)
+        # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDeck files
+        self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:           
-            mapDict=mapTools.preprocessMapDict(mapDict, diagnosticsDir = diagnosticsDir)
+            mapDict=mapTools.preprocessMapDict(mapDict.copy(), extName = extName, diagnosticsDir = diagnosticsDir)
+            self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
 
         # Sanity check that all maps are the same dimensions
-        shape=unfilteredMapsDictList[0]['data'].shape
-        for mapDict in unfilteredMapsDictList:
+        shape=self.unfilteredMapsDictList[0]['data'].shape
+        for mapDict in self.unfilteredMapsDictList:
             if mapDict['data'].shape != shape:
                 raise Exception, "Maps at different frequencies have different dimensions!"
-        
-        self.unfilteredMapsDictList=unfilteredMapsDictList
-                                
+                                        
         # Set up storage if necessary, build this filter if not already stored
         self.diagnosticsDir=diagnosticsDir
         if os.path.exists(outDir) == False:
@@ -704,7 +705,7 @@ class MatchedFilter(MapFilter):
                 # otherwise, the FFT here is just so we have the modThetaMap etc. which we would use if
                 # using e.g. beta model templates where we're setting our own normalisation, rather than
                 # using e.g. the profile models.
-                lm=liteMap.liteMapFromDataAndWCS(maskedData, self.wcs)                               
+                lm=liteMap.liteMapFromDataAndWCS(maskedData, self.wcs) 
                 lm.data=lm.data*np.sqrt(mapDict['weights']/mapDict['weights'].max()) # this appears to make no difference
                 apodlm=lm.createGaussianApodization(pad=10, kern=5)               
                 lm.data=lm.data*apodlm.data
@@ -920,8 +921,9 @@ class RealSpaceMatchedFilter(MapFilter):
             os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
         matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
         matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
-                                            outDir = matchedFilterDir, 
-                                            diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
+                                         extName = mapDict['extName'],
+                                         outDir = matchedFilterDir, 
+                                         diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
         filteredMapDict=matchedFilter.buildAndApply()
                 
         # Turn the matched filter into a smaller real space convolution kernel
@@ -1044,7 +1046,18 @@ class RealSpaceMatchedFilter(MapFilter):
             # Copes with CAR distortion at large | dec |
             # NOTE: the way this is done currently means we should pick something contiguous in dec direction at fixed RA
             RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
-            if self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
+            if self.params['noiseParams']['RADecSection'] == 'auto':
+                # In this case, use the central 50% (Sigurd's maps used in tileDeck are tapered at the edges)
+                RAOff=(RAMax-RAMin)/4.
+                RASize=(RAMax-RAMin)/2.
+                decOff=(decMax-decMin)/4.
+                decSize=(decMax-decMin)/2.
+                RADecSectionDictList=[{'RADecSection': [RAMin, RAMax, decMin, decMax],
+                                       #'RADecSection': [RAMin+RAOff, RAMin+RAOff+RASize, 
+                                                        #decMin+decOff, decMin+decOff+decSize],
+                                       'applyDecMin': decMin, 'applyDecMax': decMax,
+                                       'applyRAMin': RAMin, 'applyRAMax': RAMax}]
+            elif self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
                 numDecSteps=float(self.params['noiseParams']['RADecSection'][3])
                 decEdges=np.linspace(decMin, decMax, numDecSteps+1)
                 RADecSectionDictList=[]
