@@ -1106,11 +1106,7 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     else:
         photFilter=None
     if photFilter != None:
-        # Adapted to work with tileDeck images
-        for key in invertedDict.keys():
-            if key.split("#")[0] == photFilter:
-                photometry.getSNValues(invertedDict, SNMap = 'file', prefix = 'fixed_', template = key, invertMap = True)
-        #photometry.getSNValues(invertedDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, invertMap = True)   
+        photometry.getSNValues(invertedDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, invertMap = True)
         SNRKeys=['SNR', 'fixed_SNR']
     else:
         SNRKeys=['SNR']

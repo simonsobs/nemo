@@ -48,19 +48,20 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         psMaskMap=img[0].data
     else:
         psMaskMap=None
-    
-    # Load area mask
-    if diagnosticsDir != None:
-        img=pyfits.open(diagnosticsDir+os.path.sep+"areaMask.fits")
-        areaMask=img[0].data
-    else:
-        areaMask=None
-            
+                
     # Do search on each filtered map separately
     for key in imageDict['mapKeys']:
         
         if verbose == True:
             print "... searching %s ..." % (key)
+        
+        # Load area mask
+        extName=key.split("#")[-1]
+        if diagnosticsDir != None:
+            img=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+            areaMask=img[0].data
+        else:
+            areaMask=None
         
         if SNMap == 'file':
             img=pyfits.open(imageDict[key]['SNMap'])
@@ -165,20 +166,23 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
     """
     
     print ">>> Getting %sSNR values ..." % (prefix)
+
+    if template != None:
+        keyList=[]
+        for k in imageDict['mapKeys']:
+            if k.split("#")[0] == template:
+                keyList.append(k)
+    else:
+        keyList=imageDict['mapKeys']
     
     # Do search on each filtered map separately
-    for key in imageDict['mapKeys']:
+    for key in keyList:
         
         print "... searching %s ..." % (key)
         
-        if template == None:
-            mapKey=key
-        else:
-            mapKey=template
-
         if SNMap == 'file':
-            img=pyfits.open(imageDict[mapKey]['SNMap'])
-            wcs=astWCS.WCS(imageDict[mapKey]['SNMap'])
+            img=pyfits.open(imageDict[key]['SNMap'])
+            wcs=astWCS.WCS(imageDict[key]['SNMap'])
             data=img[0].data
         elif SNMap == 'array':
             data=imageDict[key]['SNMap']
@@ -230,10 +234,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 
     # Adds fixed_SNR values to catalogs for all maps
     if photFilter != None:
-        # Adapted to work with tileDeck images
-        for key in imageDict.keys():
-            if key.split("#")[0] == photFilter:
-                getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = key)
+        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter)
 
     for key in imageDict['mapKeys']:
         
@@ -251,18 +252,17 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                                                         mapData, kx = 1, ky = 1) 
         
         # Add fixed filter scale maps
-        # NOTE: adapted for tileDeck files, but this set-up will eat all the memory...
         mapDataList=[mapData]
         prefixList=['']
+        extName=key.split("#")[-1]
         if 'photFilter' in photometryOptions.keys():
-            for extName in imageDict['extNames']:
-                photImg=pyfits.open(imageDict[photFilter+"#"+extName]['filteredMap'])
-                photMapData=photImg[0].data
-                mapDataList.append(photMapData)
-                prefixList.append('fixed_')
+            photImg=pyfits.open(imageDict[photFilter+"#"+extName]['filteredMap'])
+            photMapData=photImg[0].data
+            mapDataList.append(photMapData)
+            prefixList.append('fixed_')
             
         for obj in catalog:
-            
+                        
             if key == obj['template']:
                 
                 for data, prefix in zip(mapDataList, prefixList):

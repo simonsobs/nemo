@@ -851,7 +851,7 @@ class MatchedFilter(MapFilter):
             #combinedMap=combinedMap/np.sqrt(mapDict['weights']/mapDict['weights'].max())
             #combinedMap=np.nan_to_num(combinedMap)
             
-            maskFileName=self.diagnosticsDir+os.path.sep+"areaMask.fits"
+            maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (mapDict['extName'])
             if os.path.exists(maskFileName) == False:
                 astImages.saveFITS(maskFileName, apodMask, mapDict['wcs'])
                     
@@ -1263,7 +1263,7 @@ class RealSpaceMatchedFilter(MapFilter):
         SNMap=SNMap*surveyMask
         SNMap[np.isnan(SNMap)]=0.
 
-        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask.fits"
+        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (mapDict['extName'])
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), mapDict['wcs'])
                 
