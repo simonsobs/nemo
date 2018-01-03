@@ -41,10 +41,13 @@ else:
         for d in dirList:
             if os.path.exists(d) == False:
                 os.makedirs(d)
-
+        
+        # tileDeck file handling - either make one, or handle loading of one
+        # If we don't want to use a tileDeck file (settings not given in .par file)
+        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict, diagnosticsDir)
       
         # Filter maps
-        imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], parDict['mapFilters'], rootOutDir = rootOutDir)
+        imageDict=mapTools.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
         
         # Find objects in filtered maps
         photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'], 

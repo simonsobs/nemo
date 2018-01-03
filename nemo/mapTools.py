@@ -65,9 +65,109 @@ def convertToDeltaT(mapData, obsFrequencyGHz = 148):
     mapData=mapData*fx*(TCMB*1e6)   # into uK
     
     return mapData
-    
+
 #-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filtersList, rootOutDir = ".", verbose = True):
+def makeTileDeck(parDict, diagnosticsDir):
+    """Makes a tileDeck multi-extension .fits file, if the needed parameters are given in parDict, or
+    will handle setting up such a file if given directly in unfilteredMapsDictList in parDict (and the .par
+    file). Adjusts unfilteredMapsDictList accordingly and returns it.
+    
+    If the options for making a tileDeck image aren't given in parDict, then we pass through a standard
+    single extension file (or rather the path to it, as originally given)
+    
+    Returns unfilteredMapsDictList [input for filterMaps], list of extension names
+    
+    """
+    
+    if os.path.exists(diagnosticsDir) == False:
+        os.makedirs(diagnosticsDir)
+        
+    if 'makeTileDeck' not in parDict.keys():
+        parDict['makeTileDeck']=False
+
+    unfilteredMapsDictList=[]
+    extNames=[]        
+    if parDict['makeTileDeck'] == False:
+        for mapDict in parDict['unfilteredMaps']:
+            unfilteredMapsDictList.append(mapDict.copy())
+            img=pyfits.open(mapDict['mapFileName'])
+            if extNames == []:
+                for ext in img:
+                    extNames.append(ext.name)
+            else:
+                for ext in img:
+                    if ext not in extNames:
+                        raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
+    else:
+        for mapDict in parDict['unfilteredMaps']:
+            outFileName=diagnosticsDir+os.path.sep+os.path.split(mapDict['mapFileName'])[-1].replace(".fits", "_tileDeck.fits")
+            whtFileName=diagnosticsDir+os.path.sep+os.path.split(mapDict['weightsFileName'])[-1].replace(".fits", "_tileDeck.fits")
+            if os.path.exists(outFileName) == False:
+
+                print ">>> Making tileDeck file %s ..." % (outFileName)                                     
+                
+                # Examine wht image first... to save memory
+                # We first check if there is any data in each tile at all... because empty tiles cause problems
+                deckWht=pyfits.HDUList()
+                wht=pyfits.open(mapDict['weightsFileName'])
+                wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
+                whtData=wht[0].data
+                mapWidth=whtData.shape[1]
+                mapHeight=whtData.shape[0]
+                xTileSize=mapWidth/parDict['numHorizontalTiles']
+                yTileSize=mapHeight/parDict['numVerticalTiles']
+                tileOverlapDeg=parDict['tileOverlapDeg']
+                coordsList=[]
+                extNames=[]
+                for yi in range(parDict['numVerticalTiles']):
+                    for xi in range(parDict['numHorizontalTiles']):
+                        y0=yi*yTileSize
+                        y1=(yi+1)*yTileSize
+                        x0=xi*xTileSize
+                        x1=(xi+1)*xTileSize
+                        ra0, dec0=wcs.pix2wcs(x0, y0)
+                        ra1, dec1=wcs.pix2wcs(x1, y1)
+                        ra1=ra1-tileOverlapDeg
+                        ra0=ra0+tileOverlapDeg
+                        dec0=dec0-tileOverlapDeg
+                        dec1=dec1+tileOverlapDeg
+                        if ra1 > ra0:
+                            ra1=-(360-ra1)
+                        clip=astImages.clipUsingRADecCoords(whtData, wcs, ra1, ra0, 
+                                                            dec0, dec1)
+                        if len(np.nonzero(clip['data'].flatten())[0]) == 0:
+                            continue
+                        name='%d_%d' % (yi, xi)
+                        print "... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0)
+                        hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
+                        deckWht.append(hdu)    
+                        extNames.append(name)
+                        coordsList.append([ra1, ra0, dec0, dec1])
+                deckWht.writeto(whtFileName)
+                deckWht.close()
+                wht.close()
+                
+                # Now do the actual map
+                deckImg=pyfits.HDUList()
+                img=pyfits.open(mapDict['mapFileName'])
+                mapData=img[0].data
+                for name, coords in zip(extNames, coordsList):
+                    clip=astImages.clipUsingRADecCoords(mapData, wcs, coords[0], coords[1], coords[2], coords[3])
+                    hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
+                    deckImg.append(hdu) 
+                img.close()
+                deckImg.writeto(outFileName)
+                deckImg.close()
+                
+            # Replace entries in unfilteredMapsDictList in place
+            mapDict['mapFileName']=outFileName
+            mapDict['weightsFileName']=whtFileName
+            unfilteredMapsDictList.append(mapDict.copy())
+    
+    return unfilteredMapsDictList, extNames
+
+#-------------------------------------------------------------------------------------------------------------
+def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], rootOutDir = ".", verbose = True):
     """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc. All filter
     operations are done in the filter objects, even if multifrequency (a change from previous behaviour).
    
@@ -91,13 +191,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, rootOutDir = ".", verbose = 
     # Dictionary to keep track of images we're going to make
     imageDict={}
     
-    # Gather list of extensions (for tileDeck files)
-    # NOTE: we're assuming all files in unfilteredMapsDictList have the same extensions...
-    img=pyfits.open(unfilteredMapsDictList[0]['mapFileName'])
-    extNames=[]
-    for ext in img:
-        extNames.append(ext.name)
-    img.close() 
+    # For handling tileDeck style .fits files
     imageDict['extNames']=extNames
     
     # Since we're putting stuff like extNames in the top level, let's keep a separate list of mapDicts

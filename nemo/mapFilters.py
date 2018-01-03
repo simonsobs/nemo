@@ -1047,14 +1047,7 @@ class RealSpaceMatchedFilter(MapFilter):
             # NOTE: the way this is done currently means we should pick something contiguous in dec direction at fixed RA
             RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
             if self.params['noiseParams']['RADecSection'] == 'auto':
-                # In this case, use the central 50% (Sigurd's maps used in tileDeck are tapered at the edges)
-                RAOff=(RAMax-RAMin)/4.
-                RASize=(RAMax-RAMin)/2.
-                decOff=(decMax-decMin)/4.
-                decSize=(decMax-decMin)/2.
                 RADecSectionDictList=[{'RADecSection': [RAMin, RAMax, decMin, decMax],
-                                       #'RADecSection': [RAMin+RAOff, RAMin+RAOff+RASize, 
-                                                        #decMin+decOff, decMin+decOff+decSize],
                                        'applyDecMin': decMin, 'applyDecMax': decMax,
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
             elif self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
