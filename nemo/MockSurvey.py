@@ -23,7 +23,7 @@ plt.matplotlib.interactive(False)
 
 class MockSurvey(object):
     
-    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8):
+    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = False):
         """Initialise a MockSurvey object. This first calculates the probability of drawing a cluster of 
         given M500, z, assuming the Tinker mass function, and the given (generous) selection limits. 
         An additional selection function can be dialled in later when using drawSample.
@@ -56,8 +56,41 @@ class MockSurvey(object):
         self.z=(zRange[:-1]+zRange[1:])/2.
 
         self._doClusterCount()
-                
-
+        
+        # Stuff to enable us to draw mock samples:
+        # We work with the mass function itself, and apply selection function at the end
+        # Selection function gives detection probability for inclusion in sample for given fixed_SNR cut
+        # We make draws = self.numClusters 
+        # For each draw, we first draw z from the overall z distribution, then log10M from the mass distribution at the given z
+        # We then roll 0...1 : if we roll < the detection probability score for M, z cell then we include it in the mock sample 
+        if enableDrawSample == True:
+            self.enableDrawSample=True
+            # For drawing from overall z distribution
+            zSum=self.clusterCount.sum(axis = 1)
+            pz=np.cumsum(zSum)/self.numClusters
+            self.tck_zRoller=interpolate.splrep(pz, self.z)
+            # For drawing from each log10M distribution at each point on z grid
+            # This can blow up if there are identical entries in pM... so we truncate spline fit when reach 1.0
+            # NOTE: Should add sanity check code that the interpolation used here is accurate (make plots)
+            print "WARNING: should add code to check interpolation used for drawing mock samples is accurate enough"
+            self.tck_log10MRoller=[]
+            for i in range(len(self.z)):
+                MSum=self.clusterCount[i].sum()
+                pM=np.cumsum(self.clusterCount[i])/MSum
+                # To avoid multiple pM == 1 blowing up the spline fit (iterate here as could have 2 same, then 2 more same...)
+                maxIndex=len(pM)
+                while np.equal(pM[:maxIndex], pM[:maxIndex].max()).sum() > 1:
+                    if np.equal(pM[:maxIndex], pM[:maxIndex].max()).sum() > 1:
+                        maxIndex=np.where(pM[:maxIndex] == pM[:maxIndex].max())[0][0]
+                self.tck_log10MRoller.append(interpolate.splrep(pM[:maxIndex], self.log10M[:maxIndex]))
+            # Sanity check
+            for i in range(len(self.z)):
+                if np.any(np.isnan(self.tck_log10MRoller[i][1])) == True:
+                    print "nans in self.tck_log10MRoller[%d]" % (i)
+                    IPython.embed()
+                    sys.exit()
+                    
+            
     def update(self, H0, Om0, Ob0, sigma_8):
         """Recalculate cluster counts if cosmological parameters updated.
         
@@ -111,6 +144,9 @@ class MockSurvey(object):
         """
         
         self.selFn=selFn
+        
+        # We may need these elsewhere...
+        self.scalingRelationDict={'tenToA0': tenToA0, 'B0': B0, 'Mpivot': Mpivot, 'sigma_int': sigma_int}
 
         # We should apply the intrinsic scatter in M500 at fixed y0~ somewhere here
         
@@ -183,55 +219,75 @@ class MockSurvey(object):
     
     
     def drawSample(self):
-        """Draw a cluster sample from the MockSurvey. Returns it as a table object, with columns M500, z
+        """Draw a cluster sample from the MockSurvey, applying the survey averaged
+        selection function when doing so.
+        
+        Returns an astropy Table object, with columns name, redshift, M500
         
         NOTE: units of M500 are 1e14 MSun
         
         """
         
-        print "new draw sample"
-        IPython.embed()
-        sys.exit()
-        ## Drawing a sample from our mass function
-        #N=100
-        #icdf=interpolate.InterpolatedUnivariateSpline((mf.ngtm / mf.ngtm[0])[::-1], np.log10(mf.m[::-1]), k=3)
-        #x=np.random.random(N)
-        #m=10**icdf(x)
-        ## To do the reverse of the above ^^^
-        #cdf=interpolate.InterpolatedUnivariateSpline(np.log10(mf.m), (mf.ngtm / mf.ngtm[0]), k=3)
-        #PLog10M=cdf(13.5)
-
+        # Survey-averaged, so here is the 1-sigma noise on y0~
+        y0Noise=self.selFn.ycLimit_surveyAverage.mean()/self.selFn.SNRCut
         
-            
-    def drawSample_old(self, dlog10M = 0.01, dz = 0.001):
-        """Draws a cluster sample from the MockSurvey. Returns it as an atpy.Table object, with columns
-        name, z, dz, M500, dM500.
+        # This takes ~16 sec for [200, 300]-shaped z, log10M500 grid
+        #t0=time.time()
+        mockCatalog=[]
+        for i in range(int(self.numClusters)):
+            #print "... %d/%d ..." % (i, self.numClusters)
+            # Draw z
+            zRoll=np.random.uniform(0, 1)
+            z=interpolate.splev(zRoll, self.tck_zRoller)
+            zIndex=np.where(abs(self.z-z) == abs(self.z-z).min())[0][0]
+            # Draw M|z
+            MRoll=np.random.uniform(0, 1)
+            log10M=interpolate.splev(MRoll, self.tck_log10MRoller[zIndex])
+            log10MIndex=np.where(abs(self.log10M-log10M) == abs(self.log10M-log10M).min())[0][0]
+            # Apply selection function
+            detP=self.M500Completeness_surveyAverage[zIndex, log10MIndex]
+            PRoll=np.random.uniform(0, 1)
+            if PRoll < detP:
+                # y0 from M500... we add scatter (both intrinsic and from error bar) here
+                # We should then feed this back through to get what our inferred mass would be...
+                # (i.e., we go true mass -> true y0 -> "measured" y0 -> inferred mass)
+                # NOTE: we've applied the selection function, so we've already applied the noise...?
+                true_y0, theta500Arcmin, Q=simsTools.y0FromLogM500(log10M, z, self.selFn.tckQFit)
+                measured_y0=np.exp(np.random.normal(np.log(true_y0), self.scalingRelationDict['sigma_int']))
+                measured_y0=np.random.normal(measured_y0, y0Noise)
+                measured_y0=true_y0+np.random.normal(0, y0Noise)
+                # inferred mass (full blown M500 UPP, mass function shape de-biased)
+                # NOTE: we may get confused about applying de-biasing term or not here...
+                M500Dict=simsTools.calcM500Fromy0(measured_y0, y0Noise, z, 0.0, 
+                                                  tenToA0 = self.scalingRelationDict['tenToA0'],
+                                                  B0 = self.scalingRelationDict['B0'],
+                                                  Mpivot = self.scalingRelationDict['Mpivot'], 
+                                                  sigma_int = self.scalingRelationDict['sigma_int'],
+                                                  tckQFit = self.selFn.tckQFit, mockSurvey = self, 
+                                                  applyMFDebiasCorrection = True, calcErrors = True)
+                # Add to catalog
+                objDict={'name': 'MOCK-CL%d' % (i+1), 
+                         'true_M500': np.power(10, log10M)/1e14,
+                         'true_fixed_y_c': true_y0/1e-4,
+                         'fixed_y_c': measured_y0/1e-4,
+                         'err_fixed_y_c': y0Noise/1e-4,
+                         'fixed_SNR': measured_y0/y0Noise,
+                         'redshift': float(z),
+                         'redshiftErr': 0}
+                for key in M500Dict:
+                    objDict[key]=M500Dict[key]
+                mockCatalog.append(objDict)
         
-        NOTE: units of M500 are 1e14 MSun
-        
-        """
-        
-        if self.enableDrawSample == False:
-            raise Exception, "enableDrawSample == False"
-        
-        zRolls=np.random.uniform(0, 1, self.numClusters)
-        mRolls=np.random.uniform(0, 1, self.numClusters)
-        
-        zs=interpolate.splev(zRolls, self.tckRedshift)
-        ms=[]
-        for z, mRoll in zip(zs, mRolls):
-            zMidIndex=np.where(abs(self.z-z) == abs(self.z-z).min())[0][0]
-            ms.append(interpolate.splev(mRoll, self.tckLog10MByRedshift[zMidIndex]))
-        ms=np.array(ms)
-        msErr=(np.power(10, ms+dlog10M)-np.power(10, ms))/1e14
-        ms=np.power(10, ms)/1e14
-        
+        # Convert to table
+        # NOTE: left out Uncorr confusion for now... i.e., we use 'Uncorr' here...
         tab=atpy.Table()
-        tab.table_name="mock sample"
-        tab.add_column(atpy.Column(zs, "z"))
-        tab.add_column(atpy.Column([dz]*len(tab), "dz"))
-        tab.add_column(atpy.Column(ms, "M500"))
-        tab.add_column(atpy.Column(msErr, "dM500"))
+        keyList=['name', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'err_fixed_y_c', 
+                 'M500Uncorr', 'M500Uncorr_errPlus', 'M500Uncorr_errMinus']
+        for key in keyList:
+            arr=[]
+            for objDict in mockCatalog:
+                arr.append(objDict[key])
+            tab.add_column(atpy.Column(arr, key))
         
         return tab
         
