@@ -166,27 +166,29 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
     """
     
     print ">>> Getting %sSNR values ..." % (prefix)
-
-    if template != None:
-        keyList=[]
-        for k in imageDict['mapKeys']:
-            if k.split("#")[0] == template:
-                keyList.append(k)
-    else:
-        keyList=imageDict['mapKeys']
     
     # Do search on each filtered map separately
-    for key in keyList:
+    for key in imageDict['mapKeys']:
         
         print "... searching %s ..." % (key)
         
+        if template == None:
+            templateKey=key
+        else:
+            templateKey=None
+            for k in imageDict['mapKeys']:
+                if k.split("#")[0] == template:
+                    templateKey=k
+            if templateKey == None:
+                raise Exception, "didn't find templateKey"
+            
         if SNMap == 'file':
-            img=pyfits.open(imageDict[key]['SNMap'])
-            wcs=astWCS.WCS(imageDict[key]['SNMap'])
+            img=pyfits.open(imageDict[templateKey]['SNMap'])
+            wcs=astWCS.WCS(imageDict[templateKey]['SNMap'])
             data=img[0].data
         elif SNMap == 'array':
-            data=imageDict[key]['SNMap']
-            wcs=imageDict[key]['wcs']
+            data=imageDict[templateKey]['SNMap']
+            wcs=imageDict[templateKey]['wcs']
         else:
             raise Exception, "Didn't understand SNMap value '%s'" % (str(SNMap))
 
@@ -268,12 +270,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                 for data, prefix in zip(mapDataList, prefixList):
                     # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
                     # i.e., avoid using interpolate.RectBivariateSpline
-                    try:
-                        mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
-                    except:
-                        print "weird coords"
-                        IPython.embed()
-                        sys.exit()
+                    mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
                     #mapValue=mapInterpolator(obj['y'], obj['x'])[0][0]
 
                     # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
