@@ -102,11 +102,23 @@ def makeTileDeck(parDict, diagnosticsDir):
     else:
         extNames=[]        
         for mapDict in parDict['unfilteredMaps']:
-            outFileName=diagnosticsDir+os.path.sep+os.path.split(mapDict['mapFileName'])[-1].replace(".fits", "_tileDeck.fits")
-            whtFileName=diagnosticsDir+os.path.sep+os.path.split(mapDict['weightsFileName'])[-1].replace(".fits", "_tileDeck.fits")
-            if os.path.exists(outFileName) == True:
+            
+            fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
+            inFileNames=[]
+            outFileNames=[]
+            for f in fileNameKeys:
+                if f in mapDict.keys() and mapDict[f] != None:
+                    inFileNames.append(mapDict[f])
+                    outFileNames.append(diagnosticsDir+os.path.sep+os.path.split(mapDict[f])[-1].replace(".fits", "_tileDeck.fits"))
+            
+            allFilesMade=True
+            for f in outFileNames:
+                if os.path.exists(f) == False:
+                    allFilesMade=False
+            
+            if allFilesMade == True:
                 # We need the extension names only here...
-                img=pyfits.open(outFileName)
+                img=pyfits.open(outFileNames[0])
                 if extNames == []:
                     for ext in img:
                         extNames.append(ext.name)
@@ -167,7 +179,7 @@ def makeTileDeck(parDict, diagnosticsDir):
                 del whtData
                 
                 # Output a .reg file for debugging (pixel coords)
-                outFile=file(outFileName.replace(".fits", "_tiles.reg"), "w")
+                outFile=file(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
                 outFile.write("# Region file format: DS9 version 4.1\n")
                 outFile.write('global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
                 outFile.write("image\n")
@@ -176,38 +188,37 @@ def makeTileDeck(parDict, diagnosticsDir):
                 outFile.close()
                 
                 # Make tiles
-                inFileNames=[mapDict['mapFileName'], mapDict['weightsFileName']]
-                outFileNames=[outFileName, whtFileName]
                 for inMapFileName, outMapFileName in zip(inFileNames, outFileNames):
-                    print ">>> Writing tileDeck file %s ..." % (outMapFileName)
-                    deckImg=pyfits.HDUList()
-                    img=pyfits.open(inMapFileName)
-                    mapData=img[0].data
-                    for c, name in zip(coordsList, extNames):
-                        y0=c[2]
-                        y1=c[3]
-                        x0=c[0]
-                        x1=c[1]
-                        ra0, dec0=wcs.pix2wcs(x0, y0)
-                        ra1, dec1=wcs.pix2wcs(x1, y1)
-                        ra1=ra1-tileOverlapDeg
-                        ra0=ra0+tileOverlapDeg
-                        dec0=dec0-tileOverlapDeg
-                        dec1=dec1+tileOverlapDeg
-                        if ra1 > ra0:
-                            ra1=-(360-ra1)
-                        clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
-                        if len(np.nonzero(clip['data'].flatten())[0]) == 0:
-                            continue
-                        print "... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0)
-                        hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
-                        deckImg.append(hdu)    
-                    deckImg.writeto(outMapFileName)
-                    deckImg.close()
+                    if os.path.exists(outMapFileName) == False:
+                        print ">>> Writing tileDeck file %s ..." % (outMapFileName)
+                        deckImg=pyfits.HDUList()
+                        img=pyfits.open(inMapFileName)
+                        mapData=img[0].data
+                        for c, name in zip(coordsList, extNames):
+                            y0=c[2]
+                            y1=c[3]
+                            x0=c[0]
+                            x1=c[1]
+                            ra0, dec0=wcs.pix2wcs(x0, y0)
+                            ra1, dec1=wcs.pix2wcs(x1, y1)
+                            ra1=ra1-tileOverlapDeg
+                            ra0=ra0+tileOverlapDeg
+                            dec0=dec0-tileOverlapDeg
+                            dec1=dec1+tileOverlapDeg
+                            if ra1 > ra0:
+                                ra1=-(360-ra1)
+                            clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
+                            if len(np.nonzero(clip['data'].flatten())[0]) == 0:
+                                continue
+                            print "... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0)
+                            hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
+                            deckImg.append(hdu)    
+                        deckImg.writeto(outMapFileName)
+                        deckImg.close()
                                 
             # Replace entries in unfilteredMapsDictList in place
-            mapDict['mapFileName']=outFileName
-            mapDict['weightsFileName']=whtFileName
+            for key, outFileName in zip(fileNameKeys, outFileNames):
+                mapDict[key]=outFileName
             unfilteredMapsDictList.append(mapDict.copy())
     
     return unfilteredMapsDictList, extNames
@@ -540,12 +551,12 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Load survey and point source masks, if given
     if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
         smImg=pyfits.open(mapDict['surveyMask'])
-        surveyMask=smImg[0].data
+        surveyMask=smImg[extName].data
     else:
         surveyMask=np.ones(data.shape)
     if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
         psImg=pyfits.open(mapDict['pointSourceMask'])
-        psMask=psImg[0].data
+        psMask=psImg[extName].data
     else:
         psMask=np.ones(data.shape)
             
@@ -576,67 +587,6 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # or a wavelet decomposition scale image
     if 'bckSubScaleArcmin' in mapDict.keys() and mapDict['bckSubScaleArcmin'] != None:
         data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
-    
-    # Added March 2017 as replacement for older 'pointSourceRemoval' code
-    # Break out from here / tidy up later
-    # NOTE: If we just mask big enough areas, we don't need to bother with this!
-    #if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
-        #psRemovedFileName=diagnosticsDir+os.path.sep+"psMasked_%d.fits" % (mapDict['obsFreqGHz'])
-        #if os.path.exists(psRemovedFileName) == True:
-            #print "... loading cached map %s which has point source masking applied ..." % (psRemovedFileName)
-            #psRemovedImg=pyfits.open(psRemovedFileName)
-            #data=psRemovedImg[0].data
-        #else:
-            #print "... filling in map at masked point source locations ..."
-            #t0=time.time()
-            ## The big smooth method
-            ##smoothed=smoothMap(data, wcs, smoothScaleDeg = 10.0/60.0)
-            ## Find hole locations - we could swap out the mask here for a catalog instead, or add as option
-            ## Measure the average value in an annulus around each hole location
-            #ptSrcData=1-psMask
-            #sigPix=np.array(np.greater(ptSrcData, 0), dtype=int)
-            #sigPixMask=np.equal(sigPix, 1)
-            #segmentationMap, numObjects=ndimage.label(sigPix)
-            #objIDs=np.unique(segmentationMap)
-            #objPositions=ndimage.center_of_mass(ptSrcData, labels = segmentationMap, index = objIDs)
-            #objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
-            #psCat=[]
-            #idNumCount=0
-            #minObjPix=5
-            #for i in range(len(objIDs)):
-                #if type(objNumPix) != float and objNumPix[i] > minObjPix:
-                    #idNumCount=idNumCount+1
-                    #x=int(round(objPositions[i][1]))
-                    #y=int(round(objPositions[i][0]))
-                    #objDict={}
-                    #objDict['id']=idNumCount
-                    #objDict['x']=x
-                    #objDict['y']=y
-                    #objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
-                    #objDict['numPix']=objNumPix[i]
-                    #rPix=int(round(np.sqrt(objDict['numPix']/np.pi)))
-                    #annulus=photometry.makeAnnulus(rPix, rPix+4)
-                    #yMin=objDict['y']-annulus.shape[0]/2
-                    #yMax=objDict['y']+annulus.shape[0]/2
-                    #xMin=objDict['x']-annulus.shape[1]/2
-                    #xMax=objDict['x']+annulus.shape[1]/2
-                    ## Just skip if too close to map edge - will be cropped out later anyway...
-                    #if yMax > data.shape[0] or yMin < 0 or xMax > data.shape[1] or xMin < 0:
-                        #continue        
-                    ## for testing
-                    ##if x > 6900 and x < 6940 and y >  1240 and y < 1270:
-                    ##if x > 6070 and x < 6133 and y > 601  and y < 648:
-                    #psClip=data[yMin:yMax, xMin:xMax]
-                    #sigma=np.std(psClip[np.not_equal(psClip, 0)*annulus])
-                    #med=np.median(psClip[np.not_equal(psClip, 0)*annulus])
-                    #if sigma > 0:
-                        #pixMask=np.where(segmentationMap == objIDs[i])
-                        ##data[pixMask]=smoothed[pixMask]+np.random.normal(0, sigma, len(smoothed[pixMask]))
-                        #data[pixMask]=np.random.normal(med, sigma, len(data[pixMask]))
-                        #psCat.append(objDict)
-            #t1=time.time()
-            #print "... took %.3f sec ..." % (t1-t0)
-            #astImages.saveFITS(psRemovedFileName, data, wcs)
     
     # Optional removal of point sources, using GaussianWienerFilter to find them
     # We only do this once, and cache the result in the diagnostics dir
@@ -701,8 +651,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     if 'maskPointSourcesFromCatalog' in mapDict.keys() and mapDict['maskPointSourcesFromCatalog'] != None:
         print "Add code for masking point sources in a catalog"
         IPython.embed()
-        sys.exit()
-        
+        sys.exit()        
+    
     # Add the map data to the dict
     mapDict['data']=data
     mapDict['weights']=weights
