@@ -1048,7 +1048,6 @@ class RealSpaceMatchedFilter(MapFilter):
             RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
             if self.params['noiseParams']['RADecSection'][0] == 'auto':
                 # If we're using tiles, we should pick the largest rectangle we can find - do not include blank areas
-                # NOTE: currently, this more a 'min' size than 'max size...
                 maxWidthDeg=self.params['noiseParams']['RADecSection'][1]
                 maxHeightDeg=self.params['noiseParams']['RADecSection'][2]
                 
@@ -1062,6 +1061,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 
                 # Then maximise region with width > max width given in parDict - defines rows to use
                 fullWidthPix=int(maxWidthDeg/wcs.getPixelSizeDeg())
+                fullHeightPix=int(maxHeightDeg/wcs.getPixelSizeDeg())
                 xWidthMap=np.zeros(segmentationMap.shape[0])
                 for y in range(segmentationMap.shape[0]):
                     xIndices=np.where(segmentationMap[y] == objIDs[np.argmax(objNumPix)])[0]
@@ -1088,17 +1088,26 @@ class RealSpaceMatchedFilter(MapFilter):
                     if xMax < maxXMax:
                         maxXMax=xMax
                 
-                # Final answer?
+                # Final answer? Trim if bigger than maxWidth
                 x0=minXMin
                 x1=maxXMax
                 y0=ys.min()
                 y1=ys.max()
+                if x1-x0 > fullWidthPix:
+                    xc=int((x1+x0)/2.)
+                    x1=int(xc+fullWidthPix/2.)
+                    x0=int(xc-fullWidthPix/2.)
+                if y1-y0 > fullHeightPix:
+                    yc=int((y1+y0)/2.)
+                    y1=int(yc+fullHeightPix/2.)
+                    y0=int(yc-fullHeightPix/2.)
                 #selectMask=np.zeros(segmentationMap.shape)  # save this if want a sanity check
                 #selectMask[y0:y1, x0:x1]=1
 
-                RAMin, decMin=wcs.pix2wcs(x1, y0)
-                RAMax, decMax=wcs.pix2wcs(x0, y1)
-                RADecSectionDictList=[{'RADecSection': [RAMin, RAMax, decMin, decMax],
+                kernelBuildRAMin, kernelBuildDecMin=wcs.pix2wcs(x1, y0)
+                kernelBuildRAMax, kernelBuildDecMax=wcs.pix2wcs(x0, y1)
+                RADecSectionDictList=[{'RADecSection': [kernelBuildRAMin, kernelBuildRAMax, 
+                                                        kernelBuildDecMin, kernelBuildDecMax],
                                        'applyDecMin': decMin, 'applyDecMax': decMax,
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
                 
