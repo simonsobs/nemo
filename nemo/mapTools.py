@@ -85,9 +85,10 @@ def makeTileDeck(parDict, diagnosticsDir):
     if 'makeTileDeck' not in parDict.keys():
         parDict['makeTileDeck']=False
 
+    # Some of this is rather clunky...
     unfilteredMapsDictList=[]
-    extNames=[]        
     if parDict['makeTileDeck'] == False:
+        extNames=[]        
         for mapDict in parDict['unfilteredMaps']:
             unfilteredMapsDictList.append(mapDict.copy())
             img=pyfits.open(mapDict['mapFileName'])
@@ -99,32 +100,94 @@ def makeTileDeck(parDict, diagnosticsDir):
                     if ext not in extNames:
                         raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
     else:
+        extNames=[]        
         for mapDict in parDict['unfilteredMaps']:
             outFileName=diagnosticsDir+os.path.sep+os.path.split(mapDict['mapFileName'])[-1].replace(".fits", "_tileDeck.fits")
             whtFileName=diagnosticsDir+os.path.sep+os.path.split(mapDict['weightsFileName'])[-1].replace(".fits", "_tileDeck.fits")
-            if os.path.exists(outFileName) == False:
-
-                print ">>> Making tileDeck file %s ..." % (outFileName)                                     
+            if os.path.exists(outFileName) == True:
+                # We need the extension names only here...
+                img=pyfits.open(outFileName)
+                if extNames == []:
+                    for ext in img:
+                        extNames.append(ext.name)
+                else:
+                    for ext in img:
+                        if ext not in extNames:
+                            raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
+            else:
                 
                 # Examine wht image first... to save memory
-                # We first check if there is any data in each tile at all... because empty tiles cause problems
                 deckWht=pyfits.HDUList()
                 wht=pyfits.open(mapDict['weightsFileName'])
                 wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
                 whtData=wht[0].data
                 mapWidth=whtData.shape[1]
                 mapHeight=whtData.shape[0]
-                xTileSize=mapWidth/parDict['numHorizontalTiles']
-                yTileSize=mapHeight/parDict['numVerticalTiles']
+
+                # Figure out where edges are
+                edges={}
+                for y in range(mapHeight):
+                    xIndices=np.where(whtData[y] != 0)[0]
+                    if len(xIndices) > 0:
+                        xMin=xIndices.min()
+                        xMax=xIndices.max()
+                        edges[y]=[xMin, xMax]
+                
+                # Starting from bottom left, work our way around the map adding tiles, ignoring blank regions
+                numHorizontalTiles=parDict['numHorizontalTiles']
+                numVerticalTiles=parDict['numVerticalTiles']
                 tileOverlapDeg=parDict['tileOverlapDeg']
+                ys=edges.keys()
+                ys.sort()
+                ys=np.array(ys)
                 coordsList=[]
                 extNames=[]
-                for yi in range(parDict['numVerticalTiles']):
-                    for xi in range(parDict['numHorizontalTiles']):
-                        y0=yi*yTileSize
-                        y1=(yi+1)*yTileSize
-                        x0=xi*xTileSize
-                        x1=(xi+1)*xTileSize
+                tileHeightPix=int(np.ceil((ys.max()-ys.min())/float(numVerticalTiles)))
+                for i in range(numVerticalTiles):
+                    yMin=ys.min()+i*tileHeightPix
+                    yMax=ys.min()+(i+1)*tileHeightPix
+                    keys=np.arange(yMin, yMax)
+                    minXMin=1e6
+                    maxXMax=0
+                    for k in keys:
+                        xMin, xMax=edges[k]
+                        if xMin < minXMin:
+                            minXMin=xMin
+                        if xMax > maxXMax:
+                            maxXMax=xMax
+                    tileWidthPix=int(np.ceil(maxXMax-minXMin)/float(numHorizontalTiles))
+                    for j in range(numHorizontalTiles):
+                        xMin=minXMin+j*tileWidthPix
+                        xMax=minXMin+(j+1)*tileWidthPix
+                        coordsList.append([xMin, xMax, yMin, yMax])
+                        extNames.append("%d_%d" % (j, i))
+                
+                # Not sure if this will actually tidy up...
+                wht.close()
+                del whtData
+                
+                # Output a .reg file for debugging (pixel coords)
+                outFile=file(outFileName.replace(".fits", "_tiles.reg"), "w")
+                outFile.write("# Region file format: DS9 version 4.1\n")
+                outFile.write('global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+                outFile.write("image\n")
+                for c, name in zip(coordsList, extNames):
+                    outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
+                outFile.close()
+                
+                # Make tiles
+                inFileNames=[mapDict['mapFileName'], mapDict['weightsFileName']]
+                outFileNames=[outFileName, whtFileName]
+                for inMapFileName, outMapFileName in zip(inFileNames, outFileNames):
+                    print ">>> Writing tileDeck file %s ..." % (outMapFileName)
+                    deckImg=pyfits.HDUList()
+                    img=pyfits.open(inMapFileName)
+                    mapData=img[0].data
+                    for c, name in zip(coordsList, extNames):
+                        y0=c[2]
+                        y1=c[3]
+                        x0=c[0]
+                        x1=c[1]
                         ra0, dec0=wcs.pix2wcs(x0, y0)
                         ra1, dec1=wcs.pix2wcs(x1, y1)
                         ra1=ra1-tileOverlapDeg
@@ -133,32 +196,15 @@ def makeTileDeck(parDict, diagnosticsDir):
                         dec1=dec1+tileOverlapDeg
                         if ra1 > ra0:
                             ra1=-(360-ra1)
-                        clip=astImages.clipUsingRADecCoords(whtData, wcs, ra1, ra0, 
-                                                            dec0, dec1)
+                        clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                         if len(np.nonzero(clip['data'].flatten())[0]) == 0:
                             continue
-                        name='%d_%d' % (yi, xi)
                         print "... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0)
                         hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
-                        deckWht.append(hdu)    
-                        extNames.append(name)
-                        coordsList.append([ra1, ra0, dec0, dec1])
-                deckWht.writeto(whtFileName)
-                deckWht.close()
-                wht.close()
-                
-                # Now do the actual map
-                deckImg=pyfits.HDUList()
-                img=pyfits.open(mapDict['mapFileName'])
-                mapData=img[0].data
-                for name, coords in zip(extNames, coordsList):
-                    clip=astImages.clipUsingRADecCoords(mapData, wcs, coords[0], coords[1], coords[2], coords[3])
-                    hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
-                    deckImg.append(hdu) 
-                img.close()
-                deckImg.writeto(outFileName)
-                deckImg.close()
-                
+                        deckImg.append(hdu)    
+                    deckImg.writeto(outMapFileName)
+                    deckImg.close()
+                                
             # Replace entries in unfilteredMapsDictList in place
             mapDict['mapFileName']=outFileName
             mapDict['weightsFileName']=whtFileName

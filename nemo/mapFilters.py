@@ -1046,10 +1046,62 @@ class RealSpaceMatchedFilter(MapFilter):
             # Copes with CAR distortion at large | dec |
             # NOTE: the way this is done currently means we should pick something contiguous in dec direction at fixed RA
             RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
-            if self.params['noiseParams']['RADecSection'] == 'auto':
+            if self.params['noiseParams']['RADecSection'][0] == 'auto':
+                # If we're using tiles, we should pick the largest rectangle we can find - do not include blank areas
+                # NOTE: currently, this more a 'min' size than 'max size...
+                maxWidthDeg=self.params['noiseParams']['RADecSection'][1]
+                maxHeightDeg=self.params['noiseParams']['RADecSection'][2]
+                
+                # First find contiguous data region
+                sigPix=np.array(np.not_equal(mapData, 0), dtype = int)
+                sigPixMask=np.equal(sigPix, 1)
+                segmentationMap, numObjects=ndimage.label(sigPix)
+                objIDs=np.unique(segmentationMap)
+                objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
+                ys, xs=np.where(segmentationMap == objIDs[np.argmax(objNumPix)])
+                
+                # Then maximise region with width > max width given in parDict - defines rows to use
+                fullWidthPix=int(maxWidthDeg/wcs.getPixelSizeDeg())
+                xWidthMap=np.zeros(segmentationMap.shape[0])
+                for y in range(segmentationMap.shape[0]):
+                    xIndices=np.where(segmentationMap[y] == objIDs[np.argmax(objNumPix)])[0]
+                    if len(xIndices) > 0:
+                        xMin=xIndices.min()
+                        xMax=xIndices.max()
+                        xWidthMap[y]=xMax-xMin
+                xWidthSigPix=np.array(np.greater(xWidthMap, fullWidthPix))
+                xWidthSigPixMask=np.equal(xWidthSigPix, 1)
+                xWidthSegMap, xWidthNumObjects=ndimage.label(xWidthSigPix)
+                xWidthObjIDs=np.unique(xWidthSegMap)
+                xWidthNumPix=ndimage.sum(xWidthSigPixMask, labels = xWidthSegMap, index = xWidthObjIDs)
+                ys=np.where(xWidthSegMap == xWidthObjIDs[np.argmax(xWidthNumPix)])[0]
+
+                # Now trim in x direction
+                minXMin=0
+                maxXMax=1e6
+                for y in ys:
+                    xIndices=np.where(segmentationMap[y] == objIDs[np.argmax(objNumPix)])[0]
+                    xMin=xIndices.min()
+                    xMax=xIndices.max()
+                    if xMin > minXMin:
+                        minXMin=xMin
+                    if xMax < maxXMax:
+                        maxXMax=xMax
+                
+                # Final answer?
+                x0=minXMin
+                x1=maxXMax
+                y0=ys.min()
+                y1=ys.max()
+                #selectMask=np.zeros(segmentationMap.shape)  # save this if want a sanity check
+                #selectMask[y0:y1, x0:x1]=1
+
+                RAMin, decMin=wcs.pix2wcs(x1, y0)
+                RAMax, decMax=wcs.pix2wcs(x0, y1)
                 RADecSectionDictList=[{'RADecSection': [RAMin, RAMax, decMin, decMax],
                                        'applyDecMin': decMin, 'applyDecMax': decMax,
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
+                
             elif self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
                 numDecSteps=float(self.params['noiseParams']['RADecSection'][3])
                 decEdges=np.linspace(decMin, decMax, numDecSteps+1)
