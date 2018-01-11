@@ -45,6 +45,16 @@ else:
         # tileDeck file handling - either make one, or handle loading of one
         # If we don't want to use a tileDeck file (settings not given in .par file)
         unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+        
+        # For when we want to test on only a subset of tiles
+        if 'extNameList' in parDict.keys():
+            newList=[]
+            for name in extNames:
+                if name in parDict['extNameList']:
+                    newList.append(name)
+            if newList == []:
+                raise Exception, "extNameList given in .par file but no extensions in images match"
+            extNames=newList
       
         # Filter maps
         imageDict=mapTools.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)

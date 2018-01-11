@@ -103,7 +103,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                                                         #data, kx = 1, ky = 1)
                                                         
         # Border around edge where we might throw stuff out just to cut down contamination
-        if np.any(areaMask) != None:
+        if np.any(areaMask) != None and areaMask.sum() > 0:
             minX=np.where(areaMask > 0)[1].min()
             maxX=np.where(areaMask > 0)[1].max()
             minY=np.where(areaMask > 0)[0].min()
