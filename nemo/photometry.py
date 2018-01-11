@@ -203,8 +203,10 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
                                             
         for obj in imageDict[key]['catalog']:
             x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
+            y=int(round(obj['y']))
+            x=int(round(obj['x']))
             if x > 0 and x < data.shape[1] and y > 0 and y < data.shape[0]:
-                obj[prefix+'SNR']=data[int(round(obj['y'])), int(round(obj['x']))] # read directly off of S/N map
+                obj[prefix+'SNR']=data[y, x] # read directly off of S/N map
                 #obj['SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
             else:
                 obj[prefix+'SNR']=0.
