@@ -67,7 +67,7 @@ def convertToDeltaT(mapData, obsFrequencyGHz = 148):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
-def makeTileDeck(parDict, diagnosticsDir):
+def makeTileDeck(parDict):
     """Makes a tileDeck multi-extension .fits file, if the needed parameters are given in parDict, or
     will handle setting up such a file if given directly in unfilteredMapsDictList in parDict (and the .par
     file). Adjusts unfilteredMapsDictList accordingly and returns it.
@@ -78,10 +78,7 @@ def makeTileDeck(parDict, diagnosticsDir):
     Returns unfilteredMapsDictList [input for filterMaps], list of extension names
     
     """
-    
-    if os.path.exists(diagnosticsDir) == False:
-        os.makedirs(diagnosticsDir)
-        
+            
     if 'makeTileDeck' not in parDict.keys():
         parDict['makeTileDeck']=False
 
@@ -109,7 +106,8 @@ def makeTileDeck(parDict, diagnosticsDir):
             for f in fileNameKeys:
                 if f in mapDict.keys() and mapDict[f] != None:
                     inFileNames.append(mapDict[f])
-                    outFileNames.append(diagnosticsDir+os.path.sep+os.path.split(mapDict[f])[-1].replace(".fits", "_tileDeck.fits"))
+                    mapDir, mapFileName=os.path.split(mapDict[f])
+                    outFileNames.append(mapDir+os.path.sep+"tileDeck_"+mapFileName)
             
             allFilesMade=True
             for f in outFileNames:
@@ -128,7 +126,7 @@ def makeTileDeck(parDict, diagnosticsDir):
                             raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
             else:
                 
-                # Examine wht image first... to save memory
+                # Examine wht image to determine where to put down tiles
                 deckWht=pyfits.HDUList()
                 wht=pyfits.open(mapDict['weightsFileName'])
                 wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
@@ -201,15 +199,18 @@ def makeTileDeck(parDict, diagnosticsDir):
                             x1=c[1]
                             ra0, dec0=wcs.pix2wcs(x0, y0)
                             ra1, dec1=wcs.pix2wcs(x1, y1)
-                            ra1=ra1-tileOverlapDeg
-                            ra0=ra0+tileOverlapDeg
-                            dec0=dec0-tileOverlapDeg
-                            dec1=dec1+tileOverlapDeg
+                            # By definition, don't need overlaps at outer edges
+                            if name.split("_")[0] != str(0):            
+                                ra1=ra1-tileOverlapDeg
+                            if name.split("_")[0] != str(numHorizontalTiles-1):
+                                ra0=ra0+tileOverlapDeg
+                            if name.split("_")[-1] != str(0):
+                                dec0=dec0-tileOverlapDeg
+                            if name.split("_")[-1] != str(numVerticalTiles-1):
+                                dec1=dec1+tileOverlapDeg
                             if ra1 > ra0:
                                 ra1=-(360-ra1)
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
-                            if len(np.nonzero(clip['data'].flatten())[0]) == 0:
-                                continue
                             print "... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0)
                             hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
                             deckImg.append(hdu)    
@@ -261,7 +262,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
         # Iterate over all extensions (for tileDeck files)...
         for extName in extNames:
             
-            print "... extName = %s ..." % (extName)
+            print "--> extName = %s ..." % (extName)
             label=f['label']+"#"+extName
             
             filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)

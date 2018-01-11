@@ -44,7 +44,7 @@ else:
         
         # tileDeck file handling - either make one, or handle loading of one
         # If we don't want to use a tileDeck file (settings not given in .par file)
-        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict, diagnosticsDir)
+        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
       
         # Filter maps
         imageDict=mapTools.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
