@@ -107,7 +107,9 @@ def makeTileDeck(parDict):
                 if f in mapDict.keys() and mapDict[f] != None:
                     inFileNames.append(mapDict[f])
                     mapDir, mapFileName=os.path.split(mapDict[f])
-                    outFileNames.append(mapDir+os.path.sep+"tileDeck_"+mapFileName)
+                    outFileNames.append(mapDir+os.path.sep+"tileDeck_%dx%d_%.1f_" % (parDict['numHorizontalTiles'], 
+                                                                                     parDict['numVerticalTiles'], 
+                                                                                     parDict['tileOverlapDeg'])+mapFileName)
             
             allFilesMade=True
             for f in outFileNames:
@@ -160,11 +162,12 @@ def makeTileDeck(parDict):
                     minXMin=1e6
                     maxXMax=0
                     for k in keys:
-                        xMin, xMax=edges[k]
-                        if xMin < minXMin:
-                            minXMin=xMin
-                        if xMax > maxXMax:
-                            maxXMax=xMax
+                        if k in edges.keys():
+                            xMin, xMax=edges[k]
+                            if xMin < minXMin:
+                                minXMin=xMin
+                            if xMax > maxXMax:
+                                maxXMax=xMax
                     tileWidthPix=int(np.ceil(maxXMax-minXMin)/float(numHorizontalTiles))
                     for j in range(numHorizontalTiles):
                         xMin=minXMin+j*tileWidthPix
