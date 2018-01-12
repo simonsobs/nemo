@@ -199,14 +199,14 @@ def makeTileDeck(parDict):
                             x1=c[1]
                             ra0, dec0=wcs.pix2wcs(x0, y0)
                             ra1, dec1=wcs.pix2wcs(x1, y1)
-                            # By definition, don't need overlaps at outer edges
-                            if name.split("_")[0] != str(0):            
-                                ra1=ra1-tileOverlapDeg
-                            if name.split("_")[0] != str(numHorizontalTiles-1):
+                            # Be careful with signs here... and we're assuming approx pixel size is ok
+                            if x0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
                                 ra0=ra0+tileOverlapDeg
-                            if name.split("_")[-1] != str(0):
+                            if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[0]:
+                                ra1=ra1-tileOverlapDeg
+                            if dec0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
                                 dec0=dec0-tileOverlapDeg
-                            if name.split("_")[-1] != str(numVerticalTiles-1):
+                            if dec1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
                                 dec1=dec1+tileOverlapDeg
                             if ra1 > ra0:
                                 ra1=-(360-ra1)
