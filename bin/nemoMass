@@ -61,8 +61,9 @@ else:
             if os.path.exists(d) == False:
                 os.makedirs(d)
         
-        # Load the nemo catalog and match against the z catalog
         massOptions=parDict['massOptions']
+        
+        # Load the nemo catalog and match against the z catalog
         optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(massOptions['redshiftCatalog'])
@@ -141,6 +142,7 @@ else:
             tab=tab[np.where(tab['fixed_SNR'] > massOptions['fixedSNRCut'])]
         
         # Q function (filter mismatch) options
+        # NOTE: this should be calculated for the fixed, fiducial cosmology used for object detection
         if massOptions['Q'] == 'H13':
             raise Exception, 'H13 option depreciated - need to replace polynomial with spline fit'
             tckQFit=simsTools.getQCoeffsH13()
@@ -148,8 +150,11 @@ else:
             tckQFit=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
         else:
             raise Exception, "didn't understand choice of Q function in massOptions"
-        
-        # Set-up the mass function stuff
+                    
+        # Set cosmological parameters for e.g. E(z) calc if these are set in .par file
+        # We set them after the Q calc, because the Q calc needs to be for the fiducial cosmology
+        # (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) used in object detection/filtering stage
+        # Set-up the mass function stuff also
         # This is for correction of mass bias due to steep cluster mass function
         # Hence minMass here needs to be set well below the survey mass limit
         # areaDeg2 we don't care about here
@@ -157,11 +162,35 @@ else:
         areaDeg2=700.
         zMin=0.0
         zMax=2.0
-        H0=70.
-        Om0=0.3
-        Ob0=0.05
-        sigma_8=0.8
-        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8)
+        # H0, OmegaM0, OmegaL0 used for E(z), theta500 calcs in Q
+        if 'H0' in massOptions.keys():
+            astCalc.H0=massOptions['H0']
+            H0=70.
+        else:
+            H0=70.
+        if 'OmegaM0' in massOptions.keys():
+            astCalc.OMEGA_M0=massOptions['OmegaM0']
+            OmegaM0=massOptions['OmegaM0']
+        else:
+            OmegaM0=0.3
+        if 'OmegaL0' in massOptions.keys():
+            astCalc.OMEGA_L0=massOptions['OmegaL0']
+            OmegaL0=massOptions['OmegaL0']
+        else:
+            OmegaL0=0.7
+        # OmegaB0, sigma8 only used for mass function Eddington bias correction
+        if 'OmegaB0' in massOptions.keys():
+            OmegaB0=massOptions['OmegaB0']
+        else:
+            OmegaB0=0.05
+        if 'sigma8' in massOptions.keys():
+            sigma8=massOptions['sigma8']
+        else:
+            sigma8=0.8
+        if OmegaL0 + OmegaM0 != 1:
+            raise Exception, "only flat cosmologies are currently supported"
+        # NOTE: should add sanity check that mockSurvey parameters match astCalc ones
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, OmegaM0, OmegaB0, sigma8)
         
         # Calc masses
         tab.add_column(atpy.Column(np.zeros(len(tab)), "M500"))
@@ -191,7 +220,8 @@ else:
                                               Mpivot = massOptions['Mpivot'], 
                                               sigma_int = massOptions['sigma_int'],
                                               tckQFit = tckQFit, mockSurvey = mockSurvey, 
-                                              applyMFDebiasCorrection = True)
+                                              applyMFDebiasCorrection = True,
+                                              H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0)
             row['M500']=massDict['M500']
             row['M500_errPlus']=massDict['M500_errPlus']
             row['M500_errMinus']=massDict['M500_errMinus']

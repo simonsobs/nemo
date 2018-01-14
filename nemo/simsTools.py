@@ -1479,15 +1479,24 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         # Need the beam - this assumes we are single frequency only
         beamFileName=parDict['unfilteredMaps'][0]['beamFileName']
         
-        # Some faffing to get map pixel scale
-        img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"_SNMap.fits")
+        # NOTE: adjusted for tileDeck files - build list of available extension names
+        fileList=glob.glob(filteredMapsDir+os.path.sep+photFilterLabel+"*_SNMap.fits")
+        extNames=[]
+        for f in fileList:
+            extNames.append(f.split("#")[-1].split("_SNMap")[0])
+        # For now, just use the first one... we may need to check if we need to do for each (doubt it though)
+        extName=extNames[0]
+
+        # Some faffing to get map pixel scale        
+        img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
         wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
         RADeg, decDeg=wcs.getCentreWCSCoords()
         clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 1.0)
         wcs=clipDict['wcs']
 
         # Ref kernel
-        kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (photFilterLabel))
+        # NOTE: adjusted for tileDeck files, and we have the RA, dec footprint info to deal with too
+        kernImg=pyfits.open(glob.glob(diagnosticsDir+os.path.sep+"kern2d_%s#%s*.fits" % (photFilterLabel, extName))[0])
         kern2d=kernImg[0].data
 
         # Blank map - to make Q calc more accurate, use finer pixel scale
@@ -1666,14 +1675,32 @@ def getM500FromP(P, log10M, calcErrors = True):
     return clusterM500, clusterM500MinusErr, clusterM500PlusErr
 
 #------------------------------------------------------------------------------------------------------------
-def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2):
+def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2,
+                  H0 = None, OmegaM0 = None, OmegaL0 = None):
     """Predict y0~ given logM500 (in MSun) and redshift. Default scaling relation parameters are A10 (as in
     H13).
+    
+    Use H0, OmegaM0, OmegaL0 to specify different cosmological parameters to the default stored under
+    astCalc.H0, astCalc.OMEGA_M0, astCalc.OMEGA_L0 (used for E(z) and angular size calculation). If these
+    are set to None, the defaults will be used.
     
     Returns y0~, theta500Arcmin, Q
     
     """
+
+    # Change cosmology for this call, if required... then put it back afterwards (just in case)
+    if H0 != None:
+        oldH0=astCalc.H0
+        astCalc.H0=H0
+    if OmegaM0 != None:
+        oldOmegaM0=astCalc.OMEGA_M0
+        astCalc.OMEGA_M0=OmegaM0
+    if OmegaL0 != None:
+        oldOmegaL0=astCalc.OMEGA_L0
+        astCalc.OMEGA_L0=OmegaL0
     
+    # Filtering/detection was performed with a fixed fiducial cosmology... so we don't need to recalculate Q
+    # We just need to recalculate theta500Arcmin and E(z) only
     M500=np.power(10, log10M500)
     theta500Arcmin=calcTheta500Arcmin(z, M500)
     Q=calcQ(theta500Arcmin, tckQFit)
@@ -1682,11 +1709,20 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
     y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*calcFRel(z, M500)
     
+    # Restore cosmology if we changed it for this call
+    if H0 != None:
+        astCalc.H0=oldH0
+    if OmegaM0 != None:
+        astCalc.OMEGA_M0=oldOmegaM0
+    if OmegaL0 != None:
+        astCalc.OMEGA_L0=oldOmegaL0
+        
     return y0pred, theta500Arcmin, Q
             
 #------------------------------------------------------------------------------------------------------------
 def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
-                   tckQFit = None, mockSurvey = None, applyMFDebiasCorrection = True, calcErrors = True):
+                   tckQFit = None, mockSurvey = None, applyMFDebiasCorrection = True, calcErrors = True,
+                   H0 = None, OmegaM0 = None, OmegaL0 = None):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
@@ -1700,8 +1736,26 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
     
     If calcErrors == False, error bars are not calculated, they are just set to zero.
     
-    """
+    Use H0, OmegaM0, OmegaL0 to specify different cosmological parameters to the default stored under
+    astCalc.H0, astCalc.OMEGA_M0, astCalc.OMEGA_L0 (used for E(z) and angular size calculation). If these
+    are set to None, the defaults will be used.
     
+    Adjustments for other parameters used for mass function shape de-bias correction (OmegaB0, sigma8) 
+    should be passed through the mockSurvey object.
+    
+    """
+
+    # Change cosmology for this call, if required... then put it back afterwards (just in case)
+    if H0 != None:
+        oldH0=astCalc.H0
+        astCalc.H0=H0
+    if OmegaM0 != None:
+        oldOmegaM0=astCalc.OMEGA_M0
+        astCalc.OMEGA_M0=OmegaM0
+    if OmegaL0 != None:
+        oldOmegaL0=astCalc.OMEGA_L0
+        astCalc.OMEGA_L0=OmegaL0
+        
     if y0 < 0:
         raise Exception, 'y0 cannot be negative'
     
@@ -1732,7 +1786,8 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
             zi=zRange[i]
             # UPP relation according to H13
             # NOTE: m in H13 is M/Mpivot
-            y0pred, theta500Arcmin, Q=y0FromLogM500(log10M500, zi, tckQFit, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int)
+            y0pred, theta500Arcmin, Q=y0FromLogM500(log10M500, zi, tckQFit, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int,
+                                                    H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0)
             theta500ArcminArr.append(theta500Arcmin)
             QArr.append(Q)
             if y0pred > 0:
@@ -1766,10 +1821,14 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
         print "M500 fail"
         IPython.embed()
         sys.exit()
-
-    #print "Add Q"
-    #IPython.embed()
-    #sys.exit()
+    
+    # Restore cosmology if we changed it for this call
+    if H0 != None:
+        astCalc.H0=oldH0
+    if OmegaM0 != None:
+        astCalc.OMEGA_M0=oldOmegaM0
+    if OmegaL0 != None:
+        astCalc.OMEGA_L0=oldOmegaL0
     
     return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus,
             'M500Uncorr': M500Uncorr, 'M500Uncorr_errPlus': errM500UncorrPlus, 
