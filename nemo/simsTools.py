@@ -1393,7 +1393,7 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName)
     profile1d_beam=beamData[1]
     rDeg_beam=beamData[0]
     tck_beam=interpolate.splrep(rDeg_beam, profile1d_beam)
-    profile1d_beam=interpolate.splev(rDeg, tck_beam)
+    profile1d_beam=interpolate.splev(rDeg, tck_beam, ext = 1) # ext = 1 sets out-of-range values to 0 rather than extrapolating beam
                         
     # Turn 1d profiles into 2d and convolve signal with beam
     # Convolving just redistributes the total signal to different spatial scales

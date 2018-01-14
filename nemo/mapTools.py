@@ -128,9 +128,17 @@ def makeTileDeck(parDict):
                             raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
             else:
                 
-                # Examine wht image to determine where to put down tiles
+                # NOTE: here we look at surveyMask first to determine where to put down tiles
+                # since this will ensure algorithm uses same tiles for multi-freq data
+                # Otherwise, we use the wht image (but then can't guarantee f090 and f150 have same tiles)
                 deckWht=pyfits.HDUList()
-                wht=pyfits.open(mapDict['weightsFileName'])
+                if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] != None:
+                    wht=pyfits.open(mapDict['surveyMask'])
+                    print ">>> Using survey mask to determine tiling ..."
+                else:
+                    wht=pyfits.open(mapDict['weightsFileName'])
+                    print ">>> Using weight map to determine tiling ..."
+                    print "... WARNING: same tiling not guaranteed across multiple frequencies ..."
                 wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
                 whtData=wht[0].data
                 mapWidth=whtData.shape[1]
