@@ -1122,10 +1122,17 @@ class RealSpaceMatchedFilter(MapFilter):
         dataCube=np.array(dataCube)
         noiseCube=np.array(noiseCube)
         
+        # Zap very low values as rounding errors (so have zero weight in combination)
+        noiseCube[np.less(noiseCube, 1e-7)]=0.
+        
         # Combining - inverse variance weighted average
         if dataCube.shape[0] > 1:
             invVar=1./noiseCube**2
             invVar[np.isinf(invVar)]=0.
+            # Use mask to flag pixels with zero everywhere
+            zeroMask=np.equal(np.sum(invVar, axis = 0), 0)
+            for z in range(invVar.shape[0]):
+                invVar[z][zeroMask]=1.
             weightedMap=np.average(dataCube, weights = invVar, axis = 0)
             weightedNoise=np.sqrt(1./np.sum(invVar, axis = 0))
             weightedNoise[np.isinf(weightedNoise)]=0.
