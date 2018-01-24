@@ -1475,7 +1475,12 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         for f in filterList:
             if f['label'] == photFilterLabel:
                 ref=f
-    
+        
+        # We need to adjust all of this to use multiple frequencies
+        # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that
+        if len(parDict['unfilteredMaps']) > 1:
+            raise Exception, "multi-frequency Q fit not implemented yet"
+        
         # Need the beam - this assumes we are single frequency only
         beamFileName=parDict['unfilteredMaps'][0]['beamFileName']
         

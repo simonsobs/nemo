@@ -68,24 +68,21 @@ else:
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(massOptions['redshiftCatalog'])
         if massOptions['forcedPhotometry'] == False:
-            tab=atpy.Table()
-            tab.add_column(nemoTab['name'])
-            tab.add_column(nemoTab['RADeg'])
-            tab.add_column(nemoTab['decDeg'])
-            tab.add_column(nemoTab['fixed_SNR'])
-            tab.add_column(nemoTab['fixed_y_c'])
-            tab.add_column(nemoTab['fixed_err_y_c'])
-            tab.add_column(atpy.Column(np.zeros(len(nemoTab)), 'redshift'))
-            tab.add_column(atpy.Column(np.zeros(len(nemoTab)), 'redshiftErr'))
-            for row in tab:
-                for zrow in zTab:
-                    if zrow['name'] == row['name']:
-                        row['redshift']=zrow['redshift']
-                        if 'redshiftErr' in zTab.keys():
-                            row['redshiftErr']=zrow['redshiftErr']
-                        else:
-                            row['redshiftErr']=0.
-            tab=tab[np.where(tab['redshift'] != 0)]
+            tab=atpy.join(nemoTab, zTab, 'name')
+            colsToRemove=[]
+            for k in tab.keys():
+                if k[-2:] == '_2':
+                    colsToRemove.append(k)
+            tab.remove_columns(colsToRemove)
+            colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr']
+            for k in colsToKeep:
+                if k+"_1" in tab.keys():
+                    tab.rename_column(k+"_1", k)
+            colsToRemove=[]
+            for k in tab.keys():
+                if k not in colsToKeep:
+                    colsToRemove.append(k)
+            tab.remove_columns(colsToRemove)
         
         elif massOptions['forcedPhotometry'] == True:
             
