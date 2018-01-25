@@ -14,6 +14,7 @@ import hmf
 from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
 from nemo import simsTools
+from nemo import catalogTools
 import cPickle
 from scipy import interpolate
 from scipy import stats
@@ -77,11 +78,8 @@ class MockSurvey(object):
             for i in range(len(self.z)):
                 MSum=self.clusterCount[i].sum()
                 pM=np.cumsum(self.clusterCount[i])/MSum
-                # To avoid multiple pM == 1 blowing up the spline fit (iterate here as could have 2 same, then 2 more same...)
-                maxIndex=len(pM)
-                while np.equal(pM[:maxIndex], pM[:maxIndex].max()).sum() > 1:
-                    if np.equal(pM[:maxIndex], pM[:maxIndex].max()).sum() > 1:
-                        maxIndex=np.where(pM[:maxIndex] == pM[:maxIndex].max())[0][0]
+                # To avoid multiple pM == 1 blowing up the spline fit
+                maxIndex=np.min(np.where(np.diff(pM) == 0))
                 self.tck_log10MRoller.append(interpolate.splrep(pM[:maxIndex], self.log10M[:maxIndex]))
             # Sanity check
             for i in range(len(self.z)):
@@ -218,23 +216,36 @@ class MockSurvey(object):
         return PLog10M
     
     
-    def drawSample(self):
-        """Draw a cluster sample from the MockSurvey, applying the survey averaged
-        selection function when doing so.
+    def drawSample(self, SNRLimit = None, wcs = None, areaMask = None, RMSMap = None):
+        """Draw a cluster sample from the MockSurvey. We can either apply the survey averaged
+        selection function, or use a user-specified area mask and noise map. If the latter, we'll
+        also give mock clusters RA and dec coords while we're at it.
         
-        Returns an astropy Table object, with columns name, redshift, M500
+        NOTE: survey-averaged version has bugs currently (and e.g., it won't make sense to use
+        SNRLimit with that, as the SelFn object has some SNRCut applied to it anyway).
+        
+        Returns an astropy Table object containing the mock catalog. Optional SNRCut can be
+        applied to that.
         
         NOTE: units of M500 are 1e14 MSun
         
         """
         
-        # Survey-averaged, so here is the 1-sigma noise on y0~
-        y0Noise=self.selFn.ycLimit_surveyAverage.mean()/self.selFn.SNRCut
-        
-        # This takes ~16 sec for [200, 300]-shaped z, log10M500 grid
+        if SNRLimit == None:
+            SNRLimit=0.
+                    
+        # If we want to draw coords
+        if np.any(areaMask) != None and np.any(RMSMap) != None:
+            ysInMask, xsInMask=np.where(areaMask != 0)
+            useRMSMap=True
+        else:
+            useRMSMap=False
+
+        # This takes ~16 sec for [200, 300]-shaped z, log10M500 grid using survey-averaged selection function
         #t0=time.time()
         mockCatalog=[]
         for i in range(int(self.numClusters)):
+            #t0=time.time()
             #print "... %d/%d ..." % (i, self.numClusters)
             # Draw z
             zRoll=np.random.uniform(0, 1)
@@ -244,29 +255,52 @@ class MockSurvey(object):
             MRoll=np.random.uniform(0, 1)
             log10M=interpolate.splev(MRoll, self.tck_log10MRoller[zIndex])
             log10MIndex=np.where(abs(self.log10M-log10M) == abs(self.log10M-log10M).min())[0][0]
-            # Apply selection function
-            detP=self.M500Completeness_surveyAverage[zIndex, log10MIndex]
-            PRoll=np.random.uniform(0, 1)
-            if PRoll < detP:
-                # y0 from M500... we add scatter (both intrinsic and from error bar) here
-                # We should then feed this back through to get what our inferred mass would be...
-                # (i.e., we go true mass -> true y0 -> "measured" y0 -> inferred mass)
-                # NOTE: we've applied the selection function, so we've already applied the noise...?
+            
+            # Using mask and noise map
+            if useRMSMap == True:
+                coordIndex=np.random.randint(0, len(xsInMask))
+                y0Noise=RMSMap[ysInMask[coordIndex], xsInMask[coordIndex]]
                 true_y0, theta500Arcmin, Q=simsTools.y0FromLogM500(log10M, z, self.selFn.tckQFit)
                 measured_y0=np.exp(np.random.normal(np.log(true_y0), self.scalingRelationDict['sigma_int']))
                 measured_y0=np.random.normal(measured_y0, y0Noise)
                 measured_y0=true_y0+np.random.normal(0, y0Noise)
-                # inferred mass (full blown M500 UPP, mass function shape de-biased)
-                # NOTE: we may get confused about applying de-biasing term or not here...
+                RADeg, decDeg=wcs.pix2wcs(xsInMask[coordIndex], ysInMask[coordIndex]) # Not the bottleneck
+            else:   # Survey-averaged selection function
+                detP=self.M500Completeness_surveyAverage[zIndex, log10MIndex]
+                PRoll=np.random.uniform(0, 1)
+                if PRoll < detP:
+                    # y0 from M500... we add scatter (both intrinsic and from error bar) here
+                    # We should then feed this back through to get what our inferred mass would be...
+                    # (i.e., we go true mass -> true y0 -> "measured" y0 -> inferred mass)
+                    # NOTE: we've applied the selection function, so we've already applied the noise...?
+                    # Survey-averaged, so here is the 1-sigma noise on y0~
+                    y0Noise=self.selFn.ycLimit_surveyAverage.mean()/self.selFn.SNRCut
+                    true_y0, theta500Arcmin, Q=simsTools.y0FromLogM500(log10M, z, self.selFn.tckQFit)
+                    measured_y0=np.exp(np.random.normal(np.log(true_y0), self.scalingRelationDict['sigma_int']))
+                    measured_y0=np.random.normal(measured_y0, y0Noise)
+                    measured_y0=true_y0+np.random.normal(0, y0Noise)
+                    RADeg=0.
+                    decDeg=0.
+            
+            # inferred mass (full blown M500 UPP, mass function shape de-biased)
+            # NOTE: we may get confused about applying de-biasing term or not here...
+            if measured_y0 / y0Noise > SNRLimit:
                 M500Dict=simsTools.calcM500Fromy0(measured_y0, y0Noise, z, 0.0, 
-                                                  tenToA0 = self.scalingRelationDict['tenToA0'],
-                                                  B0 = self.scalingRelationDict['B0'],
-                                                  Mpivot = self.scalingRelationDict['Mpivot'], 
-                                                  sigma_int = self.scalingRelationDict['sigma_int'],
-                                                  tckQFit = self.selFn.tckQFit, mockSurvey = self, 
-                                                  applyMFDebiasCorrection = True, calcErrors = True)
+                                                    tenToA0 = self.scalingRelationDict['tenToA0'],
+                                                    B0 = self.scalingRelationDict['B0'],
+                                                    Mpivot = self.scalingRelationDict['Mpivot'], 
+                                                    sigma_int = self.scalingRelationDict['sigma_int'],
+                                                    tckQFit = self.selFn.tckQFit, mockSurvey = self, 
+                                                    applyMFDebiasCorrection = True, calcErrors = True)
                 # Add to catalog
-                objDict={'name': 'MOCK-CL%d' % (i+1), 
+                if RADeg != 0 and decDeg != 0:
+                    name=catalogTools.makeACTName(RADeg, decDeg, prefix = 'MOCK-CL')
+                else:
+                    name='MOCK-CL %d' % (i+1)
+                    
+                objDict={'name': name, 
+                         'RADeg': RADeg,
+                         'decDeg': decDeg,
                          'true_M500': np.power(10, log10M)/1e14,
                          'true_fixed_y_c': true_y0/1e-4,
                          'fixed_y_c': measured_y0/1e-4,
@@ -277,7 +311,10 @@ class MockSurvey(object):
                 for key in M500Dict:
                     objDict[key]=M500Dict[key]
                 mockCatalog.append(objDict)
-        
+            
+            #t1=time.time()
+            #print "... took %.3f sec ..." % (t1-t0)
+            
         # Convert to table
         # NOTE: left out Uncorr confusion for now... i.e., we use 'Uncorr' here...
         tab=atpy.Table()
