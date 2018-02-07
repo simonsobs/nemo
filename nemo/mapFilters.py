@@ -930,29 +930,46 @@ class RealSpaceMatchedFilter(MapFilter):
         # This is set by maxArcmin in the .par file
         prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
         rIndex=np.where(arcminRange > kernelMaxArcmin)[0][0]
+        mask=np.less(arcminRange, kernelMaxArcmin)
+
         # Alternatively, roll off to zero after the second zero crossing
         # NOTE: now setting in the .par file, uncomment below to switch back
         #segProf=ndimage.label(np.greater(prof, 0))[0]
         #rIndex=np.where(segProf == 2)[0][0]
         #maxArcmin=arcminRange[rIndex]
 
-        # Make 2d kernel
-        mask=np.less(arcminRange, kernelMaxArcmin)
-        rRadians=np.radians(arcminRange/60.)
-        r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
-        profile2d=r2p(matchedFilter.radiansMap)
-        y, x=np.where(profile2d == profile2d.max())
-        y=y[0]
-        x=x[0]
-        yMin=y-rIndex
-        yMax=y+rIndex
-        xMin=x-rIndex
-        xMax=x+rIndex
-        if (yMax-yMin) % 2 == 0:
-            yMin=yMin+1
-        if (xMax-xMin) % 2 == 0:
-            xMin=xMin+1
-        kern2d=profile2d[yMin:yMax, xMin:xMax]
+        # Kernel can be either fully 2d, or be azimuthally averaged... in the ACTPol E-D56 paper, we used the latter
+        if self.params['noiseParams']['symmetrize'] == False:
+            realSpace=fft.ifft2(matchedFilter.G).real
+            realSpace=fft.fftshift(realSpace)
+            y, x=np.where(realSpace == realSpace.max())
+            y=y[0]
+            x=x[0]
+            yMin=y-rIndex
+            yMax=y+rIndex
+            xMin=x-rIndex
+            xMax=x+rIndex
+            if (yMax-yMin) % 2 == 0:
+                yMin=yMin+1
+            if (xMax-xMin) % 2 == 0:
+                xMin=xMin+1
+            kern2d=realSpace[yMin:yMax, xMin:xMax]
+        else:
+            rRadians=np.radians(arcminRange/60.)
+            r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
+            profile2d=r2p(matchedFilter.radiansMap)
+            y, x=np.where(profile2d == profile2d.max())
+            y=y[0]
+            x=x[0]
+            yMin=y-rIndex
+            yMax=y+rIndex
+            xMin=x-rIndex
+            xMax=x+rIndex
+            if (yMax-yMin) % 2 == 0:
+                yMin=yMin+1
+            if (xMax-xMin) % 2 == 0:
+                xMin=xMin+1
+            kern2d=profile2d[yMin:yMax, xMin:xMax]
         kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
 
         # This is what to high pass filter on

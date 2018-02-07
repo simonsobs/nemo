@@ -994,6 +994,14 @@ def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diag
     for i in range(numSkySims):
         
         print "... sky sim %d/%d ..." % (i+1, numSkySims)
+        
+        print "adapt sky sim for tileDeck files - to get to work, need to generate a HUGE .fits file and cut-up with makeTileDeck"
+        IPython.embed()
+        sys.exit()
+        
+        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+        
+        #---
         simParDict=actDict.ACTDict()
         simParDict.read_from_file(parDictFileName)
             
@@ -1025,7 +1033,7 @@ def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diag
             mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*.fits")
             for m in mapFileNames:
                 os.remove(m)
-        simImageDict=mapTools.filterMaps(simParDict['unfilteredMaps'], simParDict['mapFilters'], rootOutDir = rootOutDir)
+        simImageDict=mapTools.filterMaps(simParDict['unfilteredMaps'], simParDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
             
         # Below here is same as inverted maps right now....
         # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
@@ -1084,7 +1092,7 @@ def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, 
     
     Runs over both SNR and fixed_SNR values.
     
-    Returns a dictionaries containing the results
+    Returns a dictionary containing the results
     
     """
     
