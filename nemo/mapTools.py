@@ -99,7 +99,18 @@ def makeTileDeck(parDict):
     else:
         extNames=[]        
         for mapDict in parDict['unfilteredMaps']:
+                        
+            # Added an option to define tiles in the .par file... otherwise, we will do the automatic tiling
+            if 'tileDefinitions' in parDict.keys():
+                tileDeckFileNameLabel="userDefined_%.1f" % (parDict['tileOverlapDeg'])
+                defineTilesAutomatically=False
+            else:
+                tileDeckFileNameLabel="%dx%d_%.1f" % (parDict['numHorizontalTiles'],
+                                                      parDict['numVerticalTiles'], 
+                                                      parDict['tileOverlapDeg'])
+                defineTilesAutomatically=True
             
+            # Figure out what the input / output files will be called
             fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
             inFileNames=[]
             outFileNames=[]
@@ -107,9 +118,7 @@ def makeTileDeck(parDict):
                 if f in mapDict.keys() and mapDict[f] != None:
                     inFileNames.append(mapDict[f])
                     mapDir, mapFileName=os.path.split(mapDict[f])
-                    outFileNames.append(mapDir+os.path.sep+"tileDeck_%dx%d_%.1f_" % (parDict['numHorizontalTiles'], 
-                                                                                     parDict['numVerticalTiles'], 
-                                                                                     parDict['tileOverlapDeg'])+mapFileName)
+                    outFileNames.append(mapDir+os.path.sep+"tileDeck_%s_" % (tileDeckFileNameLabel)+mapFileName)
             
             allFilesMade=True
             for f in outFileNames:
@@ -128,10 +137,7 @@ def makeTileDeck(parDict):
                             raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
             else:
                 
-                # NOTE: here we look at surveyMask first to determine where to put down tiles
-                # since this will ensure algorithm uses same tiles for multi-freq data
-                # Otherwise, we use the wht image (but then can't guarantee f090 and f150 have same tiles)
-                deckWht=pyfits.HDUList()
+                # Whether we make tiles automatically or not, we need the WCS from somewhere...
                 if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] != None:
                     wht=pyfits.open(mapDict['surveyMask'])
                     print ">>> Using survey mask to determine tiling ..."
@@ -140,52 +146,73 @@ def makeTileDeck(parDict):
                     print ">>> Using weight map to determine tiling ..."
                     print "... WARNING: same tiling not guaranteed across multiple frequencies ..."
                 wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
-                whtData=wht[0].data
-                mapWidth=whtData.shape[1]
-                mapHeight=whtData.shape[0]
-
-                # Figure out where edges are
-                edges={}
-                for y in range(mapHeight):
-                    xIndices=np.where(whtData[y] != 0)[0]
-                    if len(xIndices) > 0:
-                        xMin=xIndices.min()
-                        xMax=xIndices.max()
-                        edges[y]=[xMin, xMax]
-                
-                # Starting from bottom left, work our way around the map adding tiles, ignoring blank regions
-                numHorizontalTiles=parDict['numHorizontalTiles']
-                numVerticalTiles=parDict['numVerticalTiles']
                 tileOverlapDeg=parDict['tileOverlapDeg']
-                ys=edges.keys()
-                ys.sort()
-                ys=np.array(ys)
-                coordsList=[]
-                extNames=[]
-                tileHeightPix=int(np.ceil((ys.max()-ys.min())/float(numVerticalTiles)))
-                for i in range(numVerticalTiles):
-                    yMin=ys.min()+i*tileHeightPix
-                    yMax=ys.min()+(i+1)*tileHeightPix
-                    keys=np.arange(yMin, yMax)
-                    minXMin=1e6
-                    maxXMax=0
-                    for k in keys:
-                        if k in edges.keys():
-                            xMin, xMax=edges[k]
-                            if xMin < minXMin:
-                                minXMin=xMin
-                            if xMax > maxXMax:
-                                maxXMax=xMax
-                    tileWidthPix=int(np.ceil(maxXMax-minXMin)/float(numHorizontalTiles))
-                    for j in range(numHorizontalTiles):
-                        xMin=minXMin+j*tileWidthPix
-                        xMax=minXMin+(j+1)*tileWidthPix
-                        coordsList.append([xMin, xMax, yMin, yMax])
-                        extNames.append("%d_%d" % (j, i))
+   
+                if defineTilesAutomatically == True:
+                    # NOTE: here we look at surveyMask first to determine where to put down tiles
+                    # since this will ensure algorithm uses same tiles for multi-freq data
+                    # Otherwise, we use the wht image (but then can't guarantee f090 and f150 have same tiles)
+                    deckWht=pyfits.HDUList()
+                    whtData=wht[0].data
+                    mapWidth=whtData.shape[1]
+                    mapHeight=whtData.shape[0]
+
+                    # Figure out where edges are
+                    edges={}
+                    for y in range(mapHeight):
+                        xIndices=np.where(whtData[y] != 0)[0]
+                        if len(xIndices) > 0:
+                            xMin=xIndices.min()
+                            xMax=xIndices.max()
+                            edges[y]=[xMin, xMax]
+                    
+                    # Starting from bottom left, work our way around the map adding tiles, ignoring blank regions
+                    numHorizontalTiles=parDict['numHorizontalTiles']
+                    numVerticalTiles=parDict['numVerticalTiles']
+                    ys=edges.keys()
+                    ys.sort()
+                    ys=np.array(ys)
+                    coordsList=[]
+                    extNames=[]
+                    tileHeightPix=int(np.ceil((ys.max()-ys.min())/float(numVerticalTiles)))
+                    for i in range(numVerticalTiles):
+                        yMin=ys.min()+i*tileHeightPix
+                        yMax=ys.min()+(i+1)*tileHeightPix
+                        keys=np.arange(yMin, yMax)
+                        minXMin=1e6
+                        maxXMax=0
+                        for k in keys:
+                            if k in edges.keys():
+                                xMin, xMax=edges[k]
+                                if xMin < minXMin:
+                                    minXMin=xMin
+                                if xMax > maxXMax:
+                                    maxXMax=xMax
+                        tileWidthPix=int(np.ceil(maxXMax-minXMin)/float(numHorizontalTiles))
+                        for j in range(numHorizontalTiles):
+                            xMin=minXMin+j*tileWidthPix
+                            xMax=minXMin+(j+1)*tileWidthPix
+                            coordsList.append([xMin, xMax, yMin, yMax])
+                            extNames.append("%d_%d" % (j, i))
+                    
+                    # Not sure if this will actually tidy up...
+                    wht.close()
+                    del whtData
                 
-                # Not sure if this will actually tidy up...
-                wht.close()
-                del whtData
+                else:
+                    # Use user-defined tiles - this is a bit of a faff, to avoid re-writing below bit where we make the tiles...
+                    extNames=[]
+                    coordsList=[]
+                    for tileDict in parDict['tileDefinitions']:
+                        ra0, ra1, dec0, dec1=tileDict['RADecSection']
+                        x0, y0=wcs.wcs2pix(ra0, dec0)
+                        x1, y1=wcs.wcs2pix(ra1, dec1)
+                        xMin=min([x0, x1])
+                        xMax=max([x0, x1])
+                        yMin=min([y0, y1])
+                        yMax=max([y0, y1])
+                        coordsList.append([xMin, xMax, yMin, yMax])
+                        extNames.append(tileDict['extName'])   
                 
                 # Output a .reg file for debugging (pixel coords)
                 outFile=file(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
@@ -195,7 +222,7 @@ def makeTileDeck(parDict):
                 for c, name in zip(coordsList, extNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
-                
+                    
                 # Make tiles
                 for inMapFileName, outMapFileName in zip(inFileNames, outFileNames):
                     if os.path.exists(outMapFileName) == False:

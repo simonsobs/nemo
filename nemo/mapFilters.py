@@ -1248,6 +1248,7 @@ class RealSpaceMatchedFilter(MapFilter):
                                                         kernelBuildDecMin, kernelBuildDecMax],
                                        'applyDecMin': decMin, 'applyDecMax': decMax,
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
+                print "... taking noise from %s ..." % (RADecSectionDictList[0]['RADecSection'])
                 
             elif self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
                 numDecSteps=float(self.params['noiseParams']['RADecSection'][3])
