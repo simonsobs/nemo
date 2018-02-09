@@ -940,36 +940,25 @@ class RealSpaceMatchedFilter(MapFilter):
 
         # Kernel can be either fully 2d, or be azimuthally averaged... in the ACTPol E-D56 paper, we used the latter
         if self.params['noiseParams']['symmetrize'] == False:
-            realSpace=fft.ifft2(matchedFilter.G).real
-            realSpace=fft.fftshift(realSpace)
-            y, x=np.where(realSpace == realSpace.max())
-            y=y[0]
-            x=x[0]
-            yMin=y-rIndex
-            yMax=y+rIndex
-            xMin=x-rIndex
-            xMax=x+rIndex
-            if (yMax-yMin) % 2 == 0:
-                yMin=yMin+1
-            if (xMax-xMin) % 2 == 0:
-                xMin=xMin+1
-            kern2d=realSpace[yMin:yMax, xMin:xMax]
+            profile2d=fft.ifft2(matchedFilter.G).real
+            profile2d=fft.fftshift(profile2d)
         else:
             rRadians=np.radians(arcminRange/60.)
             r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
             profile2d=r2p(matchedFilter.radiansMap)
-            y, x=np.where(profile2d == profile2d.max())
-            y=y[0]
-            x=x[0]
-            yMin=y-rIndex
-            yMax=y+rIndex
-            xMin=x-rIndex
-            xMax=x+rIndex
-            if (yMax-yMin) % 2 == 0:
-                yMin=yMin+1
-            if (xMax-xMin) % 2 == 0:
-                xMin=xMin+1
-            kern2d=profile2d[yMin:yMax, xMin:xMax]
+            
+        y, x=np.where(profile2d == profile2d.max())
+        y=y[0]
+        x=x[0]
+        yMin=y-rIndex
+        yMax=y+rIndex
+        xMin=x-rIndex
+        xMax=x+rIndex
+        if (yMax-yMin) % 2 == 0:
+            yMin=yMin+1
+        if (xMax-xMin) % 2 == 0:
+            xMin=xMin+1
+        kern2d=profile2d[yMin:yMax, xMin:xMax]
         kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
 
         # This is what to high pass filter on
@@ -1184,20 +1173,46 @@ class RealSpaceMatchedFilter(MapFilter):
             # Copes with CAR distortion at large | dec |
             # NOTE: the way this is done currently means we should pick something contiguous in dec direction at fixed RA
             RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
-            if self.params['noiseParams']['RADecSection'][0] == 'auto':
+            if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
+                RADecSectionDictList=[{'RADecSection': [wcs.header['NRAMIN'], wcs.header['NRAMAX'], 
+                                                        wcs.header['NDEMIN'], wcs.header['NDEMAX']],
+                                       'applyDecMin': decMin, 'applyDecMax': decMax,
+                                       'applyRAMin': RAMin, 'applyRAMax': RAMax}]
+                print "... taking noise from tileDeck image header: %s ..." % (RADecSectionDictList[0]['RADecSection'])
+                
+            elif self.params['noiseParams']['RADecSection'][0] == 'auto':
+                
+                # Abandoned for now... because really we would want to ensure same noise region for each frequency
+                raise Exception, "'auto' option for RADecSection disabled (needs fixing)"
+                
                 # If we're using tiles, we should pick the largest rectangle we can find - do not include blank areas
                 maxWidthDeg=self.params['noiseParams']['RADecSection'][1]
                 maxHeightDeg=self.params['noiseParams']['RADecSection'][2]
                 
-                # First find contiguous data region
-                sigPix=np.array(np.not_equal(mapData, 0), dtype = int)
+                # First find contiguous data region (smoothed to avoid feathery edges)
+                sigPix=np.array(np.not_equal(ndimage.gaussian_filter(mapData, 5), 0), dtype = int)
                 sigPixMask=np.equal(sigPix, 1)
                 segmentationMap, numObjects=ndimage.label(sigPix)
                 objIDs=np.unique(segmentationMap)
                 objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
                 ys, xs=np.where(segmentationMap == objIDs[np.argmax(objNumPix)])
                 
-                # Then maximise region with width > max width given in parDict - defines rows to use
+                # Might be easiest to grow out from the centre
+                # Increase width until hit 0, then grow height until hit 0
+                fullWidthPix=int(maxWidthDeg/wcs.getPixelSizeDeg())
+                fullHeightPix=int(maxHeightDeg/wcs.getPixelSizeDeg())
+                yc, xc=ndimage.center_of_mass(sigPix, labels = segmentationMap, index = objIDs[np.argmax(objNumPix)])
+                yc=int(round(yc))
+                xc=int(round(xc))
+                width=0
+                while np.any(np.equal(segmentationMap[yc, xc-width:xc+width], 0)) == False:
+                    width=width+1
+                xIndices=np.where(segmentationMap[yc] == objIDs[np.argmax(objNumPix)])[0]
+                print "grow out width, height"
+                IPython.embed()
+                sys.exit()
+                
+                # Then maximise region up to maximum area specified in .par file
                 fullWidthPix=int(maxWidthDeg/wcs.getPixelSizeDeg())
                 fullHeightPix=int(maxHeightDeg/wcs.getPixelSizeDeg())
                 xWidthMap=np.zeros(segmentationMap.shape[0])
@@ -1207,6 +1222,10 @@ class RealSpaceMatchedFilter(MapFilter):
                         xMin=xIndices.min()
                         xMax=xIndices.max()
                         xWidthMap[y]=xMax-xMin
+                # NOTE: we want to change such that size in .par file is MAXIMUM size of noise region, not min
+                # So, here we need to optimize for the biggest contiguous region we can, even if not matching desired size
+                # Problem is the bit below
+                # Problem is feathery edges
                 xWidthSigPix=np.array(np.greater(xWidthMap, fullWidthPix))
                 xWidthSigPixMask=np.equal(xWidthSigPix, 1)
                 xWidthSegMap, xWidthNumObjects=ndimage.label(xWidthSigPix)
@@ -1219,12 +1238,19 @@ class RealSpaceMatchedFilter(MapFilter):
                 maxXMax=1e6
                 for y in ys:
                     xIndices=np.where(segmentationMap[y] == objIDs[np.argmax(objNumPix)])[0]
-                    xMin=xIndices.min()
-                    xMax=xIndices.max()
-                    if xMin > minXMin:
-                        minXMin=xMin
-                    if xMax < maxXMax:
-                        maxXMax=xMax
+                    if len(xIndices) > 0:
+                        xMin=xIndices.min()
+                        xMax=xIndices.max()
+                        if xMin > minXMin:
+                            minXMin=xMin
+                        if xMax < maxXMax:
+                            maxXMax=xMax
+                if minXMin == maxXMax:
+                    print "minXMin == maxXMax"
+                    IPython.embed()
+                    sys.exit()
+                if minXMin == 0 and maxXMax == 1e6:
+                    raise Exception, "failed trimming in x direction when using 'auto' RADecSection option in buildAndApply()"
                 
                 # Final answer? Trim if bigger than maxWidth
                 x0=minXMin

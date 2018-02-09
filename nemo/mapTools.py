@@ -224,6 +224,9 @@ def makeTileDeck(parDict):
                 outFile.close()
                     
                 # Make tiles
+                # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
+                # Since we would only use such an option with tileDeck files, this should be okay
+                # Although since we do this by modifying headers, would need to remake tileDeck files each time adjusted in .par file
                 for inMapFileName, outMapFileName in zip(inFileNames, outFileNames):
                     if os.path.exists(outMapFileName) == False:
                         print ">>> Writing tileDeck file %s ..." % (outMapFileName)
@@ -250,7 +253,15 @@ def makeTileDeck(parDict):
                                 ra1=-(360-ra1)
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             print "... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0)
-                            hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = clip['wcs'].header.copy(), name = name)
+                            header=clip['wcs'].header.copy()
+                            if 'tileNoiseRegions' in parDict.keys() and name in parDict['tileNoiseRegions'].keys():
+                                noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=parDict['tileNoiseRegions'][name]
+                                print "... adding noise region [%.3f, %.3f, %.3f, %.3f] to header %s ..." % (noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax, name)
+                                header['NRAMIN']=noiseRAMin
+                                header['NRAMAX']=noiseRAMax
+                                header['NDEMIN']=noiseDecMin
+                                header['NDEMAX']=noiseDecMax
+                            hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = header, name = name)
                             deckImg.append(hdu)    
                         deckImg.writeto(outMapFileName)
                         deckImg.close()
