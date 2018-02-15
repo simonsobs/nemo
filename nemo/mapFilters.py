@@ -1122,101 +1122,21 @@ class RealSpaceMatchedFilter(MapFilter):
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
                 print "... taking noise from tileDeck image header: %s ..." % (RADecSectionDictList[0]['RADecSection'])
                 
-            elif self.params['noiseParams']['RADecSection'][0] == 'auto':
+            elif self.params['noiseParams']['RADecSection'] == 'auto':
                 
-                # Abandoned for now... because really we would want to ensure same noise region for each frequency
-                raise Exception, "'auto' option for RADecSection disabled (needs fixing)"
-                
-                # If we're using tiles, we should pick the largest rectangle we can find - do not include blank areas
-                maxWidthDeg=self.params['noiseParams']['RADecSection'][1]
-                maxHeightDeg=self.params['noiseParams']['RADecSection'][2]
-                
-                # First find contiguous data region (smoothed to avoid feathery edges)
-                sigPix=np.array(np.not_equal(ndimage.gaussian_filter(mapData, 5), 0), dtype = int)
-                sigPixMask=np.equal(sigPix, 1)
-                segmentationMap, numObjects=ndimage.label(sigPix)
-                objIDs=np.unique(segmentationMap)
-                objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
-                ys, xs=np.where(segmentationMap == objIDs[np.argmax(objNumPix)])
-                
-                # Might be easiest to grow out from the centre
-                # Increase width until hit 0, then grow height until hit 0
-                fullWidthPix=int(maxWidthDeg/wcs.getPixelSizeDeg())
-                fullHeightPix=int(maxHeightDeg/wcs.getPixelSizeDeg())
-                yc, xc=ndimage.center_of_mass(sigPix, labels = segmentationMap, index = objIDs[np.argmax(objNumPix)])
-                yc=int(round(yc))
-                xc=int(round(xc))
-                width=0
-                while np.any(np.equal(segmentationMap[yc, xc-width:xc+width], 0)) == False:
-                    width=width+1
-                xIndices=np.where(segmentationMap[yc] == objIDs[np.argmax(objNumPix)])[0]
-                print "grow out width, height"
-                IPython.embed()
-                sys.exit()
-                
-                # Then maximise region up to maximum area specified in .par file
-                fullWidthPix=int(maxWidthDeg/wcs.getPixelSizeDeg())
-                fullHeightPix=int(maxHeightDeg/wcs.getPixelSizeDeg())
-                xWidthMap=np.zeros(segmentationMap.shape[0])
-                for y in range(segmentationMap.shape[0]):
-                    xIndices=np.where(segmentationMap[y] == objIDs[np.argmax(objNumPix)])[0]
-                    if len(xIndices) > 0:
-                        xMin=xIndices.min()
-                        xMax=xIndices.max()
-                        xWidthMap[y]=xMax-xMin
-                # NOTE: we want to change such that size in .par file is MAXIMUM size of noise region, not min
-                # So, here we need to optimize for the biggest contiguous region we can, even if not matching desired size
-                # Problem is the bit below
-                # Problem is feathery edges
-                xWidthSigPix=np.array(np.greater(xWidthMap, fullWidthPix))
-                xWidthSigPixMask=np.equal(xWidthSigPix, 1)
-                xWidthSegMap, xWidthNumObjects=ndimage.label(xWidthSigPix)
-                xWidthObjIDs=np.unique(xWidthSegMap)
-                xWidthNumPix=ndimage.sum(xWidthSigPixMask, labels = xWidthSegMap, index = xWidthObjIDs)
-                ys=np.where(xWidthSegMap == xWidthObjIDs[np.argmax(xWidthNumPix)])[0]
+                if self.params['noiseParams']['method'] != 'CMBOnly':
+                    raise Exception, "'auto' option for RADecSection disabled for all methods EXCEPT CMBOnly (needs fixing)"
 
-                # Now trim in x direction
-                minXMin=0
-                maxXMax=1e6
-                for y in ys:
-                    xIndices=np.where(segmentationMap[y] == objIDs[np.argmax(objNumPix)])[0]
-                    if len(xIndices) > 0:
-                        xMin=xIndices.min()
-                        xMax=xIndices.max()
-                        if xMin > minXMin:
-                            minXMin=xMin
-                        if xMax < maxXMax:
-                            maxXMax=xMax
-                if minXMin == maxXMax:
-                    print "minXMin == maxXMax"
-                    IPython.embed()
-                    sys.exit()
-                if minXMin == 0 and maxXMax == 1e6:
-                    raise Exception, "failed trimming in x direction when using 'auto' RADecSection option in buildAndApply()"
+                # NOTE: hardcoded max size... if we're using CMBOnly, we don't care (no real noise) 
+                cRADeg, cDecDeg=wcs.getCentreWCSCoords()
+                maxSizeDeg=5.0
+                kernelBuildRAMin, kernelBuildRAMax, kernelBuildDecMin, kernelBuildDecMax=astCoords.calcRADecSearchBox(cRADeg, cDecDeg, maxSizeDeg)
                 
-                # Final answer? Trim if bigger than maxWidth
-                x0=minXMin
-                x1=maxXMax
-                y0=ys.min()
-                y1=ys.max()
-                if x1-x0 > fullWidthPix:
-                    xc=int((x1+x0)/2.)
-                    x1=int(xc+fullWidthPix/2.)
-                    x0=int(xc-fullWidthPix/2.)
-                if y1-y0 > fullHeightPix:
-                    yc=int((y1+y0)/2.)
-                    y1=int(yc+fullHeightPix/2.)
-                    y0=int(yc-fullHeightPix/2.)
-                #selectMask=np.zeros(segmentationMap.shape)  # save this if want a sanity check
-                #selectMask[y0:y1, x0:x1]=1
-
-                kernelBuildRAMin, kernelBuildDecMin=wcs.pix2wcs(x1, y0)
-                kernelBuildRAMax, kernelBuildDecMax=wcs.pix2wcs(x0, y1)
                 RADecSectionDictList=[{'RADecSection': [kernelBuildRAMin, kernelBuildRAMax, 
                                                         kernelBuildDecMin, kernelBuildDecMax],
                                        'applyDecMin': decMin, 'applyDecMax': decMax,
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
-                print "... taking noise from %s ..." % (RADecSectionDictList[0]['RADecSection'])
+                #print "... taking noise from %s ..." % (RADecSectionDictList[0]['RADecSection'])
                 
             elif self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
                 numDecSteps=float(self.params['noiseParams']['RADecSection'][3])
