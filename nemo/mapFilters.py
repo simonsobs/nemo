@@ -43,6 +43,8 @@ import glob
 import itertools
 import pyximport; pyximport.install()
 import nemoCython
+import nemo
+import astropy.table as atpy
 import time
 import IPython
 
@@ -120,52 +122,6 @@ class MapFilter:
         raise Exception, "Called a base filter class without a buildAndApply() function implemented."
         return None
     
-    
-    def makeForegroundsPower(self):
-        """Makes a flipper power2d object from given foregrounds template file.
-        This is assumed from Ryan, and is given in units l, dT (micro K).
-        
-        This should be called after setUpFFTStuff() has already been called
-        Returns a flipper power2D object
-        
-        """
-                
-        inFile=file(self.params['foregroundsTemplate'], "r") 
-        #inFile=file("/home/matty/Astro_Software/flipper-0.1.0/params/wmap_3year_toKevin_lensed_v3_lensedCls.dat", "r")
-        lines=inFile.readlines()
-        inFile.close()
-        l=[]
-        llClsMicroK2=[] # l(l+1)Cl/2pi, in uK^2
-        for line in lines:
-            if line[0] != "#" and len(line) > 3:
-                bits=line.split()
-                l.append(float(bits[0]))
-                llClsMicroK2.append(float(bits[1]))
-        l=np.array(l)
-        
-        # Square here because Ryan had them square rooted - if using the CMB power spec from flipper, take this off
-        llClsMicroK2=np.array(llClsMicroK2)**2 
-        
-        # Note we square back up below, as we do actually want a power spectrum, if we're running from Ryan's
-        # stuff
-        ll=np.ravel(self.fSciMap.modLMap)
-        fgPowerMap=np.zeros(self.fSciMap.kMap.shape)
-        interpolator=interpolate.interp1d(l, llClsMicroK2, fill_value=0.0, bounds_error=False)
-        kk=interpolator(ll)
-        fgPowerMap=np.reshape(kk, [self.fSciMap.Ny, self.fSciMap.Nx])
-        fgPower=fftTools.powerFromFFT(self.fSciMap)
-        
-        # Convert to raw Cls
-        fgPower.powerMap=(fgPowerMap*np.pi*2)/(fgPower.modLMap*(fgPower.modLMap+1))
-        fgPower.powerMap=np.nan_to_num(fgPower.powerMap) # division by l(l+1) above causes nan where l == 0
-        
-        # Check if can recover 1d power spectrum from 2d
-        #results=fgPower.binInAnnuli("/home/matty/Astro_Software/flipper-0.1.0/params/BIN_100_200")
-        #plt.plot(results[2], (results[2]*(results[2]+1)*results[3])/(np.pi*2))
-        #plt.plot(l, llClsMicroK2)
-        
-        return fgPower
-               
         
     def loadFilter(self, filterFileName):
         """Loads in a previously saved filter
@@ -365,59 +321,38 @@ class MapFilter:
         return NP
         
 
-    def makeForegroundsPower(self, obsFreqGHz):
-        """Returns a Power2D object with foregrounds power from the CMB (using the WMAP spectrum included in
-        flipper) plus the ACT point source contribution measured in Fowler et al. 2010, hardcoded. Need
-        to add code for 220 GHz point source contribution.
-                
+    def makeForegroundsPower(self, obsFreqGHz, whiteNoiseLevel):
+        """Returns a Power2D object with foregrounds power from the CMB and white noise only.
+        
+        White noise level is per pixel.
+                       
         """
-                
-        # CMB from flipper WMAP spectrum file
-        inFileName=os.environ['FLIPPER_DIR']+os.path.sep+"params"+os.path.sep+"wmap_3year_toKevin_lensed_v3_lensedCls.dat"
-        inFile=file(inFileName, "r")
-        lines=inFile.readlines()
-        inFile.close()
-        l=[]
-        llClsMicroK2=[] # l(l+1)Cl/2pi, in uK^2
-        for line in lines:
-            if line[0] != "#" and len(line) > 3:
-                bits=line.split()
-                l.append(float(bits[0]))
-                llClsMicroK2.append(float(bits[1]))
-        l=np.array(l)
-        llClsMicroK2=np.array(llClsMicroK2)
-        
-        # Convert to Cl
-        Cl=(llClsMicroK2*2*np.pi)/(l*(l+1))
-        
-        # Add in point source power from Fowler et al.
-        if obsFreqGHz == 148:
-            Ap=11.2 # uK^2
-            PSB=Ap*np.power(l/3000, 2)
-            PSCl=(PSB*np.pi*2)/(l*(l+1))
-        else:
-            print "WARNING: need to add code for point source contribution at other frequencies than 148 GHz"
-            PSCl=np.zeros(Cl.shape)
-        
-        # We should roll off the sources power spectrum in l-space with the beam - actually, this does nothing
-        #fwhmDeg=1.4/60.0
-        #eightLnTwo=8.0*math.log(2.0) # note: sqrt(8ln2)*sigma=fwhm 
-        #beam=np.exp(-1.0*l*(l+1)*math.radians(fwhmDeg)**2/eightLnTwo)
-        #beam=(beam*np.pi*2)/(l*(l+1))
-        #PSCl=PSCl*beam
-        
+                    
+        # CAMB power spec with Planck 2015 parameters (ish)
+        tab=atpy.Table().read(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", format = 'ascii')
+        ell=tab['L']
+        DEll=tab['TT']
+        Cl=(DEll*2*np.pi)/(ell*(ell+1)) #uK^2
+                            
         # FFT stuff
         templm=liteMap.liteMapFromDataAndWCS(np.ones(self.unfilteredMapsDictList[0]['data'].shape), self.wcs)
         fTempMap=fftTools.fftFromLiteMap(templm)
-        
-        # Add point source power to CMB, make 2d
+
+        # Make 2d
         ll=np.ravel(fTempMap.modLMap)
         fgPowerMap=np.zeros(fTempMap.kMap.shape)
-        interpolator=interpolate.interp1d(l, Cl+PSCl, fill_value=0.0, bounds_error=False)
+        interpolator=interpolate.interp1d(ell, Cl, fill_value=0.0, bounds_error=False)
         kk=interpolator(ll)
         fgPowerMap=np.reshape(kk, [fTempMap.Ny, fTempMap.Nx])
+        
         fgPower=fftTools.powerFromFFT(fTempMap)
-        fgPower.powerMap=np.nan_to_num(fgPower.powerMap)
+        fgPower.powerMap=fgPowerMap
+        
+        # Add some white noise to avoid ringing
+        whiteNoise=np.random.normal(0, whiteNoiseLevel, fgPowerMap.shape)
+        lm=liteMap.liteMapFromDataAndWCS(whiteNoise, self.wcs)
+        whiteNoisePower=fftTools.powerFromLiteMap(lm)
+        fgPower.powerMap=fgPower.powerMap+whiteNoisePower.powerMap
                 
         return fgPower
         
@@ -714,11 +649,18 @@ class MatchedFilter(MapFilter):
                                 
                 # Make noise power spectrum
                 if self.params['noiseParams']['method'] == 'dataMap':
+                    print "... taking noise power for filter from map ..."
                     NP=fftTools.powerFromFFT(fMaskedMap)
                 elif self.params['noiseParams']['method'] == '4WayMaps':
+                    print "... taking noise power for filter from 4 way maps ..."
                     NP=self.noisePowerFrom4WayMaps(mapDict['weights'], mapDict['obsFreqGHz'])
+                elif self.params['noiseParams']['method'] == 'CMBOnly':
+                    print "... taking noise power for filter from model CMB power spectrum ..."
+                    highPassMap=mapTools.subtractBackground(maskedData, self.wcs, 0.25/60.0)
+                    whiteNoiseLevel=np.std(highPassMap)
+                    NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
                 else:
-                    raise Exception, "noise method must be either 'dataMap' or '4WayMaps'"
+                    raise Exception, "noise method must be either 'dataMap', '4WayMaps' or 'CMBOnly'"
                 
                 # FFT of signal
                 signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
@@ -726,7 +668,7 @@ class MatchedFilter(MapFilter):
                 fftSignal=fftTools.fftFromLiteMap(signalMap)
                 
                 # Toby style -note smoothing noise is essential!
-                filt=1.0/NP.powerMap      
+                filt=1.0/NP.powerMap  
                 med=np.median(filt)
                 filt[np.where(filt>10*med)]=med
                 kernelSize=(5,5)

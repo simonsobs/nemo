@@ -703,6 +703,12 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         IPython.embed()
         sys.exit()        
     
+    # Apply a ready-made point source and in-paint - added Feb 2018 (should then remove other stuff above)
+    # This only reduced bright edges around masked regions... which is nice, but not essential
+    # May allow us to use smaller holes in PS mask though
+    #smoothedMap=ndimage.median_filter(data, 13) # size chosen for typical hole size... slow... but quite good
+    #data[np.where(psMask == 0)]=smoothedMap[np.where(psMask == 0)]
+    
     # Add the map data to the dict
     mapDict['data']=data
     mapDict['weights']=weights
