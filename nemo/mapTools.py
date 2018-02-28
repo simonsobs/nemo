@@ -94,7 +94,7 @@ def makeTileDeck(parDict):
                     extNames.append(ext.name)
             else:
                 for ext in img:
-                    if ext not in extNames:
+                    if ext.name not in extNames:
                         raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
     else:
         extNames=[]        
