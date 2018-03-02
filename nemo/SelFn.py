@@ -12,7 +12,7 @@ import IPython
 import astropy.table as atpy
 from astLib import *
 import pylab as plt
-import pyfits
+import astropy.io.fits as pyfits
 from scipy import interpolate
 from scipy import stats
 from astLib import *

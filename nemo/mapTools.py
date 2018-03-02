@@ -9,7 +9,7 @@ import catalogTools
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
-import pyfits
+import astropy.io.fits as pyfits
 import numpy as np
 import os
 import sys

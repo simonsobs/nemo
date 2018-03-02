@@ -3,7 +3,7 @@
 
 """
 
-import pyfits
+import astropy.io.fits as pyfits
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate

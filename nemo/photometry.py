@@ -3,7 +3,7 @@
 
 """
 
-import pyfits
+import astropy.io.fits as pyfits
 import numpy as np
 import numpy.fft as fft
 from astLib import *

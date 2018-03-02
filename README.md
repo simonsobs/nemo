@@ -28,19 +28,19 @@ version of `actDict.py` - thanks to whoever wrote that back in the day.
 Nemo itself is written in python (2.7.x), and requires the following additional modules to be installed 
 (current versions used by the author are given in brackets, earlier and later versions also probably work):
 
-* pyfits (3.3)
 * numpy (1.11.1)
 * scipy (0.17.1)
 * matplotlib (1.5.2)
-* astLib (0.9+ or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
+* astLib (0.10.x + or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
 * flipper ([ACT collaboration git version](https://github.com/ACTCollaboration/flipper))
 * Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)
-* astropy (1.3)
+* astropy (2.0.4)
 * IPython (2.4.1)
 * Cython (0.24.1)
 
-_Note:_ Switched from `atpy` to `astropy` for handling .fits tables (Feb 2017). Most of the dependencies
-can be installed using `pip`.
+_Note:_ Switched from `atpy` and `pyfits` to `astropy` for handling .fits tables and images. 
+
+Most of the dependencies can be installed using `pip`.
 
 ## Installation
 

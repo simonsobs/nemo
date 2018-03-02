@@ -36,7 +36,7 @@ import catalogTools
 import simsTools
 import plotSettings
 import gnfw
-import pyfits
+import astropy.io.fits as pyfits
 import copy
 import sys
 import glob

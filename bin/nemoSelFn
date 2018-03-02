@@ -27,7 +27,7 @@ from nemo import photometry
 from nemo import plotSettings
 import pickle
 import nemoCython
-import pyfits
+import astropy.io.fits as pyfits
 import time
 import matplotlib.cm as cm
 import matplotlib
