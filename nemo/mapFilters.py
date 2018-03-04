@@ -659,8 +659,13 @@ class MatchedFilter(MapFilter):
                     highPassMap=mapTools.subtractBackground(maskedData, self.wcs, 0.25/60.0)
                     whiteNoiseLevel=np.std(highPassMap)
                     NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
+                elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
+                    print "... taking noise power for filter from map and adding noise power from model CMB power spectrum ..."
+                    NP=fftTools.powerFromFFT(fMaskedMap)
+                    NPCMB=self.makeForegroundsPower(mapDict['obsFreqGHz'], 0.0)
+                    NP.powerMap=np.maximum.reduce([NP.powerMap, NPCMB.powerMap])
                 else:
-                    raise Exception, "noise method must be either 'dataMap', '4WayMaps' or 'CMBOnly'"
+                    raise Exception, "noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'"
                 
                 # FFT of signal
                 signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])

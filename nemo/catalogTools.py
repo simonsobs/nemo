@@ -139,12 +139,7 @@ def mergeCatalogs(imageDict):
                     if key in c.keys():
                         newObj[key]=[c[key]]
                 mergedCatalog.append(newObj)
-                
-    # Add a flag to each object indicating how many filtered maps it was identified in
-    for obj in mergedCatalog:
-        if 'template' in obj.keys():
-            obj['fractionMapsDetected']=float(len(obj['template']))/float(len(templates))
-        
+                        
     imageDict['mergedCatalog']=mergedCatalog
         
 #------------------------------------------------------------------------------------------------------------
@@ -197,22 +192,14 @@ def makeOptimalCatalog(imageDict, constraintsList):
                     for key in wantedKeys:
                         if key in c.keys():
                             bestMatch[key]=c[key]
-                    bestMatch['fractionMapsDetected']=bestMatch['fractionMapsDetected']+1.0
-                else:
-                    bestMatch['fractionMapsDetected']=bestMatch['fractionMapsDetected']+1.0
             else:
                 # Must be an object not already in list
                 newObj={}
                 for key in wantedKeys:
                     if key in c.keys():
                         newObj[key]=c[key]
-                newObj['fractionMapsDetected']=1.0  # We'll turn this into a fraction after done matching
                 mergedCatalog.append(newObj)
-                
-    # Add a flag to each object indicating how many filtered maps it was identified in
-    for obj in mergedCatalog:
-        obj['fractionMapsDetected']=obj['fractionMapsDetected']/float(len(templates))
-    
+                    
     # Now cut...
     mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList) 
     

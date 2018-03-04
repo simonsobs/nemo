@@ -164,7 +164,7 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
     a filter used to measure properties for all objects at fixed scale).
     
     """
-    
+            
     print ">>> Getting %sSNR values ..." % (prefix)
     
     # Do search on each filtered map separately
@@ -177,11 +177,12 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
         else:
             templateKey=None
             for k in imageDict['mapKeys']:
-                if k.split("#")[0] == template:
+                # Match the reference filter name and the extName
+                if k.split("#")[0] == template and k.split("#")[-1] == key.split("#")[-1]:
                     templateKey=k
             if templateKey == None:
                 raise Exception, "didn't find templateKey"
-            
+        
         if SNMap == 'file':
             img=pyfits.open(imageDict[templateKey]['SNMap'])
             wcs=astWCS.WCS(imageDict[templateKey]['SNMap'])
@@ -251,9 +252,9 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 
         mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
         
-        mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
-                                                        np.arange(mapData.shape[1]), 
-                                                        mapData, kx = 1, ky = 1) 
+        #mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
+                                                        #np.arange(mapData.shape[1]), 
+                                                        #mapData, kx = 1, ky = 1) 
         
         # Add fixed filter scale maps
         mapDataList=[mapData]
@@ -301,53 +302,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                         print "add photometry.measureFluxes() Jy/beam photometry"
                         IPython.embed()
                         sys.exit()
-        
-#------------------------------------------------------------------------------------------------------------ 
-def measureApertureFluxes(catalog, apertureRadiusArcmin, mapData, wcs, fluxCorrectionFactor, numBackgrounds = 10, 
-                          maxBackgroundSepArcmin = 30.0, minBackgroundSepArcmin = 10.0,
-                          allowOverlappingBackgrounds = True):
-   """This is now doing the 'aperture-flux-of-signal-template-multiplied-by-norm-from-central-pixel thing.
-   We assume here we already have SNR (we can use this and peak flux to estimate statistical uncertainty).
-    
-   Also measure delta T here, so should rename this
-   """
-
-   mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
-                                                    np.arange(mapData.shape[1]), 
-                                                    mapData, kx = 1, ky = 1)                                                    
-    
-   for obj in catalog:
-
-        # y_c, delta T c - assuming 148 GHz here
-        yc=mapInterpolator(obj['y'], obj['x'])[0][0]
-        deltaT=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
-        obj['y_c']=yc
-        obj['deltaT_c']=deltaT
-        
-        #if obj['name'] == 'ACT-CL J0059.1-0049':
-            #print "WARNING: check in MatchedFilter code about normalisation of signalMap"
-            #print "Here, check y_c stuff - make it y0 ish like Hass"
-            #IPython.embed()
-            #sys.exit()
-            # y0 in Hasselfield_upp .fits table is corrected y0, i.e., NOT y0~
-            # y0 = y0~ / (Q*fRel)
-            # So, e.g., mapTools.convertToY(-336)/0.53 where -336 is deltaT0_fixed in Hass catalogue, reproduces y0
-            #(obj['y_c']*Q)/1e-4
-        
-        # Integrated Y, summed flux in aperture method (works in white noise case)
-        fluxArcmin2=objectFluxInAperture(obj, apertureRadiusArcmin, mapData, wcs, fluxCorrectionFactor)
-        
-        # Integrated Y, integrate profile method - insert it here, then comment out above
-        
-        # Error is a fudge, and wrong no doubt
-        fluxErrArcmin2=fluxArcmin2/obj['SNR']
-        
-        # Add stuff to catalog
-        obj['flux_arcmin2']=fluxArcmin2
-        obj['fluxErr_arcmin2']=fluxErrArcmin2
-        obj['fluxStatus']="Okay"
-        obj['fluxRadius_arcmin']=apertureRadiusArcmin    
-        
+                
 #------------------------------------------------------------------------------------------------------------
 def getRadialDistanceMap(objDict, data, wcs):
     """Returns an array of same dimensions as data but containing radial distance to the object specified
@@ -384,65 +339,6 @@ def getPixelsDistanceMap(objDict, data):
     rRange=np.sqrt(xRange**2+yRange**2)       
 
     return rRange
-
-#------------------------------------------------------------------------------------------------------------ 
-def objectFluxInAperture(objDict, apertureRadiusArcmin, mapData, wcs, fluxCorrectionFactor = 1.0):
-    """This routine simply sums the flux at the position of the objDict in the map, without doing
-    any kind of background subtraction. Returned flux is in arcmin2.
-                
-    """
-                
-    # Clip out region big enough to contain object + background
-    # This can handle objects near map edges
-    ra0=objDict['RADeg']
-    dec0=objDict['decDeg']
-    x, y=wcs.wcs2pix(ra0, dec0)
-    ra1, dec1=wcs.pix2wcs(x+1, y+1)    
-    xLocalDegPerPix=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
-    yLocalDegPerPix=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
-    arcmin2PerPix=xLocalDegPerPix*yLocalDegPerPix*60.0**2
-    clipSizeDeg=(apertureRadiusArcmin/60.0)*3
-    xClipSizePix=int(round(clipSizeDeg/xLocalDegPerPix))
-    yClipSizePix=int(round(clipSizeDeg/yLocalDegPerPix))
-    left=int(round(x-xClipSizePix/2))
-    right=int(round(x+xClipSizePix/2))
-    top=int(round(y+yClipSizePix/2))
-    bottom=int(round(y-yClipSizePix/2))
-    yCorrection=0
-    xCorrection=0
-    if bottom < 0:
-        yCorrection=bottom
-        bottom=0
-    if top > mapData.shape[0]:
-        yCorrection=top-mapData.shape[0]
-        top=mapData.shape[0]
-    if left < 0:
-        xCorrection=left
-        left=0
-    if right > mapData.shape[1]:
-        xCorrection=right-mapData.shape[1]
-        right=mapData.shape[1]
-    data=mapData[bottom:top, left:right]
-    if xCorrection < 0:
-        x=xClipSizePix/2+xCorrection
-    else:
-        x=data.shape[1]-(xClipSizePix/2-xCorrection)
-    if yCorrection < 0:
-        y=yClipSizePix/2+yCorrection
-    else:
-        y=data.shape[0]-(yClipSizePix/2-yCorrection)
-    xPix=np.array([np.arange(0, data.shape[1], dtype=float)]*data.shape[0])-x
-    yPix=(np.array([np.arange(0, data.shape[0], dtype=float)]*data.shape[1])-y).transpose()
-    xDeg=xPix*xLocalDegPerPix
-    yDeg=yPix*yLocalDegPerPix
-    rDeg=np.sqrt(xDeg**2+yDeg**2)  
-    
-    # Note flux correction factor in below
-    fluxMask=np.less(rDeg, apertureRadiusArcmin/60.0)
-    fluxPixels=data[fluxMask]
-    flux_arcmin2=np.sum(fluxPixels)*arcmin2PerPix*fluxCorrectionFactor
-        
-    return flux_arcmin2
 
 #------------------------------------------------------------------------------------------------------------
 def makeAnnulus(innerScalePix, outerScalePix):

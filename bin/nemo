@@ -119,7 +119,7 @@ else:
         catalogTools.writeCatalog(imageDict['optimalCatalog'], optimalCatalogFileName, \
                                   catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
                                   headings = True)
-        addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fractionMapsDetected', 'fmt': '%.2f'}]
+        addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fixed_SNR', 'fmt': '%.1f'}]
         catalogTools.catalog2DS9(imageDict['optimalCatalog'], \
                                  optimalCatalogFileName.replace(".csv", ".reg"), \
                                  constraintsList = ["SNR > 0.0"], \
