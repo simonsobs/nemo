@@ -8,6 +8,8 @@ For any routine that makes a plot using matplotlib, call plotSettings.update_rcP
 """
 
 import pylab as plt
+import matplotlib as mpl
+from cycler import cycler
 
 #------------------------------------------------------------------------------------------------------------
 def update_rcParams(dict={}):
@@ -37,5 +39,9 @@ def update_rcParams(dict={}):
     # defined
     for key in dict:
         plt.rcParams[key] = dict[key]
+
+    # From https://github.com/mhasself/rg_friendly
+    plt.rcParams['axes.prop_cycle']=cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
+
 
 
