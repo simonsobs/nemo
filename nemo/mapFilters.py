@@ -660,7 +660,7 @@ class MatchedFilter(MapFilter):
                     whiteNoiseLevel=np.std(highPassMap)
                     NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
                 elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
-                    print "... taking noise power for filter from map and adding noise power from model CMB power spectrum ..."
+                    print "... taking noise power from max(map noise power, model CMB power spectrum) ..."
                     NP=fftTools.powerFromFFT(fMaskedMap)
                     NPCMB=self.makeForegroundsPower(mapDict['obsFreqGHz'], 0.0)
                     NP.powerMap=np.maximum.reduce([NP.powerMap, NPCMB.powerMap])

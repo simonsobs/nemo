@@ -27,6 +27,17 @@ else:
         parDict=actDict.ACTDict()
         parDict.read_from_file(parDictFileName)
 
+        MPIEnabled=parDict['useMPI']
+        if MPIEnabled == True:
+            from mpi4py import MPI
+            comm=MPI.COMM_WORLD
+            size=comm.Get_size()
+            rank=comm.Get_rank()
+            if size == 1:
+                raise Exception, "if you want to use MPI, run with e.g., mpirun --np 4 nemo ..."
+        else:
+            rank=0
+            
         # Output dirs
         if 'outputDir' in parDict.keys():
             rootOutDir=parDict['outDir']
@@ -38,14 +49,23 @@ else:
         filtersDir=rootOutDir+os.path.sep+"filters"
         diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
         dirList=[rootOutDir, filteredMapsDir, filtersDir]
-        for d in dirList:
-            if os.path.exists(d) == False:
-                os.makedirs(d)
+        if rank == 0:
+            for d in dirList:
+                if os.path.exists(d) == False:
+                    os.makedirs(d)
         
         # tileDeck file handling - either make one, or handle loading of one
-        # If we don't want to use a tileDeck file (settings not given in .par file)
-        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
-        
+        # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+        if rank == 0:
+            unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+            madeTileDeck=True
+        else:
+            madeTileDeck=None
+        if MPIEnabled == True:
+            madeTileDeck=comm.bcast(madeTileDeck, root = 0)
+            if rank != 0 and madeTileDeck == True:
+                unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+            
         # For when we want to test on only a subset of tiles
         if 'extNameList' in parDict.keys():
             newList=[]
@@ -55,7 +75,20 @@ else:
             if newList == []:
                 raise Exception, "extNameList given in .par file but no extensions in images match"
             extNames=newList
-      
+        
+        # MPI: just divide up tiles pointed at by extNames among processes
+        if MPIEnabled == True:
+            numTilesPerNode=len(extNames)/size
+            startIndex=numTilesPerNode*rank
+            if rank == size-1:
+                endIndex=len(extNames)
+            else:
+                endIndex=numTilesPerNode*(rank+1)
+        else:
+            startIndex=0
+            endIndex=len(extNames)
+        extNames=extNames[startIndex:endIndex]
+        
         # Filter maps
         imageDict=mapTools.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
         
@@ -71,12 +104,14 @@ else:
         catalogTools.mergeCatalogs(imageDict)
         catalogTools.makeOptimalCatalog(imageDict, parDict['catalogCuts'])
         
-        # Estimate of contamination from running cluster finding over inverted map (this takes no time really)
-        # Makes a plot and we write a .fits table under diagnostics dir
-        contaminationTabDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
-                                                                          parDict['minObjPix'], parDict['rejectBorder'], 
-                                                                          parDict['catalogCuts'], parDict['photometryOptions'],
-                                                                          diagnosticsDir, findCenterOfMass = parDict['findCenterOfMass'])        
+        # Estimate of contamination from running cluster finding over inverted map
+        if 'estimateContaminationFromInvertedMaps' in parDict.keys() and parDict['estimateContaminationFromInvertedMaps'] == True:
+            contaminationTabDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
+                                                                                 parDict['minObjPix'], parDict['rejectBorder'], 
+                                                                                 parDict['catalogCuts'], parDict['photometryOptions'],
+                                                                                 diagnosticsDir, findCenterOfMass = parDict['findCenterOfMass'])
+        else:
+            contaminationTabDict={}
           
         # Estimate of contamination by generating a fake sky with noise, and running detection algorithm over it
         # Ultimately we want this and the above ^^^ to appear on the same plot for comparison
@@ -90,8 +125,8 @@ else:
         # Plot contamination together
         for k in skySimContaminationTabDict.keys():
             contaminationTabDict[k]=skySimContaminationTabDict[k]
-        simsTools.plotContamination(contaminationTabDict, diagnosticsDir)
-        
+        if contaminationTabDict != {}:
+            simsTools.plotContamination(contaminationTabDict, diagnosticsDir)
 
         # Sims based on inserting fake cluster profiles into the maps
         if 'fakeSourceSimOptions' in parDict.keys():
@@ -114,13 +149,28 @@ else:
             outKeys=outKeys+['inputSim_flux_arcmin2', 'inputSim_RvirMpc', 'inputSim_Mvir']
             outFormats=outFormats+['%.3e', '%.3f', '%.3f']
 
+        # MPI: gather together and merge all of the catalogs from each process
+        if MPIEnabled == True:
+            optimalCatalogList=comm.gather(imageDict['optimalCatalog'], root = 0)
+            if rank != 0:
+                assert optimalCatalogList is None
+                print "... MPI rank %d finished ..." % (rank)
+                sys.exit()
+            else:
+                print "... gathering catalogs ..."
+                optimalCatalog=[]
+                for cat in optimalCatalogList:
+                    optimalCatalog=optimalCatalog+cat
+        else:
+            optimalCatalog=imageDict['optimalCatalog']
+            
         # Basic merged/optimal catalog
         optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(rootOutDir)[-1])           
-        catalogTools.writeCatalog(imageDict['optimalCatalog'], optimalCatalogFileName, \
+        catalogTools.writeCatalog(optimalCatalog, optimalCatalogFileName, \
                                   catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
                                   headings = True)
         addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fixed_SNR', 'fmt': '%.1f'}]
-        catalogTools.catalog2DS9(imageDict['optimalCatalog'], \
+        catalogTools.catalog2DS9(optimalCatalog, \
                                  optimalCatalogFileName.replace(".csv", ".reg"), \
                                  constraintsList = ["SNR > 0.0"], \
                                  addInfo = addInfo, color = "cyan") 

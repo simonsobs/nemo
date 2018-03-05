@@ -78,7 +78,7 @@ def makeTileDeck(parDict):
     Returns unfilteredMapsDictList [input for filterMaps], list of extension names
     
     """
-            
+    
     if 'makeTileDeck' not in parDict.keys():
         parDict['makeTileDeck']=False
 
