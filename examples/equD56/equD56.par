@@ -6,26 +6,27 @@
 # use it for detection if wanted (to do this, don't include 219 in mapCombination)
 # NOTE: surveyMask is optional
 unfilteredMaps = [\
-                 {'mapFileName': "weightedMap_4.fits", \
-                  'weightsFileName': "weightedInvVar_4.fits", \
+                 {'mapFileName': "weightedMap_4.fits.gz", \
+                  'weightsFileName': "weightedInvVar_4.fits.gz", \
                   'obsFreqGHz': 148.0, 'units': 'uK', \
                   'beamFileName': "profiles_ACT/profile_AR1_2009_pixwin_130224.txt", \
                   'addNoise': None, \
                   'RADecSection': None, \
-                  'pointSourceMask': 'pointSourceMask.fits.gz', \
-                  'surveyMask': 'surveyMask.fits.gz'} \
+                  'pointSourceMask': 'surveyAndPointSourceMask/pointSourceMask.fits', \
+                  'surveyMask': 'surveyAndPointSourceMask/surveyMask.fits'} \
 ]
 
-# MPI? Used only by nemoSelFn for now
+# MPI? Used by nemo (on tileDeck files only) and nemoSelFn
 useMPI = False
 
 # Detection/catalog options
 thresholdSigma = 4.0
 minObjPix = 1
 rejectBorder = 0
+findCenterOfMass = True
 objIdent = 'ACT-CL'
 longNames = False
-catalogCuts=['SNR > 4.0']#, 'fractionMapsDetected > 0.5']#, 'decDeg > -1.4', 'decDeg < 1.5']
+catalogCuts=['SNR > 4.0']
 
 # Photometry options
 # use photFilter to choose which filter to include in the catalog as fixed filter scale measurement (fixed_delta_T_c, fixed_y_c etc.) 
@@ -54,163 +55,137 @@ selFnOptions = {'fixed_SNR_cut': 5.0, 'maxPositionsPerSquare': 80, 'makeMLimitMa
 # Filter definitions
 # NOTE: Arnaud_M5p5e14_z0p2 gives theta500 = 5.9', for comparison with H13
 mapFilters = [\
-                {'label': "Arnaud_M5p5e14_z0p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
-                 'params': {'M500MSun': 5.5e14, 'z': 0.2, \
-                            'noiseParams': {'method': "dataMap", \
-                                            'matchedFilterClass': 'ArnaudModelMatchedFilter', \
-                                            'RADecSection': [32.3, 38.2, -7.5, -2.5], \
-                                            'kernelMaxArcmin': 7.0, \
-                                            'noiseGridArcmin': 20., \
-                                            'saveHighPassMap': True, \
-                                            'saveRMSMap': True}, \
-                            'bckSub': True, \
-                            'outputUnits': 'yc', \
-                            'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}} \
-                }, \
+               {'label': "Arnaud_M5p5e14_z0p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
+                'params': {'M500MSun': 5.5e14, 'z': 0.2, \
+                           'noiseParams': {'method': "dataMap", \
+                                           'matchedFilterClass': 'ArnaudModelMatchedFilter', \
+                                           'RADecSection': [32.3, 38.2, -7.5, -2.5], \
+                                           'kernelMaxArcmin': 7.0, \
+                                           'noiseGridArcmin': 20., 'symmetrize': True, \
+                                           'saveHighPassMap': True, \
+                                           'saveRMSMap': True}, \
+                           'bckSub': True, \
+                           'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M1e14_z0p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 1e14, 'z': 0.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M2e14_z0p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 2e14, 'z': 0.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M4e14_z0p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 4e14, 'z': 0.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M8e14_z0p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 8e14, 'z': 0.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \        
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M1e14_z0p4", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 1e14, 'z': 0.4, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M2e14_z0p4", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 2e14, 'z': 0.4, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'saveRMSMap': True}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True, 'saveRMSMap': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M4e14_z0p4", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 4e14, 'z': 0.4, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M8e14_z0p4", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 8e14, 'z': 0.4, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \                             
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M1e14_z0p6", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 1e14, 'z': 0.6, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M2e14_z0p6", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 2e14, 'z': 0.6, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M4e14_z0p6", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 4e14, 'z': 0.6, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M8e14_z0p6", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 8e14, 'z': 0.6, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \                                 
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M1e14_z0p8", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 1e14, 'z': 0.8, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M2e14_z0p8", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 2e14, 'z': 0.8, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M4e14_z0p8", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 4e14, 'z': 0.8, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M8e14_z0p8", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 8e14, 'z': 0.8, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \   
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M1e14_z1p0", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 1e14, 'z': 1.0, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M2e14_z1p0", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 2e14, 'z': 1.0, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M4e14_z1p0", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 4e14, 'z': 1.0, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M8e14_z1p0", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 8e14, 'z': 1.0, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M1e14_z1p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 1e14, 'z': 1.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M2e14_z1p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 2e14, 'z': 1.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M4e14_z1p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 4e14, 'z': 1.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \
+                          'outputUnits': 'yc'}}, \
                {'label': "Arnaud_M8e14_z1p2", 'class': "ArnaudModelRealSpaceMatchedFilter", \
                'params': {'M500MSun': 8e14, 'z': 1.2, \
-                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20.}, \
+                          'noiseParams': {'method': "dataMap", 'matchedFilterClass': 'ArnaudModelMatchedFilter','RADecSection':[32.3, 38.2, -7.5, -2.5], 'kernelMaxArcmin': 7.0,  'noiseGridArcmin': 20., 'symmetrize': True}, \
                           'bckSub': True, \
-                          'outputUnits': 'yc', \
-                          'mapCombination': {'148': 1.0, 'rootFreqGHz': 148.0}}}, \                                 
+                          'outputUnits': 'yc'}}, \
 ]
 
 # These used for comparing simulations against input

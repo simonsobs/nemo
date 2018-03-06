@@ -1471,123 +1471,149 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
     parDict['unfilteredMaps'].
     
     """
+
+    # Spin through the filter kernels
+    photFilterLabel=parDict['photometryOptions']['photFilter']
+    filterList=parDict['mapFilters']
+    for f in filterList:
+        if f['label'] == photFilterLabel:
+            ref=f
+                
+    # NOTE: adjusted for tileDeck files - build list of available extension names
+    fileList=glob.glob(filteredMapsDir+os.path.sep+photFilterLabel+"*_SNMap.fits")
+    extNames=[]
+    for f in fileList:
+        extNames.append(f.split("#")[-1].split("_SNMap")[0])
+
+    # M, z ranges for Q calc
+    # NOTE: ref filter that sets scale we compare to must ALWAYS come first
+    MRange=[ref['params']['M500MSun']]
+    zRange=[ref['params']['z']]
+    MRange=MRange+np.logspace(13.5, 16.0, 10).tolist()
+    zRange=zRange+np.arange(0.1, 1.7, 0.2).tolist()
     
-    outFileName=diagnosticsDir+os.path.sep+"QFit.fits"
-    
+    # Q calc - results for all tiles stored in one file
+    outFileName=diagnosticsDir+os.path.sep+"QFit.pickle"
+    QTabDict={}
     if os.path.exists(outFileName) == False:
+        
         print ">>> Fitting for Q ..."
         
-        # Spin through the filter kernels
-        photFilterLabel=parDict['photometryOptions']['photFilter']
-        filterList=parDict['mapFilters']
-        for f in filterList:
-            if f['label'] == photFilterLabel:
-                ref=f
-        
-        # We need to adjust all of this to use multiple frequencies
-        # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that
-        if len(parDict['unfilteredMaps']) > 1:
-            raise Exception, "multi-frequency Q fit not implemented yet"
-        
-        # Need the beam - this assumes we are single frequency only
-        beamFileName=parDict['unfilteredMaps'][0]['beamFileName']
-        
-        # NOTE: adjusted for tileDeck files - build list of available extension names
-        fileList=glob.glob(filteredMapsDir+os.path.sep+photFilterLabel+"*_SNMap.fits")
-        extNames=[]
-        for f in fileList:
-            extNames.append(f.split("#")[-1].split("_SNMap")[0])
-        # For now, just use the first one... we may need to check if we need to do for each (doubt it though)
-        extName=extNames[0]
+        # Do each tile in turn
+        # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that at some point...
+        for extName in extNames:        
+            
+            print "... %s ..." % (extName)
+            
+            # Some faffing to get map pixel scale        
+            img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
+            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            RADeg, decDeg=wcs.getCentreWCSCoords()
+            clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 1.0)
+            wcs=clipDict['wcs']
+            
+            # Input signal maps to which we will apply filter(s)
+            # We don't actually care about freq here because we deal with pressure profile itself
+            # And Q measurement is relative 
+            theta500Arcmin=[]
+            signalMapDict={}
+            signalMap=np.zeros(clipDict['data'].shape)
+            degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 1.0)
+            for z in zRange:
+                for M500MSun in MRange:
+                    key='%.2f_%.2f' % (z, np.log10(M500MSun))
+                    modelDict=makeArnaudModelProfile(z, M500MSun, 148.0)   
+                    rDeg=modelDict['rDeg']
+                    profile1d=interpolate.splev(rDeg, modelDict['tckP'])
+                    r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+                    signalMap=r2p(degreesMap)
+                    # NOTE: missing a beam convolution here?
+                    signalMapDict[key]=signalMap
+                    theta500Arcmin.append(modelDict['theta500Arcmin'])
+            theta500Arcmin=np.array(theta500Arcmin)
 
-        # Some faffing to get map pixel scale        
-        img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
-        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-        RADeg, decDeg=wcs.getCentreWCSCoords()
-        clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 1.0)
-        wcs=clipDict['wcs']
-
-        # Ref kernel
-        # NOTE: adjusted for tileDeck files, and we have the RA, dec footprint info to deal with too
-        kernImg=pyfits.open(glob.glob(diagnosticsDir+os.path.sep+"kern2d_%s#%s*.fits" % (photFilterLabel, extName))[0])
-        kern2d=kernImg[0].data
-
-        # Blank map - to make Q calc more accurate, use finer pixel scale
-        signalMap=np.zeros(clipDict['data'].shape)
-        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 1.0)
-
-        # M, z ranges for Q calc
-        # NOTE: ref filter that sets scale we compare to must ALWAYS come first
-        MRange=[ref['params']['M500MSun']]
-        zRange=[ref['params']['z']]
-        MRange=MRange+np.logspace(13.5, 16.0, 10).tolist()
-        zRange=zRange+np.arange(0.1, 1.7, 0.2).tolist()
-
-        # Make signal only maps and filter them with the ref kernel
-        t0=time.time()
-        Q=[]
-        theta500Arcmin=[]
-        for z in zRange:
-            for M500MSun in MRange:
-                # We don't actually care about freq here because we deal with pressure profile itself
-                # And Q measurement is relative 
-                modelDict=makeArnaudModelProfile(z, M500MSun, 148.0)   
-                rDeg=modelDict['rDeg']
-                profile1d=interpolate.splev(rDeg, modelDict['tckP'])
-                r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-                signalMap=r2p(degreesMap)
-                # Apply high-pass then convolve (high-pass effect seems negligible)
-                signalMap=mapTools.subtractBackground(signalMap, wcs, smoothScaleDeg = kernImg[0].header['BCKSCALE']/60.)
-                filteredSignal=ndimage.convolve(signalMap, kern2d) 
-                Q.append(filteredSignal.max())
-                theta500Arcmin.append(modelDict['theta500Arcmin'])
-        Q=np.array(Q)
-        Q=Q/Q[0]
-        theta500Arcmin=np.array(theta500Arcmin)
-        t1=time.time()
+            # Set-up the beams and kernels
+            # NOTE: adjusted for tileDeck files, and we have the RA, dec footprint info to deal with too
+            beamsDict={}
+            kernsDict={}
+            for mapDict in parDict['unfilteredMaps']:
+                obsFreqGHz=mapDict['obsFreqGHz']
+                beamsDict[obsFreqGHz]=mapDict['beamFileName']
+                kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s#%s_%d.fits" % (photFilterLabel, extName, mapDict['obsFreqGHz']))
+                kern2d=kernImg[0].data
+                kernsDict[obsFreqGHz]={'kern2d': kern2d, 'header': kernImg[0].header}
+            
+            # Filter maps with the ref kernel(s)
+            Q=[]
+            for z in zRange:
+                for M500MSun in MRange:
+                    key='%.2f_%.2f' % (z, np.log10(M500MSun))
+                    peakFilteredSignals=[]  # effectively, already in yc
+                    for obsFreqGHz in kernsDict.keys():
+                        signalMap=np.zeros(signalMapDict[key].shape)+signalMapDict[key]
+                        signalMap=mapTools.subtractBackground(signalMap, wcs, 
+                                                              smoothScaleDeg = kernsDict[obsFreqGHz]['header']['BCKSCALE']/60.)
+                        filteredSignal=ndimage.convolve(signalMap, kernsDict[obsFreqGHz]['kern2d'])
+                        peakFilteredSignals.append(filteredSignal.max()*kernsDict[obsFreqGHz]['header']['SIGNORM'])
+                    Q.append(np.mean(peakFilteredSignals))  # no noise, so straight average            
+            Q=np.array(Q)
+            Q=Q/Q[0]
+            
+            # Sort and do spline fit... save .fits table of theta, Q
+            QTab=atpy.Table()
+            QTab.add_column(atpy.Column(Q, 'Q'))
+            QTab.add_column(atpy.Column(theta500Arcmin, 'theta500Arcmin'))
+            QTab.sort('theta500Arcmin')
+            QTabDict[extName]=QTab
+            
+            # Fit with spline
+            tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
+            
+            # Plot
+            plotSettings.update_rcParams()
+            #fontSize=18.0
+            #fontDict={'size': fontSize, 'family': 'serif'}
+            plt.figure(figsize=(9,6.5))
+            ax=plt.axes([0.10, 0.11, 0.88, 0.88])
+            #plt.tick_params(axis='both', which='major', labelsize=15)
+            #plt.tick_params(axis='both', which='minor', labelsize=15)       
+            thetaArr=np.linspace(0, 30, 300)
+            #plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
+            plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
+            plt.plot(theta500Arcmin, Q, 'D', ms = 8)
+            #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
+            #plt.xlim(0, 9)
+            plt.ylim(0, Q.max()*1.05)
+            plt.xlim(0, thetaArr.max())
+            plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
+            plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
+            plt.savefig(diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
+            plt.close()
         
-        # Sort and do spline fit... save .fits table of theta, Q
-        QTab=atpy.Table()
-        QTab.add_column(atpy.Column(Q, 'Q'))
-        QTab.add_column(atpy.Column(theta500Arcmin, 'theta500Arcmin'))
-        QTab.sort('theta500Arcmin')
-        if os.path.exists(outFileName) == True:
-            os.remove(outFileName)
-        QTab.write(outFileName)
-        
-        # Fit with spline
-        #coeffs=np.polyfit(theta500Arcmin, Q, 16)
-        tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
-        
-        # Plot
-        plotSettings.update_rcParams()
-        #fontSize=18.0
-        #fontDict={'size': fontSize, 'family': 'serif'}
-        plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.10, 0.11, 0.88, 0.88])
-        #plt.tick_params(axis='both', which='major', labelsize=15)
-        #plt.tick_params(axis='both', which='minor', labelsize=15)       
-        thetaArr=np.linspace(0, 30, 300)
-        #plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
-        plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
-        plt.plot(theta500Arcmin, Q, 'D', ms = 8)
-        #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
-        #plt.xlim(0, 9)
-        plt.ylim(0, Q.max()*1.05)
-        plt.xlim(0, thetaArr.max())
-        plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
-        plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
-        plt.savefig(diagnosticsDir+os.path.sep+"QFit.pdf")
-        plt.close()
+        # Save all the Q fits
+        pickleFile=file(outFileName, "wb")
+        pickler=pickle.Pickler(pickleFile)
+        pickler.dump(QTabDict)
+        pickleFile.close()
     
     else:
         
         print ">>> Loading previously cached Q fit ..."
+        pickleFile=file(outFileName, "rb")
+        unpickler=pickle.Unpickler(pickleFile)
+        QTabDict=unpickler.load()
+        pickleFile.close()
+ 
+        # Old
         #coeffs=np.load(outFileName)
-        QTab=atpy.Table().read(outFileName)
-        tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
+        #QTab=atpy.Table().read(outFileName)
+        #tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
+        
+    tckDict={}
+    for key in QTabDict:
+        tckDict[key]=interpolate.splrep(QTabDict[key]['theta500Arcmin'], QTabDict[key]['Q'])
     
-    return tck
+    return tckDict
 
 #------------------------------------------------------------------------------------------------------------
 def calcQ(theta500Arcmin, tck):

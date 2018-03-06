@@ -74,7 +74,8 @@ else:
                 if k[-2:] == '_2':
                     colsToRemove.append(k)
             tab.remove_columns(colsToRemove)
-            colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr']
+            # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
+            colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
             for k in colsToKeep:
                 if k+"_1" in tab.keys():
                     tab.rename_column(k+"_1", k)
@@ -115,7 +116,8 @@ else:
             photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
             
             # Make into an atpy table
-            wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr']
+            # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
+            wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
             catalog=imageDict[photFilterLabel]['catalog']
             tab=atpy.Table()
             for key in wantedKeys:
@@ -144,7 +146,7 @@ else:
             raise Exception, 'H13 option depreciated - need to replace polynomial with spline fit'
             tckQFit=simsTools.getQCoeffsH13()
         elif massOptions['Q'] == 'fit':
-            tckQFit=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+            tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
         else:
             raise Exception, "didn't understand choice of Q function in massOptions"
                     
@@ -210,13 +212,14 @@ else:
         #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q_err"))
         for row in tab:
             print "... %s (%.3f +/- %.3f) ..." % (row['name'], row['redshift'], row['redshiftErr'])
+            extName=row['template'].split("#")[-1]
             massDict=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                               row['redshift'], row['redshiftErr'],
                                               tenToA0 = massOptions['tenToA0'],
                                               B0 = massOptions['B0'], 
                                               Mpivot = massOptions['Mpivot'], 
                                               sigma_int = massOptions['sigma_int'],
-                                              tckQFit = tckQFit, mockSurvey = mockSurvey, 
+                                              tckQFit = tckQFitDict[extName], mockSurvey = mockSurvey, 
                                               applyMFDebiasCorrection = True,
                                               H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0)
             row['M500']=massDict['M500']

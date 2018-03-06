@@ -954,8 +954,8 @@ class RealSpaceMatchedFilter(MapFilter):
         kernWCS.header['SIGNORM']=signalNorm
         RADecLabel=str(RADecSection).replace(",", "_").replace(" ", "").replace("[", "").replace("]", "").replace(".", "p")
         freqLabel=int(mapDict['obsFreqGHz'])
-        astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s_%s_%d.fits" \
-                           % (self.label, RADecLabel, freqLabel), kern2d, kernWCS)
+        astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s_%d.fits" \
+                           % (self.label, freqLabel), kern2d, kernWCS)
         
         # Filter profile plot   
         # Save the stuff we plot first, in case we want to make a plot with multiple filters on later

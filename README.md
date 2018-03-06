@@ -30,7 +30,7 @@ Nemo itself is written in python (2.7.x), and requires the following additional 
 
 * numpy (1.11.1)
 * scipy (0.17.1)
-* matplotlib (1.5.2)
+* matplotlib (2.1.0)
 * astLib (0.10.x + or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
 * flipper ([ACT collaboration git version](https://github.com/ACTCollaboration/flipper))
 * Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)

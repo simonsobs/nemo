@@ -39,7 +39,9 @@ class MockSurvey(object):
         areaSr=np.radians(np.sqrt(areaDeg2))**2
                 
         # Globally change hmf's cosmology - at least, according to the docs...
-        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0)
+        # NOTE: for astropy 2.0+ need to actually set Tcmb0 here as it defaults to zero
+        # Here we use the value from Fixsen (2009): http://adsabs.harvard.edu/abs/2009ApJ...707..916F
+        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
         cosmo.Cosmology(cosmo_model = cosmo_model)
         
         self.minMass=minMass
