@@ -86,11 +86,12 @@ else:
             tab.remove_columns(colsToRemove)
         
         elif massOptions['forcedPhotometry'] == True:
-            
-            # We need this to check if objects in the catalog are actually in the footprint
-            areaMaskImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask.fits")
-            areaMask=areaMaskImg[0].data
-            wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
+                        
+            # This is for "easy set-up" below - we just need a list of extNames
+            if 'extNameList' in parDict.keys():
+                extNames=parDict['extNameList']
+            else:
+                raise Exception, "need to add code to scan for extNames in forced photometry mode"
             
             # Filter maps - but should already have been done, this is just for easy set up
             photFilterLabel=parDict['photometryOptions']['photFilter']
@@ -98,36 +99,44 @@ else:
             for filterDict in parDict['mapFilters']:
                 if filterDict['label'] == photFilterLabel:
                     photFilterList.append(filterDict)
-            imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], photFilterList, rootOutDir = rootOutDir)
+            imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], photFilterList, extNames = extNames, rootOutDir = rootOutDir)
             
             # Re-jig the catalog into the appropriate format before feeding through photometry routine
             catalog=[]
-            for row in zTab:
-                objDict={}
-                for key in zTab.keys():
-                    objDict[key]=row[key]
-                objDict['template']=photFilterLabel
-                objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
-                x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
-                if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
-                    if areaMask[int(round(y)), int(round(x))] == 1:
-                        catalog.append(objDict)
-            imageDict[photFilterLabel]['catalog']=catalog
+            for extName in extNames:
+                # We need this to check if objects in the catalog are actually in the footprint
+                areaMaskImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+                areaMask=areaMaskImg[0].data
+                wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
+                for row in zTab:
+                    objDict={}
+                    for key in zTab.keys():
+                        objDict[key]=row[key]
+                    objDict['template']=photFilterLabel+"#"+extName
+                    objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
+                    x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
+                    if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
+                        if areaMask[int(round(y)), int(round(x))] == 1:
+                            objDict['x']=x
+                            objDict['y']=y
+                            catalog.append(objDict)
+            imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
             photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
             
             # Make into an atpy table
             # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
             wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
-            catalog=imageDict[photFilterLabel]['catalog']
             tab=atpy.Table()
-            for key in wantedKeys:
-                arr=[]
-                for objDict in catalog:
-                    if key in objDict.keys():
-                        arr.append(objDict[key])
-                    else:
-                        arr.append(0)
-                tab.add_column(atpy.Column(np.array(arr), key))
+            for extName in extNames:
+                catalog=imageDict[photFilterLabel+"#"+extName]['catalog']
+                for key in wantedKeys:
+                    arr=[]
+                    for objDict in catalog:
+                        if key in objDict.keys():
+                            arr.append(objDict[key])
+                        else:
+                            arr.append(0)
+                    tab.add_column(atpy.Column(np.array(arr), key))
             tab=tab[np.where(tab['redshift'] != 0)]
             
             # Flag things with -ve y0~, which we can't do anything with (unless we add stacking / averaging mode)
