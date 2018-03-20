@@ -4,7 +4,7 @@
 """
 
 from astLib import *
-import numpy
+import numpy as np
 import operator
 import os
 import urllib
@@ -12,6 +12,8 @@ import urllib2
 import sys
 import time
 import astropy.table as atpy
+from astropy.coordinates import SkyCoord
+from astropy.coordinates import match_coordinates_sky
 import IPython
 
 # For adding meta data to output
@@ -114,12 +116,12 @@ def mergeCatalogs(imageDict):
             for m in mergedCatalog:
                 mRAs.append(m['RADeg'])
                 mDecs.append(m['decDeg'])
-            mRAs=numpy.array(mRAs)
-            mDecs=numpy.array(mDecs)
+            mRAs=np.array(mRAs)
+            mDecs=np.array(mDecs)
             if mRAs.shape[0] > 0:
                 rs=astCoords.calcAngSepDeg(cra, cdec, mRAs, mDecs)
                 rMin=rs.min()
-                rMinIndex=numpy.equal(rs, rMin).nonzero()[0][0]
+                rMinIndex=np.equal(rs, rMin).nonzero()[0][0]
                 bestMatch=mergedCatalog[rMinIndex]
             else:
                 bestMatch=None
@@ -269,15 +271,15 @@ def matchCatalogs(catalog1, catalog2, matchKey = 'catalog2Match', xMatchRadiusDe
     for c2 in catalog2:
         c2RAs.append(c2['RADeg'])
         c2Decs.append(c2['decDeg'])
-    c2RAs=numpy.array(c2RAs)
-    c2Decs=numpy.array(c2Decs)
+    c2RAs=np.array(c2RAs)
+    c2Decs=np.array(c2Decs)
     for c1 in catalog1:
         rMin=1e6
         bestMatch=None        
         if c2RAs.shape[0] > 0:
             rs=astCoords.calcAngSepDeg(c1['RADeg'], c1['decDeg'], c2RAs, c2Decs)
             rMin=rs.min()
-            rMinIndex=numpy.equal(rs, rMin).nonzero()[0][0]
+            rMinIndex=np.equal(rs, rMin).nonzero()[0][0]
             if rMin < xMatchRadiusDeg:
                 deltaRA=abs(c1['RADeg']-catalog2[rMinIndex]['RADeg'])
                 deltaDec=abs(c2['decDeg']-catalog2[rMinIndex]['decDeg'])
@@ -297,8 +299,8 @@ def flagCatalogMatches(catalog, flagCatalog, key, matchRadiusDeg = 2.0/60.0):
     for sobj in flagCatalog:
         ras.append(sobj['RADeg'])
         decs.append(sobj['decDeg'])
-    ras=numpy.array(ras)
-    decs=numpy.array(decs)
+    ras=np.array(ras)
+    decs=np.array(decs)
     matchRadiusDeg=2.0/60.0
     for obj in catalog:
         obj[key]=False
@@ -482,16 +484,90 @@ def selectFromCatalog(catalog, constraintsList):
     return passedConstraint
 
 #------------------------------------------------------------------------------------------------------------
+def catalogToTab(catalog, keysToWrite, keyFormats, constraintsList):
+    """Converts a nemo catalog (list of dictionaries) into astropy.table format.
+    
+    constraintsList works as in the selectFromCatalog function.
+
+    Returns astropy.table object
+    
+    """
+    
+    cutCatalog=selectFromCatalog(catalog, constraintsList)                                           
+    availKeys=cutCatalog[0].keys()
+    
+    # Write a .fits version (easier for topcatting)
+    # NOTE: switched to astropy (v1.3) tables interface
+    tab=atpy.Table()
+    for key in keysToWrite:
+        if key in availKeys:
+            arr=[]
+            for obj in cutCatalog:
+                if obj[key] != None:
+                    arr.append(obj[key])
+                else:
+                    arr.append(-99)
+            tab.add_column(atpy.Column(arr, key))
+    
+    return tab
+
+#------------------------------------------------------------------------------------------------------------
+def tabToCatalog(tab):
+    """Converts an astropy.table to a nemo catalog (list of dictionaries).
+
+    Returns catalog
+    
+    """
+    
+    catalog=[]
+    for row in tab:
+        objDict={}
+        for k in tab.keys():
+            objDict[k]=row[k]
+        catalog.append(objDict)
+    
+    return catalog
+
+#------------------------------------------------------------------------------------------------------------
+def writeTab(tab, outFileName):
+    """Writes an astropy.table object to disk. The file format is determined by the extension of outFileName.
+    
+    """
+    
+    if os.path.exists(outFileName) == True:
+        os.remove(outFileName)
+    tab.write(outFileName)
+
+#------------------------------------------------------------------------------------------------------------
+def writeCatalogFromTab(tab, outFileName, keysToWrite, keyFormats, constraintsList, headings = True, 
+                        writeNemoInfo = True, extraHeaderText = None):
+    """Given an astropy.table (rather than a catalog, i.e., list of dictionaries), write a .csv (actually
+    tab-delimited), with meta data at the top, in the style of writeCatalog.
+    
+    This is provided so that the format of the output provided by nemo doesn't change, even though in places
+    we have switched to astropy.table for data storage. We may get rid of this eventually...
+    
+    """
+    
+    catalog=tabToCatalog(tab)
+    writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList, headings = headings,
+                 writeNemoInfo = writeNemoInfo, extraHeaderText = extraHeaderText)
+    
+#------------------------------------------------------------------------------------------------------------
 def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList, headings = True, 
                  writeNemoInfo = True, extraHeaderText = None):
-    """Dumps the merged catalog to a .csv, for now this is only names and object positions.
+    """Dumps the merged catalog to a .csv.
     
     constraintsList works as in the selectFromCatalog function.
     
     NOTE: Now writing a .fits table too.
-        
-    """
     
+    NOTE: Not using this to write final nemo output anymore - as we need to take care of duplicates if 
+    running under MPI with maps that overlap. But this is still used by other routines (e.g., individual
+    catalogs output by the routines in the photometry module).
+    
+    """
+        
     # Cut catalog according to constraints
     cutCatalog=selectFromCatalog(catalog, constraintsList)                                           
     availKeys=cutCatalog[0].keys()
@@ -523,7 +599,7 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
             if k in availKeys:
                 if line != "":
                     line=line+"\t"
-                if type(obj[k]) == list or type(obj[k]) == numpy.ndarray:
+                if type(obj[k]) == list or type(obj[k]) == np.ndarray:
                     if obj[k][0] != None:   # merged cat, just take first item for now
                         line=line+f % (obj[k][0])   
                     else:
@@ -550,22 +626,8 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
     
     # Write a .fits version (easier for topcatting)
     # NOTE: switched to astropy (v1.3) tables interface
-    tab=atpy.Table()
-    for key in keysToWrite:
-        if key in availKeys:
-            arr=[]
-            for obj in cutCatalog:
-                if obj[key] != None:
-                    arr.append(obj[key])
-                else:
-                    arr.append(-99)
-            tab.add_column(atpy.Column(arr, key))
-    #tab.table_name='ACT'
-    fitsOutFileName=outFileName.replace(".csv", ".fits")
-    if os.path.exists(fitsOutFileName) == True:
-        os.remove(fitsOutFileName)
-    tab.write(fitsOutFileName)
-    
+    tab=catalogToTab(catalog, keysToWrite, keyFormats, constraintsList)
+    writeTab(tab, outFileName.replace(".csv", ".fits"))
 
 #------------------------------------------------------------------------------------------------------------
 def readCatalog(fileName):
@@ -627,334 +689,56 @@ def readCatalog(fileName):
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def readFelipeCatalog(fileName):
-    """Reads a Felipe-style catalog.
+def removeDuplicatesFromTab(tab):
+    """Given an astropy.table object, remove duplicate objects - keeping the highest SNR detection for each
+    duplicate. This routine is used to clean up output of MPI runs (where we have overlapping tiles). This
+    method could be applied elsewhere, if we re-did how we handled catalogs everywhere in nemo.
+    
+    Returns table with duplicates removed, number of duplicates found, names of duplicates
     
     """
     
-    inFile=file(fileName, "r")
-    lines=inFile.readlines()
-    inFile.close()
+    # Find all duplicates
+    cat=SkyCoord(ra = tab['RADeg'].data, dec = tab['decDeg'].data, unit = 'deg')
+    xIndices, rDeg, sep3d = match_coordinates_sky(cat, cat, nthneighbor = 2)
+    mask=np.less(rDeg.value, XMATCH_RADIUS_DEG)
+    noDupMask=np.greater_equal(rDeg.value, XMATCH_RADIUS_DEG)
+    dupTab=tab[mask]
+    noDupTab=tab[noDupMask]
     
-    catalog=[]
-    for line in lines:
-        if line[0] != '#' and len(line) > 3:
-            objDict={}
-            bits=line.rstrip("\n").split()
-            objDict['name']=bits[0]
-            objDict['RADeg']=astCoords.hms2decimal(bits[1], ":")
-            objDict['decDeg']=astCoords.dms2decimal(bits[2], ":")
-            catalog.append(objDict)
-            
-    return catalog
+    # All duplicates removed?
+    if mask.sum() == 0:
+        return tab, 0, []
+    
+    # Keep highest SNR of all pairs
+    # NOTE: This is correct, but very slow
+    #keepMask=np.zeros(len(dupTab), dtype = bool)
+    #for i in range(len(dupTab)):
+        #iCoord=SkyCoord(ra = dupTab['RADeg'][i], dec = dupTab['decDeg'][i], unit = 'deg')
+        #bestSNR=dupTab['SNR'][i]
+        #bestIndex=i
+        #for j in range(len(dupTab)):
+            #if i != j:
+                #jCoord=SkyCoord(ra = dupTab['RADeg'][j], dec = dupTab['decDeg'][j], unit = 'deg')
+                #if iCoord.separation(jCoord).value < XMATCH_RADIUS_DEG and dupTab['SNR'][j] > bestSNR:
+                    #bestSNR=dupTab['SNR'][j]
+                    #bestIndex=j
+        #keepMask[bestIndex]=True
+    #keepTab=dupTab[keepMask]
 
-#------------------------------------------------------------------------------------------------------------
-def readTobyLatexCatalog(fileName):
-    """Read LaTeX format catalog like Toby sent for his paper.
+    # Much faster
+    keepMask=np.zeros(len(dupTab), dtype = bool)
+    for i in range(len(dupTab)):
+        # NOTE: astCoords does not like atpy.Columns sometimes...
+        rDeg=astCoords.calcAngSepDeg(dupTab['RADeg'][i], dupTab['decDeg'][i], dupTab['RADeg'].data, dupTab['decDeg'].data)
+        mask=np.less(rDeg, XMATCH_RADIUS_DEG)
+        indices=np.where(mask == True)[0]
+        bestIndex=indices[np.equal(dupTab['SNR'][mask], dupTab['SNR'][mask].max())][0]
+        keepMask[bestIndex]=True
+    keepTab=dupTab[keepMask]
     
-    """
-
-    inFile=file(fileName, 'r')
-    lines=inFile.readlines()
-    inFile.close()
-    objList=[]
-    for line in lines:
-        objDict={}
-        bits=line.split("&")
-        objDict['name']=bits[0].lstrip(" ").rstrip(" ")
-        objDict['RADeg']=astCoords.hms2decimal(bits[1].lstrip(" ").rstrip(" ").replace("$", ""), ":")
-        objDict['decDeg']=astCoords.dms2decimal(bits[2].lstrip(" ").rstrip(" ").replace("$", ""), ":")
-        objDict['SNR']=float(bits[3])
-        objDict['thetaCoreArcmin']=float(bits[4])
-        deltaTString=bits[5].replace("$", "").lstrip(" ").rstrip(" ")
-        deltaTBits=deltaTString.split("\\pm")
-        objDict['deltaT0String']="%d &plusmn; %d" % (int(deltaTBits[0]), int(deltaTBits[1]))
-        objDict['deltaT0']=float(deltaTBits[0])
-        objDict['deltaT0Err']=float(deltaTBits[1])
-        deltaTCorrString=bits[6].replace("$", "").lstrip(" ").rstrip(" ")
-        deltaTCorrBits=deltaTCorrString.split("\\pm")
-        objDict['deltaT0CorrString']="%d &plusmn; %d" % (int(deltaTCorrBits[0]), int(deltaTCorrBits[1]))
-        objDict['deltaT0Corr']=float(deltaTCorrBits[0])
-        objDict['deltaT0CorrErr']=float(deltaTCorrBits[1])
-        y0String=bits[8].replace("$", "").lstrip(" ").rstrip(" ")
-        y0Bits=y0String.split("\\pm")
-        objDict['y0String']="%.2f &plusmn; %.2f" % (float(y0Bits[0]), float(y0Bits[1]))
-        objDict['y0']=float(y0Bits[0])
-        objDict['y0Err']=float(y0Bits[1])
-        objDict['z']=float(bits[10])
-        objDict['altID']=bits[11].replace("\n", "").replace("\\", "").lstrip(" ").rstrip(" ")
-        objList.append(objDict)
-        
-    return objList
-            
-#------------------------------------------------------------------------------------------------------------
-def addNEDInfo(catalog, nedDir = "nedResults"):
-    """Queries NED for matches near each object in the merged catalog, adds the nearest cluster match and 
-    its distance in arcmin. We search a box 10' on a side near each object.
-        
-    """
+    keepTab=atpy.vstack([keepTab, noDupTab])
+    keepTab.sort('RADeg')
     
-    halfMatchBoxLengthDeg=5.0/60.0
-    
-    if os.path.exists(nedDir) == False:
-        os.makedirs(nedDir)
-            
-    for obj in catalog:
-        
-        name=obj['name']
-        RADeg=obj['RADeg']
-        decDeg=obj['decDeg']
-        RAMin=RADeg-halfMatchBoxLengthDeg
-        RAMax=RADeg+halfMatchBoxLengthDeg
-        decMin=decDeg-halfMatchBoxLengthDeg
-        decMax=decDeg+halfMatchBoxLengthDeg
-                
-        outFileName=nedDir+os.path.sep+name.replace(" ", "_")+".txt"        
-        if os.path.exists(outFileName) == False:
-            print "... fetching NED info for %s ..." % (name)
-            try:                
-                urllib.urlretrieve("http://ned.ipac.caltech.edu/cgi-bin/objsearch?search_type=Near+Position+Search&in_csys=Equatorial&in_equinox=J2000.0&lon=%.6fd&lat=%.6fd&radius=%.2f&dot_include=ANY&in_objtypes1=GGroups&in_objtypes1=GClusters&in_objtypes1=QSO&in_objtypes2=Radio&in_objtypes2=SmmS&in_objtypes2=Infrared&in_objtypes2=Xray&nmp_op=ANY&out_csys=Equatorial&out_equinox=J2000.0&obj_sort=RA+or+Longitude&of=ascii_tab&zv_breaker=30000.0&list_limit=5&img_stamp=YES" % (RADeg, decDeg, halfMatchBoxLengthDeg*60.0), filename = outFileName)
-            except:
-                print "WARNING: couldn't get NED info"
-                #IPython.embed()
-                #sys.exit()
-                outFileName=None
-                
-        nedObjs=parseNEDResult(outFileName)
-        
-        # Flag matches against clusters - choose nearest one
-        rMin=10000
-        crossMatchRadiusDeg=2.5/60.0
-        clusterMatch={}
-        if len(nedObjs['RAs']) > 0:
-            obj['NED_allClusterMatches']=[]
-            for i in range(len(nedObjs['RAs'])):
-                ned=nedObjs
-                if ned['sourceTypes'][i] == 'GClstr':
-                    r=astCoords.calcAngSepDeg(ned['RAs'][i], ned['decs'][i], RADeg, decDeg)
-                    if r < crossMatchRadiusDeg:
-                        obj['NED_allClusterMatches'].append(ned['names'][i])
-                    if r < rMin and r < crossMatchRadiusDeg:
-                        keepName=False
-                        if 'name' in clusterMatch:
-                            if "ABELL" in clusterMatch['name']:
-                                keepName=True
-                        if keepName == False:
-                            rMin=r
-                            clusterMatch['name']=ned['names'][i]
-                            if ned['redshifts'][i] != 'N/A':
-                                clusterMatch['z']=float(ned['redshifts'][i])
-                            else:
-                                clusterMatch['z']=None
-                            clusterMatch['rArcmin']=rMin*60.0
-                            clusterMatch['NED_RADeg']=float(ned['RAs'][i])
-                            clusterMatch['NED_decDeg']=float(ned['decs'][i])
-        
-        if clusterMatch != {}:
-            obj['NED_name']=clusterMatch['name']  
-            obj['NED_z']=clusterMatch['z']
-            obj['NED_distArcmin']=clusterMatch['rArcmin']
-            obj['NED_RADeg']=clusterMatch['NED_RADeg']
-            obj['NED_decDeg']=clusterMatch['NED_decDeg']
-        else:
-            obj['NED_name']=None 
-            obj['NED_z']=None
-            obj['NED_distArcmin']=None
-            obj['NED_RADeg']=None
-            obj['NED_decDeg']=None
-             
-#----------------------------------------------------------------------------------------------------
-def parseNEDResult(inFileName, onlyObjTypes = None):
-    """Parses NED tab-delimited text file query result, returns dictionary.
-    
-    onlyObjTypes can be a string indicating types of objects only to include e.g. GClstr
-    
-    """
-    
-    if inFileName != None and os.path.exists(inFileName):
-        inFile=file(inFileName, "r")
-        lines=inFile.readlines()
-        inFile.close()
-    else:
-        # Fail safe in case we couldn't contact NED
-        lines=[]
-
-    dataStarted=False
-    labels=[]
-    names=[]
-    RAs=[]
-    decs=[]
-    sourceTypes=[]
-    redshifts=[]
-    for line in lines:
-        bits=line.split("\t")
-        if bits[0] == "1":
-            dataStarted=True
-        if dataStarted == True:
-            if onlyObjTypes == str(bits[4]) or onlyObjTypes == None:
-                labels.append(bits[0])
-                names.append(bits[1])
-                RAs.append(float(bits[2]))
-                decs.append(float(bits[3]))
-                sourceTypes.append(str(bits[4]))
-                if bits[6] == '':
-                    redshifts.append('N/A')
-                else:
-                    redshifts.append(str(bits[6]))
-
-    return {'labels': labels, 'names': names, 'RAs': RAs, 'decs': decs, 'sourceTypes': sourceTypes, 'redshifts': redshifts}
-
-#----------------------------------------------------------------------------------------------------
-def addExtraMatches(catalog, extrasDict):
-    """Matches catalog against an external catalog, which is simply a tab-delimited text file with
-    columns name, RADeg, decDeg (nothing else just yet ...)
-    
-    """
-    
-    # Load data
-    inFile=file(extrasDict['fileName'], "r")
-    lines=inFile.readlines()
-    inFile.close()
-    
-    names=[]
-    RAs=[]
-    decs=[]
-    #zs=[]
-    for line in lines:
-        if line[0] != "#" and len(line) > 3:
-            bits=line.split("\t")
-            names.append(bits[0])
-            RAs.append(float(bits[1]))
-            decs.append(float(bits[2]))
-            #zs.append(float(bits[3]))
-    RAs=numpy.array(RAs)
-    decs=numpy.array(decs)
-    
-    matchRadiusDeg=10.0/60.0
-    for obj in catalog:
-        obj['extra_%s_name' % (extrasDict['label'])]=None
-        obj['extra_%s_RADeg' % (extrasDict['label'])]=None
-        obj['extra_%s_decDeg' % (extrasDict['label'])]=None
-        obj['extra_%s_distArcmin' % (extrasDict['label'])]=None
-        rDeg=astCoords.calcAngSepDeg(obj['RADeg'], obj['decDeg'], RAs, decs)
-        rMin=rDeg.min()
-        if rMin < matchRadiusDeg:
-            rMinIndex=rDeg.tolist().index(rMin)
-            deltaRA=abs(obj['RADeg']-RAs[rMinIndex])
-            deltaDec=abs(obj['decDeg']-decs[rMinIndex])
-            if deltaRA < 10.0 and deltaDec < 10.0:
-                obj['extra_%s_name' % (extrasDict['label'])]=names[rMinIndex]
-                obj['extra_%s_RADeg' % (extrasDict['label'])]=RAs[rMinIndex]
-                obj['extra_%s_decDeg' % (extrasDict['label'])]=decs[rMinIndex]
-                obj['extra_%s_distArcmin' % (extrasDict['label'])]=rMin*60.0
-
-    
-    outKeys=['extra_%s_name'  % (extrasDict['label']), 'extra_%s_distArcmin'  % (extrasDict['label']), 
-             'extra_%s_RADeg'  % (extrasDict['label']), 'extra_%s_decDeg'  % (extrasDict['label'])]
-    outFormats=["%s", "%.3f", "%.6f", "%.6f"]
-    outLabels=["%s name"  % (extrasDict['label']), "Distance from %s object (arcmin)"  % (extrasDict['label']),
-               "%s R.A. (degrees)"  % (extrasDict['label']), "%s Dec. (degrees)"  % (extrasDict['label'])]
-    
-    return [outKeys, outFormats, outLabels]
-
-#-------------------------------------------------------------------------------------------------------------
-def addSDSSRedshifts(catalog, cacheDir = "SDSSQueryResults"):
-    """Queries SDSS for redshifts. 
-    
-    """
-    
-    print ">>> Adding spec zs from SDSS ..."
-    #url = 'http://cas.sdss.org/astrodr7/en/tools/search/x_sql.asp'
-    #url = 'http://skyserver.sdss3.org/dr10/en/tools/search/x_sql.aspx'
-    url = 'http://skyserver.sdss.org/dr12/en/tools/search/x_sql.aspx'
-
-    if os.path.exists(cacheDir) == False:
-        os.makedirs(cacheDir)
-    
-    count=0
-    consecutiveQueryCount=0
-    for obj in catalog:
-
-        count=count+1
-        print "... %s (%d/%d) ..." % (obj['name'], count, len(catalog))
-        
-        outFileName=cacheDir+os.path.sep+"%s.csv" % (obj['name'].replace(" ", "_"))
-        if os.path.exists(outFileName) == False:
-        
-            sql="""SELECT
-            p.objid,p.ra,p.dec,p.r,
-            s.specobjid,s.z, 
-            dbo.fSpecZWarningN(s.zWarning) as warning,
-            s.plate, s.mjd, s.fiberid
-            FROM PhotoObj AS p
-            JOIN SpecObj AS s ON s.bestobjid = p.objid
-            WHERE 
-            p.ra < %.6f+0.1 and p.ra > %.6f-0.1
-            AND p.dec < %.6f+0.1 and p.dec > %.6f-0.1
-            """ % (obj['RADeg'], obj['RADeg'], obj['decDeg'], obj['decDeg'])
-
-            # Filter SQL so that it'll work
-            fsql = ''
-            for line in sql.split('\n'):
-                fsql += line.split('--')[0] + ' ' + os.linesep;
-        
-            params=urllib.urlencode({'cmd': fsql, 'format': "csv"})
-            response=urllib2.urlopen(url+'?%s' % (params))
-            lines=response.read()
-            lines=lines.split("\n")
-
-            outFile=file(outFileName, "w")
-            for line in lines:
-                outFile.write(line+"\n")
-            outFile.close()
-            
-            consecutiveQueryCount=consecutiveQueryCount+1
-            if consecutiveQueryCount > 50:
-                print "... sleeping to give SDSS server a break ..."
-                time.sleep(60)
-                consecutiveQueryCount=0
-        
-        else:
-            
-            inFile=file(outFileName, "r")
-            lines=inFile.readlines()
-            inFile.close()
-        
-        # Parse .csv into catalog
-        if lines[0] == "No objects have been found\n":
-            obj['SDSSRedshifts']=None
-        elif len(lines) > 1 and lines[1] == '"ERROR: Maximum 60 queries allowed per minute. Rejected query: SELECT \n':
-            os.remove(outFileName)
-            raise Exception, "Exceeded 60 queries/min on SDSS server. Take a breather and rerun nemo (previous queries cached)."
-        else:
-            obj['SDSSRedshifts']=[]
-            for line in lines[2:]: # first line (DR7) always heading, first two lines (DR10) always heading
-                if len(line) > 3:
-                    zDict={}
-                    bits=line.replace("\n", "").split(",")
-                    zDict['objID']=bits[0]
-                    try:
-                        zDict['RADeg']=float(bits[1])
-                        zDict['decDeg']=float(bits[2])
-                    except:
-                        if len(lines) > 1 and lines[1].find('"ERROR: Maximum 60 queries allowed per minute. Rejected query: SELECT') != -1:
-                            raise Exception, "Exceeded 60 queries/min on SDSS server. Take a breather and rerun nemo (previous queries cached)."
-                        else:
-                            print "Hmm. Not able to parse SDSS redshifts"
-                            IPython.embed()
-                            sys.exit()
-                    zDict['rMag']=float(bits[3])
-                    zDict['specObjID']=bits[4]
-                    try:
-                        zDict['z']=float(bits[5])
-                    except:
-                        print "zDict['z'] problem"
-                        IPython.embed()
-                        sys.exit()
-                    zDict['zWarning']=bits[6]
-                    zDict['plate']=bits[7]
-                    zDict['mjd']=bits[8]
-                    zDict['fiberID']=bits[9]
-                    obj['SDSSRedshifts'].append(zDict)
-
+    return keepTab, len(dupTab), dupTab['name']
     

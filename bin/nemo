@@ -165,12 +165,24 @@ else:
             optimalCatalog=imageDict['optimalCatalog']
             
         # Basic merged/optimal catalog
+        # NOTE: now converting everything to astropy.table files here, so we can quickly remove duplicates we get under MPI
+        tab=catalogTools.catalogToTab(optimalCatalog, catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, ["SNR > 0.0"])
+        catalogTools.writeTab(tab, "withDuplicates.fits")
+
+        numDuplicatesFound=1e6
+        while numDuplicatesFound != 0:
+            tab, numDuplicatesFound, names=catalogTools.removeDuplicatesFromTab(tab)
+    
         optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(rootOutDir)[-1])           
-        catalogTools.writeCatalog(optimalCatalog, optimalCatalogFileName, \
-                                  catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
-                                  headings = True)
+        #catalogTools.writeTab(tab, optimalCatalogFileName)
+    
+        # This is a bit wasteful - we convert everything back to a catalog in doing this - but preserves current file formats
+        catalogTools.writeCatalogFromTab(tab, optimalCatalogFileName, \
+                                         catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
+                                         headings = True)
+                
         addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fixed_SNR', 'fmt': '%.1f'}]
-        catalogTools.catalog2DS9(optimalCatalog, \
+        catalogTools.catalog2DS9(tab, \
                                  optimalCatalogFileName.replace(".csv", ".reg"), \
                                  constraintsList = ["SNR > 0.0"], \
                                  addInfo = addInfo, color = "cyan") 
