@@ -1403,7 +1403,8 @@ class ArnaudModelFilter(MapFilter):
         
         signalMap, modelDict=simsTools.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
                                                                 mapObsFreqGHz, np.degrees(self.radiansMap),
-                                                                self.wcs, beamFileName)
+                                                                self.wcs, beamFileName, 
+                                                                GNFWParams = self.params['GNFWParams'])
         
         return {'signalMap': signalMap, 'inputSignalProperties': modelDict}
         

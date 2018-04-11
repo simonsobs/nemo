@@ -53,6 +53,12 @@ else:
             for d in dirList:
                 if os.path.exists(d) == False:
                     os.makedirs(d)
+                    
+        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+        if 'GNFWParams' not in parDict.keys():
+            parDict['GNFWParams']='default'
+        for filtDict in parDict['mapFilters']:
+            filtDict['params']['GNFWParams']=parDict['GNFWParams']
         
         # tileDeck file handling - either make one, or handle loading of one
         # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done

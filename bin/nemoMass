@@ -60,7 +60,13 @@ else:
         for d in dirList:
             if os.path.exists(d) == False:
                 os.makedirs(d)
-        
+
+        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+        if 'GNFWParams' not in parDict.keys():
+            parDict['GNFWParams']='default'
+        for filtDict in parDict['mapFilters']:
+            filtDict['params']['GNFWParams']=parDict['GNFWParams']
+            
         massOptions=parDict['massOptions']
         
         # Load the nemo catalog and match against the z catalog

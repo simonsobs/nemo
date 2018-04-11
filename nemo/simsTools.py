@@ -1257,19 +1257,30 @@ def calcTheta500Arcmin(z, M500):
     return theta500Arcmin
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelProfile(z, M500, obsFreqGHz):
+def makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = 'default'):
     """Given z, M500 (in MSun), returns dictionary containing Arnaud model profile (well, knots from spline 
     fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
     (particularly 'y0', 'theta500Arcmin').
+    
+    Use GNFWParams to specify a different shape. If GNFWParams = 'default', then the default parameters as listed
+    in gnfw.py are used, i.e., 
+    
+    GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905, 'tol': 1e-7, 'npts': 100}
+    
+    Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
+    GNFWParams in the filter params in the nemo .par file (see the example .par files).
     
     Used by ArnaudModelFilter
     
     """
 
+    if GNFWParams == 'default':
+        GNFWParams=gnfw._default_params
+        
     bRange=np.linspace(0, 30, 1000)
     cylPProfile=[]
     for b in bRange:
-        cylPProfile.append(gnfw.integrated(b))
+        cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
     cylPProfile=np.array(cylPProfile)
     
     # Normalise to 1 at centre
@@ -1372,18 +1383,26 @@ def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
     return signalMap, inputSignalProperties
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName):
+def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default'):
     """Makes a 2d signal only map containing an Arnaud model cluster. Units of M500 are MSun.
     
     degreesMap is a 2d array containing radial distance from the centre - the output map will have the same
     dimensions and pixel scale (see nemoCython.makeDegreesDistanceMap).
+    
+    Use GNFWParams to specify a different shape. If GNFWParams = 'default', then the default parameters as listed
+    in gnfw.py are used, i.e., 
+    
+    GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905, 'tol': 1e-7, 'npts': 100}
+    
+    Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
+    GNFWParams in the filter params in the nemo .par file (see the example .par files).
     
     Returns the map (2d array) and a dictionary containing the properties of the inserted cluster model.
     
     """
         
     # Broken out the Arnaud model code from here into simsTools
-    signalDict=makeArnaudModelProfile(z, M500, obsFreqGHz)
+    signalDict=makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
     y0=signalDict['y0']
     theta500Arcmin=signalDict['theta500Arcmin']
@@ -1467,11 +1486,18 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
     
     This can be generalised, but for now is hard coded to use the Arnaud model.
     
+    Use GNFWParams (in parDict) to specify a different shape.
+    
     NOTE: This is also currently signal frequency only - we're assuming that beamFileName is given under
     parDict['unfilteredMaps'].
     
     """
 
+    if parDict['GNFWParams'] == 'default':
+        GNFWParams=gnfw._default_params
+    else:
+        GNFWParams=parDict['GNFWParams']
+        
     # Spin through the filter kernels
     photFilterLabel=parDict['photometryOptions']['photFilter']
     filterList=parDict['mapFilters']
@@ -1522,7 +1548,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
             for z in zRange:
                 for M500MSun in MRange:
                     key='%.2f_%.2f' % (z, np.log10(M500MSun))
-                    modelDict=makeArnaudModelProfile(z, M500MSun, 148.0)   
+                    modelDict=makeArnaudModelProfile(z, M500MSun, 148.0, GNFWParams = GNFWParams)   
                     rDeg=modelDict['rDeg']
                     profile1d=interpolate.splev(rDeg, modelDict['tckP'])
                     r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
