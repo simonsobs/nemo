@@ -1474,6 +1474,7 @@ class ProfileFilter(MapFilter):
         plt.xlim(0, 10)
         plt.ylim(0, 1.05)
         plt.savefig(self.diagnosticsDir+os.path.sep+"SignalProfile1d_"+self.label+".png")
+        plt.close()
 
         # Turn 1d profile into 2d
         r2prof=interpolate.interp1d(rRadiansLinear, profileLinear, bounds_error=False, fill_value=0.0)

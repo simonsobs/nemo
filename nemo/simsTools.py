@@ -1289,10 +1289,9 @@ def makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = 'default'):
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
     theta500Arcmin=calcTheta500Arcmin(z, M500)
     
-    # Map between b and angular coordinates for random model
-    # Note we fix c500 here to Arnaud value, we could leave it free
-    c500=1.177
-    thetaDegRange=(bRange*(theta500Arcmin/60.0))/c500
+    # Map between b and angular coordinates
+    # NOTE: c500 now taken into account in gnfw.py
+    thetaDegRange=bRange*(theta500Arcmin/60.)
     tckP=interpolate.splrep(thetaDegRange, cylPProfile)
     
     # Get Y500 from M500 according to Arnaud et al. (eq. 25, cylindrical relation)
@@ -1309,6 +1308,9 @@ def makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = 'default'):
     norm=arnaudY500_arcmin2/YArcmin2
     deltaT0=fidDeltaT0*norm
     y0=mapTools.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
+    
+    # NOTE: all of the above ^^^ for normalisation etc. is irrelevant
+    # See makeArnaudSignalMap below - we re-define y0, deltaT0 there to show this
 
     return {'tckP': tckP, 'y0': y0, 'deltaT0': deltaT0, 'theta500Arcmin': theta500Arcmin, 
             'Y500Arcmin2': arnaudY500_arcmin2, 'rDeg': thetaDegRange}
@@ -1409,10 +1411,18 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     deltaT0=signalDict['deltaT0']
     arnaudY500_arcmin2=signalDict['Y500Arcmin2']
     
+    # NOTE: deltaT0, y0 above are irrelevant to how we normalise the filter later on
+    # We just change these to arbitrary values here to check this
+    # i.e., that we can also change model to PPP instead of UPP (or anything)
+    # The important thing is to record the _input_ y0 before the beam smoothing was applied
+    # That's the thing we need to undo later (signalNorm in RealSpaceMatchedFilter)
+    deltaT0=-1000.0
+    y0=mapTools.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
+    
     # Setup 1d profile
     rDeg=np.linspace(0.0, 1.0, 5000)
     profile1d=deltaT0*interpolate.splev(rDeg, tckP)
-            
+
     # Apply beam to profile
     # NOTE: Do not disable this
     # Load Matthew's beam profile and interpolate onto signal profile coords
@@ -1471,12 +1481,17 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     smoothedProfile1d=normFactor*smoothedProfile1d
     beamDecrementBias=abs(profile1d).max()/abs(smoothedProfile1d).max()               
 
+    # All of this 'check profile2d integrates to give Arnaud value' ^^^ is irrelevant, 
+    # Unless we're actually checking integrated quantities as a sanity check
+    # Doesn't affect masses / decrement measurements
+    
     # For sanity checking later, let's dump the input properties of the model into a dictionary
     # Then we can apply whatever filter we like later and check that we're recovering these
     # These are BEFORE beam smoothing in this case, i.e., just from the input Arnaud model
+    # NOTE: this is exactly what we need for signalNorm (i.e., to back out beam smoothing)
     inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500Arcmin': theta500Arcmin, 
-                            'Y500Arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': obsFreqGHz}
-
+                           'Y500Arcmin2': arnaudY500_arcmin2, 'obsFreqGHz': obsFreqGHz}
+    
     return signalMap, inputSignalProperties
     
 #------------------------------------------------------------------------------------------------------------
