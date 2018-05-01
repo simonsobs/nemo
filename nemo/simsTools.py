@@ -1585,7 +1585,10 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
                 kernsDict[obsFreqGHz]={'kern2d': kern2d, 'header': kernImg[0].header}
             
             # Filter maps with the ref kernel(s)
+            # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
             Q=[]
+            QTheta500Arcmin=[]
+            count=0
             for z in zRange:
                 for M500MSun in MRange:
                     key='%.2f_%.2f' % (z, np.log10(M500MSun))
@@ -1596,17 +1599,20 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
                                                               smoothScaleDeg = kernsDict[obsFreqGHz]['header']['BCKSCALE']/60.)
                         filteredSignal=ndimage.convolve(signalMap, kernsDict[obsFreqGHz]['kern2d'])
                         peakFilteredSignals.append(filteredSignal.max()*kernsDict[obsFreqGHz]['header']['SIGNORM'])
-                    Q.append(np.mean(peakFilteredSignals))  # no noise, so straight average            
+                    if np.mean(peakFilteredSignals) not in Q:
+                        Q.append(np.mean(peakFilteredSignals))  # no noise, so straight average            
+                        QTheta500Arcmin.append(theta500Arcmin[count])
+                    count=count+1
             Q=np.array(Q)
             Q=Q/Q[0]
             
             # Sort and do spline fit... save .fits table of theta, Q
             QTab=atpy.Table()
             QTab.add_column(atpy.Column(Q, 'Q'))
-            QTab.add_column(atpy.Column(theta500Arcmin, 'theta500Arcmin'))
+            QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
             QTab.sort('theta500Arcmin')
             QTabDict[extName]=QTab
-            
+                       
             # Fit with spline
             tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
             
@@ -1621,7 +1627,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
             thetaArr=np.linspace(0, 30, 300)
             #plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
             plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
-            plt.plot(theta500Arcmin, Q, 'D', ms = 8)
+            plt.plot(QTheta500Arcmin, Q, 'D', ms = 8)
             #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
             #plt.xlim(0, 9)
             plt.ylim(0, Q.max()*1.05)
@@ -1722,12 +1728,7 @@ def getM500FromP(P, log10M, calcErrors = True):
     fineLog10M=np.linspace(log10M.min(), log10M.max(), 1e5)
     fineP=interpolate.splev(fineLog10M, tckP)
     fineP=fineP/np.trapz(fineP, fineLog10M)
-    try:
-        index=np.where(fineP == fineP.max())[0][0]
-    except:
-        print "argh"
-        IPython.embed()
-        sys.exit()
+    index=np.where(fineP == fineP.max())[0][0]
     
     clusterLogM500=fineLog10M[index]
     clusterM500=np.power(10, clusterLogM500)/1e14
@@ -1890,15 +1891,25 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
     if applyMFDebiasCorrection == True and mockSurvey != None:
         PLog10M=mockSurvey.getPLog10M(z)
         PLog10M=PLog10M/np.trapz(PLog10M, log10M)
-        M500, errM500Minus, errM500Plus=getM500FromP(Py0GivenM*PLog10M, log10M, calcErrors = calcErrors)
+        try:
+            M500, errM500Minus, errM500Plus=getM500FromP(Py0GivenM*PLog10M, log10M, calcErrors = calcErrors)
+        except:
+            print "M500 fail 1"
+            IPython.embed()
+            sys.exit()
     else:
         M500, errM500Minus, errM500Plus=0.0, 0.0, 0.0
 
     # M500 without de-biasing for mass function shape (this gives the ~15% offset compared to Planck)
-    M500Uncorr, errM500UncorrMinus, errM500UncorrPlus=getM500FromP(Py0GivenM, log10M, calcErrors = calcErrors)
-    
+    try:
+        M500Uncorr, errM500UncorrMinus, errM500UncorrPlus=getM500FromP(Py0GivenM, log10M, calcErrors = calcErrors)
+    except:
+        print "M500 fail 2"
+        IPython.embed()
+        sys.exit()
+        
     if M500Uncorr == 0:
-        print "M500 fail"
+        print "M500 fail 3"
         IPython.embed()
         sys.exit()
     
