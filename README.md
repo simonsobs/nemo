@@ -37,10 +37,15 @@ Nemo itself is written in python (2.7.x), and requires the following additional 
 * astropy (2.0.4)
 * IPython (2.4.1)
 * Cython (0.24.1)
+* enlib (git version: https://github.com/ACTCollaboration/enlib)
 
-_Note:_ Switched from `atpy` and `pyfits` to `astropy` for handling .fits tables and images. 
+_Note:_ Switched from `atpy` and `pyfits` to `astropy` for handling .fits tables and images. enlib is 
+currently being used only for CMB-only sky sims (for estimating false positive detection rate), but
+other parts which currently rely on flipper may be replaced in future.
 
 Most of the dependencies can be installed using `pip`.
+
+Add a short guide to installing the enlib bits we need here, if running Ubuntu...
 
 ## Installation
 

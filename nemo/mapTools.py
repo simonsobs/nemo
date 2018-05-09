@@ -6,11 +6,13 @@
 import mapFilters
 import photometry
 import catalogTools
+import simsTools
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
 import astropy.io.fits as pyfits
 import numpy as np
+import glob
 import os
 import sys
 import math
@@ -18,6 +20,9 @@ import pyximport; pyximport.install()
 import nemoCython
 import time
 import IPython
+import nemo
+from enlib import enmap, utils, powspec
+import astropy.wcs as apywcs
 np.random.seed()
 
 #-------------------------------------------------------------------------------------------------------------
@@ -626,6 +631,56 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         wcs=clip['wcs']
         #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
     
+    if 'CMBSimSeed' in mapDict.keys():
+        # The old flipper-based routine that did this took 190 sec versus 0.7 sec for enlib
+        enlibWCS=apywcs.WCS(wcs.header)
+        ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", scale = True)
+        randMap=enmap.rand_map(data.shape, enlibWCS, ps, seed = mapDict['CMBSimSeed'])
+        np.random.seed()    # Otherwise, we will end up with identical white noise...
+        # Convolve with beam - NOTE: beam map only 4 x HWHM on a side (otherwise convolution very slow)
+        beamData=np.loadtxt(mapDict['beamFileName']).transpose()
+        profile1d=beamData[1]
+        rArcmin=beamData[0]*60.0
+        HWHMDeg=rArcmin[np.where(profile1d <= 0.5)[0][0]]/60.
+        radiusDeg=HWHMDeg*4
+        RADeg, decDeg=wcs.getCentreWCSCoords()
+        clip=astImages.clipUsingRADecCoords(np.array(randMap), wcs, RADeg+radiusDeg, RADeg-radiusDeg, decDeg-radiusDeg, decDeg+radiusDeg)
+        RADeg, decDeg=clip['wcs'].getCentreWCSCoords()
+        degreesMap=nemoCython.makeDegreesDistanceMap(clip['data'], clip['wcs'], RADeg, decDeg, 0.5)
+        beamSignalMap, inputSignalProperties=simsTools.makeBeamModelSignalMap(mapDict['obsFreqGHz'], degreesMap, 
+                                                                    clip['wcs'], mapDict['beamFileName'])
+        randMap=ndimage.convolve(np.array(randMap), beamSignalMap.data/beamSignalMap.data.sum()) 
+        # Add white noise that varies according to inv var map...
+        # Noise needed is the extra noise we need to add to match the real data, scaled by inv var map
+        # This initial estimate is too high, so we use a grid search to get a better estimate
+        mask=np.nonzero(data)
+        dataSigma=data[mask].std()
+        whiteNoiseLevel=np.zeros(weights.shape)
+        whiteNoiseLevel[mask]=1/np.sqrt(weights[mask])
+        noiseNeeded=np.sqrt(data[mask].var()-randMap[mask].var()-np.median(whiteNoiseLevel[mask])**2)
+        noiseBoostFactor=noiseNeeded/np.median(whiteNoiseLevel[mask])
+        simNoise=np.zeros(data.shape)+np.array(randMap)
+        simNoise[np.equal(data, 0)]=0.
+        generatedNoise=np.random.normal(0, whiteNoiseLevel[mask], whiteNoiseLevel[mask].shape)
+        # NOTE: disabled finding boost factor below for now...
+        bestBoostFactor=1.
+        # --- disabled
+        #bestDiff=1e6
+        #bestBoostFactor=noiseBoostFactor
+        #simNoiseValues=simNoise[mask]
+        #for boostFactor in np.linspace(noiseBoostFactor*0.5, noiseBoostFactor, 10):
+            #diff=abs(dataSigma-(simNoiseValues+generatedNoise*boostFactor).std())
+            #if diff < bestDiff:
+                #bestBoostFactor=boostFactor
+                #bestDiff=diff
+        # --- disabled
+        simNoise[mask]=simNoise[mask]+generatedNoise*bestBoostFactor
+        # Output
+        data=np.array(simNoise)
+        # Sanity check
+        outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], extName) 
+        astImages.saveFITS(outFileName, data, wcs)
+        
     # Optional adding of white noise
     if 'addNoise' in mapDict.keys() and mapDict['addNoise'] != None:
         data=addWhiteNoise(data, mapDict['addNoise'])

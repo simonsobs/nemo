@@ -1070,6 +1070,8 @@ class RealSpaceMatchedFilter(MapFilter):
             mapData=filteredMaps[key]
             mapData=mapTools.convertToY(mapData, float(key))
             RMSMap=self.makeNoiseMap(mapData)
+            #outFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s_%s.fits" % (key, self.label)
+            #astImages.saveFITS(outFileName, RMSMap, self.wcs)
             dataCube.append(mapData)
             noiseCube.append(RMSMap)
         dataCube=np.array(dataCube)
@@ -1092,7 +1094,7 @@ class RealSpaceMatchedFilter(MapFilter):
         else:
             weightedMap=dataCube[0]
             weightedNoise=noiseCube[0]
-
+            
         weightedSNMap=weightedMap/weightedNoise
         weightedSNMap[np.isinf(weightedSNMap)]=0.
         

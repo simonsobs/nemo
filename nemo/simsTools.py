@@ -937,50 +937,13 @@ def simpleCatalogMatch(primary, secondary, matchRadiusArcmin):
             pobj['recoveredMatch']=match
 
 #-------------------------------------------------------------------------------------------------------------
-def generateCMBOnlySim(parDict):
-    """Generates a signal-only CMB sky, convolved with the beam.
-    
-    Returns beam-smoothed map (2d array) and wcs
-    
-    """
-    
-    # CAMB power spec with Planck 2015 parameters (ish)
-    tab=atpy.Table().read(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", format = 'ascii')
-    ell=tab['L']
-    DEll=tab['TT']
-    Cl_uK2=(DEll*2*np.pi)/(ell*(ell+1))
-    
-    # NOTE: assuming the first map is the only one, used for getting dimensions... this will break if this isn't the case 
-    # See here for flipper docs: http://www.hep.anl.gov/sdas/flipperDocumentation/map_manipulations.html
-    img=pyfits.open(parDict['unfilteredMaps'][0]['mapFileName'])
-    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-    d=np.zeros(img[0].data.shape, dtype = float)
-    grfMap=liteMap.liteMapFromDataAndWCS(d, wcs)
-    grfMap.fillWithGaussianRandomField(ell, Cl_uK2)
-    
-    # Convolve with beam - NOTE: beam map only 4 x HWHM on a side (otherwise convolution very slow)
-    beamData=np.loadtxt(parDict['unfilteredMaps'][0]['beamFileName']).transpose()
-    profile1d=beamData[1]
-    rArcmin=beamData[0]*60.0
-    HWHMDeg=rArcmin[np.where(profile1d <= 0.5)[0][0]]/60.
-    radiusDeg=HWHMDeg*4
-    RADeg, decDeg=grfMap.wcs.getCentreWCSCoords()
-    clip=astImages.clipUsingRADecCoords(grfMap.data, grfMap.wcs, RADeg+radiusDeg, RADeg-radiusDeg, decDeg-radiusDeg, decDeg+radiusDeg)
-    RADeg, decDeg=clip['wcs'].getCentreWCSCoords()
-    degreesMap=nemoCython.makeDegreesDistanceMap(clip['data'], clip['wcs'], RADeg, decDeg, 0.5)
-    beamSignalMap, inputSignalProperties=makeBeamModelSignalMap(parDict['unfilteredMaps'][0]['obsFreqGHz'], degreesMap, 
-                                                                clip['wcs'], parDict['unfilteredMaps'][0]['beamFileName'])
-    beamSmoothedMap=ndimage.convolve(grfMap.data, beamSignalMap.data/beamSignalMap.data.sum()) 
-    
-    return beamSmoothedMap, grfMap.wcs
-
-#-------------------------------------------------------------------------------------------------------------
-def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diagnosticsDir):
+def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSkySims, diagnosticsDir):
     """Run the whole filtering set up again, on sky simulation, with noise, that we generate here.
     
     Turns out we need to run many realisations, as results can vary by a lot.
     
-    We will want to combine the output from this with the inverted maps test (which is quicker and easier).
+    We may want to combine the output from this with the inverted maps test (which is quicker and easier,
+    but has different problems - e.g., how aggressive we are at masking point sources).
     
     Writes a plot and a .fits table to the diagnostics dir.
     
@@ -989,51 +952,41 @@ def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diag
     Returns a dictionaries containing the results
     
     """
-    
+        
     resultsList=[]
     for i in range(numSkySims):
         
-        print "... sky sim %d/%d ..." % (i+1, numSkySims)
+        # NOTE: we throw the first sim away on figuring out noiseBoostFactors
+        print ">>> sky sim %d/%d ..." % (i+1, numSkySims)
+        t0=time.time()
         
-        print "adapt sky sim for tileDeck files - to get to work, need to generate a HUGE .fits file and cut-up with makeTileDeck"
-        IPython.embed()
-        sys.exit()
+        # We use the seed here to keep the CMB sky the same across frequencies...
+        CMBSimSeed=np.random.randint(16777216)
         
-        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
-        
-        #---
         simParDict=actDict.ACTDict()
         simParDict.read_from_file(parDictFileName)
-            
-        simFileName=diagnosticsDir+os.path.sep+"signalOnlyCMBSim.fits"
-        print "... generating CMB-only sim ..."
-        simMap, wcs=generateCMBOnlySim(simParDict)
-        #astImages.saveFITS(simFileName, simMap, wcs)
         
-        # Add noise...
-        # Rather than using the 'noiseBoostFactor', and issuing a warning about inv var only weight maps, we could
-        # just solve for the noiseBoostFactor needed to make the RMS map match the actual one
-        print "... adding noise (WARNING: for this to work, the weight map must be an inverse variance map) ..."
-        iVarImg=pyfits.open(simParDict['unfilteredMaps'][0]['weightsFileName'])
-        iVarMap=iVarImg[0].data
-        footprint=np.where(iVarMap != 0)
-        blank=np.where(iVarMap == 0)
-        noiseMap=np.zeros(iVarMap.shape)
-        noiseMap[footprint]=np.random.normal(0, np.sqrt(1/iVarMap[footprint]))
-        noiseMap=noiseMap*simParDict['noiseBoostFactor'] # test if reasonable: RMSMap of real data and sim should agree
-        simMap[blank]=0.
-        simMap=simMap+noiseMap
-        astImages.saveFITS(simFileName.replace(".fits", "_withNoise.fits"), simMap, wcs)
-
-        # After we get out sky sim map into this, we want to do the filtering again...
-        # NOTE: redirect rootOutDir here as well
-        simParDict['unfilteredMaps'][0]['mapFileName']=simFileName.replace(".fits", "_withNoise.fits")
+        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+        if 'GNFWParams' not in simParDict.keys():
+            simParDict['GNFWParams']='default'
+        for filtDict in simParDict['mapFilters']:
+            filtDict['params']['GNFWParams']=simParDict['GNFWParams']
+        
+        # We're feeding in extNames to be MPI-friendly (each process takes its own set of extNames)
+        unfilteredMapsDictList, ignoreThis=mapTools.makeTileDeck(simParDict)
+        
+        # Filling in with sim will be done when mapTools.preprocessMapDict is called by the filter object
+        for mapDict in unfilteredMapsDictList:
+            mapDict['CMBSimSeed']=CMBSimSeed
+                            
         rootOutDir=diagnosticsDir+os.path.sep+"skySim"
         if os.path.exists(rootOutDir) == True:
-            mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*.fits")
-            for m in mapFileNames:
-                os.remove(m)
-        simImageDict=mapTools.filterMaps(simParDict['unfilteredMaps'], simParDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
+            # NOTE: we need to zap ONLY specific maps for when we are running in parallel
+            for extName in extNames:
+                mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
+                for m in mapFileNames:
+                    os.remove(m)
+        simImageDict=mapTools.filterMaps(unfilteredMapsDictList, simParDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
             
         # Below here is same as inverted maps right now....
         # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
@@ -1057,10 +1010,25 @@ def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diag
         minSNToIncludeInOptimalCatalog=simParDict['catalogCuts']
         catalogTools.mergeCatalogs(simImageDict)
         catalogTools.makeOptimalCatalog(simImageDict, minSNToIncludeInOptimalCatalog)
-            
+
+        # Write out sim map catalogs for debugging
+        skySimDir=diagnosticsDir+os.path.sep+"skySim"
+        if len(simImageDict['optimalCatalog']) > 0:
+            tab=catalogTools.catalogToTab(simImageDict['optimalCatalog'], catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, ["SNR > 0.0"])    
+            optimalCatalogFileName=skySimDir+os.path.sep+"skySim%d_optimalCatalog.csv" % (i)           
+            catalogTools.writeCatalogFromTab(tab, optimalCatalogFileName, \
+                                            catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
+                                            headings = True)
+            addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fixed_SNR', 'fmt': '%.1f'}]
+            catalogTools.catalog2DS9(tab, optimalCatalogFileName.replace(".csv", ".reg"), constraintsList = ["SNR > 0.0"], \
+                                    addInfo = addInfo, color = "cyan") 
+
+        # Contamination estimate...
         contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', diagnosticsDir)
         resultsList.append(contaminTabDict)
-    
+        t1=time.time()
+        print "... time taken for sky sim run = %.3f sec" % (t1-t0)
+            
     # Average results
     avContaminTabDict={}
     for k in resultsList[0].keys():
@@ -1070,9 +1038,12 @@ def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diag
             for i in range(len(resultsList)):
                 avContaminTabDict[k][kk]=avContaminTabDict[k][kk]+resultsList[i][k][kk]
             avContaminTabDict[k][kk]=avContaminTabDict[k][kk]/float(len(resultsList))
-
+    
+    # For writing separate contamination .fits tables if running in parallel
+    # (if we're running in serial, then we'll get a giant file name with full extNames list... fix later)
+    extNamesLabel="#"+str(extNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
     for k in avContaminTabDict.keys():
-        fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate.fits" % (k)
+        fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, extNamesLabel)
         if os.path.exists(fitsOutFileName) == True:
             os.remove(fitsOutFileName)
         contaminTab=avContaminTabDict[k]
@@ -1081,7 +1052,7 @@ def estimateContaminationFromSkySim(imageDict, parDictFileName, numSkySims, diag
     return avContaminTabDict
 
 #-------------------------------------------------------------------------------------------------------------
-def estimateContaminationFromInvertedMaps(imageDict, thresholdSigma, minObjPix, rejectBorder, 
+def estimateContaminationFromInvertedMaps(imageDict, extNames, thresholdSigma, minObjPix, rejectBorder, 
                                           minSNToIncludeInOptimalCatalog, photometryOptions, diagnosticsDir, findCenterOfMass = True):
     """Run the whole filtering set up again, on inverted maps.
     
@@ -1218,8 +1189,8 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
         # Remember, this is all cumulative (> SNR, so lower bin edges)
         contaminDict={}
         contaminDict['%s' % (SNRKey)]=binEdges[:-1]
-        contaminDict['cumSumCandidates']=cumSumCandidates
-        contaminDict['cumSumInverted']=cumSumInverted
+        contaminDict['cumSumRealCandidates']=cumSumCandidates
+        contaminDict['cumSumSimCandidates']=cumSumInverted
         contaminDict['cumContamination']=cumContamination       
         
         # Convert to .fits table

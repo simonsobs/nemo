@@ -8,6 +8,8 @@ import os
 import datetime
 from nemo import *
 import nemo
+import astropy.table as atpy
+import numpy as np
 import pylab
 import pickle
 import IPython
@@ -112,7 +114,7 @@ else:
         
         # Estimate of contamination from running cluster finding over inverted map
         if 'estimateContaminationFromInvertedMaps' in parDict.keys() and parDict['estimateContaminationFromInvertedMaps'] == True:
-            contaminationTabDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, parDict['thresholdSigma'], 
+            contaminationTabDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, extNames, parDict['thresholdSigma'], 
                                                                                  parDict['minObjPix'], parDict['rejectBorder'], 
                                                                                  parDict['catalogCuts'], parDict['photometryOptions'],
                                                                                  diagnosticsDir, findCenterOfMass = parDict['findCenterOfMass'])
@@ -122,18 +124,17 @@ else:
         # Estimate of contamination by generating a fake sky with noise, and running detection algorithm over it
         # Ultimately we want this and the above ^^^ to appear on the same plot for comparison
         if 'estimateContaminationFromSkySim' in parDict.keys() and parDict['estimateContaminationFromSkySim'] == True:
-            skySimContaminationTabDict=simsTools.estimateContaminationFromSkySim(imageDict, parDictFileName,
+            skySimContaminationTabDict=simsTools.estimateContaminationFromSkySim(imageDict, extNames, parDictFileName,
                                                                                  parDict['numSkySims'],
                                                                                  diagnosticsDir)
         else:
             skySimContaminationTabDict={}
         
-        # Plot contamination together
+        # This just combines inverted maps contamination results and skySim (under different keys)
+        # So we only feed one dictionary into the plotting routine (see below)
         for k in skySimContaminationTabDict.keys():
             contaminationTabDict[k]=skySimContaminationTabDict[k]
-        if contaminationTabDict != {}:
-            simsTools.plotContamination(contaminationTabDict, diagnosticsDir)
-
+            
         # Sims based on inserting fake cluster profiles into the maps
         if 'fakeSourceSimOptions' in parDict.keys():
             simsTools.fakeSourceSims(parDict['fakeSourceSimOptions'], parDict['unfilteredMaps'], parDict['mapFilters'],
@@ -155,9 +156,11 @@ else:
             outKeys=outKeys+['inputSim_flux_arcmin2', 'inputSim_RvirMpc', 'inputSim_Mvir']
             outFormats=outFormats+['%.3e', '%.3f', '%.3f']
 
-        # MPI: gather together and merge all of the catalogs from each process
+        # MPI: gather together and merge all of the catalogs from each process, and contamination test results
         if MPIEnabled == True:
             optimalCatalogList=comm.gather(imageDict['optimalCatalog'], root = 0)
+            contamKeysList=contaminationTabDict.keys()
+            contaminationTabDictList=comm.gather(contaminationTabDict, root = 0)
             if rank != 0:
                 assert optimalCatalogList is None
                 print "... MPI rank %d finished ..." % (rank)
@@ -167,14 +170,46 @@ else:
                 optimalCatalog=[]
                 for cat in optimalCatalogList:
                     optimalCatalog=optimalCatalog+cat
+                print "... gathering and averaging contamination estimates ..."
+                avContaminationTabDict={}
+                for k in contamKeysList:
+                    tabList=[]
+                    avTab=None
+                    tabCount=0
+                    for tabDict in contaminationTabDictList:
+                        tab=tabDict[k]
+                        if avTab == None:
+                            avTab=atpy.Table()
+                            for colName in tab.keys():
+                                avTab.add_column(atpy.Column(np.zeros(len(tab)), colName))
+                        for colName in avTab.keys():
+                            avTab[colName]=avTab[colName]+tab[colName]
+                        tabCount=tabCount+1
+                    for colName in avTab.keys():
+                        avTab[colName]=avTab[colName]/float(tabCount)
+                    mask=np.greater(avTab['cumSumSimCandidates'], 0)
+                    avTab['cumContamination']=atpy.Column(np.zeros(len(avTab)), 'cumContamination')
+                    avTab['cumContamination'][mask]=avTab['cumSumSimCandidates'][mask]/avTab['cumSumRealCandidates'][mask]
+                    avContaminationTabDict[k]=avTab
+                contaminationTabDictList=avContaminationTabDict
+                # And write average as .fits table(s)
+                # (if we didn't run under MPI, already averaged)
+                for k in avContaminationTabDict.keys():
+                    fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, "_average")
+                    if os.path.exists(fitsOutFileName) == True:
+                        os.remove(fitsOutFileName)
+                    contaminTab=avContaminationTabDict[k]
+                    contaminTab.write(fitsOutFileName) 
         else:
             optimalCatalog=imageDict['optimalCatalog']
-            
+        
+        # Plot contamination together
+        if contaminationTabDict != {}:
+            simsTools.plotContamination(contaminationTabDict, diagnosticsDir)           
+        
         # Basic merged/optimal catalog
         # NOTE: now converting everything to astropy.table files here, so we can quickly remove duplicates we get under MPI
         tab=catalogTools.catalogToTab(optimalCatalog, catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, ["SNR > 0.0"])
-        catalogTools.writeTab(tab, "withDuplicates.fits")
-
         numDuplicatesFound=1e6
         while numDuplicatesFound != 0:
             tab, numDuplicatesFound, names=catalogTools.removeDuplicatesFromTab(tab)
