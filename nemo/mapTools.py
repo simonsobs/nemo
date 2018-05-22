@@ -119,12 +119,14 @@ def makeTileDeck(parDict):
             fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
             inFileNames=[]
             outFileNames=[]
+            mapTypeList=[]
             for f in fileNameKeys:
                 if f in mapDict.keys() and mapDict[f] != None:
                     inFileNames.append(mapDict[f])
                     mapDir, mapFileName=os.path.split(mapDict[f])
                     outFileNames.append(mapDir+os.path.sep+"tileDeck_%s_" % (tileDeckFileNameLabel)+mapFileName)
-            
+                    mapTypeList.append(f)
+                    
             allFilesMade=True
             for f in outFileNames:
                 if os.path.exists(f) == False:
@@ -232,7 +234,8 @@ def makeTileDeck(parDict):
                 # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
                 # Since we would only use such an option with tileDeck files, this should be okay
                 # Although since we do this by modifying headers, would need to remake tileDeck files each time adjusted in .par file
-                for inMapFileName, outMapFileName in zip(inFileNames, outFileNames):
+                # NOTE: now treating surveyMask as special, and zapping overlap regions there (simplify selection function stuff later)
+                for mapType, inMapFileName, outMapFileName in zip(mapTypeList, inFileNames, outFileNames):
                     if os.path.exists(outMapFileName) == False:
                         print ">>> Writing tileDeck file %s ..." % (outMapFileName)
                         deckImg=pyfits.HDUList()
@@ -248,11 +251,11 @@ def makeTileDeck(parDict):
                             # Be careful with signs here... and we're assuming approx pixel size is ok
                             if x0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
                                 ra0=ra0+tileOverlapDeg
-                            if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[0]:
+                            if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
                                 ra1=ra1-tileOverlapDeg
-                            if dec0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
+                            if y0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
                                 dec0=dec0-tileOverlapDeg
-                            if dec1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
+                            if y1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[0]:
                                 dec1=dec1+tileOverlapDeg
                             if ra1 > ra0:
                                 ra1=-(360-ra1)
@@ -266,6 +269,20 @@ def makeTileDeck(parDict):
                                 header['NRAMAX']=noiseRAMax
                                 header['NDEMIN']=noiseDecMin
                                 header['NDEMAX']=noiseDecMax
+                            # Survey mask is special: zap overlap regions outside of tile definitions
+                            if mapType == 'surveyMask':
+                                ra0, dec0=wcs.pix2wcs(x0, y0)
+                                ra1, dec1=wcs.pix2wcs(x1, y1)
+                                clip_x0, clip_y0=clip['wcs'].wcs2pix(ra0, dec0)
+                                clip_x1, clip_y1=clip['wcs'].wcs2pix(ra1, dec1)
+                                clip_x0=int(round(clip_x0))
+                                clip_x1=int(round(clip_x1))
+                                clip_y0=int(round(clip_y0))
+                                clip_y1=int(round(clip_y1))
+                                zapMask=np.zeros(clip['data'].shape)
+                                zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
+                                clip['data']=clip['data']*zapMask
+                                #astImages.saveFITS("test.fits", zapMask, clip['wcs'])
                             hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = header, name = name)
                             deckImg.append(hdu)    
                         deckImg.writeto(outMapFileName)
