@@ -21,8 +21,6 @@ import nemoCython
 import time
 import IPython
 import nemo
-from enlib import enmap, utils, powspec
-import astropy.wcs as apywcs
 np.random.seed()
 
 #-------------------------------------------------------------------------------------------------------------
@@ -650,6 +648,9 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     
     if 'CMBSimSeed' in mapDict.keys():
         # The old flipper-based routine that did this took 190 sec versus 0.7 sec for enlib
+        # NOTE: enlib imports here for now, to save having to install if we're not using it
+        from enlib import enmap, utils, powspec
+        import astropy.wcs as apywcs
         enlibWCS=apywcs.WCS(wcs.header)
         ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", scale = True)
         randMap=enmap.rand_map(data.shape, enlibWCS, ps, seed = mapDict['CMBSimSeed'])
