@@ -408,196 +408,7 @@ class MapFilter:
         # Save 2D realspace filter image too
         #astImages.saveFITS(self.diagnosticsDir+os.path.sep+"realSpaceProfile2d_"+self.label+".fits", \
                                 #realSpace, wcs)
-    
-
-#------------------------------------------------------------------------------------------------------------
-class WienerFilter(MapFilter):
-    """Generic class for Wiener filtering. All derivatives of this class must provide a 
-    makeSignalTemplateMap() that returns a liteMap. This class includes the routines for various ways of 
-    handling the noise that goes into the denominator (e.g. l-space templates).
-    
-    """
-    
-    def buildAndApply(self):
-        
-        print ">>> Building filter %s ..." % (self.label)
-
-        if 'iterations' not in self.params.keys():
-            self.params['iterations']=1
-        iterations=self.params['iterations']
-        clusterCatalog=[]
-        for i in range(iterations):
-            
-            #print "... iteration %d ..." % (i) 
-            
-            # Filter both maps with the same scale filter
-            filteredMaps={}
-            for mapDict in self.unfilteredMapsDictList:   
-                
-                # Iterative filtering stuff currently disabled
-                # Mask out clusters so they don't go into the noise component of the filter
-                #maskedDict=mapTools.maskOutSources(mapDict['data'], self.wcs, clusterCatalog, 
-                                                   #radiusArcmin = self.params['maskingRadiusArcmin'], 
-                                                   #mask = 'whiteNoise')
-                #maskedData=maskedDict['data']
-                #if self.diagnosticsDir != None:
-                    #outPath=self.diagnosticsDir+os.path.sep+"iteration_%d_%s_mask.fits" % (i, self.label)
-                    #astImages.saveFITS(outPath, maskedDict['mask'], self.wcs)
-                
-                maskedData=mapDict['data']
-                
-                # FFT - note using flipper 0.1.3 Gaussian apodization
-                # The apodization here is only used if we're estimation noise power directly from the map itself
-                # otherwise, the FFT here is just so we have the modThetaMap etc. which we would use if
-                # using e.g. beta model templates where we're setting our own normalisation, rather than
-                # using e.g. the profile models.
-                lm=liteMap.liteMapFromDataAndWCS(maskedData, self.wcs) 
-                lm.data=lm.data*np.sqrt(mapDict['weights']/mapDict['weights'].max()) # this appears to make no difference
-                apodlm=lm.createGaussianApodization()
-                lm.data=lm.data*apodlm.data
-                fMaskedMap=fftTools.fftFromLiteMap(lm)
-                fMaskedMap.modThetaMap=180.0/(fMaskedMap.modLMap+1)       
-                                
-                # Make noise power spectrum
-                if self.params['noiseParams']['method'] == 'dataMap':
-                    NP=fftTools.powerFromFFT(fMaskedMap)
-                elif self.params['noiseParams']['method'] == '4WayMaps':
-                    NP=self.noisePowerFrom4WayMaps(self.weights, mapDict['obsFreqGHz'])
-                else:
-                    raise Exception, "noise method must be either 'dataMap' or '4WayMaps'"
-                
-                # Make signal power spectrum
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFWHMArcmin'], mapDict['obsFreqGHz'])
-                signalMap=signalMapDict['signalMap']
-                rInnerDeg=signalMapDict['normInnerDeg']
-                rOuterDeg=signalMapDict['normOuterDeg']
-                powerScaleFactor=signalMapDict['powerScaleFactor']
-                SP=fftTools.powerFromLiteMap(signalMap)
-                
-                # Scale the signal power such that it is equal to the noise power within given annulus, 
-                # if signal template has this sort of scaling applied (e.g. beta model case)
-                # If it doesn't, we'd better have supplied powerScaleFactor (e.g. profile case)
-                if rInnerDeg != None and rOuterDeg != None:
-                    mask=np.logical_and(np.greater(fMaskedMap.modThetaMap, rInnerDeg), \
-                                        np.less(fMaskedMap.modThetaMap, rOuterDeg))
-                    matchNoise=np.sum(NP.powerMap[mask])/np.sum(SP.powerMap[mask])
-                    SP.powerMap=SP.powerMap*matchNoise
-                elif powerScaleFactor != None:
-                    SP.powerMap=SP.powerMap*powerScaleFactor
-                
-                # Make Wiener filter
-                #filt=1.0/(SP.powerMap+NP.powerMap)
-                #med=np.median(filt)
-                #filt[np.where(filt>10*med)]=med
-                #kernelSize=(5,5)
-                #filt=ndimage.gaussian_filter(filt, kernelSize)
-                #self.G=SP.powerMap*filt
-                self.G=SP.powerMap/(SP.powerMap+NP.powerMap)
-                self.G=np.nan_to_num(self.G)
-                #astImages.saveFITS(self.filterFileName, fft.fftshift(self.G), None)
-
-                # Apply the filter - note we apply weights here now like Toby
-                # We also window the map in the same way as noise was windowed
-                weightedMap=mapDict['data']*np.sqrt(mapDict['weights']/mapDict['weights'].max())
-                apodlm=lm.createGaussianApodization(pad=20, kern=10)
-                apodlm=apodlm.data
-                weightedMap=weightedMap*apodlm
-                fMap=fftTools.fftFromLiteMap(liteMap.liteMapFromDataAndWCS(weightedMap, self.wcs))
-                filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=np.real(fft.ifft2(fMap.kMap[:,:]*self.G[:,:]))
-
-                # Check and correct for bias - apply filter to the signal template - do we recover the same flux?
-                peakCoords=np.where(abs(signalMap.data) == abs(signalMap.data).max())
-                yPeak=peakCoords[0][0]
-                xPeak=peakCoords[1][0]
-                fSignalMap=fftTools.fftFromLiteMap(signalMap)
-                filteredSignalMap=np.real(fft.ifft2(fSignalMap.kMap[:,:]*self.G[:,:]))                                     
-                amplitudeIn=signalMap.data[yPeak, xPeak]
-                amplitudeOut=filteredSignalMap[yPeak, xPeak].real
-                filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMaps['%d' % int(mapDict['obsFreqGHz'])]*(amplitudeIn/amplitudeOut)
-                
-            # Linearly combine filtered maps and convert to yc if asked to do so
-            if 'mapCombination' in self.params.keys():
-                combinedMap=np.zeros(filteredMaps[filteredMaps.keys()[0]].shape)
-                for key in filteredMaps.keys():
-                    combinedMap=combinedMap+self.params['mapCombination'][key]*filteredMaps[key]
-                combinedMap=mapTools.convertToY(combinedMap, self.params['mapCombination']['rootFreqGHz'])
-                combinedObsFreqGHz='yc'
-                #print "So - did the map combination make sense?"
-                #ipshell()
-                #sys.exit()
-            else:
-                # If no linear map combination given, assume we only want the first item in the filtered maps list
-                combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
-                combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
-            
-            # Now that we're applying the weights in here, we may as well write out the S/N map here too
-            # So we measure the RMS of the whole filtered map
-            goodAreaMask=np.greater_equal(apodlm, 1.0) # don't want the apodized edges of the map to bias this
-            mapMean=np.mean(combinedMap[goodAreaMask])
-            mapRMS=np.std(combinedMap[goodAreaMask])
-            sigmaClip=3.0
-            for i in range(10):
-                mask=np.less(abs(combinedMap), abs(mapMean+sigmaClip*mapRMS))
-                mask=np.logical_and(goodAreaMask, mask)
-                mapMean=np.mean(combinedMap[mask])
-                mapRMS=np.std(combinedMap[mask])
-            SNMap=combinedMap/mapRMS
-            
-            # Save the filtered map at this iteration so we can see if we're making a difference
-            #if self.diagnosticsDir != None:
-                #outPath=self.diagnosticsDir+os.path.sep+"iteration_%d_%s.fits" % (i, self.label)
-                #astImages.saveFITS(outPath, combinedMap, self.wcs)
-                
-            # Now find clusters so we can mask them on the next iteration
-            # Also save DS9 .reg file here so we can see if there are differences in what we detect
-            #sigmaImage=mapTools.makeSigmaMap(combinedMap, mapDict['weights'])
-            #SNMap=mapTools.makeSNMap(combinedMap, sigmaImage)
-            #imageDict={'iterFilter': {}}
-            #imageDict['iterFilter']['SNMap']=SNMap
-            #imageDict['iterFilter']['wcs']=self.wcs
-            #photometry.findObjects(imageDict, SNMap = 'array', 
-                                    #threshold = self.params['detParams']['thresholdSigma'],
-                                    #minObjPix = self.params['detParams']['minObjPix'], 
-                                    #rejectBorder = 10, makeDS9Regions = False, 
-                                    #writeSegmentationMap = False)            
-            #clusterCatalog=imageDict['iterFilter']['catalog']
-            #if self.diagnosticsDir != None:
-                #outRegFileName=self.diagnosticsDir+os.path.sep+"iteration_%d_%s.reg" % (i, self.label)
-                #catalogTools.catalog2DS9(clusterCatalog, outRegFileName)
-            
-            # Save filter profile in real space
-            self.saveRealSpaceFilterProfile()
-            
-            # Add stuff to header for doing photometry
-            # Hacked here - flux inside 2' radius from signal template, needs to be in yc
-            # Big assumption here - need to think how this works for e.g. beta profile etc.
-            # Maybe we can multiply the map through by something so that peak value = 2' value?
-            ycSignalData=mapTools.convertToY(signalMap.data, obsFrequencyGHz = 148)
-            ra0, dec0=self.wcs.pix2wcs(xPeak, yPeak)
-            ra1, dec1=self.wcs.pix2wcs(xPeak+1, yPeak+1)    
-            xLocalDegPerPix=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
-            yLocalDegPerPix=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
-            xPix=np.array([np.arange(0, ycSignalData.shape[1], dtype=float)]*ycSignalData.shape[0])-xPeak
-            yPix=(np.array([np.arange(0, ycSignalData.shape[0], dtype=float)]*ycSignalData.shape[1])-yPeak).transpose()
-            xDeg=xPix*xLocalDegPerPix
-            yDeg=yPix*yLocalDegPerPix
-            rDegMap=np.sqrt(xDeg**2+yDeg**2) 
-            apertureMask=np.less(rDegMap, 2.0/60.0)  # 2' radius
-            signalFluxInAperture=np.sum(ycSignalData[apertureMask])
-            arcmin2PerPix=xLocalDegPerPix*yLocalDegPerPix*60.0**2
-            signalFluxInAperture=signalFluxInAperture*arcmin2PerPix # ?
-            self.wcs.header.update('SAPFLUX', signalFluxInAperture)
-            self.wcs.header.update('SPEAK', ycSignalData[yPeak, xPeak])
-            self.wcs.header.update('SRADIUS', 2.0/60.0)
-            self.wcs.updateFromHeader()
-            #if 'gauss' not in self.label:
-                #print "So, can we recover the input yc from the peak in the filtered map?"
-                #ipshell()
-                #sys.exit()
-            
-        return {'data': combinedMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
-                'SNMap': SNMap}
-                
+                    
 #------------------------------------------------------------------------------------------------------------
 class MatchedFilter(MapFilter):
     """Yes, it doesn't make that much sense deriving this from Wiener filter, but this is a quick and
@@ -1270,10 +1081,11 @@ class RealSpaceMatchedFilter(MapFilter):
         surveyMask=edgeCheck*surveyMask*psMask
         del edgeCheck
 
-        # Apply final survey mask to signal-to-noise map
+        # Apply final survey mask to signal-to-noise map and RMS map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
         SNMap=SNMap*surveyMask
         SNMap[np.isnan(SNMap)]=0.
+        RMSMap=RMSMap*surveyMask
 
         maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (mapDict['extName'])
         if os.path.exists(maskFileName) == False:
@@ -1514,15 +1326,6 @@ class BeamMatchedFilter(MatchedFilter, BeamFilter):
 class ArnaudModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, ArnaudModelFilter):
     pass
 class BeamRealSpaceMatchedFilter(RealSpaceMatchedFilter, BeamFilter):
-    pass
-
-class BetaModelWienerFilter(WienerFilter, BetaModelFilter):
-    pass
-class ProfileWienerFilter(WienerFilter, ProfileFilter):
-    pass
-class GaussianWienerFilter(WienerFilter, GaussianFilter):
-    pass
-class ArnaudModelWienerFilter(WienerFilter, ArnaudModelFilter):
     pass
 
 #------------------------------------------------------------------------------------------------------------
