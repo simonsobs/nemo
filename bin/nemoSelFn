@@ -3,7 +3,7 @@
 
 """
 
-Calculate mass / y completeness limits over the fixed scale filtered map
+Calculate mass completeness limits, assuming the RMS map(s) are correct
 
 """
 
@@ -18,6 +18,7 @@ from astLib import *
 from scipy import stats
 from scipy import interpolate
 from scipy import ndimage
+from scipy import optimize
 from nemo import actDict
 from nemo import simsTools
 from nemo import mapTools
@@ -34,150 +35,298 @@ import matplotlib
 import IPython
 plt.matplotlib.interactive(False)
 
-cm.register_cmap("planck", matplotlib.colors.LinearSegmentedColormap.from_list("planck",[(0,"#0000ff"),(0.332,"#00d7ff"),(0.5,"#ffedd9"),(0.664,"#ffb400"),(0.828,"#ff4b00"),(1,"#640000")]))
-
 #------------------------------------------------------------------------------------------------------------
-def makeSimTab(numRows):
-    """Returns a blank table object with given number of rows. Used to store selection function output.
+def getTileTotalAreaDeg2(extName, diagnosticsDir):
+    """Returns total area of the tile pointed at by extName (taking into account survey mask and point
+    source masking).
     
     """
     
-    simTab=atpy.Table()
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'ID'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'y0'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'y1'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'x0'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'x1'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'z'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'M500MSun'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'yc'))
-    simTab.add_column(atpy.Column(np.zeros(numRows), 'SNR'))
+    areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+    areaMap=areaImg[0].data
+    wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+    areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+    totalAreaDeg2=areaMapSqDeg.sum()
     
-    return simTab
+    return totalAreaDeg2
 
 #------------------------------------------------------------------------------------------------------------
-def generatePositions(numPositions, surveyMask, x0, x1, y0, y1, maxTries = 10):
-    """Returns random x, y positions in surveyMask between the given pixel limits.
+def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir):
+    """Makes a table containing fraction of map area in tile pointed to by extName against RMS values
+    (so this compresses the information in the RMS maps). The first time this is run takes ~200 sec (for a
+    1000 sq deg tile), but the result is cached.
     
-    """
-                    
-    possiblePositions=np.where(surveyMask[y0:y1, x0:x1] == 1)
-    xPositions, yPositions=[], []
-    for n in xrange(numPositions):
-        maskSum=0
-        tryCount=0
-        while maskSum == 0:
-            randIndex=np.random.randint(len(possiblePositions[0]))
-            yPosition, xPosition=possiblePositions[0][randIndex]+y0, possiblePositions[1][randIndex]+x0
-            maskSum=surveyMask[yPosition-3:yPosition+3, xPosition-3:xPosition+3].sum()
-            if surveyMask[yPosition, xPosition] == 0:
-                maskSum=0
-            if tryCount > maxTries:
-                maskSum=1
-            tryCount=tryCount+1
-        if tryCount < maxTries:
-            xPositions.append(xPosition)
-            yPositions.append(yPosition)
-    
-    return xPositions, yPositions
-
-#------------------------------------------------------------------------------------------------------------
-def doSquare(mapData, RMSMap, surveyMask, wcs, numPositions, squareID, x0, x1, y0, y1, clipSizeDeg, zRange, MRange, 
-             signalDictsByRedshift, kern2d, bckScaleDeg, sigNorm, minNotMaskedPix = 0):
-    """Returns simTab containing results for this square only. If masked or empty, returns []
+    Returns weighted average noise value in the tile.
     
     """
 
-    # Quickly skip near-empty squares
-    if surveyMask[y0:y1, x0:x1].sum() <= minNotMaskedPix:
-        return []
+    # This can probably be sped up, but takes ~200 sec for a ~1000 sq deg tile, so we cache
+    RMSTabFileName=diagnosticsDir+os.path.sep+"RMSTab_%s.fits" % (extName)
+    if os.path.exists(RMSTabFileName) == False:
+        print("... making %s ..." % (RMSTabFileName))
+        RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits" % (extName))
+        RMSMap=RMSImg[0].data
+        RMSValues=np.unique(RMSMap[np.nonzero(RMSMap)])
 
-    # Generate a bunch of random positions - remember default squares are 20' on a side
-    # Skip on if all positions masked
-    xPositions, yPositions=generatePositions(numPositions, surveyMask, x0, x1, y0, y1)
-    if len(xPositions) == 0:
-        return []
-    
-    # Re-jigged to avoid gobbling all the RAM
-    SNRResults={}
-    ycResults={}
-    for z in zRange:
-        if z not in SNRResults.keys():
-            SNRResults[z]={}
-        if z not in ycResults.keys():
-            ycResults[z]={}
-        for M in MRange:
-            if M not in SNRResults.keys():
-                SNRResults[z][M]=[]
-            if M not in ycResults.keys():
-                ycResults[z][M]=[]
-    
-    for xPosition, yPosition in zip(xPositions, yPositions):
-        RADeg, decDeg=wcs.pix2wcs(xPosition, yPosition)
-        clip=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, clipSizeDeg)
-        RMSClip=astImages.clipImageSectionWCS(RMSMap, wcs, RADeg, decDeg, clipSizeDeg)
-        yCentre=clip['data'].shape[0]/2
-        xCentre=clip['data'].shape[1]/2
-        clipData=np.zeros(clip['data'].shape)+clip['data']  
-        for z in zRange:
-            for signalDict in signalDictsByRedshift['%.2f' % (z)]:
-                
-                M=signalDict['M500MSun']
-                
-                # Splat in cluster
-                sy0=yCentre-signalDict['signalMap'].shape[0]/2
-                sy1=yCentre+signalDict['signalMap'].shape[0]/2
-                sx0=xCentre-signalDict['signalMap'].shape[1]/2
-                sx1=xCentre+signalDict['signalMap'].shape[1]/2
-                
-                try:
-                    filteredMap=clipData[sy0:sy1, sx0:sx1]+signalDict['signalMap']
-                except:
-                    # Edge of map
-                    break
-                
-                # Apply kernel - convolution takes most of the time (0.02 sec)
-                filteredMap=mapTools.subtractBackground(filteredMap, wcs, smoothScaleDeg = bckScaleDeg)
-                filteredMap=ndimage.convolve(filteredMap, kern2d, mode = 'constant')*sigNorm 
-                
-                # Make SNMap
-                SNMap=filteredMap/RMSClip['data'][sy0:sy1, sx0:sx1]
-                syc=SNMap.shape[0]/2
-                sxc=SNMap.shape[1]/2
-                peakCoords=np.where(SNMap[syc-1:syc+1, sxc-1:sxc+1] == \
-                                    SNMap[syc-1:syc+1, sxc-1:sxc+1].max())
-                SNR=SNMap[syc-1:syc+1, sxc-1:sxc+1][peakCoords][0]
-                yc=filteredMap[syc-1:syc+1, sxc-1:sxc+1][peakCoords][0]
-                
-                SNRResults[z][M].append(SNR)
-                ycResults[z][M].append(yc)
+        areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaMap=areaImg[0].data
+        wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+        areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+        totalAreaDeg2=areaMapSqDeg.sum()
+        
+        fracArea=np.zeros(len(RMSValues))
+        for i in range(len(RMSValues)):
+            fracArea[i]=areaMapSqDeg[np.equal(RMSMap, RMSValues[i])].sum()
+        RMSTab=atpy.Table()
+        RMSTab.add_column(atpy.Column(fracArea, 'fracArea'))
+        RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
+        RMSTab.write(RMSTabFileName)
+    else:
+        print("... reading %s ..." % (RMSTabFileName))
+        RMSTab=atpy.Table().read(RMSTabFileName)
+        RMSValues=np.array(RMSTab['y0RMS'])
+        fracArea=np.array(RMSTab['fracArea'])
+    tileRMSValue=np.average(RMSValues, weights = fracArea)
 
-    # Average and store
-    numRows=len(zRange)*len(MRange)
-    simTab=makeSimTab(numRows)
-    rowCount=0
-    for z in zRange:
-        for M in MRange:
-            medSNR=np.median(SNRResults[z][M])
-            medyc=np.median(ycResults[z][M])
-            if np.isnan(medSNR) == False and medyc > 0:
-                simTab['ID'][rowCount]=squareID
-                simTab['y0'][rowCount]=y0
-                simTab['y1'][rowCount]=y1
-                simTab['x0'][rowCount]=x0
-                simTab['x1'][rowCount]=x1
-                simTab['z'][rowCount]=z
-                # NOTE: Below this is a label for the template shape, NOT a 'real' mass - need actual yc-M relation for that (see SelFn.py)
-                simTab['M500MSun'][rowCount]=M
-                simTab['yc'][rowCount]=medyc
-                simTab['SNR'][rowCount]=medSNR
-            rowCount=rowCount+1
-    
-    # Throw out empty rows
-    simTab=simTab[np.where(simTab['ID'] != 0)]
+    return tileRMSValue
 
-    return simTab
-                    
+#------------------------------------------------------------------------------------------------------------
+def rayleighFlipped(log10M, loc, scale):
+    """This is a good functional form to fit to completeness as a function of mass. It's asymmetric, so
+    it can fit both the low and high completeness ends with one function (previously we used Gaussian cdf,
+    but that isn't a good fit when intrinsic scatter is turned on)
+    
+    """
+    return (1-stats.rayleigh.cdf(log10M, loc = loc, scale = scale))[::-1]
+
+#------------------------------------------------------------------------------------------------------------
+def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
+                     writeOutput = False):
+    """Calculate completeness as a function of M500, z, for assumed fiducial cosmology and scaling relation,
+    at the given SNRCut and noise level. Intrinsic scatter in the scaling relation is taken into account.
+    
+    If writeOutput == True, saves the resulting model (and sim results) as .fits table(s) under 
+    diagnosticsDir. Also saves a diagnostic plot of completeness for that tile.
+    
+    Returns fitTab
+    
+    """
+    
+    # We'll need to change this behaviour if we later want to use this on every pixel in the RMS map...
+    fitTabFileName=diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName)
+    if os.path.exists(fitTabFileName) == True:
+        fitTab=atpy.Table().read(fitTabFileName)
+        return fitTab
+    
+    # What we'll generally want is the completeness at some fixed z, for some assumed scaling relation
+    tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
+                                    scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
+
+    # This is the minimum number to draw - gets multiplied up as needed to get good statistics...
+    # ... and this is the minimum number of detected sim cluster we need to get a good completeness curve and model fit
+    # This combination peaks at ~5 Gb of RAM used 
+    numMockClusters=10000
+    minAllowedDetections=4000
+    maxMultiplier=8000
+    minDrawNoiseMultiplier=2   # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
+
+    # Binning used for fitting
+    binEdges=np.arange(13.5, 16.0, 0.05)
+    binCentres=(binEdges[:-1]+binEdges[1:])/2.
+
+    # For storing results - this one is not strictly necessary, but could be used for sanity checking fit results
+    # Table format: column of log10M values, then columns (labelled with redshift) of completeness versus mass
+    completenessTab=atpy.Table()
+    completenessTab.add_column(atpy.Column(binCentres, 'log10M'))
+
+    # This takes ~60 sec in 2_1 for 15 zs for robust results at SNR > 4 (minDrawNoiseMultiplier=1)
+    # ... and ~120 - 180 sec in 2_1 for 15 zs for robust results at SNR > 5 (minDrawNoiseMultiplier=1)
+    # (later we'll interpolate fit results onto the MockSurvey 2d M, z completeness grid)
+    t00=time.time()
+    zRange=[0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
+    #zRange=[0.5]
+
+    # Stores Rayleigh cumulative distribution function (flipped etc.) fits at each z
+    fitTab=atpy.Table()
+    fitTab.add_column(atpy.Column(zRange, 'z'))
+    fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'loc'))
+    fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'scale'))
+
+    # Need these when applying the fit - only valid in this range for given loc, scale
+    fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10MMin'))  
+    fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10MMax'))
+
+    # We may as well store 90% completeness limit in here as well
+    fraction=0.9
+    fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10MLimit_90%'))
+
+    for iz in range(len(zRange)):
+
+        t0=time.time()    
+        z=zRange[iz]
+        print("... z = %.2f ..." % (z))
+        zIndex=np.where(abs(mockSurvey.z-z) == abs(mockSurvey.z-z).min())[0][0]
+        
+        # Used in Q-calc below...
+        Ez=astCalc.Ez(z)
+        Hz=astCalc.Ez(z)*astCalc.H0  
+        G=4.301e-9  # in MSun-1 km2 s-2 Mpc
+        criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+        
+        # Ajusting mass limit for draws according to RMS - trick to avoid drawing loads of clusters we'll never see
+        # This is ok as just a rough estimate
+        minLog10MDraw=np.log10(Mpivot*np.power((y0Noise*minDrawNoiseMultiplier)/(tenToA0*np.power(astCalc.Ez(z), 2)), 1/(1+B0)))
+        testDraws=np.linspace(0, 1, 1000)
+        testLog10M=interpolate.splev(testDraws, mockSurvey.tck_log10MRoller[zIndex])
+        minDraw=testDraws[np.argmin(abs(testLog10M-minLog10MDraw))]
+        
+        # Draw masses from the mass function...    
+        numDetected=0
+        mockClusterMultiplier=1
+        exceededMultiplierCount=0
+        while numDetected < minAllowedDetections:
+            log10Ms=interpolate.splev(np.random.uniform(minDraw, 1, int(mockClusterMultiplier*numMockClusters)), mockSurvey.tck_log10MRoller[zIndex])
+                        
+            # Sort masses here, as we need in order biggest -> smallest for fast completeness calc
+            log10Ms.sort()
+            log10Ms=log10Ms[::-1]
+            
+            # For speedy mock "observations" - since we have fixed z
+            fitM500s=np.power(10, np.linspace(log10Ms.min(), log10Ms.max(), 100))
+            fitTheta500s=np.zeros(len(fitM500s))
+            for i in range(len(fitM500s)):
+                M500=fitM500s[i]
+                R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
+                theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+                fitTheta500s[i]=theta500Arcmin
+            tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
+            theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500)
+            Qs=interpolate.splev(theta500s, tckQFitDict[extName])
+            fRels=simsTools.calcFRel(z, np.power(10, log10Ms))
+            true_y0s=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
+            
+            # Mock "observations" (apply intrinsic scatter and noise)...
+            scattered_y0s=np.exp(np.random.normal(np.log(true_y0s), sigma_int, len(true_y0s)))        
+            measured_y0s=np.random.normal(scattered_y0s, y0Noise)
+            # Comment out above and uncomment below to switch off intrinsic scatter
+            #measured_y0s=np.random.normal(true_y0s, y0Noise)
+            
+            # Check selection - did we manage to select enough objects?
+            y0Lim_selection=SNRCut*y0Noise  # y0Noise = RMS
+            t111=time.time()
+            numDetected=np.greater(measured_y0s, y0Lim_selection).sum()
+            if numDetected == 0:
+                mockClusterMultiplier=maxMultiplier
+            elif numDetected < minAllowedDetections:
+                mockClusterMultiplier=1.2*(minAllowedDetections/(float(numDetected)/mockClusterMultiplier))
+                print("... mockClusterMultiplier = %.1f ..." % (mockClusterMultiplier))
+                if mockClusterMultiplier > maxMultiplier:
+                    mockClusterMultiplier=maxMultiplier
+                    exceededMultiplierCount=exceededMultiplierCount+1
+                if exceededMultiplierCount > 2:
+                    raise Exception, "exceeded maxMultiplier too many times"
+        
+        # Calculate completeness
+        detArr=np.cumsum(np.greater(measured_y0s, y0Lim_selection))
+        allArr=np.arange(1, len(log10Ms)+1, 1, dtype = float)
+        completeness=detArr/allArr
+        
+        # Average/downsample: both for storage, and to deal with low numbers at high mass end (and spline fits later)
+        binnedCompleteness=np.zeros(len(binEdges)-1)
+        binnedCounts=np.zeros(len(binEdges)-1, dtype = float)
+        for i in range(len(binEdges)-1):
+            mask=np.logical_and(np.greater(log10Ms, binEdges[i]), np.less(log10Ms, binEdges[i+1]))
+            if mask.sum() > 0:
+                binnedCompleteness[i]=np.median(completeness[mask])
+            binnedCounts[i]=mask.sum()
+            # Never allow completness to decrease at higher mass (this would be a lower limit)
+            if binnedCompleteness[i] < binnedCompleteness[i-1]:
+                binnedCompleteness[i]=binnedCompleteness[i-1]
+        completenessTab.add_column(atpy.Column(binnedCompleteness, z))
+        
+        # NOTE: Neither cdf nor error function can fit, because of intrinsic scatter (assymetric at low/high completeness)
+        # However, cdf for Rayleigh distribution can be fiddled to look like we what we have...
+        # We need the min, max of the range the fit is done over for finer binning to work (see below)
+        fraction=0.5
+        locGuess=log10Ms[np.argmin(abs(fraction-completeness))]
+        fitResult=optimize.curve_fit(rayleighFlipped, binCentres, binnedCompleteness, p0 =[locGuess, 0.2])
+        fittedLoc=fitResult[0][0]
+        fittedScale=fitResult[0][1]
+        fitTab['loc'][iz]=fittedLoc
+        fitTab['scale'][iz]=fittedScale   
+        fitTab['log10MMin'][iz]=binCentres.min()
+        fitTab['log10MMax'][iz]=binCentres.max()
+
+        # While we're here, we may as well store 90% completeness limit
+        fraction=0.9    
+        fineLog10Bins=np.linspace(fitTab['log10MMin'][iz], fitTab['log10MMax'][iz], 1000)
+        fineCompleteness=rayleighFlipped(fineLog10Bins, fitTab['loc'][iz], fitTab['scale'][iz])
+        log10MassLimit=fineLog10Bins[np.argmin(abs(fraction-fineCompleteness))]
+        fitTab['log10MLimit_90%'][iz]=log10MassLimit
+        print("... 90%% completeness mass limit at z = %.1f: %.3e MSun ..." % (z, np.power(10, log10MassLimit)))
+        t1=time.time()
+        print("... time taken = %.3f sec ..." % (t1-t0))
+
+    t11=time.time()
+    print("... total time take for %s = %.3f sec ..." % (extName, t11-t00))
+    
+    if writeOutput == True:
+
+        # Save both the fit results and the binned data they are based on
+        outFileNames=[diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName), diagnosticsDir+os.path.sep+"selFn_completenessTab#%s.fits" % (extName)]
+        tabs=[fitTab, completenessTab]
+        for outFileName, tab in zip(outFileNames, tabs):
+            if os.path.exists(outFileName) == True:
+                os.remove(outFileName)
+            tab.write(outFileName)
+        
+        # Tile-averaged 90% completeness mass limit and plot (will be a good, quick sanity check)
+        massLimit_90Complete=np.power(10, np.array(fitTab['log10MLimit_90%']))/1e14
+        zRange=np.array(fitTab['z'])
+        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
+        makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (extName), 
+                                   title = "%s: $M_{\\rm 500c}$ / $10^{14}$ M$_{\odot}$ > %.2f (0.2 < $z$ < 1)" % (extName, averageMassLimit_90Complete)) 
+
+        # Another potentially useful sanity check plot - the fits themselves
+        #plt.ion()
+        #plt.close()
+        #for key in completenessTab.keys():
+            #if key != 'log10M':
+                #plt.plot(completenessTab['log10M'], completenessTab[key], 'k.')
+                #fitMask=np.equal(fitTab['z'], float(key))
+                #plt.plot(completenessTab['log10M'], rayleighFlipped(completenessTab['log10M'], 
+                                                                    #fitTab['loc'][fitMask], fitTab['scale'][fitMask]), label = key)
+        #plt.legend()
+
+    return fitTab
+
+#------------------------------------------------------------------------------------------------------------
+def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title = None):
+    """Write a plot of 90%-completeness mass limit versus z, adding a spline interpolation.
+    
+    """
+    
+    plotSettings.update_rcParams()
+    plt.figure(figsize=(9,6.5))
+    if title == None:
+        ax=plt.axes([0.10, 0.11, 0.87, 0.86])
+    else:
+        ax=plt.axes([0.10, 0.11, 0.87, 0.80])
+    tck=interpolate.splrep(zRange, massLimit_90Complete)
+    plotRange=np.linspace(0, 2, 100)
+    plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
+    plt.plot(zRange, massLimit_90Complete, 'D', ms = 8)
+    plt.xlabel("$z$")
+    plt.ylim(0.5, 8)
+    plt.xticks(np.arange(0, 2.2, 0.2))
+    plt.xlim(0, 2)
+    labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]"
+    plt.ylabel(labelStr)
+    if title != None:
+        plt.title(title)
+    plt.savefig(outFileName)
+    plt.close()   
+    
 #------------------------------------------------------------------------------------------------------------
 # Main
 if len(sys.argv) < 2:
@@ -188,18 +337,12 @@ else:
     
     for parDictFileName in parDictFileNames:
     
+        # This first part is all the same as the main nemo script
         print ">>> Running .par file: %s" % (parDictFileName)
         parDict=actDict.ACTDict()
         parDict.read_from_file(parDictFileName)
 
-        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-        if 'GNFWParams' not in parDict.keys():
-            parDict['GNFWParams']='default'
-        for filtDict in parDict['mapFilters']:
-            filtDict['params']['GNFWParams']=parDict['GNFWParams']
-            
         MPIEnabled=parDict['useMPI']
-        
         if MPIEnabled ==True:
             from mpi4py import MPI
             comm=MPI.COMM_WORLD
@@ -221,12 +364,66 @@ else:
         filtersDir=rootOutDir+os.path.sep+"filters"
         diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
         dirList=[rootOutDir, filteredMapsDir, filtersDir]
-        for d in dirList:
-            if os.path.exists(d) == False and rank == 0:
-                os.makedirs(d)
+        if rank == 0:
+            for d in dirList:
+                if os.path.exists(d) == False:
+                    os.makedirs(d)
+                    
+        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+        if 'GNFWParams' not in parDict.keys():
+            parDict['GNFWParams']='default'
+        for filtDict in parDict['mapFilters']:
+            filtDict['params']['GNFWParams']=parDict['GNFWParams']
 
-        # Filter maps - but should already have been done, this is just for easy set up
-        imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], parDict['mapFilters'], rootOutDir = rootOutDir)
+        # tileDeck file handling - either make one, or handle loading of one
+        # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+        if rank == 0:
+            unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+            madeTileDeck=True
+        else:
+            madeTileDeck=None
+        if MPIEnabled == True:
+            madeTileDeck=comm.bcast(madeTileDeck, root = 0)
+            if rank != 0 and madeTileDeck == True:
+                unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+            
+        # For when we want to test on only a subset of tiles
+        if 'extNameList' in parDict.keys():
+            newList=[]
+            for name in extNames:
+                if name in parDict['extNameList']:
+                    newList.append(name)
+            if newList == []:
+                raise Exception, "extNameList given in .par file but no extensions in images match"
+            extNames=newList
+        
+        # MPI: just divide up tiles pointed at by extNames among processes
+        if MPIEnabled == True:
+            numTilesPerNode=len(extNames)/size
+            startIndex=numTilesPerNode*rank
+            if rank == size-1:
+                endIndex=len(extNames)
+            else:
+                endIndex=numTilesPerNode*(rank+1)
+        else:
+            startIndex=0
+            endIndex=len(extNames)
+        extNames=extNames[startIndex:endIndex]
+
+        # Now we get into selection function stuff...
+        # Q varies across tiles
+        tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+
+        # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
+        minMass=5e13
+        areaDeg2=400.0  # Don't care what value this has, as we'll sim up an arbitrary number of clusters anyway
+        zMin=0.0
+        zMax=2.0
+        H0=70.
+        Om0=0.30
+        Ob0=0.05
+        sigma_8=0.8
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
         
         # We only care about the filter used for fixed_ columns
         photFilterLabel=parDict['photometryOptions']['photFilter']
@@ -234,430 +431,59 @@ else:
             if filterDict['label'] == photFilterLabel:
                 break
 
-        # Focus ONLY on RealSpaceMatchedFilter here... AND assume single-frequency only (kernels saved are anyway)
-        # Convert to y and invert
-        mapDict=imageDict[photFilterLabel]['unfilteredMapsDictList'][0]
-        img=pyfits.open(mapDict['mapFileName'])
-        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-        mapData=img[0].data*-1
-        mapData=mapTools.convertToY(mapData, mapDict['obsFreqGHz'])
-        beamFileName=mapDict['beamFileName']
-
-        # Load the kernel
-        kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (photFilterLabel))
-        kern2d=kernImg[0].data
-        bckScaleDeg=kernImg[0].header['BCKSCALE']/60.
-        sigNorm=kernImg[0].header['SIGNORM']
-    
-        # Survey mask
-        surveyImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask.fits")
-        surveyMask=surveyImg[0].data
-        #mapShape=[wcs.header['NAXIS2'], wcs.header['NAXIS1']]
-
-        # Unmasked area map, square degrees
-        areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(surveyMask, wcs)*surveyMask)/(60**2)
-        print "... total unmasked survey area = %.3f square degrees ..." % (areaMapSqDeg.sum())
-        
-        # Noise map
-        RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (photFilterLabel))
-        RMSMap=RMSImg[0].data
-        
-        # Write big sim table - this takes ~9 hours to do on a single core for equD56
-        simTabFileName=diagnosticsDir+os.path.sep+"simTab.fits"
-        zRange=SelFn.zRange
-        MRange=SelFn.MRange
-        
-        # Only making the big sim table is parallelised
-        if os.path.exists(simTabFileName) == True:
-            if MPIEnabled == True and rank != 0:       
-                sys.exit()
-            print "... reading saved sim table ..."
-            simTab=atpy.Table().read(simTabFileName)
-            
-        else:
-            
-            # Compute all the signal templates we want to use... cache for later
-            pickleFileName=diagnosticsDir+os.path.sep+"signalDicts.pickled"
-            if os.path.exists(pickleFileName) == False:
-                t0=time.time()
-                signalDictsByRedshift={}
-                for z in zRange:
-                    signalDictList=[]
-                    for M500MSun in MRange:
-                    
-                        # Some faffing to get a smaller map we can splat model clusters into
-                        RADeg, decDeg=wcs.getCentreWCSCoords()
-                        clipDict=astImages.clipImageSectionWCS(mapData, wcs, RADeg, decDeg, 1.0)
-                        signalWCS=clipDict['wcs']
-                        signalShape=list(clipDict['data'].shape)
-                        for ax in [0, 1]:
-                            if signalShape[ax] % 2 != 0:
-                                signalShape[ax]=signalShape[ax]+1            
-                        signalMap=np.zeros(signalShape)
-                        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, signalWCS, RADeg, decDeg, 1.0)
-                    
-                        # Model we'll be inserting - we turn it into yc, so obsFreqGHz shouldn't matter here
-                        signalMap, modelDict=simsTools.makeArnaudModelSignalMap(z, M500MSun, mapDict['obsFreqGHz'], 
-                                                                                degreesMap, signalWCS, beamFileName)
-                        signalMap=mapTools.convertToY(signalMap.data, obsFrequencyGHz = mapDict['obsFreqGHz'])
-                        signalDictList.append({'signalMap': signalMap, 'sizeDeg': signalWCS.getFullSizeSkyDeg(), 
-                                               'modelDict': modelDict, 'z': z, 'M500MSun': M500MSun})
-                    signalDictsByRedshift['%.2f' % (z)]=signalDictList
-                t1=time.time()
-                pickleFile=file(pickleFileName, "wb")
-                pickler=pickle.Pickler(pickleFile)
-                pickler.dump(signalDictsByRedshift)
-                pickleFile.close()
-                print "... making models took %.3f sec ..." % (t1-t0)
-            else:
-                print "... loading pickled signal maps ..."
-                pickleFile=file(pickleFileName, "rb")
-                unpickler=pickle.Unpickler(pickleFile)
-                signalDictsByRedshift=unpickler.load()
-                pickleFile.close()
-                
-            clipSizeDeg=float(np.max(signalDictsByRedshift[signalDictsByRedshift.keys()[0]][0]['sizeDeg'])*1.1)
-                    
-            # Do each grid square in noise map in turn
-            # Avoids overlapping sources, and easy to parallelise later
-            # Here we'll just store the raw results as a big table - we'll do the solving for SNR limits later
-            # This will take ~9 hours to run on a single core
-            print ">>> Measuring completeness across map ..."
-            numPositions=parDict['selFnOptions']['maxPositionsPerSquare']
-            gridSizeArcmin=filterDict['params']['noiseParams']['noiseGridArcmin']
-            gridSize=int(round((gridSizeArcmin/60.)/wcs.getPixelSizeDeg()))
-            overlapPix=0#gridSize/2 # Match the noise map
-            numXChunks=mapData.shape[1]/gridSize
-            numYChunks=mapData.shape[0]/gridSize
-            yChunks=np.linspace(0, mapData.shape[0], numYChunks+1, dtype = int)
-            xChunks=np.linspace(0, mapData.shape[1], numXChunks+1, dtype = int)
-            
-            # We can use this to skip near-empty squares
-            minNotMaskedPix=0#int(round(0.25*gridSize*gridSize))
-                        
-            # Break down by number of squares rather than rows/columns
-            #numSquares=400
-            numSquares=(len(xChunks)-1)*(len(yChunks)-1)
-            if MPIEnabled == True:
-                numSquaresPerNode=numSquares/size
-                startIndex=numSquaresPerNode*rank
-                if rank == size-1:
-                    endIndex=numSquares
-                else:
-                    endIndex=numSquaresPerNode*(rank+1)
-            else:
-                startIndex=0
-                endIndex=numSquares
-                        
-            # The easiest way to keep track of where everything is
-            squareIDs=[]
-            kList=[]
-            iList=[]
-            for k in xrange(len(xChunks)-1):
-                for i in xrange(len(yChunks)-1):
-                    squareIDs.append(i*(len(xChunks)-1)+k)
-                    kList.append(k)
-                    iList.append(i)
-            
-            # A map of where the squares are - both eases debugging AND makes finding intersections with other masks fast
-            squaresMapPath=diagnosticsDir+os.path.sep+"squaresMap.fits"
-            if rank == 0 and os.path.exists(squaresMapPath) == False:
-                squaresMap=np.zeros(mapData.shape)
-                for squareID, i, k in zip(squareIDs, iList, kList):
-                    y0=yChunks[i]-overlapPix
-                    y1=yChunks[i+1]+overlapPix
-                    x0=xChunks[k]-overlapPix
-                    x1=xChunks[k+1]+overlapPix
-                    if y0 < 0:
-                        y0=0
-                    if y1 > mapData.shape[0]:
-                        y1=mapData.shape[0]
-                    if x0 < 0:
-                        x0=0
-                    if x1 > mapData.shape[1]:
-                        x1=mapData.shape[1]
-                    squaresMap[y0:y1, x0:x1]=squareID
-                astImages.saveFITS(squaresMapPath, squaresMap*surveyMask, wcs)
-             
-            # Uncomment if want to select a specific square for testing
-            #wantedSquareID=5785
-            #startIndex=squareIDs.index(wantedSquareID)
-            #endIndex=startIndex+5
-            
-            # Write one simTab_*.fits file per processor (if MPI), and merge afterwards
-            nodeFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (rank)
-            if os.path.exists(nodeFileName) == False:
-                count=0
-                simTab=makeSimTab(0)
-                for squareID, i, k in zip(squareIDs[startIndex:endIndex], iList[startIndex:endIndex], kList[startIndex:endIndex]):
-                    
-                    y0=yChunks[i]-overlapPix
-                    y1=yChunks[i+1]+overlapPix
-                    x0=xChunks[k]-overlapPix
-                    x1=xChunks[k+1]+overlapPix
-                    if y0 < 0:
-                        y0=0
-                    if y1 > mapData.shape[0]:
-                        y1=mapData.shape[0]
-                    if x0 < 0:
-                        x0=0
-                    if x1 > mapData.shape[1]:
-                        x1=mapData.shape[1]
-                        
-                    t0=time.time()
-                    squareTab=doSquare(mapData, RMSMap, surveyMask, wcs, numPositions, squareID, x0, x1, y0, y1, clipSizeDeg, zRange, MRange, 
-                                       signalDictsByRedshift, kern2d, bckScaleDeg, sigNorm, minNotMaskedPix = 0)
-                    if len(squareTab) > 0:
-                        simTab=atpy.operations.vstack([simTab, squareTab])
-                    t1=time.time()
-                    count=count+1
-                    
-                    print "... rank %d / squareID = %d (%d/%d) / RAM = %.3f Gb / time taken = %.3f sec ..." % (rank, squareID, count, endIndex-startIndex,
-                                                                                          resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1e6, t1-t0)
-                    
-                # Save this node's work (bad if running in serial... but suspect we won't want to)
-                simTab.write(nodeFileName)
-            else:
-                print "... already made %s ..." % (nodeFileName)
-
-            # Combine all the tables for each yChunk row
-            # We can't just send/receive without changing stuff above (we'd need to make rank 0 just collect stuff)
-            if rank == 0:
-                simTab=atpy.Table().read(diagnosticsDir+os.path.sep+"simTab_0.fits")
-                if MPIEnabled == True:
-                    print ">>> Gathering tables from each node:"
-                    for k in range(1, size):
-                        print "... %d/%d ..." % (k+1, size)
-                        nodeFileName=diagnosticsDir+os.path.sep+"simTab_%d.fits" % (k)
-                        loadedTab=False
-                        while loadedTab == False:
-                            if os.path.exists(nodeFileName) == True:
-                                nodeTab=atpy.Table().read(nodeFileName)
-                                loadedTab=True
-                            else:
-                                print "... not found %s - waiting 60 sec ..." % (nodeFileName)
-                                time.sleep(60)
-                        mask=np.greater(nodeTab['z'], 0)
-                        if mask.sum() > 0:
-                            nodeTab=nodeTab[np.where(mask)]
-                            simTab=atpy.operations.vstack([simTab, nodeTab])
-                simTab.write(simTabFileName)
-                print "... saved sim table %s ..." % (simTabFileName)
-                ## Clean up the chunk files
-                #fileList=glob.glob(diagnosticsDir+os.path.sep+"simTab_*.fits")
-                #for f in fileList:
-                    #os.remove(f)
-            else:
-                sys.exit()
-                                                                
-        # Now fit for M500 / y0 limits in each grid square
-        # NOTE: Units change here (10^14 MSun, 1e-4 yc)
-        # Linear regression seems to work okay
-        # This is slow (takes ~1 hour) and could be parallelised
-        outFileName=diagnosticsDir+os.path.sep+"fitSimTab.fits"
-        if os.path.exists(outFileName) == False:
-            print ">>> Fitting for M, yc as function of SNR ..."
-            t0=time.time()
-            squareIDs=np.unique(simTab['ID'])
-            fitTab=atpy.Table()
-            lenFitTab=len(squareIDs)*len(zRange)
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'ID'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'z'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'y0'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'y1'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'x0'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'x1'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'areaDeg2'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'fracSurveyArea'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'MFitSlope'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'MFitIntercept'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'ycFitSlope'))
-            fitTab.add_column(atpy.Column(np.zeros(lenFitTab), 'ycFitIntercept'))
-            rowCount=0
-            for sID in squareIDs:
-                for z in zRange:
-                    mask=np.logical_and(np.equal(simTab['ID'], sID), np.equal(simTab['z'], z))
-                    MFitResult=stats.linregress(simTab['SNR'][mask], simTab['M500MSun'][mask]/1e14)
-                    ycFitResult=stats.linregress(simTab['SNR'][mask], simTab['yc'][mask])
-                    fitTab['ID'][rowCount]=sID
-                    fitTab['z'][rowCount]=z
-                    fitTab['y0'][rowCount]=simTab['y0'][mask][0]
-                    fitTab['y1'][rowCount]=simTab['y1'][mask][0]
-                    fitTab['x0'][rowCount]=simTab['x0'][mask][0]
-                    fitTab['x1'][rowCount]=simTab['x1'][mask][0]
-                    squareAreaDeg2=areaMapSqDeg[int(fitTab['y0'][rowCount]):int(fitTab['y1'][rowCount]),
-                                                int(fitTab['x0'][rowCount]):int(fitTab['x1'][rowCount])].sum()
-                    fracSurveyArea=squareAreaDeg2/areaMapSqDeg.sum()
-                    fitTab['areaDeg2'][rowCount]=squareAreaDeg2
-                    fitTab['fracSurveyArea'][rowCount]=fracSurveyArea
-                    fitTab['MFitSlope'][rowCount]=MFitResult.slope
-                    fitTab['MFitIntercept'][rowCount]=MFitResult.intercept
-                    fitTab['ycFitSlope'][rowCount]=ycFitResult.slope
-                    fitTab['ycFitIntercept'][rowCount]=ycFitResult.intercept  
-                    rowCount=rowCount+1
-            fitTab.write(outFileName)
-            t1=time.time()
-            print "... took %.3f sec ..." % (t1-t0)
-        else:
-            print "... reading fit results for M, yc as function of SNR ..."
-            fitTab=atpy.Table().read(outFileName)
-        
-        # Some applications of selection function...
+        # We'll only calculate completeness for this given selection
         SNRCut=parDict['selFnOptions']['fixed_SNR_cut']
-        selFn=SelFn.SelFn(rootOutDir, parDict, SNRCut)
+
+        # Run the selection function calculation on each tile in turn
+        selFnDictList=[]
+        for extName in extNames:
+            tileAreaDeg2=getTileTotalAreaDeg2(extName, diagnosticsDir)
+            y0Noise=calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
+            fitTab=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
+                                    writeOutput = True)
+            # We will eventually want to use interpolation of fitTab results to make 2d completeness array on mockSurvey grid, as used in HSC stuff
+            selFnDict={'extName': extName,
+                       'y0Noise': y0Noise,
+                       'tileAreaDeg2': tileAreaDeg2,
+                       'fitTab': fitTab}
+            selFnDictList.append(selFnDict)
         
-        # Add detection probabilities for clusters
-        SNRStr=('%.1f' % (SNRCut)).replace(".", "p")
-        realTab=atpy.Table().read(rootOutDir+os.path.sep+"%s_M500.fits" % (rootOutDir))
-        detP=[]
-        ycSelectionLimit=[]
-        MSelectionLimit=[]
-        for row in realTab:
-            yc=row['fixed_y_c']*1e-4
-            ycErr=row['fixed_err_y_c']*1e-4
-            P, ycLimit, MLimit=selFn.detectionProbability(yc, row['redshift'], ycErr, RADeg = row['RADeg'], decDeg = row['decDeg'])
-            ycSelectionLimit.append(ycLimit)
-            MSelectionLimit.append(MLimit)
-            detP.append(P)
-        detP=np.array(detP)
-        realTab.add_column(atpy.Column(detP, 'detP_SNRCut%s' % (SNRStr)))
-        realTab.add_column(atpy.Column(ycSelectionLimit, 'ycLimit_SNRCut%s' % (SNRStr)))  
-        realTab.add_column(atpy.Column(MSelectionLimit, 'M500Limit_SNRCut%s' % (SNRStr)))
-        outFileName=rootOutDir+os.path.sep+rootOutDir+"_detP.fits"
-        if os.path.exists(outFileName) == True:
-            os.remove(outFileName)
-        realTab.write(outFileName)
+        # MPI: gather together selection function results, so we can compute survey-wide average
+        if MPIEnabled == True:
+            gathered_selFnDictLists=comm.gather(selFnDictList, root = 0)
+            if rank != 0:
+                assert gathered_selFnDictLists is None
+                print "... MPI rank %d finished ..." % (rank)
+                sys.exit()
+            else:
+                print "... gathering selection function results ..."
+                all_selFnDictList=[]
+                for dictList in gathered_selFnDictLists:
+                    all_selFnDictList=selFnDictList+dictList
+        else:
+            all_selFnDictList=selFnDictList
                 
-        # Survey-averaged 90% completeness mass limit and plot
-        plotSettings.update_rcParams()
-        completenessLim=0.9
-        massLimit_90Complete, zRange=selFn.surveyAverage_MLimitAtCompleteness(completenessLim)
-        #fontDict={'size': 18, 'family': 'serif'}
-        plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.11, 0.12, 0.87, 0.86])
-        #plt.tick_params(axis='both', which='major', labelsize=15)
-        #plt.tick_params(axis='both', which='minor', labelsize=15)
-        tck=interpolate.splrep(zRange, massLimit_90Complete)
-        plotRange=np.linspace(0, 2, 100)
-        plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-        plt.plot(zRange, massLimit_90Complete, 'D', ms = 8)
-        plt.xlabel("$z$")
-        plt.ylim(1.5, 10)
-        plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
-        plt.xlim(0, 2)
-        labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
-        plt.ylabel(labelStr)
-        #plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
-        plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
-        plt.close()
-        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(selFn.zRange, 0.2), np.less(selFn.zRange, 1.0))].mean()
-        print "... survey-average 90 per cent completeness limit (0.2 < z < 1) = %.3f x 10^14 MSun ..." % (averageMassLimit_90Complete)
-
-        # Cumulative area above mass limit plot
-        # This needs to be for a fixed z, or averaged over a z range - we'll go with [0.2, 1.0] for now
-        selFn.calcMLimits()
-        zMin=0.2
-        zMax=1.0
-        zMask=np.logical_and(np.greater(selFn.fitTab['z'], zMin), np.less(selFn.fitTab['z'], zMax))
-        IDs=np.unique(selFn.fitTab['ID'])
-        cellMLimits=[]
-        cellFracAreas=[]
-        for i in IDs:
-            idMask=np.equal(selFn.fitTab['ID'], i)
-            cellMLimits.append(np.mean(selFn.MLimits[np.logical_and(zMask, idMask)]))
-            cellFracAreas.append(np.mean(selFn.fitTab['fracSurveyArea'][np.logical_and(zMask, idMask)]))
-        cellMLimits=np.array(cellMLimits)
-        cellFracAreas=np.array(cellFracAreas)
-        areaTab=atpy.Table()
-        areaTab.add_column(atpy.Column(cellMLimits, 'MLimit'))
-        areaTab.add_column(atpy.Column(cellFracAreas, 'fracSurveyArea'))
-        areaTab.sort('MLimit')
+        # Survey-averaged 90% mass completeness limit
+        tileAreas=[]
+        completeness=[]
+        for selFnDict in all_selFnDictList:
+            tileAreas.append(selFnDict['tileAreaDeg2'])
+            completeness.append(np.array(selFnDict['fitTab']['log10MLimit_90%']))
+        tileAreas=np.array(tileAreas)
+        fracArea=tileAreas/np.sum(tileAreas)
+        completeness=np.array(completeness)
+        zRange=np.array(selFnDict['fitTab']['z'])
+        #massLimit_90Complete=np.average(np.power(10, completeness)/1e14, axis = 0, weights = fracArea)
+        massLimit_90Complete=np.power(10, np.average(completeness, axis = 0, weights = fracArea))/1e14
+        makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent_surveyAverage.pdf")
+        print(">>> Survey-averaged results:")
+        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
+        print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete))
         
-        completenessLim=0.5
-        #fontSize=18.
-        #fontDict={'size': fontSize, 'family': 'serif'}
-        plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.11, 0.12, 0.87, 0.86])
-        #plt.tick_params(axis='both', which='major', labelsize=15)
-        #plt.tick_params(axis='both', which='minor', labelsize=15)
-        plt.plot(areaTab['MLimit'], np.cumsum(areaTab['fracSurveyArea']), 'k-')
-        plt.ylabel("Fraction of survey area < $M_{\\rm 500c}$ limit")
-        plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]")
-        #labelStr="total survey area = %.1f deg$^2$\n$%.1f < z < %.1f$" % (areaMapSqDeg.sum(), zMin, zMax)
-        labelStr="total survey area = %.1f deg$^2$" % (areaMapSqDeg.sum())
-        plt.ylim(0, 1.05)
-        plt.xlim(1.5, areaTab['MLimit'].max())
-        plt.figtext(0.4, 0.2, labelStr, ha="left", va="center")
-        plt.savefig(diagnosticsDir+os.path.sep+"cumulativeAreaMLimit_0p2_z_1p0.pdf")
-        plt.close()
-        
-        # For folks who like mass limit maps
-        if 'makeMLimitMaps' in parDict['selFnOptions'].keys() and parDict['selFnOptions']['makeMLimitMaps'] == True:
-            MLimitDir=diagnosticsDir+os.path.sep+"MLimitMaps_SNRCut%.1f" % (SNRCut)
-            if os.path.exists(MLimitDir) == False:
-                os.makedirs(MLimitDir)
-            print "... making MLimit maps ..."
-            for z in selFn.zRange:
-                print "... z = %.2f ..." % (z)
-                selFn.makeM500LimitMap(wcs, z, MLimitDir+os.path.sep+'MLimitMap_z%.2f.fits' % (z))
-        
-        # Make yc limit map - as expected, these are all the same whichever z you choose (if we averaged over enough points)
-        ycLimitMap=selFn.ycLimitMap(wcs, z = 0.4, outFileName = diagnosticsDir+os.path.sep+"ycLimitMap.fits")
-        ycLimitMap=ycLimitMap/1e-4
-        ycLimitMap=np.ma.masked_where(ycLimitMap == 0, ycLimitMap)
-        fontSize=18.0*1.33
-        figSize=(22.2, 5.2)
-        axesLabels="sexagesimal"
-        axes=[0.065,0.17,0.93,0.88]
-        fig=plt.figure(figsize = figSize)
-        p=astPlots.ImagePlot(ycLimitMap, wcs, cutLevels = [ycLimitMap.min(), np.percentile(ycLimitMap, 99)], title = None, axes = axes, 
-                            axesLabels = axesLabels, colorMapName = 'gray', axesFontFamily = 'sans-serif',
-                            RATickSteps = {'deg': 15.0, 'unit': 'h'}, decTickSteps = {'deg': 5.0, 'unit': 'd'},
-                            axesFontSize = fontSize)
-        cbShrink=0.64
-        cbAspect=34
-        cbLabel="$\\tilde{y}_{0}$ ($10^{-4}$)"
-        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.08, pad = 0.22, 
-                        shrink = cbShrink, aspect = cbAspect)
-        plt.figtext(0.53, 0.045, cbLabel, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
-        plt.savefig(diagnosticsDir+os.path.sep+"ycLimitMap.pdf")
-
-        # 2d M500, z versus detection probability plot     
-        #print "make yc M500 z sel fn 2d image plot"
+        #print("what now?")
         #IPython.embed()
-        #sys.exit()
-        
-        #minMass=5e13
-        #areaDeg2=areaMapSqDeg.sum()
-        #zMin=0.0
-        #zMax=2.0
-        #H0=70.
-        #Om0=0.30
-        #Ob0=0.05
-        #sigma_8=0.80
-        #mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8)
-        #mockSurvey.addSelFn(selFn)
-        
-        #fontDict={'size': 18, 'family': 'serif'}
-        #plt.figure(figsize=(9,6.5))
-        #ax=plt.axes([0.09, 0.10, 0.88, 0.88])
-        
-        
-        #plt.tick_params(axis='both', which='major', labelsize=15)
-        #plt.tick_params(axis='both', which='minor', labelsize=15)
-        #plt.plot(zRange, massLimit_90Complete, 'kD', ms = 8)
-        #tck=interpolate.splrep(zRange, massLimit_90Complete)
-        #plotRange=np.linspace(0, 2, 100)
-        #plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-        #plt.xlabel("$z$", fontdict = fontDict)
-        #plt.ylim(2, 10)
-        #plt.xticks(np.linspace(0, 2, 11), np.linspace(0, 2, 11))
-        #labelStr="$M_{500}$ (10$^{14}$ M$_{\odot}$) [%d" % (int(completenessLim*100.))+"%"+" complete]"
-        #plt.ylabel(labelStr, fontdict = fontDict)
-        ##plt.title("Survey %d" % (int(completenessLim*100.))+"% "+"completeness limit (area: %.1f deg$^2$)" % (areaMapSqDeg.sum()))
-        #plt.savefig(diagnosticsDir+os.path.sep+"completenessMLimit_z.pdf")
-        #plt.close()
-        
-        
-
-        
+        #sys.exit()            
+            
+            
+            
+            

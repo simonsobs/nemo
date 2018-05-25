@@ -1474,8 +1474,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
     
     Use GNFWParams (in parDict) to specify a different shape.
     
-    NOTE: This is also currently signal frequency only - we're assuming that beamFileName is given under
-    parDict['unfilteredMaps'].
+    NOTE: We're assuming that beamFileName is given under parDict['unfilteredMaps'].
     
     """
 
@@ -1496,6 +1495,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
     extNames=[]
     for f in fileList:
         extNames.append(f.split("#")[-1].split("_SNMap")[0])
+    extNames.sort()
 
     # M, z ranges for Q calc
     # NOTE: ref filter that sets scale we compare to must ALWAYS come first

@@ -75,13 +75,16 @@ class MockSurvey(object):
             # For drawing from each log10M distribution at each point on z grid
             # This can blow up if there are identical entries in pM... so we truncate spline fit when reach 1.0
             # NOTE: Should add sanity check code that the interpolation used here is accurate (make plots)
-            print "WARNING: should add code to check interpolation used for drawing mock samples is accurate enough"
+            #print "WARNING: should add code to check interpolation used for drawing mock samples is accurate enough"
             self.tck_log10MRoller=[]
             for i in range(len(self.z)):
                 MSum=self.clusterCount[i].sum()
                 pM=np.cumsum(self.clusterCount[i])/MSum
                 # To avoid multiple pM == 1 blowing up the spline fit
-                maxIndex=np.min(np.where(np.diff(pM) == 0))
+                try:
+                    maxIndex=np.min(np.where(np.diff(pM) == 0))
+                except:
+                    maxIndex=len(pM)
                 self.tck_log10MRoller.append(interpolate.splrep(pM[:maxIndex], self.log10M[:maxIndex]))
             # Sanity check
             for i in range(len(self.z)):

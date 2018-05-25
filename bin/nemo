@@ -135,27 +135,6 @@ else:
         for k in skySimContaminationTabDict.keys():
             contaminationTabDict[k]=skySimContaminationTabDict[k]
             
-        # Sims based on inserting fake cluster profiles into the maps
-        if 'fakeSourceSimOptions' in parDict.keys():
-            simsTools.fakeSourceSims(parDict['fakeSourceSimOptions'], parDict['unfilteredMaps'], parDict['mapFilters'],
-                                     parDict['thresholdSigma'], parDict['minObjPix'], parDict['rejectBorder'],
-                                     parDict['minSNToIncludeInOptimalCatalog'], parDict['photometryOptions'], 
-                                     diagnosticsDir)
-        
-        # If asked for, check against inputs sim catalog
-        if 'compareToSim' in parDict.keys() and parDict['compareToSim'] == True:
-            simsTools.compareToInputSimCatalog(imageDict, parDict['inputSimCatalog'], 
-                                            parDict['noiselessSimMap'], \
-                                            parDict['photometryOptions'], \
-                                            outDir = diagnosticsDir, \
-                                            YLimit = parDict['minYLimit_arcmin2'], \
-                                            zRange = parDict['zRange'], \
-                                            convertFromJySrToMicroK = False, \
-                                            obsFreqGHz = 148.0,
-                                            clusterProfilesToPlot = [])
-            outKeys=outKeys+['inputSim_flux_arcmin2', 'inputSim_RvirMpc', 'inputSim_Mvir']
-            outFormats=outFormats+['%.3e', '%.3f', '%.3f']
-
         # MPI: gather together and merge all of the catalogs from each process, and contamination test results
         if MPIEnabled == True:
             optimalCatalogList=comm.gather(imageDict['optimalCatalog'], root = 0)
