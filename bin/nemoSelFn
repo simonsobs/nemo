@@ -478,6 +478,7 @@ else:
         makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent_surveyAverage.pdf")
         print(">>> Survey-averaged results:")
         averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
+        print("... total survey area (after masking) = %.3f sq deg ..." % (np.sum(tileAreas)))
         print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete))
         
         #print("what now?")
