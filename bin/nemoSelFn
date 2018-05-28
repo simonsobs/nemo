@@ -26,6 +26,7 @@ from nemo import MockSurvey
 from nemo import SelFn
 from nemo import photometry
 from nemo import plotSettings
+import types
 import pickle
 import nemoCython
 import astropy.io.fits as pyfits
@@ -33,7 +34,11 @@ import time
 import matplotlib.cm as cm
 import matplotlib
 import IPython
+import warnings
 plt.matplotlib.interactive(False)
+
+# If want to catch warnings as errors...
+#warnings.filterwarnings('error')
 
 #------------------------------------------------------------------------------------------------------------
 def getTileTotalAreaDeg2(extName, diagnosticsDir):
@@ -180,10 +185,12 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         # Ajusting mass limit for draws according to RMS - trick to avoid drawing loads of clusters we'll never see
         # This is ok as just a rough estimate
         minLog10MDraw=np.log10(Mpivot*np.power((y0Noise*minDrawNoiseMultiplier)/(tenToA0*np.power(astCalc.Ez(z), 2)), 1/(1+B0)))
-        testDraws=np.linspace(0, 1, 1000)
+        testDraws=np.linspace(0, 1, 1000000)
         testLog10M=interpolate.splev(testDraws, mockSurvey.tck_log10MRoller[zIndex])
         minDraw=testDraws[np.argmin(abs(testLog10M-minLog10MDraw))]
-        
+        if minDraw == 1.0:
+            raise Exception, "minDraw == 1 - very noisy pixel, try increasing number of test draws?"
+            
         # Draw masses from the mass function...    
         numDetected=0
         mockClusterMultiplier=1
@@ -218,7 +225,12 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             # Check selection - did we manage to select enough objects?
             y0Lim_selection=SNRCut*y0Noise  # y0Noise = RMS
             t111=time.time()
-            numDetected=np.greater(measured_y0s, y0Lim_selection).sum()
+            try:
+                numDetected=np.greater(measured_y0s, y0Lim_selection).sum()
+            except:
+                print("eh?")
+                IPython.embed()
+                sys.exit()
             if numDetected == 0:
                 mockClusterMultiplier=maxMultiplier
             elif numDetected < minAllowedDetections:
@@ -320,19 +332,20 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
     RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir)
 
     # Fill in blocks in map for each RMS value, and store giant fit table for this z also
+    # Quite possibly we can speed this up loads by doing a subset and interpolating
     massLimMap=np.zeros(RMSMap.shape)
     mapFitTab=None
     count=0
     t0=time.time()
     for y0Noise in RMSTab['y0RMS']:
         count=count+1
-        print("... %d/%d ..." % (count, len(RMSTab)))
+        print("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise))
         fitTab=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
                                 zRange = [z], fitTabFileName = None)
         fitTab.rename_column('z', 'y0RMS')
         fitTab['y0RMS'][0]=y0Noise
         massLimMap[np.where(RMSMap == y0Noise)]=fitTab['log10MLimit_90%'][0]
-        if mapFitTab == None:
+        if type(mapFitTab) == types.NoneType:
             mapFitTab=fitTab
         else:
             mapFitTab.add_row(fitTab[0])

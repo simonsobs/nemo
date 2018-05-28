@@ -12,6 +12,7 @@ import astropy.table as atpy
 import numpy as np
 import pylab
 import pickle
+import types
 import IPython
 pylab.matplotlib.interactive(False)
 
@@ -157,7 +158,7 @@ else:
                     tabCount=0
                     for tabDict in contaminationTabDictList:
                         tab=tabDict[k]
-                        if avTab == None:
+                        if type(avTab) == types.NoneType:
                             avTab=atpy.Table()
                             for colName in tab.keys():
                                 avTab.add_column(atpy.Column(np.zeros(len(tab)), colName))
