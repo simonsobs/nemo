@@ -51,15 +51,15 @@ def getTileTotalAreaDeg2(extName, diagnosticsDir):
     return totalAreaDeg2
 
 #------------------------------------------------------------------------------------------------------------
-def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir):
+def getRMSTab(extName, photFilterLabel, diagnosticsDir):
     """Makes a table containing fraction of map area in tile pointed to by extName against RMS values
     (so this compresses the information in the RMS maps). The first time this is run takes ~200 sec (for a
     1000 sq deg tile), but the result is cached.
-    
-    Returns weighted average noise value in the tile.
+        
+    Returns RMSTab
     
     """
-
+    
     # This can probably be sped up, but takes ~200 sec for a ~1000 sq deg tile, so we cache
     RMSTabFileName=diagnosticsDir+os.path.sep+"RMSTab_%s.fits" % (extName)
     if os.path.exists(RMSTabFileName) == False:
@@ -84,8 +84,18 @@ def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir):
     else:
         print("... reading %s ..." % (RMSTabFileName))
         RMSTab=atpy.Table().read(RMSTabFileName)
-        RMSValues=np.array(RMSTab['y0RMS'])
-        fracArea=np.array(RMSTab['fracArea'])
+    
+    return RMSTab
+
+#------------------------------------------------------------------------------------------------------------
+def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir):
+    """Returns weighted average noise value in the tile.
+    
+    """
+
+    RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir)
+    RMSValues=np.array(RMSTab['y0RMS'])
+    fracArea=np.array(RMSTab['fracArea'])
     tileRMSValue=np.average(RMSValues, weights = fracArea)
 
     return tileRMSValue
@@ -94,27 +104,26 @@ def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir):
 def rayleighFlipped(log10M, loc, scale):
     """This is a good functional form to fit to completeness as a function of mass. It's asymmetric, so
     it can fit both the low and high completeness ends with one function (previously we used Gaussian cdf,
-    but that isn't a good fit when intrinsic scatter is turned on)
+    but that isn't a good fit when intrinsic scatter is turned on).
     
     """
     return (1-stats.rayleigh.cdf(log10M, loc = loc, scale = scale))[::-1]
 
 #------------------------------------------------------------------------------------------------------------
 def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
-                     writeOutput = False):
+                     zRange = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0],
+                     fitTabFileName = None):
     """Calculate completeness as a function of M500, z, for assumed fiducial cosmology and scaling relation,
     at the given SNRCut and noise level. Intrinsic scatter in the scaling relation is taken into account.
     
-    If writeOutput == True, saves the resulting model (and sim results) as .fits table(s) under 
+    If fitTabFileName != None, saves the resulting model (and sim results) as .fits table(s) under 
     diagnosticsDir. Also saves a diagnostic plot of completeness for that tile.
     
     Returns fitTab
     
     """
     
-    # We'll need to change this behaviour if we later want to use this on every pixel in the RMS map...
-    fitTabFileName=diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName)
-    if os.path.exists(fitTabFileName) == True:
+    if fitTabFileName != None and os.path.exists(fitTabFileName) == True:
         fitTab=atpy.Table().read(fitTabFileName)
         return fitTab
     
@@ -128,7 +137,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     numMockClusters=10000
     minAllowedDetections=4000
     maxMultiplier=8000
-    minDrawNoiseMultiplier=2   # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
+    minDrawNoiseMultiplier=SNRCut-3.  # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
 
     # Binning used for fitting
     binEdges=np.arange(13.5, 16.0, 0.05)
@@ -139,12 +148,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     completenessTab=atpy.Table()
     completenessTab.add_column(atpy.Column(binCentres, 'log10M'))
 
-    # This takes ~60 sec in 2_1 for 15 zs for robust results at SNR > 4 (minDrawNoiseMultiplier=1)
-    # ... and ~120 - 180 sec in 2_1 for 15 zs for robust results at SNR > 5 (minDrawNoiseMultiplier=1)
-    # (later we'll interpolate fit results onto the MockSurvey 2d M, z completeness grid)
     t00=time.time()
-    zRange=[0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0]
-    #zRange=[0.5]
 
     # Stores Rayleigh cumulative distribution function (flipped etc.) fits at each z
     fitTab=atpy.Table()
@@ -164,7 +168,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
 
         t0=time.time()    
         z=zRange[iz]
-        print("... z = %.2f ..." % (z))
+        #print("... z = %.2f ..." % (z))
         zIndex=np.where(abs(mockSurvey.z-z) == abs(mockSurvey.z-z).min())[0][0]
         
         # Used in Q-calc below...
@@ -219,7 +223,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
                 mockClusterMultiplier=maxMultiplier
             elif numDetected < minAllowedDetections:
                 mockClusterMultiplier=1.2*(minAllowedDetections/(float(numDetected)/mockClusterMultiplier))
-                print("... mockClusterMultiplier = %.1f ..." % (mockClusterMultiplier))
+                #print("... mockClusterMultiplier = %.1f ..." % (mockClusterMultiplier))
                 if mockClusterMultiplier > maxMultiplier:
                     mockClusterMultiplier=maxMultiplier
                     exceededMultiplierCount=exceededMultiplierCount+1
@@ -263,17 +267,17 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         fineCompleteness=rayleighFlipped(fineLog10Bins, fitTab['loc'][iz], fitTab['scale'][iz])
         log10MassLimit=fineLog10Bins[np.argmin(abs(fraction-fineCompleteness))]
         fitTab['log10MLimit_90%'][iz]=log10MassLimit
-        print("... 90%% completeness mass limit at z = %.1f: %.3e MSun ..." % (z, np.power(10, log10MassLimit)))
+        #print("... 90%% completeness mass limit at z = %.1f: %.3e MSun ..." % (z, np.power(10, log10MassLimit)))
         t1=time.time()
-        print("... time taken = %.3f sec ..." % (t1-t0))
+        #print("... time taken = %.3f sec ..." % (t1-t0))
 
     t11=time.time()
-    print("... total time take for %s = %.3f sec ..." % (extName, t11-t00))
+    #print("... total time take for %s = %.3f sec ..." % (extName, t11-t00))
     
-    if writeOutput == True:
+    if fitTabFileName != None:
 
         # Save both the fit results and the binned data they are based on
-        outFileNames=[diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName), diagnosticsDir+os.path.sep+"selFn_completenessTab#%s.fits" % (extName)]
+        outFileNames=[fitTabFileName, diagnosticsDir+os.path.sep+"selFn_completenessTab#%s.fits" % (extName)]
         tabs=[fitTab, completenessTab]
         for outFileName, tab in zip(outFileNames, tabs):
             if os.path.exists(outFileName) == True:
@@ -300,6 +304,48 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
 
     return fitTab
 
+#------------------------------------------------------------------------------------------------------------
+def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRelationDict, tckQFitDict, 
+                     diagnosticsDir):
+    """Makes a map of 90% mass completeness (for now, this fraction is fixed).
+    
+    """
+    
+    # Get the stuff we need...
+    RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits" % (extName))
+    RMSMap=RMSImg[0].data
+    areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+    areaMap=areaImg[0].data
+    wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+    RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir)
+
+    # Fill in blocks in map for each RMS value, and store giant fit table for this z also
+    massLimMap=np.zeros(RMSMap.shape)
+    mapFitTab=None
+    count=0
+    t0=time.time()
+    for y0Noise in RMSTab['y0RMS']:
+        count=count+1
+        print("... %d/%d ..." % (count, len(RMSTab)))
+        fitTab=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
+                                zRange = [z], fitTabFileName = None)
+        fitTab.rename_column('z', 'y0RMS')
+        fitTab['y0RMS'][0]=y0Noise
+        massLimMap[np.where(RMSMap == y0Noise)]=fitTab['log10MLimit_90%'][0]
+        if mapFitTab == None:
+            mapFitTab=fitTab
+        else:
+            mapFitTab.add_row(fitTab[0])
+    t1=time.time()
+    
+    outFileName=diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName)
+    astImages.saveFITS(outFileName, np.power(10, massLimMap)/1e14, wcs)
+
+    outFileName=diagnosticsDir+os.path.sep+"selFn_mapFitTab_z%s#%s.fits" % (str(z).replace(".", "p"), extName)
+    if os.path.exists(outFileName) == True:
+        os.remove(outFileName)
+    mapFitTab.write(outFileName)
+    
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title = None):
     """Write a plot of 90%-completeness mass limit versus z, adding a spline interpolation.
@@ -440,14 +486,24 @@ else:
             tileAreaDeg2=getTileTotalAreaDeg2(extName, diagnosticsDir)
             y0Noise=calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
             fitTab=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
-                                    writeOutput = True)
+                                    fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName))
             # We will eventually want to use interpolation of fitTab results to make 2d completeness array on mockSurvey grid, as used in HSC stuff
             selFnDict={'extName': extName,
                        'y0Noise': y0Noise,
                        'tileAreaDeg2': tileAreaDeg2,
                        'fitTab': fitTab}
             selFnDictList.append(selFnDict)
-        
+
+            # Optional mass-limit maps
+            if 'massLimitMaps' in parDict['selFnOptions'].keys():
+                for massLimitDict in parDict['selFnOptions']['massLimitMaps']:
+                    makeMassLimitMap(SNRCut, massLimitDict['z'], extName, photFilterLabel, mockSurvey, 
+                                     parDict['massOptions'], tckQFitDict, diagnosticsDir)
+                    #print("what now?")
+                    #IPython.embed()
+                    #sys.exit()            
+            
+            
         # MPI: gather together selection function results, so we can compute survey-wide average
         if MPIEnabled == True:
             gathered_selFnDictLists=comm.gather(selFnDictList, root = 0)
@@ -476,15 +532,12 @@ else:
         #massLimit_90Complete=np.average(np.power(10, completeness)/1e14, axis = 0, weights = fracArea)
         massLimit_90Complete=np.power(10, np.average(completeness, axis = 0, weights = fracArea))/1e14
         makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent_surveyAverage.pdf")
+        
         print(">>> Survey-averaged results:")
         averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
         print("... total survey area (after masking) = %.3f sq deg ..." % (np.sum(tileAreas)))
         print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete))
-        
-        #print("what now?")
-        #IPython.embed()
-        #sys.exit()            
-            
+
             
             
             
