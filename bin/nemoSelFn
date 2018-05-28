@@ -455,6 +455,8 @@ else:
             startIndex=0
             endIndex=len(extNames)
         extNames=extNames[startIndex:endIndex]
+        # For debugging...
+        print("... rank = %d: extNames = %s" % (rank, str(extNames)))
 
         # Now we get into selection function stuff...
         # Q varies across tiles
