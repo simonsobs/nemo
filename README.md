@@ -27,7 +27,7 @@ version of `actDict.py` - thanks to whoever wrote that back in the day.
 
 ## Software needed
 
-Nemo itself is written in `python` (2.7.x), and requires the following additional modules to be installed 
+Nemo itself is written in python (2.7.x), and requires the following additional modules to be installed 
 (current versions used by the author are given in brackets, earlier and later versions also probably work):
 
 * numpy (1.11.1)
