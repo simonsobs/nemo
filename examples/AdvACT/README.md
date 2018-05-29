@@ -1,28 +1,34 @@
-An example of using BeamRealSpaceMatchedFilter to find point sources.
+# Running nemo on AdvACT maps
 
-Using Sigurd's maps: 
+In this directory you will find example .par files that show how to 
+run nemo in "tileDeck" mode - i.e., splitting a very large map into
+tiles and then (optionally) running nemo in parallel using MPI. Given
+that this is work in progress, no example maps or beam files are 
+provided - check the ACTPol wiki for where to find such things.
 
-`~sigurdkn/data/actpol/maps/s4test3/cmb_huge`
+For a quick tutorial on how to run `nemo`, see `examples/equD56/README.md`
+first. The key difference between the AdvACT .par files in this 
+directory and the equD56 example are the "tileDeck" options. These are
+documented in the .par files themselves, but the key parameters are:
 
-Look at the .par files to see which maps are used there, and copy/link them into this directory. 
-Note that since Sigurd's maps include polarisation, the script makeSigurd1D.py should be used to 
-extract the temperature map only.
+* `makeTileDeck` - set to True for any of the other tileDeck options to be
+  used (otherwise nemo will not split the map into tiles).
+* `tileDefinitions` - a dictionary list that defines the names of the tiles, and
+  the corresponding RA, dec range covered.
+* `tileNoiseRegions` - a dictionary that defines the regions used for 
+  estimating the noise in RealSpaceMatchedFilter. Hence, `RADecSection` in 
+  `noiseParams` in the filter definitions is set to `tileNoiseRegions` for
+  these to be used.
+* `extNameList` - this can be used to select a particular set of tiles only,
+  most useful for testing purposes. To see this in action, see
+  `MF_AdvACT_multiScale_tileDeck_hybrid_quick.par`.
 
-For testing out the code, run: 
+Additionally, if `useMPI = True` is found in the .par file, the `nemo` 
+scripts should be launched with `mpirun`, e.g.,
 
 ```
-nemo AdvACT_PointSources_quick.par
+mpirun --np 16 nemo MF_AdvACT_multiScale_tileDeck_hybrid.par
 ```
 
-This is very quick (~30 sec), as it uses only a small part of the map. Under the 
-`AdvACT_PointSources_quick` directory that is created, you'll find the catalogs and filtered maps in the usual format.
-
-To run over the whole map, use:
-
-```
-nemo AdvACT_PointSources.par
-```
-
-This will start thrashing the disk on a machine with 8 Gb of RAM. Currently, it will still take a 
-loooong time on a machine with lots of memory (maybe ~1 hour to do the filtering step) - the code 
-needs to be parallelised to cope with the size of the AdvACT maps.
+The *.sh files in this directory are the batch files used for running 
+the code on [hippo](https://www.acru.ukzn.ac.za/~hippo/) using `slurm`. 

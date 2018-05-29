@@ -6,16 +6,18 @@ give similar results for signal-to-noise, given the same map (or at least it did
 *It is* the pipeline, that has been used for the two-season ACTPol cluster catalog 
 [paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
 See `examples/equD56/README.md` if you would like to re-create the cluster catalog produced for the
-E-D56 field.
+E-D56 field, and `examples/AdvACT/` if you want to see example .par files currently being used 
+for the AdvACT cluster search.
 
 This code was originally posted "as is", in time for the Feb 2017 meeting, and it is still in need 
 of a tidy up. There are several different types of filters and options to play with, but the only
-one which is well-tested and recommended at the moment is the single-frequency 
-RealSpaceMatchedFilter. Again, see `examples/AdvACT` and `examples/equD56` for examples of its use.
+one which is well-tested and recommended at the moment is the RealSpaceMatchedFilter. 
+Again, see `examples/AdvACT` (multi-frequency) and `examples/equD56` (single frequency) for 
+examples of its use.
 
-Note that the catalog matching and (static) web page generation code in `nemo` is disabled, as that's 
-all now handled by the [sourcery](https://github.com/mattyowl/sourcery) package, which runs a live, 
-editable web database.
+Note that the catalog matching and (static) web page generation code that was in `nemo` has been
+removed, as that's all now handled by the [sourcery](https://github.com/mattyowl/sourcery) package, 
+which runs a live, editable web database.
 
 Catalogs produced by nemo can also be fed into the [zCluster](https://github.com/ACTCollaboration/zCluster)
 code, for estimating cluster photometric redshifts.
@@ -25,7 +27,7 @@ version of `actDict.py` - thanks to whoever wrote that back in the day.
 
 ## Software needed
 
-Nemo itself is written in python (2.7.x), and requires the following additional modules to be installed 
+Nemo itself is written in `python` (2.7.x), and requires the following additional modules to be installed 
 (current versions used by the author are given in brackets, earlier and later versions also probably work):
 
 * numpy (1.11.1)
@@ -37,15 +39,12 @@ Nemo itself is written in python (2.7.x), and requires the following additional 
 * astropy (2.0.4)
 * IPython (2.4.1)
 * Cython (0.24.1)
-* enlib (git version: https://github.com/ACTCollaboration/enlib)
 
-_Note:_ Switched from `atpy` and `pyfits` to `astropy` for handling .fits tables and images. enlib is 
+_Note:_ Switched from `atpy` and `pyfits` to `astropy` for handling .fits tables and images. `enlib` is 
 currently being used only for CMB-only sky sims (for estimating false positive detection rate), but
-other parts which currently rely on flipper may be replaced in future.
+other parts which currently rely on `flipper` may be replaced in future.
 
 Most of the dependencies can be installed using `pip`.
-
-Add a short guide to installing the enlib bits we need here, if running Ubuntu...
 
 ## Installation
 
@@ -70,11 +69,10 @@ export PYTHONPATH=$HOME/local/lib/python2.7/site-packages:$PYTHONPATH
 
 ## Running nemo
 
-See the README.md file under `examples/ACTEqu/` for a quick tutorial, though you shouldn't use the filter
-used in this example if you want to perform photometry. Instead, see `examples/equD56` for a tutorial on
-how to re-create the ACTPol two-season cluster catalog (including mass estimates).
+See `examples/equD56` for a tutorial on how to re-create the ACTPol two-season cluster catalog (including mass estimates).
+See `examples/AdvACT` for example .par files for the current AdvACT cluster search. Refer to the comments in the .par
+files themselves for information on what each parameter does.
 
 ## Comments, bug reports, help, suggestions etc..
 
 Please contact Matt Hilton <matt.hilton@mykolab.com>.
-

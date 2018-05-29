@@ -4,6 +4,9 @@ Here is an example of how to re-create the cluster catalog presented
 in the [two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H). 
 This uses nemo's RealSpaceMatchedFilter method.
 
+If you want to see an example .par file that breaks the map up into
+tiles and runs in parallel, see the `examples/AdvACT` directory
+instead.
 
 ## Step 1:
 
@@ -40,23 +43,20 @@ This may take ~20-30 minutes to run, because a lot of different filter
 scales are used (for a "cosmological sample", you would only need to
 run the `'Arnaud_M2e14_z0p4'` filter, and could comment out with # the
 other dictionaries defining each other filter in the mapFilters 
-list).
+list - this is already done in the `equD56_quick.par` file that you can
+find in this directory).
 
-Output is written to the equD56 directory. Here you will find 
+Output is written to the `equD56` directory. Here you will find 
 catalogs (.fits tables, e.g., `equD56_optimalCatalog.fits`), DS9 region
-(.reg files), images (both in terms of y and signal-to-noise; under
-`filteredMaps/`), and a bunch of other stuff under `diagnostics/` (e.g.,
-statistics (.fits tables) and plots of the contamination rate as a 
-function of SNR, estimated by running the detection algorithm over 
-inverted maps - you should recognise several of the plots here from
-the paper draft linked to above).
+(.reg files), images (both in terms of y0 and signal-to-noise; under
+`filteredMaps/`), and a bunch of other stuff under `diagnostics/`.
 
 ## Step 3:
 
 If you want to measure masses, a .fits table that includes the columns
 'redshift' and 'redshiftErr' is needed. The `ACTPol_redshifts.fits` file
-in this directory contains all redshifts that have been assigned to 
-clusters on the web database. You can specify the redshift catalog 
+in this directory contains all redshifts that were assigned to 
+cluster candidates on the web database. You can specify the redshift catalog 
 used for mass estimates with the `massOptions` key in the .par file. 
 Since this is already filled in, you can run the mass estimation 
 script with:
@@ -65,25 +65,10 @@ script with:
 nemoMass equD56.par
 ```
 
-The output is written as a .fits table, `equD56/equD56_M500.fits`.
-
-If you wanted to extract a catalog containing redshifts from the web 
-database, this link shows the query needed:
-
-<http://www.acru.ukzn.ac.za/actpol-sourcery/updateQueryParams?queryRADeg=0%3A360&queryDecDeg=-90%3A90&querySearchBoxArcmin=&queryOtherConstraints=sourceList+%3D+equD56-MJH+and+redshift+%3E+0&queryApply=Apply>
-
-(you may need to enter 'act', 'atacamallama' to see the web database).
-You could download the catalog (in .fits format) using the links at
-the bottom of the web database table page.
-
-Similarly, if you wanted everything flagged as a cluster (i.e., the
-sample of 182 clusters in the two-season ACTPol catalog), you can use
-this query:
-
-<http://www.acru.ukzn.ac.za/actpol-sourcery/updateQueryParams?queryRADeg=0%3A360&queryDecDeg=-90%3A90&querySearchBoxArcmin=&queryOtherConstraints=sourceList+%3D+equD56-MJH+and+classification+%3D+%27cluster%27&queryApply=Apply>
-
-This should match the `ACTPol_clusters.fits` file included in the 
-current directory.
+This will take ~10 minutes to run (initially), as it calculates the 
+filter mismatch function Q (the result of this is cached, so subsequent
+runs would be faster). The output is written as a .fits table, 
+`equD56/equD56_M500.fits`.
 
 If you're interested in measuring photo-zs for clusters detected with
 `nemo`, check out `zCluster`: 
@@ -95,11 +80,26 @@ This can take the `equD56/equD56_optimalCatalog.fits` file as input.
 ## Step 4:
 
 Steps 1-3 are all that are needed to recreate the two-season ACTPol
-cluster catalog. If you wanted to run simulations to estimate 
-completeness, you can check out the nemoSelFn script. This runs in the
-same way as the others (taking the .par file for input), and writes
-output to `equD56/diagnostics`. With the settings in the equD56.par 
-given in this directory, it only makes sense to run this on a cluster
-using MPI. For applications of this, see the `nemo/MockSurvey.py` and 
-`nemo/SelFn.py` modules, as well as the `bin/nemoSelFn` script itself.
+cluster catalog. You can check the output by cross-matching against
+the `ACTPol_clusters.fits` catalog using e.g. TopCat.
 
+If you wanted to run simulations to estimate completeness, you can use
+the `nemoSelFn` script. You can run it with:
+
+```
+nemoSelFn equD56.par
+```
+
+The output for this script is written in the `diagnostics/` directory,
+and includes a plot of the 90% completeness limit, averaged over the
+survey (in this case the E-D56 field), and an equivalent mass limit 
+map, evaluated at z = 0.5 (a .fits image). It is making the latter
+that takes up most of the time - this can be disabled by removing
+the `massLimitMaps` key from the `selFnOptions` dictionary in the .par
+file. No doubt this part could be sped up, but at the time of writing,
+this script takes ~40 minutes to run. As with `nemoMass`, some results
+are cached, so repeat runs are much quicker.
+
+Note that `nemoSelFn` has been completely rewritten and is different
+to the version used for the ACTPol paper. Hence, the results are 
+slightly different.
