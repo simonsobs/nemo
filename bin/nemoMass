@@ -46,6 +46,18 @@ else:
         parDict=actDict.ACTDict()
         parDict.read_from_file(parDictFileName)
 
+        MPIEnabled=parDict['useMPI']
+        if MPIEnabled == True:
+            from mpi4py import MPI
+            comm=MPI.COMM_WORLD
+            size=comm.Get_size()
+            rank=comm.Get_rank()
+            if size == 1:
+                raise Exception, "if you want to use MPI, run with e.g., mpirun --np 4 nemo ..."
+        else:
+            rank=0
+            comm=None
+            
         # Output dirs
         if 'outputDir' in parDict.keys():
             rootOutDir=parDict['outDir']
@@ -66,7 +78,44 @@ else:
             parDict['GNFWParams']='default'
         for filtDict in parDict['mapFilters']:
             filtDict['params']['GNFWParams']=parDict['GNFWParams']
-            
+
+        # tileDeck file handling - either make one, or handle loading of one
+        # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+        if rank == 0:
+            unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+            madeTileDeck=True
+        else:
+            madeTileDeck=None
+        if MPIEnabled == True:
+            madeTileDeck=comm.bcast(madeTileDeck, root = 0)
+            if rank != 0 and madeTileDeck == True:
+                unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+                
+        # For when we want to test on only a subset of tiles
+        if 'extNameList' in parDict.keys():
+            newList=[]
+            for name in extNames:
+                if name in parDict['extNameList']:
+                    newList.append(name)
+            if newList == []:
+                raise Exception, "extNameList given in .par file but no extensions in images match"
+            extNames=newList
+
+        # MPI: just divide up tiles pointed at by extNames among processes
+        if MPIEnabled == True:
+            numTilesPerNode=len(extNames)/size
+            startIndex=numTilesPerNode*rank
+            if rank == size-1:
+                endIndex=len(extNames)
+            else:
+                endIndex=numTilesPerNode*(rank+1)
+        else:
+            startIndex=0
+            endIndex=len(extNames)
+        extNames=extNames[startIndex:endIndex]
+        # For debugging...
+        print("... rank = %d: extNames = %s" % (rank, str(extNames)))
+        
         massOptions=parDict['massOptions']
         
         # Load the nemo catalog and match against the z catalog
@@ -157,11 +206,13 @@ else:
         
         # Q function (filter mismatch) options
         # NOTE: this should be calculated for the fixed, fiducial cosmology used for object detection
+        # NOTE: Q calculation is the only bit of this code that uses MPI - rank != 0 MPI jobs killed after fitQ
         if massOptions['Q'] == 'H13':
             raise Exception, 'H13 option depreciated - need to replace polynomial with spline fit'
             tckQFit=simsTools.getQCoeffsH13()
         elif massOptions['Q'] == 'fit':
-            tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+            tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = extNames, 
+                                       MPIEnabled = MPIEnabled, rank = rank, comm = comm)
         else:
             raise Exception, "didn't understand choice of Q function in massOptions"
                     

@@ -8,6 +8,7 @@ import mapTools
 import mapFilters
 import photometry
 import simsTools
+import selFnTools
 import actDict
 import plotSettings
 

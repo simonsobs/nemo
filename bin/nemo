@@ -97,6 +97,8 @@ else:
             startIndex=0
             endIndex=len(extNames)
         extNames=extNames[startIndex:endIndex]
+        # For debugging...
+        print("... rank = %d: extNames = %s" % (rank, str(extNames)))
         
         # Filter maps
         imageDict=mapTools.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)

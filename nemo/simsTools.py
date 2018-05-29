@@ -1466,13 +1466,16 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     return signalMap, inputSignalProperties
     
 #------------------------------------------------------------------------------------------------------------
-def fitQ(parDict, diagnosticsDir, filteredMapsDir):
+def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = False, rank = 0, comm = None):
     """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot and the (theta, Q) array
     as a table in the diagnostics dir.
-    
-    This can be generalised, but for now is hard coded to use the Arnaud model.
-    
+        
     Use GNFWParams (in parDict) to specify a different shape.
+    
+    The calculation will be done in parallel, if MPIEnabled = True, and comm and rank are given, and extNames 
+    is different for each rank. This is only needed for the first run of this routine by the nemoMass script.
+    
+    If extNames == [], then we figure out what the extNames are from the contents of the filteredMapsDir.
     
     NOTE: We're assuming that beamFileName is given under parDict['unfilteredMaps'].
     
@@ -1490,12 +1493,12 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
         if f['label'] == photFilterLabel:
             ref=f
                 
-    # NOTE: adjusted for tileDeck files - build list of available extension names
-    fileList=glob.glob(filteredMapsDir+os.path.sep+photFilterLabel+"*_SNMap.fits")
-    extNames=[]
-    for f in fileList:
-        extNames.append(f.split("#")[-1].split("_SNMap")[0])
-    extNames.sort()
+    # NOTE: adjusted for tileDeck files - build list of available extension names (if extNames not given)
+    if extNames == []:
+        fileList=glob.glob(filteredMapsDir+os.path.sep+photFilterLabel+"*_SNMap.fits")
+        for f in fileList:
+            extNames.append(f.split("#")[-1].split("_SNMap")[0])
+        extNames.sort()
 
     # M, z ranges for Q calc
     # NOTE: ref filter that sets scale we compare to must ALWAYS come first
@@ -1506,7 +1509,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
     
     # Q calc - results for all tiles stored in one file
     outFileName=diagnosticsDir+os.path.sep+"QFit.pickle"
-    QTabDict={}
+    rank_QTabDict={}
     if os.path.exists(outFileName) == False:
         
         print ">>> Fitting for Q ..."
@@ -1582,7 +1585,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
             QTab.add_column(atpy.Column(Q, 'Q'))
             QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
             QTab.sort('theta500Arcmin')
-            QTabDict[extName]=QTab
+            rank_QTabDict[extName]=QTab
                        
             # Fit with spline
             tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
@@ -1608,24 +1611,36 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir):
             plt.savefig(diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
             plt.close()
         
-        # Save all the Q fits
+        # Gather and save all the Q fits
+        if MPIEnabled == True:
+            gathered_QTabDicts=comm.gather(rank_QTabDict, root = 0)
+            if rank != 0:
+                assert gathered_QTabDicts is None
+                print "... MPI rank %d finished ..." % (rank)
+                sys.exit()
+            else:
+                print "... gathering QTabDicts ..."
+                QTabDict={}
+                for tabDict in gathered_QTabDicts:
+                    for key in tabDict:
+                        QTabDict[key]=tabDict[key]
+        else:
+            QTabDict=rank_QTabDict
+                    
         pickleFile=file(outFileName, "wb")
         pickler=pickle.Pickler(pickleFile)
         pickler.dump(QTabDict)
         pickleFile.close()
-    
     else:
+        
+        if MPIEnabled == True and rank != 0:
+            sys.exit()
         
         print ">>> Loading previously cached Q fit ..."
         pickleFile=file(outFileName, "rb")
         unpickler=pickle.Unpickler(pickleFile)
         QTabDict=unpickler.load()
         pickleFile.close()
- 
-        # Old
-        #coeffs=np.load(outFileName)
-        #QTab=atpy.Table().read(outFileName)
-        #tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
         
     tckDict={}
     for key in QTabDict:
