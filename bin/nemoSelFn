@@ -178,7 +178,7 @@ else:
                 print "... gathering selection function results ..."
                 all_selFnDictList=[]
                 for dictList in gathered_selFnDictLists:
-                    all_selFnDictList=selFnDictList+dictList
+                    all_selFnDictList=all_selFnDictList+dictList
         else:
             all_selFnDictList=selFnDictList
                 
