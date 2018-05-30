@@ -20,8 +20,6 @@ from nemo import actDict
 from nemo import simsTools
 from nemo import mapTools
 from nemo import MockSurvey
-#from nemo import SelFn
-#from nemo import photometry
 from nemo import plotSettings
 import types
 import pickle
@@ -396,4 +394,184 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     plt.savefig(outFileName)
     plt.close()   
     
+#------------------------------------------------------------------------------------------------------------
+def cumulativeAreaMassLimitPlot(z, diagnosticsDir):
+    """Make a cumulative plot of 90%-completeness mass limit versus survey area, at the given redshift.
     
+    """
+
+    fileList=glob.glob(diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")))
+    extNames=[]
+    for f in fileList:
+        extNames.append(f.split("#")[-1].split(".fits")[0])
+    extNames.sort()
+    
+    # NOTE: We can avoid this if we add 'areaDeg2' column to selFn_mapFitTab_*.fits tables
+    allLimits=[]
+    allAreas=[]
+    for extName in extNames:
+        massLimImg=pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName))
+        massLimMap=massLimImg[0].data
+        areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaMap=areaImg[0].data
+        wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+        areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+        limits=np.unique(massLimMap).tolist()
+        areas=[]
+        for l in limits:
+            areas.append(areaMapSqDeg[np.where(massLimMap == l)].sum())
+        allLimits=allLimits+limits
+        allAreas=allAreas+areas
+    tab=atpy.Table()
+    tab.add_column(atpy.Column(allLimits, 'MLim'))
+    tab.add_column(atpy.Column(allAreas, 'areaDeg2'))
+    tab.sort('MLim')
+
+    plotSettings.update_rcParams()
+
+    # Full survey plot
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.155, 0.12, 0.82, 0.86])
+    plt.minorticks_on()
+    plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
+    plt.ylabel("survey area < $M_{\\rm 500c}$ limit (deg$^2$)")
+    plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
+    labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
+    plt.ylim(0.1, 1.01*np.cumsum(tab['areaDeg2']).max())
+    plt.xlim(1.5, 10)
+    plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
+    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.pdf" % (str(z).replace(".", "p")))
+    plt.close()
+    
+    # Deepest 20%
+    totalAreaDeg2=tab['areaDeg2'].sum()
+    deepTab=tab[np.where(np.cumsum(tab['areaDeg2']) < 0.2 * totalAreaDeg2)]
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.155, 0.12, 0.82, 0.86])
+    plt.minorticks_on()
+    plt.plot(deepTab['MLim'], np.cumsum(deepTab['areaDeg2']), 'k-')
+    plt.ylabel("survey area < $M_{\\rm 500c}$ limit (deg$^2$)")
+    plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
+    labelStr="area of deepest 20%% = %.0f deg$^2$" % (np.cumsum(deepTab['areaDeg2']).max())
+    plt.ylim(0.1, 1.01*np.cumsum(deepTab['areaDeg2']).max())
+    plt.xlim(1.5, deepTab['MLim'].max())
+    plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
+    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.pdf" % (str(z).replace(".", "p")))
+    plt.close()
+        
+#------------------------------------------------------------------------------------------------------------
+def makeFullSurveyMassLimitMapPlot(z, diagnosticsDir):
+    """Reprojects tile mass limit maps onto the full map pixelisation, then makes a plot and saves a
+    .fits image.
+    
+    NOTE: we hardcoded the pixelisation in here for now...
+    
+    """
+
+    # Making the full res reprojected map takes ~1650 sec
+    outFileName=diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
+    if os.path.exists(outFileName) == False:
+
+        print(">>> Making reprojected full survey mass limit map:")
+        
+        # Downsampled
+        h=pyfits.Header()
+        h['NAXIS']=2
+        h['NAXIS1']=10800
+        h['NAXIS2']=2580
+        h['WCSAXES']=2
+        h['CRPIX1']=5400.25
+        h['CRPIX2']=1890.25
+        h['CDELT1']=-0.0333333333333332
+        h['CDELT2']=0.0333333333333332
+        h['CUNIT1']='deg'
+        h['CUNIT2']='deg'
+        h['CTYPE1']='RA---CAR'
+        h['CTYPE2']='DEC--CAR'
+        h['CRVAL1']=0.0
+        h['CRVAL2']=0.0
+        h['LONPOLE']=0.0
+        h['LATPOLE']=90.0
+        h['RADESYS']='ICRS'
+        # Full res
+        #h['NAXIS']=2
+        #h['NAXIS1']=43200
+        #h['NAXIS2']=10320
+        #h['WCSAXES']=2
+        #h['CRPIX1']=21601.0
+        #h['CRPIX2']=7561.0
+        #h['CDELT1']=-0.0083333333333333
+        #h['CDELT2']=0.0083333333333333
+        #h['CUNIT1']='deg'
+        #h['CUNIT2']='deg'
+        #h['CTYPE1']='RA---CAR'
+        #h['CTYPE2']='DEC--CAR'
+        #h['CRVAL1']=0.0
+        #h['CRVAL2']=0.0
+        #h['LONPOLE']=0.0
+        #h['LATPOLE']=90.0
+        #h['RADESYS']='ICRS'
+        wcs=astWCS.WCS(h, mode = 'pyfits')
+        
+        reproj=np.zeros([wcs.header['NAXIS2'], wcs.header['NAXIS1']])
+        sumPix=np.zeros([wcs.header['NAXIS2'], wcs.header['NAXIS1']])
+        
+        fileList=glob.glob(diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")))
+        extNames=[]
+        for f in fileList:
+            extNames.append(f.split("#")[-1].split(".fits")[0])
+        extNames.sort()
+        
+        t0=time.time()
+        for extName in extNames:
+            print("... %s ..." % (extName))
+            img=pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName))
+            data=img[0].data
+            imgWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+            areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+            areaMap=areaImg[0].data
+            for y in range(data.shape[0]):
+                for x in range(data.shape[1]):
+                    outRADeg, outDecDeg=imgWCS.pix2wcs(x, y)
+                    inX, inY=wcs.wcs2pix(outRADeg, outDecDeg)
+                    # Once, this returned infinity...
+                    try:
+                        inX=int(round(inX))
+                        inY=int(round(inY))
+                    except:
+                        continue
+                    # handle the overlap regions, which were zeroed
+                    if areaMap[y, x] > 0:   
+                        reproj[inY, inX]=reproj[inY, inX]+data[y, x]
+                        sumPix[inY, inX]=sumPix[inY, inX]+1.0
+        t1=time.time()
+        #print(t1-t0)
+        astImages.saveFITS(outFileName, reproj/sumPix, wcs)
+    
+    # Make plot
+    import colorcet
+    img=pyfits.open(outFileName)
+    reproj=np.nan_to_num(img[0].data)
+    #reproj=np.ma.masked_where(reproj == np.nan, reproj)
+    reproj=np.ma.masked_where(reproj <1e-6, reproj)
+    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+    plotSettings.update_rcParams()
+    fontSize=20.0
+    figSize=(16, 5.7)
+    axesLabels="sexagesimal"
+    axes=[0.08,0.15,0.91,0.88]
+    cutLevels=[2, 9]
+    colorMapName=colorcet.m_rainbow
+    fig=plt.figure(figsize = figSize)
+    p=astPlots.ImagePlot(reproj, wcs, cutLevels = cutLevels, title = None, axes = axes, 
+                         axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif', 
+                         RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
+                         axesFontSize = fontSize)
+    cbLabel="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]"
+    cbShrink=0.7
+    cbAspect=40
+    cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18, 
+                    shrink = cbShrink, aspect = cbAspect)
+    plt.figtext(0.53, 0.04, cbLabel, size = 20, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
+    plt.savefig(outFileName.replace(".fits", ".pdf"))
+    plt.close()

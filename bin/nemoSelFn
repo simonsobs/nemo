@@ -72,9 +72,8 @@ else:
                 raise Exception, "File must have .par extension"
             rootOutDir=sys.argv[1].replace(".par", "")
         filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
-        filtersDir=rootOutDir+os.path.sep+"filters"
         diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-        dirList=[rootOutDir, filteredMapsDir, filtersDir]
+        dirList=[rootOutDir, filteredMapsDir]
         if rank == 0:
             for d in dirList:
                 if os.path.exists(d) == False:
@@ -194,13 +193,18 @@ else:
         zRange=np.array(selFnDict['fitTab']['z'])
         massLimit_90Complete=np.average(np.power(10, completeness)/1e14, axis = 0, weights = fracArea)  # agrees with full mass limit map
         selFnTools.makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent_surveyAverage.pdf")
-        
+        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()        
         print(">>> Survey-averaged results:")
-        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
         print("... total survey area (after masking) = %.3f sq deg ..." % (np.sum(tileAreas)))
         print("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun" % (massLimit_90Complete[np.where(zRange == 0.5)][0]))
         print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete))
 
-            
+        # If we made mass limit maps...
+        # ... make cumulative area versus mass limit plot(s)
+        # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit
+        if 'massLimitMaps' in parDict['selFnOptions'].keys():
+            for massLimitDict in parDict['selFnOptions']['massLimitMaps']:
+                selFnTools.cumulativeAreaMassLimitPlot(massLimitDict['z'], diagnosticsDir) 
+                selFnTools.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], diagnosticsDir)
             
             

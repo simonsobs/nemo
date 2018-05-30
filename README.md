@@ -39,6 +39,7 @@ Nemo itself is written in python (2.7.x), and requires the following additional 
 * astropy (2.0.4)
 * IPython (2.4.1)
 * Cython (0.24.1)
+* colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 
 _Note:_ Switched from `atpy` and `pyfits` to `astropy` for handling .fits tables and images. `enlib` is 
 currently being used only for CMB-only sky sims (for estimating false positive detection rate), but

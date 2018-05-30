@@ -49,9 +49,8 @@ else:
                 raise Exception, "File must have .par extension"
             rootOutDir=sys.argv[1].replace(".par", "")
         filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
-        filtersDir=rootOutDir+os.path.sep+"filters"
         diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-        dirList=[rootOutDir, filteredMapsDir, filtersDir]
+        dirList=[rootOutDir, filteredMapsDir]
         if rank == 0:
             for d in dirList:
                 if os.path.exists(d) == False:
