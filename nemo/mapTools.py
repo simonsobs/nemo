@@ -78,6 +78,10 @@ def makeTileDeck(parDict):
     If the options for making a tileDeck image aren't given in parDict, then we pass through a standard
     single extension file (or rather the path to it, as originally given)
     
+    NOTE: If the map given in unfilteredMaps is 3d (enki gives I, Q, U as a datacube), then this will extract
+    only the I (temperature) part and save that in the tileDeck file. This will need changing if hunting for
+    polarized sources...
+    
     Returns unfilteredMapsDictList [input for filterMaps], list of extension names
     
     """
@@ -122,7 +126,11 @@ def makeTileDeck(parDict):
                 if f in mapDict.keys() and mapDict[f] != None:
                     inFileNames.append(mapDict[f])
                     mapDir, mapFileName=os.path.split(mapDict[f])
-                    outFileNames.append(mapDir+os.path.sep+"tileDeck_%s_" % (tileDeckFileNameLabel)+mapFileName)
+                    if mapDir != '':
+                        mapDirStr=mapDir+os.path.sep
+                    else:
+                        mapDirStr=''
+                    outFileNames.append(mapDirStr+"tileDeck_%s_" % (tileDeckFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
                     
             allFilesMade=True
@@ -149,11 +157,14 @@ def makeTileDeck(parDict):
                 else:
                     wht=pyfits.open(mapDict['weightsFileName'])
                     print ">>> Using weight map to determine tiling ..."
-                    print "... WARNING: same tiling not guaranteed across multiple frequencies ..."
                 wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
                 tileOverlapDeg=parDict['tileOverlapDeg']
    
                 if defineTilesAutomatically == True:
+                    
+                    if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] == None:
+                        print "... WARNING: same tiling not guaranteed across multiple frequencies ..."
+                    
                     # NOTE: here we look at surveyMask first to determine where to put down tiles
                     # since this will ensure algorithm uses same tiles for multi-freq data
                     # Otherwise, we use the wht image (but then can't guarantee f090 and f150 have same tiles)
@@ -239,6 +250,10 @@ def makeTileDeck(parDict):
                         deckImg=pyfits.HDUList()
                         img=pyfits.open(inMapFileName)
                         mapData=img[0].data
+                        # Deal with Sigurd's maps which have T, Q, U as one 3d array
+                        # If anyone wants to find polarized sources, this will need changing...
+                        if mapData.ndim == 3:
+                            mapData=mapData[0, :]
                         for c, name in zip(coordsList, extNames):
                             y0=c[2]
                             y1=c[3]
