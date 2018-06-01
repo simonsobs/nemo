@@ -32,6 +32,10 @@ catalogCuts=['SNR > 4.0']#, 'fractionMapsDetected > 0.5']#, 'decDeg > -1.4', 'de
 # use photFilter to choose which filter to include in the catalog as fixed filter scale measurement (fixed_delta_T_c, fixed_y_c etc.) 
 photometryOptions = {'photFilter': 'Arnaud_M2e14_z0p4'}
 
+# Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
+# The example below is for the Planck Pressure Profile (PPP)
+#GNFWParams={'P0': 6.41, 'c500': 1.81, 'gamma': 0.31, 'alpha': 1.33, 'beta': 4.13, 'tol': 1e-7, 'npts': 100}
+
 # Mass measurement options - used by nemoMass and nemoSelFn scripts
 # Writes out .fits file to nemoOutDir/nemoOutDir_M500.fits
 # redshiftCatalog:  A .fits table containing name, RADeg, decDeg, redshift, redshiftErr columns
