@@ -104,11 +104,13 @@ else:
         
         # Find objects in filtered maps
         photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'], 
-                               findCenterOfMass = parDict['findCenterOfMass'], rejectBorder = parDict['rejectBorder'], 
-                               diagnosticsDir = diagnosticsDir, objIdent = parDict['objIdent'], longNames = parDict['longNames'])
+                               findCenterOfMass = parDict['findCenterOfMass'], useInterpolator = parDict['useInterpolator'],
+                               rejectBorder = parDict['rejectBorder'], diagnosticsDir = diagnosticsDir, 
+                               objIdent = parDict['objIdent'], longNames = parDict['longNames'])
         
         # Measure fluxes
-        photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
+        photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, useInterpolator = parDict['useInterpolator'],
+                                 unfilteredMapsDict = parDict['unfilteredMaps'])
                     
         # Merged/optimal catalogs
         catalogTools.mergeCatalogs(imageDict)

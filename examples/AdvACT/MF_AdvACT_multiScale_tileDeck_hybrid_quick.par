@@ -113,9 +113,11 @@ tileNoiseRegions = {\
 extNameList = ['2_1', '2_2', '3_1', '5_1']
 
 # Detection/catalog options
+# Set useInterpolator = True for sub-pixel flux and SNR measurements
 thresholdSigma = 4.0
 minObjPix = 1
-findCenterOfMass = False
+findCenterOfMass = True
+useInterpolator = True
 rejectBorder = 0
 objIdent = 'ACT-CL'
 longNames = False

@@ -21,7 +21,7 @@ np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
+                findCenterOfMass = True, useInterpolator = True, makeDS9Regions = True, writeSegmentationMap = False, 
                 diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, verbose = True):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
@@ -97,10 +97,13 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
 
         objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
 
-        # Found to be not robust elsewhere
-        #mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
-                                                        #np.arange(data.shape[1]), 
-                                                        #data, kx = 1, ky = 1)
+        # In the past this had problems - Simone using happily in his fork though, so now optional
+        if useInterpolator == True:
+            mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
+                                                            np.arange(data.shape[1]), 
+                                                            data, kx = 3, ky = 3)
+        else:
+            print("... not using sub-pixel interpolation for SNRs ...")
                                                         
         # Border around edge where we might throw stuff out just to cut down contamination
         if np.any(areaMask) != None and areaMask.sum() > 0:
@@ -138,7 +141,10 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                     objDict['name']=catalogTools.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
                 objDict['numSigPix']=objNumPix[i]
                 objDict['template']=key
-                objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]             
+                if useInterpolator == True:
+                    objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
+                else:
+                    objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
                 if objDict['x'] > minX and objDict['x'] < maxX and \
                     objDict['y'] > minY and objDict['y'] < maxY:
                     masked=False
@@ -153,7 +159,8 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         imageDict[key]['catalog']=catalog
 
 #------------------------------------------------------------------------------------------------------------
-def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', template = None):
+def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = False, prefix = '', 
+                template = None):
     """Measures SNR values in maps at catalog positions.
     
     Set invertMap == True, to do a test for estimating the spurious source fraction
@@ -197,23 +204,28 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
         if invertMap == True:
             data=data*-1
             
-        # Found not to be robust elsewhere
-        #mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
-                                                        #np.arange(data.shape[1]), 
-                                                        #data, kx = 1, ky = 1)
+        # In the past this had problems - Simone using happily in his fork though, so now optional
+        if useInterpolator == True:
+            mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
+                                                            np.arange(data.shape[1]), 
+                                                            data, kx = 3, ky = 3)
+        else:
+            print("... not using sub-pixel interpolation for SNRs ...")
                                             
         for obj in imageDict[key]['catalog']:
             x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
             y=int(round(obj['y']))
             x=int(round(obj['x']))
             if x > 0 and x < data.shape[1] and y > 0 and y < data.shape[0]:
-                obj[prefix+'SNR']=data[y, x] # read directly off of S/N map
-                #obj['SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
+                if useInterpolator == True:
+                    obj[prefix+'SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
+                else:
+                    obj[prefix+'SNR']=data[y, x] # read directly off of S/N map
             else:
                 obj[prefix+'SNR']=0.
        
 #------------------------------------------------------------------------------------------------------------
-def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDict = None):
+def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator = True, unfilteredMapsDict = None):
     """Add flux measurements to each catalog pointed to in the imageDict. Measured in 'outputUnits' 
     specified in the filter definition in the .par file (and written to the image header as 'BUNIT').
     
@@ -225,12 +237,9 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
     flux measurements at fixed scale (fixed_delta_T_c, fixed_y_c etc.) 
 
     """
-
-    # NOTE: I prefer sr to arcmin2 (but arcmin2 is how we define signalAreaScaling for Arnaud model)
-    srToArcmin2=np.power(np.radians(1.0/60.0), 2)
     
     print ">>> Doing photometry ..."
-
+        
     # For fixed filter scale
     if 'photFilter' in photometryOptions.keys():
         photFilter=photometryOptions['photFilter']
@@ -239,7 +248,8 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 
     # Adds fixed_SNR values to catalogs for all maps
     if photFilter != None:
-        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter)
+        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, 
+                    useInterpolator = useInterpolator)
 
     for key in imageDict['mapKeys']:
         
@@ -252,12 +262,18 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 
         mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
         
-        #mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
-                                                        #np.arange(mapData.shape[1]), 
-                                                        #mapData, kx = 1, ky = 1) 
+        # In the past this had problems - Simone using happily in his fork though, so now optional
+        if useInterpolator == True:
+            mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
+                                                            np.arange(mapData.shape[1]), 
+                                                            mapData, kx = 3, ky = 3)
+        else:
+            print("... not using sub-pixel interpolation for fluxes ...")
+            mapInterpolator=None
         
         # Add fixed filter scale maps
         mapDataList=[mapData]
+        interpolatorList=[mapInterpolator]
         prefixList=['']
         extName=key.split("#")[-1]
         if 'photFilter' in photometryOptions.keys():
@@ -265,33 +281,33 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
             photMapData=photImg[0].data
             mapDataList.append(photMapData)
             prefixList.append('fixed_')
+            if useInterpolator == True:
+                photMapInterpolator=interpolate.RectBivariateSpline(np.arange(photMapData.shape[0]), 
+                                                                    np.arange(photMapData.shape[1]), 
+                                                                    photMapData, kx = 3, ky = 3)
+            else:
+                photMapInterpolator=None
+            interpolatorList.append(photMapInterpolator)
             
         for obj in catalog:
                         
             if key == obj['template']:
                 
-                for data, prefix in zip(mapDataList, prefixList):
+                for data, prefix, interpolator in zip(mapDataList, prefixList, interpolatorList):
                     # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
-                    # i.e., avoid using interpolate.RectBivariateSpline
-                    mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
-                    #mapValue=mapInterpolator(obj['y'], obj['x'])[0][0]
-
+                    # 2018: Simone seems to now be using this happily, so now optional
+                    if useInterpolator == True:
+                        mapValue=interpolator(obj['y'], obj['x'])[0][0]
+                    else:
+                        mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
                     # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
                     if mapUnits == 'yc':
-                        # Map is in yc, with the effect of the beam taken out
-                        #Y500_sr=mapValue*signalAreaScaling*srToArcmin2
                         yc=mapValue
                         deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
-                        #obj['Y500_sr']=Y500_sr
-                        #obj['err_Y500_sr']=Y500_sr/obj['SNR']
                         obj[prefix+'y_c']=yc/1e-4                            # So that same units as H13 in output catalogs
                         obj[prefix+'err_y_c']=obj[prefix+'y_c']/obj[prefix+'SNR']
                         obj[prefix+'deltaT_c']=deltaTc
                         obj[prefix+'err_deltaT_c']=abs(deltaTc/obj[prefix+'SNR'])
-                    elif mapUnits == 'Y500':
-                        print "add photometry.measureFluxes() for Y500"
-                        IPython.embed()
-                        sys.exit()
                     elif mapUnits == 'uK':
                         # For this, we want deltaTc to be source amplitude
                         deltaTc=mapValue
