@@ -617,6 +617,9 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     img=pyfits.open(mapDict['mapFileName'], memmap = True)
     wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
     data=img[extName].data
+    # For Enki maps... take only I (temperature) for now, add options for this later
+    if data.ndim == 3:
+        data=data[0, :]
     if mapDict['units'] == 'Jy/sr':
         if mapDict['obsFreqGHz'] == 148:
             data=(data/1.072480e+09)*2.726*1e6
@@ -630,6 +633,9 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     if 'weightsFileName' in mapDict.keys() and mapDict['weightsFileName'] != None:
         wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
         weights=wht[extName].data
+        # For Enki maps... take only I (temperature) for now, add options for this later
+        if weights.ndim == 3:
+            weights=weights[0, :]
     else:
         weights=np.ones(data.shape)
 
