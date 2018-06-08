@@ -118,6 +118,7 @@ def makeTileDeck(parDict):
                 defineTilesAutomatically=True
             
             # Figure out what the input / output files will be called
+            # NOTE: we always need to make a survey mask if none exists, as used to zap over regions, so that gets special treatment
             fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
             inFileNames=[]
             outFileNames=[]
@@ -132,7 +133,11 @@ def makeTileDeck(parDict):
                         mapDirStr=''
                     outFileNames.append(mapDirStr+"tileDeck_%s_" % (tileDeckFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
-                    
+                if f == 'surveyMask' and mapDict[f] == None:
+                    inFileNames.append(None)
+                    outFileNames.append(outFileNames[0].replace(".fits", "_surveyMask.fits"))
+                    mapTypeList.append(f)
+
             allFilesMade=True
             for f in outFileNames:
                 if os.path.exists(f) == False:
@@ -248,8 +253,14 @@ def makeTileDeck(parDict):
                     if os.path.exists(outMapFileName) == False:
                         print ">>> Writing tileDeck file %s ..." % (outMapFileName)
                         deckImg=pyfits.HDUList()
-                        img=pyfits.open(inMapFileName)
-                        mapData=img[0].data
+                        # Special handling for case where surveyMask = None in the .par file (tidy later...)
+                        if mapType == 'surveyMask' and inMapFileName == None:
+                            img=pyfits.open(inFileNames[0])
+                            mapData=np.ones(img[0].data.shape)
+                        else:
+                            img=pyfits.open(inMapFileName)
+                            mapData=img[0].data
+
                         # Deal with Sigurd's maps which have T, Q, U as one 3d array
                         # If anyone wants to find polarized sources, this will need changing...
                         if mapData.ndim == 3:
@@ -302,7 +313,7 @@ def makeTileDeck(parDict):
                         deckImg.close()
                                 
             # Replace entries in unfilteredMapsDictList in place
-            for key, outFileName in zip(fileNameKeys, outFileNames):
+            for key, outFileName in zip(mapTypeList, outFileNames):
                 mapDict[key]=outFileName
             unfilteredMapsDictList.append(mapDict.copy())
     
