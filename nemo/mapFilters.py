@@ -718,7 +718,7 @@ class RealSpaceMatchedFilter(MapFilter):
             xMin=xMin+1
         kern2d=profile2d[yMin:yMax, xMin:xMax]
         kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
-
+        
         # This is what to high pass filter on
         bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
         
