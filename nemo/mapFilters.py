@@ -110,8 +110,6 @@ class MapFilter:
                                     dtype=np.float64)*np.radians(self.degPerPixX)]*mapDict['data'].shape[0])
         yRadRange=np.array([np.arange(int(np.floor(-mapDict['data'].shape[0]/2)), int(mapDict['data'].shape[0]/2), \
                                     dtype=np.float64)*np.radians(self.degPerPixY)]*mapDict['data'].shape[1]).transpose()
-        IPython.embed()
-        sys.exit()
         rRadRange=np.sqrt(xRadRange**2+yRadRange**2)
         self.radiansMap=rRadRange
         
