@@ -96,17 +96,17 @@ class MapFilter:
         
         mapDict=self.unfilteredMapsDictList[0]
         
-        x0=mapDict['data'].shape[1]/2
-        y0=mapDict['data'].shape[0]/2
+        x0=int(mapDict['data'].shape[1]/2)
+        y0=int(mapDict['data'].shape[0]/2)
         ra0, dec0=self.wcs.pix2wcs(x0, y0)
         ra1, dec1=self.wcs.pix2wcs(x0+1, y0+1)
         self.degPerPixX=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
         self.degPerPixY=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
         
         # Real space map og angular distance from centre in radians, used in making filters and beam
-        xRadRange=np.array([np.arange(-mapDict['data'].shape[1]/2, mapDict['data'].shape[1]/2, \
+        xRadRange=np.array([np.arange(int(-mapDict['data'].shape[1]/2), int(mapDict['data'].shape[1]/2), \
                                     dtype=np.float64)*np.radians(self.degPerPixX)]*mapDict['data'].shape[0])
-        yRadRange=np.array([np.arange(-mapDict['data'].shape[0]/2, mapDict['data'].shape[0]/2, \
+        yRadRange=np.array([np.arange(int(-mapDict['data'].shape[0]/2), int(mapDict['data'].shape[0]/2), \
                                     dtype=np.float64)*np.radians(self.degPerPixY)]*mapDict['data'].shape[1]).transpose()
         rRadRange=np.sqrt(xRadRange**2+yRadRange**2)
         self.radiansMap=rRadRange
@@ -374,8 +374,8 @@ class MapFilter:
         realSpace=fft.ifft2(self.G).real
         realSpace=fft.fftshift(realSpace)
         
-        x0=realSpace.shape[1]/2
-        y0=realSpace.shape[0]/2
+        x0=int(realSpace.shape[1]/2)
+        y0=int(realSpace.shape[0]/2)
         prof=realSpace[y0, x0:]/realSpace[y0, x0:].max() # normalise for plot
         arcminRange=np.arange(0, prof.shape[0])*self.degPerPixX*60.0
         
@@ -718,7 +718,7 @@ class RealSpaceMatchedFilter(MapFilter):
             xMin=xMin+1
         kern2d=profile2d[yMin:yMax, xMin:xMax]
         kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
-
+        
         # This is what to high pass filter on
         bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
         
