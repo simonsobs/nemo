@@ -24,7 +24,7 @@ but the key parameters are:
   most useful for testing purposes. To see this in action, see
   `MF_AdvACT_multiScale_tileDeck_hybrid_quick.yml`.
 
-Additionally, if `useMPI: True` is found in the .par file, the `nemo` 
+Additionally, if `useMPI: True` is found in the .yml file, the `nemo` 
 scripts should be launched with `mpirun`, e.g.,
 
 ```
