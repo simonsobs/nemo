@@ -87,7 +87,7 @@ def startUp(parDictFileName):
 
     # MPI: just divide up tiles pointed at by extNames among processes
     if MPIEnabled == True:
-        numTilesPerNode=len(extNames)/size
+        numTilesPerNode=int(len(extNames)/size)
         startIndex=numTilesPerNode*rank
         if rank == size-1:
             endIndex=len(extNames)
