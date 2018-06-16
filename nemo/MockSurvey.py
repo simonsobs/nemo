@@ -1,5 +1,6 @@
-"""Playing with the halo mass function... updated for the latest hmf which uses astropy
+"""
 
+Playing with the halo mass function... updated for the latest hmf which uses astropy
 
 """
 
@@ -20,7 +21,6 @@ from scipy import interpolate
 from scipy import stats
 from astLib import *
 import time
-plt.matplotlib.interactive(False)
 
 class MockSurvey(object):
     

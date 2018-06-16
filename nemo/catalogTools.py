@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-"""This module contains tools for handling catalogs, which for us are lists of dictionaries.
+"""
+
+This module contains tools for handling catalogs, which for us are lists of dictionaries.
 
 """
 
@@ -7,8 +8,6 @@ from astLib import *
 import numpy as np
 import operator
 import os
-import urllib.request, urllib.parse, urllib.error
-import urllib.request, urllib.error, urllib.parse
 import sys
 import time
 import astropy.table as atpy

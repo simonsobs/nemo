@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 """
 
 Calculate masses of clusters detected by nemo
 
-Requires 'massOptions' in nemo .par file (keys: 'redshiftCatalog', 'forcedPhotometry', 'Q')
+Requires 'massOptions' in nemo config file
 
 Run this after filtering / detecting objects in a map with nemo itself
 
@@ -25,6 +25,7 @@ from nemo import simsTools
 from nemo import mapTools
 from nemo import MockSurvey
 from nemo import photometry
+from nemo import startUp
 import astropy.io.fits as pyfits
 import time
 import yaml
@@ -38,80 +39,7 @@ if len(sys.argv) < 2:
 else:
     
     parDictFileName=sys.argv[1]
-    
-    print(">>> Running .yml config file: %s" % (parDictFileName))
-
-    with open(parDictFileName, "r") as stream:
-        parDict=yaml.safe_load(stream)
-
-    MPIEnabled=parDict['useMPI']
-    if MPIEnabled == True:
-        from mpi4py import MPI
-        comm=MPI.COMM_WORLD
-        size=comm.Get_size()
-        rank=comm.Get_rank()
-        if size == 1:
-            raise Exception("if you want to use MPI, run with e.g., mpirun --np 4 nemo ...")
-    else:
-        rank=0
-        comm=None
-        
-    # Output dirs
-    if 'outputDir' in list(parDict.keys()):
-        rootOutDir=parDict['outDir']
-    else:
-        if parDictFileName.find(".yml") == -1:
-            raise Exception("File must have .par extension")
-        rootOutDir=sys.argv[1].replace(".yml", "")
-    filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
-    diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    dirList=[rootOutDir, filteredMapsDir]
-    for d in dirList:
-        if os.path.exists(d) == False:
-            os.makedirs(d)
-
-    # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-    if 'GNFWParams' not in list(parDict.keys()):
-        parDict['GNFWParams']='default'
-    for filtDict in parDict['mapFilters']:
-        filtDict['params']['GNFWParams']=parDict['GNFWParams']
-
-    # tileDeck file handling - either make one, or handle loading of one
-    # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
-    if rank == 0:
-        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
-        madeTileDeck=True
-    else:
-        madeTileDeck=None
-    if MPIEnabled == True:
-        madeTileDeck=comm.bcast(madeTileDeck, root = 0)
-        if rank != 0 and madeTileDeck == True:
-            unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
-            
-    # For when we want to test on only a subset of tiles
-    if 'extNameList' in list(parDict.keys()):
-        newList=[]
-        for name in extNames:
-            if name in parDict['extNameList']:
-                newList.append(name)
-        if newList == []:
-            raise Exception("extNameList given in .par file but no extensions in images match")
-        extNames=newList
-
-    # MPI: just divide up tiles pointed at by extNames among processes
-    if MPIEnabled == True:
-        numTilesPerNode=len(extNames)/size
-        startIndex=numTilesPerNode*rank
-        if rank == size-1:
-            endIndex=len(extNames)
-        else:
-            endIndex=numTilesPerNode*(rank+1)
-    else:
-        startIndex=0
-        endIndex=len(extNames)
-    extNames=extNames[startIndex:endIndex]
-    # For debugging...
-    print(("... rank = %d: extNames = %s" % (rank, str(extNames))))
+    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
     
     massOptions=parDict['massOptions']
     
@@ -209,7 +137,7 @@ else:
         tckQFit=simsTools.getQCoeffsH13()
     elif massOptions['Q'] == 'fit':
         tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = extNames, 
-                                    MPIEnabled = MPIEnabled, rank = rank, comm = comm)
+                                    MPIEnabled = parDict['useMPI'], rank = rank, comm = comm)
     else:
         raise Exception("didn't understand choice of Q function in massOptions")
                 

@@ -1,5 +1,4 @@
 # Cython routines for nemo
-#
 
 #include "python.pxi"
 #include "numpy.pxi"

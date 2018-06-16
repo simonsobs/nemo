@@ -16,12 +16,9 @@ from scipy import stats
 from scipy import interpolate
 from scipy import ndimage
 from scipy import optimize
-from nemo import actDict
 from nemo import simsTools
 from nemo import mapTools
 from nemo import MockSurvey
-#from nemo import SelFn
-#from nemo import photometry
 from nemo import plotSettings
 import types
 import pickle

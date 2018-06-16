@@ -1,12 +1,13 @@
-# -*- coding: utf-8 -*-
-"""This module contains tools for manipulating maps (e.g. filtering, conversion of units etc.).
+"""
+
+This module contains tools for manipulating maps (e.g. filtering, conversion of units etc.).
 
 """
 
-from . import mapFilters
-from . import photometry
-from . import catalogTools
-from . import simsTools
+from nemo import mapFilters
+from nemo import photometry
+from nemo import catalogTools
+from nemo import simsTools
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate

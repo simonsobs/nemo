@@ -1,21 +1,22 @@
-# -*- coding: utf-8 -*-
-"""Filter classes are defined in this module.
+"""
 
-There are two main base classes of filter - WienerFilter and MatchedFilter. These are both derived from the
-overall base class for everything: MapFilter.
+Filter classes are defined in this module.
 
-There are also base classes corresponding to filters with different signal templates: Beta, Profle, Gaussian.
+There are two main classes of filter: MatchedFilter and RealSpaceMatchedFilter (previously, there was a 
+WienerFilter class, but it has been removed). RealSpaceMatcherFilter is the preferred one to use.
+
+New base classes can be derived from the overall base class: MapFilter.
+
+There are also base classes corresponding to filters with different signal templates: 
+e.g., BeamFilter, ArnaudModelFilter
 
 The actual filters that can be used are derived from these, e.g.:
 
-BetaModelMatchedFilter
-ProfileMatchedFilter
-GaussianMatchedFilter
+BeamMatchedFilter
 ArnaudModelMatchedFilter
-BetaModelWienerFilter
-ProfileWienerFilter
-GaussianWienerFilter
-ArnaudModelWienerFilter
+BeamRealSpaceMatchedFilter
+ArnaudModelRealSpaceMatchedFilter
+etc.
 
 """
 
@@ -29,13 +30,13 @@ import pylab as plt
 import os
 from scipy import interpolate
 from scipy import ndimage
-from . import mapTools
-from . import simsTools
-from . import photometry
-from . import catalogTools
-from . import simsTools
-from . import plotSettings
-from . import gnfw
+from nemo import mapTools
+from nemo import simsTools
+from nemo import photometry
+from nemo import catalogTools
+from nemo import simsTools
+from nemo import plotSettings
+from nemo import gnfw
 import astropy.io.fits as pyfits
 import copy
 import sys

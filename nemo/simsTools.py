@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-"""This module contains routines for comparing measured fluxes to input sims.
+"""
+
+This module contains routines for comparing measured fluxes to input sims.
 
 """
 
@@ -10,13 +11,13 @@ from scipy import interpolate
 from scipy import stats
 import time
 import astropy.table as atpy
-from . import mapTools
+from nemo import mapTools
+from nemo import catalogTools
+from nemo import photometry
+from nemo import gnfw
+from nemo import plotSettings
 from flipper import liteMap
 from flipper import fftTools
-from . import catalogTools
-from . import photometry
-from . import gnfw
-from . import plotSettings
 import numpy as np
 import numpy.fft as fft
 import os

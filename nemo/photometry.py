@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-"""This module contains source finding and photometry routines.
+"""
+
+This module contains source finding and photometry routines.
 
 """
 
@@ -12,9 +13,9 @@ import pylab
 import math
 from scipy import ndimage
 from scipy import interpolate
-from . import catalogTools
-from . import mapTools
-from . import simsTools
+from nemo import catalogTools
+from nemo import mapTools
+from nemo import simsTools
 import sys
 import IPython
 np.random.seed()
@@ -22,7 +23,8 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
                 findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
-                diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, verbose = True):
+                diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
+                verbose = True):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
     
