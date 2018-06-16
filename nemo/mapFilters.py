@@ -96,6 +96,7 @@ class MapFilter:
         
         mapDict=self.unfilteredMapsDictList[0]
         
+        # NOTE: int conversion for python3
         x0=int(mapDict['data'].shape[1]/2)
         y0=int(mapDict['data'].shape[0]/2)
         ra0, dec0=self.wcs.pix2wcs(x0, y0)
@@ -104,10 +105,13 @@ class MapFilter:
         self.degPerPixY=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
         
         # Real space map og angular distance from centre in radians, used in making filters and beam
-        xRadRange=np.array([np.arange(int(-mapDict['data'].shape[1]/2), int(mapDict['data'].shape[1]/2), \
+        # NOTE: floor and int conversion added for python3
+        xRadRange=np.array([np.arange(int(np.floor(-mapDict['data'].shape[1]/2)), int(mapDict['data'].shape[1]/2), \
                                     dtype=np.float64)*np.radians(self.degPerPixX)]*mapDict['data'].shape[0])
-        yRadRange=np.array([np.arange(int(-mapDict['data'].shape[0]/2), int(mapDict['data'].shape[0]/2), \
+        yRadRange=np.array([np.arange(int(np.floor(-mapDict['data'].shape[0]/2)), int(mapDict['data'].shape[0]/2), \
                                     dtype=np.float64)*np.radians(self.degPerPixY)]*mapDict['data'].shape[1]).transpose()
+        IPython.embed()
+        sys.exit()
         rRadRange=np.sqrt(xRadRange**2+yRadRange**2)
         self.radiansMap=rRadRange
         
