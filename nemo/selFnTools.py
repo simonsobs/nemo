@@ -62,7 +62,7 @@ def getRMSTab(extName, photFilterLabel, diagnosticsDir):
     # This can probably be sped up, but takes ~200 sec for a ~1000 sq deg tile, so we cache
     RMSTabFileName=diagnosticsDir+os.path.sep+"RMSTab_%s.fits" % (extName)
     if os.path.exists(RMSTabFileName) == False:
-        print("... making %s ..." % (RMSTabFileName))
+        print(("... making %s ..." % (RMSTabFileName)))
         RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits" % (extName))
         RMSMap=RMSImg[0].data
         RMSValues=np.unique(RMSMap[np.nonzero(RMSMap)])
@@ -183,7 +183,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         testLog10M=interpolate.splev(testDraws, mockSurvey.tck_log10MRoller[zIndex])
         minDraw=testDraws[np.argmin(abs(testLog10M-minLog10MDraw))]
         if minDraw == 1.0:
-            raise Exception, "minDraw == 1 - very noisy pixel, try increasing number of test draws?"
+            raise Exception("minDraw == 1 - very noisy pixel, try increasing number of test draws?")
             
         # Draw masses from the mass function...    
         numDetected=0
@@ -234,7 +234,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
                     mockClusterMultiplier=maxMultiplier
                     exceededMultiplierCount=exceededMultiplierCount+1
                 if exceededMultiplierCount > 2:
-                    raise Exception, "exceeded maxMultiplier too many times"
+                    raise Exception("exceeded maxMultiplier too many times")
         
         # Calculate completeness
         detArr=np.cumsum(np.greater(measured_y0s, y0Lim_selection))
@@ -335,13 +335,13 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
         t0=time.time()
         for y0Noise in RMSTab['y0RMS']:
             count=count+1
-            print("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise))
+            print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
             fitTab=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
                                     zRange = [z], fitTabFileName = None)
             fitTab.rename_column('z', 'y0RMS')
             fitTab['y0RMS'][0]=y0Noise
             massLimMap[np.where(RMSMap == y0Noise)]=fitTab['log10MLimit_90%'][0]
-            if type(mapFitTab) == types.NoneType:
+            if type(mapFitTab) == type(None):
                 mapFitTab=fitTab
             else:
                 mapFitTab.add_row(fitTab[0])

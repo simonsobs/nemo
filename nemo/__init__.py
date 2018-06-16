@@ -3,13 +3,12 @@
 nemo - SZ cluster detection
 
 """
-import catalogTools
-import mapTools
-import mapFilters
-import photometry
-import simsTools
-import selFnTools
-import actDict
-import plotSettings
+from . import catalogTools
+from . import mapTools
+from . import mapFilters
+from . import photometry
+from . import simsTools
+from . import selFnTools
+from . import plotSettings
 
 __version__ = "git"

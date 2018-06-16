@@ -10,13 +10,13 @@ from scipy import interpolate
 from scipy import stats
 import time
 import astropy.table as atpy
-import mapTools
+from . import mapTools
 from flipper import liteMap
 from flipper import fftTools
-import catalogTools
-import photometry
-import gnfw
-import plotSettings
+from . import catalogTools
+from . import photometry
+from . import gnfw
+from . import plotSettings
 import numpy as np
 import numpy.fft as fft
 import os
@@ -28,8 +28,8 @@ import operator
 import pyximport; pyximport.install()
 import nemoCython
 import nemo
-import actDict
 import glob
+import yaml
 import IPython
 np.random.seed()
 
@@ -41,7 +41,7 @@ def parseInputSimCatalog(fileName, wcs):
         
     """
     
-    inFile=file(fileName, "r")
+    inFile=open(fileName, "r")
     lines=inFile.readlines()
     inFile.close()
     
@@ -102,7 +102,7 @@ def matchAgainstSimCatalog(catalog, inputSimCatalog, simFluxKey = 'fixedAperture
             m['inputSim_Mvir']=bestMatch['Mvir']
             m['inputSim_z']=bestMatch['z']
             m['inputSim_RvirMpc']=bestMatch['RvirMpc']
-            if simFluxKey in bestMatch.keys():
+            if simFluxKey in list(bestMatch.keys()):
                 m['inputSim_flux_arcmin2']=bestMatch[simFluxKey]
             else:
                 m['inputSim_flux_arcmin2']=None
@@ -124,12 +124,12 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     
     """
     
-    print ">>> Checking fluxes against input sim ..."        
+    print(">>> Checking fluxes against input sim ...")        
     if os.path.exists(outDir) == False:
         os.makedirs(outDir)
     
     signalTemplatesList=[]
-    for k in imageDict.keys():
+    for k in list(imageDict.keys()):
         if k != "mergedCatalog" and k != "optimalCatalog":
             signalTemplatesList.append(k)
     
@@ -157,7 +157,7 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     
     # Match all catalogs against input sim
     matchAgainstSimCatalog(imageDict['optimalCatalog'], simCatalog)
-    for key in catalogsDict.keys():
+    for key in list(catalogsDict.keys()):
         matchAgainstSimCatalog(catalogsDict[key], simCatalog)
 
     # Flux comparison plot
@@ -165,7 +165,7 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     fig.canvas.set_window_title('Measured vs. Input Flux Comparison')
     topPlot=plt.axes([0.12, 0.35, 0.8, 0.6])
     bottomPlot=plt.axes([0.12, 0.1, 0.8, 0.23])
-    keysList=catalogsDict.keys()
+    keysList=list(catalogsDict.keys())
     keysList.reverse()  # so optimal gets plotted first
     for key in keysList:
         catalog=catalogsDict[key]
@@ -174,7 +174,7 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
         myFlux=[]
         myFluxErr=[]
         for obj in catalog:
-            if 'inputSim_flux_arcmin2' in obj.keys() and obj['inputSim_flux_arcmin2'] != None:
+            if 'inputSim_flux_arcmin2' in list(obj.keys()) and obj['inputSim_flux_arcmin2'] != None:
                 names.append(obj['name'])
                 myFlux.append(obj['flux_arcmin2'])
                 myFluxErr.append(obj['fluxErr_arcmin2'])
@@ -227,9 +227,9 @@ def compareToInputSimCatalog(imageDict, inputSimCatFileName, inputSimMapFileName
     # and medianResidualSigma = 0.3 means that we're reasonably unbiased (within 0.3 error bars)
     medianResidualSigma=np.median((simFlux-myFlux)/myFluxErr)
     sigmaResidualSigma=np.std(((simFlux-myFlux)/myFluxErr))
-    print ">>> Flux recovery stats:"
-    print "... median residual = %.3f error bars" % (medianResidualSigma)
-    print "... stdev residual = %.3f error bars" % (sigmaResidualSigma)
+    print(">>> Flux recovery stats:")
+    print("... median residual = %.3f error bars" % (medianResidualSigma))
+    print("... stdev residual = %.3f error bars" % (sigmaResidualSigma))
     
     # Now we want to do completeness and purity as function of S/N and mass
     fig=plt.figure(num=5, figsize=(10,8))
@@ -331,13 +331,13 @@ def getInputSimApertureFluxes(inputSimCatFileName, inputSimMapFileName, dataMapW
         
     pickleFileName="nemoCache/inputSimFluxes.pickled"
     if os.path.exists(pickleFileName) == True:
-        print ">>> Loading previously measured input sim map fluxes ..."
-        pickleFile=file(pickleFileName, "r")
+        print(">>> Loading previously measured input sim map fluxes ...")
+        pickleFile=open(pickleFileName, "r")
         unpickler=pickle.Unpickler(pickleFile)
         inputCatalog=unpickler.load()
     else:
         
-        print ">>> Loading noiseless input sim catalog and getting fluxes from input sim map  ... "
+        print(">>> Loading noiseless input sim catalog and getting fluxes from input sim map  ... ")
         
         inputCatalog=parseInputSimCatalog(inputSimCatFileName, dataMapWCS)
 
@@ -347,10 +347,10 @@ def getInputSimApertureFluxes(inputSimCatFileName, inputSimMapFileName, dataMapW
         data=img[0].data
         if convertFromJySrToMicroK == True: # from Jy/sr
             if obsFreqGHz == 148:
-                print ">>> Converting from Jy/sr to micro kelvins assuming obsFreqGHz = %.0f" % (obsFreqGHz)
+                print(">>> Converting from Jy/sr to micro kelvins assuming obsFreqGHz = %.0f" % (obsFreqGHz))
                 data=(data/1.072480e+09)*2.726*1e6
             else:
-                raise Exception, "no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" % (obsFreqGHz)
+                raise Exception("no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" % (obsFreqGHz))
         data=mapTools.convertToY(data, obsFrequencyGHz = obsFreqGHz)
         if saveAsY == True:
             astImages.saveFITS("yc_inputSimMap.fits", data, wcs)
@@ -362,7 +362,7 @@ def getInputSimApertureFluxes(inputSimCatFileName, inputSimMapFileName, dataMapW
             tenPercent=len(inputCatalog)/10
             for j in range(0,11):
                 if count == j*tenPercent:
-                    print "... "+str(j*10)+"% complete ..."
+                    print("... "+str(j*10)+"% complete ...")
             # Only measure flux if this object passes Y, z limit cuts (otherwise this will take forever!)
             if obj['z'] > zRange[0] and obj['z'] < zRange[1] and obj['fluxFromCatalog_arcmin2'] > YLimit:
                 x0, y0=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
@@ -377,7 +377,7 @@ def getInputSimApertureFluxes(inputSimCatFileName, inputSimMapFileName, dataMapW
                 obj['fixedApertureFluxFromInputSimMap_arcmin2']=flux_arcmin2
             
         # Pickle results for speed
-        pickleFile=file(pickleFileName, "w")
+        pickleFile=open(pickleFileName, "w")
         pickler=pickle.Pickler(pickleFile)
         pickler.dump(inputCatalog)
                     
@@ -391,7 +391,7 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
         
     """
 
-    print ">>> Getting fluxes from noiseless input sim catalog ... "
+    print(">>> Getting fluxes from noiseless input sim catalog ... ")
     
     inputCatalog=parseInputSimCatalog(inputSimCatFileName, YLimit = YLimit, zRange = zRange)
 
@@ -405,10 +405,10 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
     data=img[0].data
     if convertFromJySrToMicroK == True: # from Jy/sr
         if obsFreqGHz == 148:
-            print ">>> Converting from Jy/sr to micro kelvins assuming obsFreqGHz = %.0f" % (obsFreqGHz)
+            print(">>> Converting from Jy/sr to micro kelvins assuming obsFreqGHz = %.0f" % (obsFreqGHz))
             data=(data/1.072480e+09)*2.726*1e6
         else:
-            raise Exception, "no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" % (obsFreqGHz)
+            raise Exception("no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" % (obsFreqGHz))
     data=mapTools.convertToY(data, obsFrequencyGHz = obsFreqGHz)
 
     for obj in inputCatalog:
@@ -438,7 +438,7 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
     fluxesFromMap=[]
     fluxesFromCatalog=[]
     for obj in inputCatalog:
-        if 'fluxFromInputSimMap_arcmin2' in obj.keys():
+        if 'fluxFromInputSimMap_arcmin2' in list(obj.keys()):
             fluxesFromMap.append(obj['fluxFromInputSimMap_arcmin2'])
             fluxesFromCatalog.append(obj['fluxFromCatalog_arcmin2'])
     fluxesFromMap=np.array(fluxesFromMap)
@@ -473,7 +473,7 @@ def checkInputSimCatalogFluxes(inputSimCatFileName, inputSimMapFileName, YLimit 
         
     # Put corrected fluxes into our input catalog
     for obj in inputCatalog:
-        if 'fluxFromInputSimMap_arcmin2' in obj.keys():
+        if 'fluxFromInputSimMap_arcmin2' in list(obj.keys()):
             obj['correctedFlux_arcmin2']=fit['slope']*obj['fluxFromCatalog_arcmin2']+fit['intercept']
 
     return inputCatalog
@@ -488,7 +488,7 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
     
     """
     
-    print ">>> Running completeness & flux recovery sims ..."
+    print(">>> Running completeness & flux recovery sims ...")
     
     outDir=diagnosticsDir+os.path.sep+"fakeSourceSims"
     if os.path.exists(outDir) == False:
@@ -522,10 +522,10 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         elif profileType == 'projectedNFWModel':
             insertSourceIntoMap=insertProjectedNFWModelIntoMap
         else:
-            raise Exception, "didn't understand profileType"
+            raise Exception("didn't understand profileType")
         
         # Set up selection function storage
-        if profileType not in selFnDict.keys():
+        if profileType not in list(selFnDict.keys()):
             selFnDict[profileType]={}
             for prop, valuesList in zip(propertiesToTrack, propertyValuesLists):
                 selFnDict[profileType][prop]={'recoveredByRun': np.zeros([numRuns, len(valuesList)], dtype=float), 
@@ -539,7 +539,7 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
         for run in range(numRuns):
             
             t0=time.time()
-            print "--> Run: %d" % (run+1)
+            print("--> Run: %d" % (run+1))
             
             label='%s_run_%d' % (profileType, run+1)
             outFileName=outDir+os.path.sep+"fakeMap_%s.fits" % (label)
@@ -590,7 +590,7 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
                 obj['scaleArcmin']=scaleArcmin
                 fakeMapDict['data'], sourceProperties=insertSourceIntoMap(obj, deltaT, scaleArcmin, 
                                                                           fakeMapDict, photometryOptions)
-                for key in sourceProperties.keys():
+                for key in list(sourceProperties.keys()):
                     obj[key]=sourceProperties[key]
             
             # Complete map pre-processing - i.e. do same background subtraction, point source removal
@@ -647,7 +647,7 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
                             recoveredDeltaTc.append(obj['recoveredMatch']['deltaT_c'])
         
             t1=time.time()
-            print "... time taken for fake source insertion & recovery run = %.3f sec" % (t1-t0)
+            print("... time taken for fake source insertion & recovery run = %.3f sec" % (t1-t0))
             
         # Bring all results from sim runs together for a given profileType
         for prop in propertiesToTrack:
@@ -744,12 +744,12 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
     pickleFileName=outDir+os.path.sep+"selFnDict.pickle"
     if os.path.exists(pickleFileName) == True:
         os.remove(pickleFileName)
-    pickleFile=file(pickleFileName, "w")
+    pickleFile=open(pickleFileName, "w")
     pickler=pickle.Pickler(pickleFile)
     pickler.dump(selFnDict)
     pickleFile.close()
     
-    print "Done, check plots etc., what's going on with recovered Y"    
+    print("Done, check plots etc., what's going on with recovered Y")    
     ipshell()
     sys.exit()
             
@@ -861,7 +861,7 @@ def insertArnaudModelIntoMap(objDict, deltaT, scaleArcmin, mapDict, photometryOp
                                               objDict['decDeg'], (10*scaleArcmin)/60.0)
    
     # The easy way - use Matthew's saved Arnaud GNFW profile and scale it according to scale arcmin
-    print "Arnaud model!"
+    print("Arnaud model!")
     ipshell()
     sys.exit()
  
@@ -957,17 +957,17 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
     for i in range(numSkySims):
         
         # NOTE: we throw the first sim away on figuring out noiseBoostFactors
-        print ">>> sky sim %d/%d ..." % (i+1, numSkySims)
+        print(">>> sky sim %d/%d ..." % (i+1, numSkySims))
         t0=time.time()
         
         # We use the seed here to keep the CMB sky the same across frequencies...
         CMBSimSeed=np.random.randint(16777216)
         
-        simParDict=actDict.ACTDict()
-        simParDict.read_from_file(parDictFileName)
-        
+        with open(parDictFileName, "r") as stream:
+            simParDict=yaml.safe_load(stream)
+            
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-        if 'GNFWParams' not in simParDict.keys():
+        if 'GNFWParams' not in list(simParDict.keys()):
             simParDict['GNFWParams']='default'
         for filtDict in simParDict['mapFilters']:
             filtDict['params']['GNFWParams']=simParDict['GNFWParams']
@@ -997,7 +997,7 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
         # For fixed filter scale
         # Adds fixed_SNR values to catalogs for all maps
         photometryOptions=simParDict['photometryOptions']
-        if 'photFilter' in photometryOptions.keys():
+        if 'photFilter' in list(photometryOptions.keys()):
             photFilter=photometryOptions['photFilter']
         else:
             photFilter=None
@@ -1027,13 +1027,13 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
         contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', diagnosticsDir)
         resultsList.append(contaminTabDict)
         t1=time.time()
-        print "... time taken for sky sim run = %.3f sec" % (t1-t0)
+        print("... time taken for sky sim run = %.3f sec" % (t1-t0))
             
     # Average results
     avContaminTabDict={}
-    for k in resultsList[0].keys():
+    for k in list(resultsList[0].keys()):
         avContaminTabDict[k]=atpy.Table()
-        for kk in resultsList[0][k].keys():
+        for kk in list(resultsList[0][k].keys()):
             avContaminTabDict[k].add_column(atpy.Column(np.zeros(len(resultsList[0][k])), kk))
             for i in range(len(resultsList)):
                 avContaminTabDict[k][kk]=avContaminTabDict[k][kk]+resultsList[i][k][kk]
@@ -1042,7 +1042,7 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
     # For writing separate contamination .fits tables if running in parallel
     # (if we're running in serial, then we'll get a giant file name with full extNames list... fix later)
     extNamesLabel="#"+str(extNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
-    for k in avContaminTabDict.keys():
+    for k in list(avContaminTabDict.keys()):
         fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, extNamesLabel)
         if os.path.exists(fitsOutFileName) == True:
             os.remove(fitsOutFileName)
@@ -1080,7 +1080,7 @@ def estimateContaminationFromInvertedMaps(imageDict, extNames, thresholdSigma, m
 
     # For fixed filter scale
     # Adds fixed_SNR values to catalogs for all maps
-    if 'photFilter' in photometryOptions.keys():
+    if 'photFilter' in list(photometryOptions.keys()):
         photFilter=photometryOptions['photFilter']
     else:
         photFilter=None
@@ -1095,7 +1095,7 @@ def estimateContaminationFromInvertedMaps(imageDict, extNames, thresholdSigma, m
     
     contaminTabDict=estimateContamination(invertedDict, imageDict, SNRKeys, 'invertedMap', diagnosticsDir)
 
-    for k in contaminTabDict.keys():
+    for k in list(contaminTabDict.keys()):
         fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate.fits" % (k)
         if os.path.exists(fitsOutFileName) == True:
             os.remove(fitsOutFileName)
@@ -1112,7 +1112,7 @@ def plotContamination(contaminTabDict, diagnosticsDir):
 
     plotSettings.update_rcParams()
 
-    for k in contaminTabDict.keys():
+    for k in list(contaminTabDict.keys()):
         if k.find('fixed') != -1:
             SNRKey="fixed_SNR"
             SNRLabel="SNR$_{\\rm 2.4}$"
@@ -1195,7 +1195,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
         
         # Convert to .fits table
         contaminTab=atpy.Table()
-        for key in contaminDict.keys():
+        for key in list(contaminDict.keys()):
             contaminTab.add_column(atpy.Column(contaminDict[key], key))
         
         contaminTabDict['%s_%s' % (label, SNRKey)]=contaminTab
@@ -1207,13 +1207,16 @@ def calcR500Mpc(z, M500):
     """Given z, M500 (in MSun), returns R500 in Mpc, with respect to critical density.
     
     """
-    
+
+    if type(M500) == str:
+        raise Exception("M500 is a string - check M500MSun in your .yml config file: use, e.g., 1.0e+14 (not 1e14 or 1e+14)")
+
     Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
     Hz=astCalc.Ez(z)*astCalc.H0  
     G=4.301e-9  # in MSun-1 km2 s-2 Mpc
     criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
     R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)
-    
+        
     return R500Mpc
 
 #------------------------------------------------------------------------------------------------------------
@@ -1313,7 +1316,7 @@ def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
     elif units == 'arcmin2':
         return YSZ_R500_arcmin2
     else:
-        raise Exception, "didn't understand units"
+        raise Exception("didn't understand units")
 
 #------------------------------------------------------------------------------------------------------------
 def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
@@ -1512,13 +1515,13 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
     rank_QTabDict={}
     if os.path.exists(outFileName) == False:
         
-        print ">>> Fitting for Q ..."
+        print(">>> Fitting for Q ...")
         
         # Do each tile in turn
         # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that at some point...
         for extName in extNames:        
             
-            print "... %s ..." % (extName)
+            print("... %s ..." % (extName))
             
             # Some faffing to get map pixel scale        
             img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
@@ -1567,7 +1570,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
                 for M500MSun in MRange:
                     key='%.2f_%.2f' % (z, np.log10(M500MSun))
                     peakFilteredSignals=[]  # effectively, already in yc
-                    for obsFreqGHz in kernsDict.keys():
+                    for obsFreqGHz in list(kernsDict.keys()):
                         signalMap=np.zeros(signalMapDict[key].shape)+signalMapDict[key]
                         signalMap=mapTools.subtractBackground(signalMap, wcs, 
                                                               smoothScaleDeg = kernsDict[obsFreqGHz]['header']['BCKSCALE']/60.)
@@ -1616,10 +1619,10 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             gathered_QTabDicts=comm.gather(rank_QTabDict, root = 0)
             if rank != 0:
                 assert gathered_QTabDicts is None
-                print "... MPI rank %d finished ..." % (rank)
+                print("... MPI rank %d finished ..." % (rank))
                 sys.exit()
             else:
-                print "... gathering QTabDicts ..."
+                print("... gathering QTabDicts ...")
                 QTabDict={}
                 for tabDict in gathered_QTabDicts:
                     for key in tabDict:
@@ -1627,7 +1630,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
         else:
             QTabDict=rank_QTabDict
                     
-        pickleFile=file(outFileName, "wb")
+        pickleFile=open(outFileName, "wb")
         pickler=pickle.Pickler(pickleFile)
         pickler.dump(QTabDict)
         pickleFile.close()
@@ -1636,8 +1639,8 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
         if MPIEnabled == True and rank != 0:
             sys.exit()
         
-        print ">>> Loading previously cached Q fit ..."
-        pickleFile=file(outFileName, "rb")
+        print(">>> Loading previously cached Q fit ...")
+        pickleFile=open(outFileName, "rb")
         unpickler=pickle.Unpickler(pickleFile)
         QTabDict=unpickler.load()
         pickleFile.close()
@@ -1725,7 +1728,7 @@ def getM500FromP(P, log10M, calcErrors = True):
             maxIndex=index+n
             if minIndex < 0 or maxIndex > fineP.shape[0]:
                 # This shouldn't happen; if it does, probably y0 is in the wrong units
-                print "WARNING: outside M500 range"
+                print("WARNING: outside M500 range")
                 clusterLogM500=None
                 break            
             p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
@@ -1755,6 +1758,9 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     
     """
 
+    if type(Mpivot) == str:
+        raise Exception("Mpivot is a string - check Mpivot in your .yml config file: use, e.g., 3.0e+14 (not 3e14 or 3e+14)")
+    
     # Change cosmology for this call, if required... then put it back afterwards (just in case)
     if H0 != None:
         oldH0=astCalc.H0
@@ -1775,7 +1781,7 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     # NOTE: m in H13 is M/Mpivot
     # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
     y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*calcFRel(z, M500)
-    
+            
     # Restore cosmology if we changed it for this call
     if H0 != None:
         astCalc.H0=oldH0
@@ -1824,10 +1830,10 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
         astCalc.OMEGA_L0=OmegaL0
         
     if y0 < 0:
-        raise Exception, 'y0 cannot be negative'
+        raise Exception('y0 cannot be negative')
     
     if mockSurvey == None and applyMFDebiasCorrection == True:
-        raise Exception, 'MockSurvey object must be supplied for the mass function shape de-bias correction to work'
+        raise Exception('MockSurvey object must be supplied for the mass function shape de-bias correction to work')
     
     try:
         log10M=mockSurvey.log10M
@@ -1868,7 +1874,7 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
         Py0GivenM.append(np.sum(np.exp(lnPy0)*Pz))
     Py0GivenM=np.array(Py0GivenM)
     if np.any(np.isnan(Py0GivenM)) == True:
-        print "nan"
+        print("nan")
         IPython.embed()
         sys.exit()
     
@@ -1880,7 +1886,7 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
         try:
             M500, errM500Minus, errM500Plus=getM500FromP(Py0GivenM*PLog10M, log10M, calcErrors = calcErrors)
         except:
-            print "M500 fail 1"
+            print("M500 fail 1")
             IPython.embed()
             sys.exit()
     else:
@@ -1890,12 +1896,12 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
     try:
         M500Uncorr, errM500UncorrMinus, errM500UncorrPlus=getM500FromP(Py0GivenM, log10M, calcErrors = calcErrors)
     except:
-        print "M500 fail 2"
+        print("M500 fail 2")
         IPython.embed()
         sys.exit()
         
     if M500Uncorr == 0:
-        print "M500 fail 3"
+        print("M500 fail 3")
         IPython.embed()
         sys.exit()
     
@@ -2010,7 +2016,7 @@ def convertM500cToM200m(M500c, z):
         scaleFactor=scaleFactor*ratio
         count=count+1
         if count > 10:
-            raise Exception, "M500c -> M200m conversion didn't converge quickly enough"
+            raise Exception("M500c -> M200m conversion didn't converge quickly enough")
         
     M200m=scaleFactor*M500c
     

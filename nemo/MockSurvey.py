@@ -15,7 +15,7 @@ from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
 from nemo import simsTools
 from nemo import catalogTools
-import cPickle
+import pickle
 from scipy import interpolate
 from scipy import stats
 from astLib import *
@@ -89,7 +89,7 @@ class MockSurvey(object):
             # Sanity check
             for i in range(len(self.z)):
                 if np.any(np.isnan(self.tck_log10MRoller[i][1])) == True:
-                    print "nans in self.tck_log10MRoller[%d]" % (i)
+                    print("nans in self.tck_log10MRoller[%d]" % (i))
                     IPython.embed()
                     sys.exit()
                     
@@ -154,7 +154,7 @@ class MockSurvey(object):
         # We should apply the intrinsic scatter in M500 at fixed y0~ somewhere here
         
         # This takes ~95 sec
-        print "... calculating (M, z) detection probabilities in each tile (takes ~100 sec on E-D56) ..."
+        print("... calculating (M, z) detection probabilities in each tile (takes ~100 sec on E-D56) ...")
         self.M500Completeness=np.zeros([len(self.selFn.ycLimitTab), self.clusterCount.shape[0], self.clusterCount.shape[1]])
         t0=time.time()        
         ycLimits=self.selFn.ycLimitTab['ycLimit']

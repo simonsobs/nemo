@@ -3,7 +3,7 @@ import os
 import string
 
 def ask_for( key ):
-    s = raw_input( "ACTDict: enter value for '%s': " % key )
+    s = input( "ACTDict: enter value for '%s': " % key )
     try:
         val = eval(s)
     except NameError:
@@ -15,9 +15,9 @@ class ACTDict( dict ):
 
     def __getitem__( self, key ):
         if key not in self:
-            print "ACTDict: parameter '%s' not found" % key
+            print("ACTDict: parameter '%s' not found" % key)
             val = ask_for( key )
-            print "ACTDict: setting '%s' = %s" % (key,repr(val))
+            print("ACTDict: setting '%s' = %s" % (key,repr(val)))
             dict.__setitem__( self, key, val )
         return dict.__getitem__( self, key )
 
@@ -39,20 +39,20 @@ class ACTDict( dict ):
                 old = ''
             s = line.split('=')
             if len(s) != 2:
-                print "Error parsing line:"
-                print line
+                print("Error parsing line:")
+                print(line)
                 continue
             try:
                 key = s[0].strip()
                 val = eval(s[1].strip()) # XXX:make safer
             except:
-                raise Exception, "can't parse line: %s" % (line)
+                raise Exception("can't parse line: %s" % (line))
             self[key] = val
         f.close()
 
     def write_to_file( self, filename, mode = 'w' ):
         f = open( filename, mode )
-        keys = self.keys()
+        keys = list(self.keys())
         keys.sort()
         for key in keys:
             f.write( "%s = %s\n" % (key,repr(self[key])) )
@@ -61,7 +61,7 @@ class ACTDict( dict ):
     def cmp( self, otherDict ):
         
         diff = []
-        ks = self.keys()
+        ks = list(self.keys())
         for k in ks:
             try:
                 if otherDict[k] == self.params[k]:

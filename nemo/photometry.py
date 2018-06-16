@@ -12,9 +12,9 @@ import pylab
 import math
 from scipy import ndimage
 from scipy import interpolate
-import catalogTools
-import mapTools
-import simsTools
+from . import catalogTools
+from . import mapTools
+from . import simsTools
 import sys
 import IPython
 np.random.seed()
@@ -37,7 +37,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
     """
     
     if verbose == True:
-        print ">>> Finding objects ..."
+        print(">>> Finding objects ...")
     
     if rejectBorder == None:
         rejectBorder=0
@@ -53,7 +53,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
     for key in imageDict['mapKeys']:
         
         if verbose == True:
-            print "... searching %s ..." % (key)
+            print("... searching %s ..." % (key))
         
         # Load area mask
         extName=key.split("#")[-1]
@@ -89,10 +89,10 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         # Get object positions, number of pixels etc.
         objIDs=np.unique(segmentationMap)
         if findCenterOfMass == True:
-           print "... working with center of mass method ..."
+           print("... working with center of mass method ...")
            objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
         else:
-           print "... working with maximum position method ..."
+           print("... working with maximum position method ...")
            objPositions=ndimage.maximum_position(data, labels = segmentationMap, index = objIDs)
 
         objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
@@ -165,12 +165,12 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
     
     """
             
-    print ">>> Getting %sSNR values ..." % (prefix)
+    print(">>> Getting %sSNR values ..." % (prefix))
     
     # Do search on each filtered map separately
     for key in imageDict['mapKeys']:
         
-        print "... searching %s ..." % (key)
+        print("... searching %s ..." % (key))
         
         if template == None:
             templateKey=key
@@ -181,7 +181,7 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
                 if k.split("#")[0] == template and k.split("#")[-1] == key.split("#")[-1]:
                     templateKey=k
             if templateKey == None:
-                raise Exception, "didn't find templateKey"
+                raise Exception("didn't find templateKey")
         
         if SNMap == 'file':
             img=pyfits.open(imageDict[templateKey]['SNMap'])
@@ -191,7 +191,7 @@ def getSNValues(imageDict, SNMap = 'file', invertMap = False, prefix = '', templ
             data=imageDict[templateKey]['SNMap']
             wcs=imageDict[templateKey]['wcs']
         else:
-            raise Exception, "Didn't understand SNMap value '%s'" % (str(SNMap))
+            raise Exception("Didn't understand SNMap value '%s'" % (str(SNMap)))
 
         # This is for checking contamination
         if invertMap == True:
@@ -229,10 +229,10 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
     # NOTE: I prefer sr to arcmin2 (but arcmin2 is how we define signalAreaScaling for Arnaud model)
     srToArcmin2=np.power(np.radians(1.0/60.0), 2)
     
-    print ">>> Doing photometry ..."
+    print(">>> Doing photometry ...")
 
     # For fixed filter scale
-    if 'photFilter' in photometryOptions.keys():
+    if 'photFilter' in list(photometryOptions.keys()):
         photFilter=photometryOptions['photFilter']
     else:
         photFilter=None
@@ -243,7 +243,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
 
     for key in imageDict['mapKeys']:
         
-        print "--> Map: %s ..." % (imageDict[key]['filteredMap'])
+        print("--> Map: %s ..." % (imageDict[key]['filteredMap']))
         catalog=imageDict[key]['catalog']        
         
         img=pyfits.open(imageDict[key]['filteredMap'])
@@ -260,7 +260,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
         mapDataList=[mapData]
         prefixList=['']
         extName=key.split("#")[-1]
-        if 'photFilter' in photometryOptions.keys():
+        if 'photFilter' in list(photometryOptions.keys()):
             photImg=pyfits.open(imageDict[photFilter+"#"+extName]['filteredMap'])
             photMapData=photImg[0].data
             mapDataList.append(photMapData)
@@ -289,7 +289,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                         obj[prefix+'deltaT_c']=deltaTc
                         obj[prefix+'err_deltaT_c']=abs(deltaTc/obj[prefix+'SNR'])
                     elif mapUnits == 'Y500':
-                        print "add photometry.measureFluxes() for Y500"
+                        print("add photometry.measureFluxes() for Y500")
                         IPython.embed()
                         sys.exit()
                     elif mapUnits == 'uK':
@@ -299,7 +299,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, unfilteredMapsDi
                         obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']
                     elif mapUnits == 'Jy/beam':
                         # For this, we want mapValue to be source amplitude == flux density
-                        print "add photometry.measureFluxes() Jy/beam photometry"
+                        print("add photometry.measureFluxes() Jy/beam photometry")
                         IPython.embed()
                         sys.exit()
                 
