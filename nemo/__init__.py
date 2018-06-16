@@ -1,15 +1,10 @@
-# -*- coding: utf-8 -*-
 """
-nemo - SZ cluster detection
+
+nemo - SZ cluster and source detection package
 
 """
-import catalogTools
-import mapTools
-import mapFilters
-import photometry
-import simsTools
-import selFnTools
-import actDict
-import plotSettings
+
+__all__ = ['startUp', 'catalogTools', 'mapTools', 'mapFilters', 'photometry', 
+           'simsTools', 'selFnTools', 'plotSettings']
 
 __version__ = "git"

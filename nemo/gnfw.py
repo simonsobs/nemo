@@ -9,11 +9,6 @@ Matthew Hasselfield's code, slightly updated to include P0, c500
 import numpy as np
 from scipy.optimize import fmin
 
-#import pylab
-#pylab.matplotlib.interactive(True)
-#from IPython.Shell import IPShellEmbed
-#ipshell = IPShellEmbed([] ,banner = 'Dropping into IPython', exit_msg = 'Leaving Interpreter, back to program.')
-
 # Below, params is a dictionary that specifies the GNFW powers as well
 # as the integration control parameters.  The GNFW parameters should
 # be keyed with 'alpha', 'beta', 'gamma'.
@@ -35,13 +30,6 @@ _default_params = {
         'tol': 1e-7,
         'npts': 100,
         }
-
-#def func(x, params):
-    #"""
-    #The GNFW radial profile.
-    #"""
-    #G, A, B = params['gamma'], params['alpha'], params['beta']
-    #return x**-G * (1+x**A)**((G-B)/A)
 
 def func(x, params):
     """

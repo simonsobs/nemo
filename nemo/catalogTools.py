@@ -1,5 +1,6 @@
-# -*- coding: utf-8 -*-
-"""This module contains tools for handling catalogs, which for us are lists of dictionaries.
+"""
+
+This module contains tools for handling catalogs, which for us are lists of dictionaries.
 
 """
 
@@ -7,8 +8,6 @@ from astLib import *
 import numpy as np
 import operator
 import os
-import urllib
-import urllib2
 import sys
 import time
 import astropy.table as atpy
@@ -69,7 +68,7 @@ COLUMN_NAMES=COLUMN_NAMES+columnsToAdd
 COLUMN_FORMATS=COLUMN_FORMATS+formatsToAdd
         
 if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
-    raise exception, "COLUMN_NAMES and COLUMN_FORMATS lists should be same length"
+    raise exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
 
 #------------------------------------------------------------------------------------------------------------
 def mergeCatalogs(imageDict):
@@ -128,17 +127,17 @@ def mergeCatalogs(imageDict):
             
             if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
                 for key in wantedKeys:
-                    if key in bestMatch.keys() and key in c.keys():
+                    if key in list(bestMatch.keys()) and key in list(c.keys()):
                         bestMatch[key].append(c[key])   
             else:
                 # Must be an object not already in list
                 nonListKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
                 newObj={}
                 for key in nonListKeys:
-                    if key in c.keys():
+                    if key in list(c.keys()):
                         newObj[key]=c[key]
                 for key in wantedKeys:
-                    if key in c.keys():
+                    if key in list(c.keys()):
                         newObj[key]=[c[key]]
                 mergedCatalog.append(newObj)
                         
@@ -192,13 +191,13 @@ def makeOptimalCatalog(imageDict, constraintsList):
                 # Is this better than the current object?
                 if c['SNR'] > bestMatch['SNR']:
                     for key in wantedKeys:
-                        if key in c.keys():
+                        if key in list(c.keys()):
                             bestMatch[key]=c[key]
             else:
                 # Must be an object not already in list
                 newObj={}
                 for key in wantedKeys:
-                    if key in c.keys():
+                    if key in list(c.keys()):
                         newObj[key]=c[key]
                 mergedCatalog.append(newObj)
                     
@@ -226,7 +225,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
     # Cut catalog according to constraints
     cutCatalog=selectFromCatalog(catalog, constraintsList) 
     
-    outFile=file(outFileName, "w")
+    outFile=open(outFileName, "w")
     timeStamp=datetime.datetime.today().date().isoformat()
     comment="# DS9 region file"
     if writeNemoInfo == True:
@@ -312,7 +311,7 @@ def flagCatalogMatches(catalog, flagCatalog, key, matchRadiusDeg = 2.0/60.0):
             deltaDec=abs(obj['decDeg']-decs[rMinIndex])
             if deltaRA < 10.0 and deltaDec < 10.0:
                 obj[key]=True
-                if 'name' in flagCatalog[rMinIndex].keys():
+                if 'name' in list(flagCatalog[rMinIndex].keys()):
                     obj[key+" name"]=flagCatalog[rMinIndex]['name']
     
     return catalog
@@ -494,7 +493,7 @@ def catalogToTab(catalog, keysToWrite, keyFormats, constraintsList):
     """
     
     cutCatalog=selectFromCatalog(catalog, constraintsList)                                           
-    availKeys=cutCatalog[0].keys()
+    availKeys=list(cutCatalog[0].keys())
     
     # Write a .fits version (easier for topcatting)
     # NOTE: switched to astropy (v1.3) tables interface
@@ -522,7 +521,7 @@ def tabToCatalog(tab):
     catalog=[]
     for row in tab:
         objDict={}
-        for k in tab.keys():
+        for k in list(tab.keys()):
             objDict[k]=row[k]
         catalog.append(objDict)
     
@@ -570,9 +569,9 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
         
     # Cut catalog according to constraints
     cutCatalog=selectFromCatalog(catalog, constraintsList)                                           
-    availKeys=cutCatalog[0].keys()
+    availKeys=list(cutCatalog[0].keys())
     
-    outFile=file(outFileName, "w")
+    outFile=open(outFileName, "w")
     
     # Add meta data
     timeStamp=datetime.datetime.today().date().isoformat()
@@ -609,14 +608,14 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
                         try:
                             line=line+f % (obj[k]) 
                         except:
-                            print "Argh!"
+                            print("Argh!")
                             ipshell()
                             sys.exit()
                     else:
                         line=line+str(None)
         # Add on a 'notes' column - any key which is just a bool gets added to a , delimited list if True
         notes=""
-        for key in obj.keys():
+        for key in list(obj.keys()):
             if type(obj[key]) == bool and obj[key] == True:
                 if notes != "":
                     notes=notes+","
@@ -660,7 +659,7 @@ def readCatalog(fileName):
                'z': 'float'
               }
     
-    inFile=file(fileName, "r")
+    inFile=open(fileName, "r")
     lines=inFile.readlines()
     inFile.close()
     
@@ -673,7 +672,7 @@ def readCatalog(fileName):
             keysList=line.lstrip("# ").rstrip("\n").split("\t")
         if line[0] != '#' and len(line) > 3:
             if keysList == None:
-                raise Exception, "couldn't find column headings in catalog file %s" % (fileName)
+                raise Exception("couldn't find column headings in catalog file %s" % (fileName))
             objDict={}
             bits=line.rstrip("\n").split("\t")
             for key, bit in zip(keysList, bits):

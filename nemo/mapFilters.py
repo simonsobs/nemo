@@ -1,21 +1,22 @@
-# -*- coding: utf-8 -*-
-"""Filter classes are defined in this module.
+"""
 
-There are two main base classes of filter - WienerFilter and MatchedFilter. These are both derived from the
-overall base class for everything: MapFilter.
+Filter classes are defined in this module.
 
-There are also base classes corresponding to filters with different signal templates: Beta, Profle, Gaussian.
+There are two main classes of filter: MatchedFilter and RealSpaceMatchedFilter (previously, there was a 
+WienerFilter class, but it has been removed). RealSpaceMatcherFilter is the preferred one to use.
+
+New base classes can be derived from the overall base class: MapFilter.
+
+There are also base classes corresponding to filters with different signal templates: 
+e.g., BeamFilter, ArnaudModelFilter
 
 The actual filters that can be used are derived from these, e.g.:
 
-BetaModelMatchedFilter
-ProfileMatchedFilter
-GaussianMatchedFilter
+BeamMatchedFilter
 ArnaudModelMatchedFilter
-BetaModelWienerFilter
-ProfileWienerFilter
-GaussianWienerFilter
-ArnaudModelWienerFilter
+BeamRealSpaceMatchedFilter
+ArnaudModelRealSpaceMatchedFilter
+etc.
 
 """
 
@@ -29,13 +30,13 @@ import pylab as plt
 import os
 from scipy import interpolate
 from scipy import ndimage
-import mapTools
-import simsTools
-import photometry
-import catalogTools
-import simsTools
-import plotSettings
-import gnfw
+from nemo import mapTools
+from nemo import simsTools
+from nemo import photometry
+from nemo import catalogTools
+from nemo import simsTools
+from nemo import plotSettings
+from nemo import gnfw
 import astropy.io.fits as pyfits
 import copy
 import sys
@@ -54,7 +55,7 @@ class MapFilter:
     
     """
     def __init__(self, label, unfilteredMapsDictList, paramsDict, extName = 'PRIMARY', writeFilter = False, 
-                 forceRebuild = False, outDir = ".", diagnosticsDir = None):
+                 forceRebuild = False, diagnosticsDir = None):
         """Initialises a MapFilter. unfilteredMapsDictList describes the input maps, paramsDict describes
         the filter options. The convention is that single frequency only filters (e.g. GaussianWienerFilter)
         only operate on the first map in the unfilteredMapDictList.
@@ -80,12 +81,10 @@ class MapFilter:
         shape=self.unfilteredMapsDictList[0]['data'].shape
         for mapDict in self.unfilteredMapsDictList:
             if mapDict['data'].shape != shape:
-                raise Exception, "Maps at different frequencies have different dimensions!"
+                raise Exception("Maps at different frequencies have different dimensions!")
                                         
         # Set up storage if necessary, build this filter if not already stored
         self.diagnosticsDir=diagnosticsDir
-        if os.path.exists(outDir) == False:
-            os.makedirs(outDir)
         self.filterFileName=self.diagnosticsDir+os.path.sep+label+".fits"
                
         
@@ -121,7 +120,7 @@ class MapFilter:
     
         """
         
-        raise Exception, "Called a base filter class without a buildAndApply() function implemented."
+        raise Exception("Called a base filter class without a buildAndApply() function implemented.")
         return None
     
         
@@ -204,7 +203,7 @@ class MapFilter:
             tenPercent=lArray.shape[0]/10
             for j in range(0,11):
                 if i == j*tenPercent:
-                    print "... "+str(j*10)+"% complete ..."
+                    print("... "+str(j*10)+"% complete ...")
             besselTransformedArray[i]=integrate.simps(profile*special.j0(lArray[i]*thetaArray)*thetaArray*thetaSmoothed, thetaArray)
 
         return [2*np.pi*besselTransformedArray, lArray]
@@ -265,11 +264,11 @@ class MapFilter:
             #nullMap=nullMap/8.0   # scales to same noise level as in full map
             
             # Trim, subtract background if needed
-            if 'RADecSection' in self.unfilteredMapsDictList[0].keys() and self.unfilteredMapsDictList[0]['RADecSection'] != None:
+            if 'RADecSection' in list(self.unfilteredMapsDictList[0].keys()) and self.unfilteredMapsDictList[0]['RADecSection'] != None:
                 clipSection=True
             else:
                 clipSection=False
-            if 'backgroundSubtraction' in self.unfilteredMapsDictList[0].keys() and self.unfilteredMapsDictList[0]['backgroundSubtraction'] == True:
+            if 'backgroundSubtraction' in list(self.unfilteredMapsDictList[0].keys()) and self.unfilteredMapsDictList[0]['backgroundSubtraction'] == True:
                 bckSub=True      
             else:
                 bckSub=False
@@ -316,7 +315,7 @@ class MapFilter:
         try:
             NP.powerMap=NP.powerMap+powerMap
         except:
-            print "Hmm? 4WayNoise"
+            print("Hmm? 4WayNoise")
             ipshell()
             sys.exit()
                 
@@ -375,9 +374,12 @@ class MapFilter:
         
         realSpace=fft.ifft2(self.G).real
         realSpace=fft.fftshift(realSpace)
-        
+
+        # Changed for python3 - we may want to check this...
+        # i.e., force to always be int after /2 without this
         x0=int(realSpace.shape[1]/2)
         y0=int(realSpace.shape[0]/2)
+
         prof=realSpace[y0, x0:]/realSpace[y0, x0:].max() # normalise for plot
         arcminRange=np.arange(0, prof.shape[0])*self.degPerPixX*60.0
         
@@ -420,11 +422,11 @@ class MatchedFilter(MapFilter):
 
     def buildAndApply(self):
         
-        print ">>> Building filter %s ..." % (self.label)
+        print(">>> Building filter %s ..." % (self.label))
 
         self.makeRadiansMap()
 
-        if 'iterations' not in self.params.keys():
+        if 'iterations' not in list(self.params.keys()):
             self.params['iterations']=1
         iterations=self.params['iterations']
         clusterCatalog=[]
@@ -462,23 +464,23 @@ class MatchedFilter(MapFilter):
                                 
                 # Make noise power spectrum
                 if self.params['noiseParams']['method'] == 'dataMap':
-                    print "... taking noise power for filter from map ..."
+                    print("... taking noise power for filter from map ...")
                     NP=fftTools.powerFromFFT(fMaskedMap)
                 elif self.params['noiseParams']['method'] == '4WayMaps':
-                    print "... taking noise power for filter from 4 way maps ..."
+                    print("... taking noise power for filter from 4 way maps ...")
                     NP=self.noisePowerFrom4WayMaps(mapDict['weights'], mapDict['obsFreqGHz'])
                 elif self.params['noiseParams']['method'] == 'CMBOnly':
-                    print "... taking noise power for filter from model CMB power spectrum ..."
+                    print("... taking noise power for filter from model CMB power spectrum ...")
                     highPassMap=mapTools.subtractBackground(maskedData, self.wcs, 0.25/60.0)
                     whiteNoiseLevel=np.std(highPassMap)
                     NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
                 elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
-                    print "... taking noise power from max(map noise power, model CMB power spectrum) ..."
+                    print("... taking noise power from max(map noise power, model CMB power spectrum) ...")
                     NP=fftTools.powerFromFFT(fMaskedMap)
                     NPCMB=self.makeForegroundsPower(mapDict['obsFreqGHz'], 0.0)
                     NP.powerMap=np.maximum.reduce([NP.powerMap, NPCMB.powerMap])
                 else:
-                    raise Exception, "noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'"
+                    raise Exception("noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'")
                 
                 # FFT of signal
                 signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
@@ -524,7 +526,7 @@ class MatchedFilter(MapFilter):
                 elif self.params['outputUnits'] == 'Y500':
                     # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
                     # We can get this from yc and the info in signalProperties, so we don't really need this
-                    print "implement signal norm for %s" % (self.params['outputUnits'])
+                    print("implement signal norm for %s" % (self.params['outputUnits']))
                     IPython.embed()
                     sys.exit()
                 elif self.params['outputUnits'] == 'uK':
@@ -532,11 +534,11 @@ class MatchedFilter(MapFilter):
                     signalNorm=1.0/filteredSignalMap.max()
                 elif self.params['outputUnits'] == 'Jy/beam':
                     # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
-                    print "implement signal norm for %s" % (self.params['outputUnits'])
+                    print("implement signal norm for %s" % (self.params['outputUnits']))
                     IPython.embed()
                     sys.exit()
                 else:
-                    raise Exception, "didn't understand 'outputUnits' given in the .par file"
+                    raise Exception("didn't understand 'outputUnits' given in the .par file")
 
                 #---
                 # Filter actual map
@@ -550,7 +552,7 @@ class MatchedFilter(MapFilter):
                 #filteredSimMap=np.real(fft.ifft2(self.G*fSimMap.kMap*filterNormFactor))
                 #filteredSimMap=mapTools.convertToY(filteredSimMap, self.params['mapCombination']['rootFreqGHz'])  
                 # Or... add the signal only sim to the real map
-                if 'simData' in mapDict.keys():
+                if 'simData' in list(mapDict.keys()):
                     lmSim=liteMap.liteMapFromDataAndWCS(mapDict['simData']+mapDict['data'], self.wcs)                               
                     lmSim.data=lmSim.data*apodlm.data
                     fSimMap=fftTools.fftFromLiteMap(lmSim)
@@ -560,9 +562,9 @@ class MatchedFilter(MapFilter):
                     filteredSimMap=None
 
             # Linearly combine filtered maps and convert to yc if asked to do so
-            if 'mapCombination' in self.params.keys():
-                combinedMap=np.zeros(filteredMaps[filteredMaps.keys()[0]].shape)
-                for key in filteredMaps.keys():
+            if 'mapCombination' in list(self.params.keys()):
+                combinedMap=np.zeros(filteredMaps[list(filteredMaps.keys())[0]].shape)
+                for key in list(filteredMaps.keys()):
                     combinedMap=combinedMap+self.params['mapCombination'][key]*filteredMaps[key]
                 combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
             else:
@@ -573,7 +575,7 @@ class MatchedFilter(MapFilter):
             # Convert to whatever output units we want:
             # Jy/sr (should go to Jy/beam eventually) for sources
             # yc for SZ clusters
-            if 'outputUnits' in self.params.keys():
+            if 'outputUnits' in list(self.params.keys()):
                 if self.params['outputUnits'] == 'yc':
                     combinedMap=mapTools.convertToY(combinedMap, combinedObsFreqGHz)
                     combinedObsFreqGHz='yc'
@@ -581,12 +583,12 @@ class MatchedFilter(MapFilter):
                 elif self.params['outputUnits'] == 'uK':
                     mapUnits='uK'
                 elif self.params['outputUnits'] == 'Jy/beam':
-                    print "Jy/beam here"
+                    print("Jy/beam here")
                     mapUnits='Jy/beam'
                     IPython.embed()
                     sys.exit()
                 else:
-                    raise Exception, 'need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params'
+                    raise Exception('need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params')
                 
             # We'll be saving this shortly...
             apodMask=np.zeros(apodlm.data.shape)
@@ -668,7 +670,7 @@ class RealSpaceMatchedFilter(MapFilter):
                     'pointSourceRemoval']
         kernelUnfilteredMapsDict={}
         for k in keysWanted:
-            if k in mapDict.keys():
+            if k in list(mapDict.keys()):
                 kernelUnfilteredMapsDict[k]=mapDict[k]
         kernelUnfilteredMapsDict['RADecSection']=RADecSection
         kernelUnfilteredMapsDictList=[kernelUnfilteredMapsDict]
@@ -681,7 +683,6 @@ class RealSpaceMatchedFilter(MapFilter):
         matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
         matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
                                          extName = mapDict['extName'],
-                                         outDir = matchedFilterDir, 
                                          diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
         filteredMapDict=matchedFilter.buildAndApply()
                 
@@ -743,7 +744,7 @@ class RealSpaceMatchedFilter(MapFilter):
         elif self.params['outputUnits'] == 'Y500':
             # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
             # We can get this from yc and the info in signalProperties, so we don't really need this
-            print "implement signal norm for %s" % (self.params['outputUnits'])
+            print("implement signal norm for %s" % (self.params['outputUnits']))
             IPython.embed()
             sys.exit()
         elif self.params['outputUnits'] == 'uK':
@@ -753,11 +754,11 @@ class RealSpaceMatchedFilter(MapFilter):
             signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
         elif self.params['outputUnits'] == 'Jy/beam':
             # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
-            print "implement signal norm for %s" % (self.params['outputUnits'])
+            print("implement signal norm for %s" % (self.params['outputUnits']))
             IPython.embed()
             sys.exit()
         else:
-            raise Exception, "didn't understand 'outputUnits' given in the .par file"
+            raise Exception("didn't understand 'outputUnits' given in the .par file")
         
         # Save 2d kernel - we need this (at least for the photometry ref scale) to calc Q later
         # Add bckSubScaleArcmin to the header
@@ -805,7 +806,7 @@ class RealSpaceMatchedFilter(MapFilter):
         #print "... making SN map ..."
         gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
         #gridSize=rIndex*3
-        overlapPix=gridSize/2
+        overlapPix=int(gridSize/2)
         numXChunks=mapData.shape[1]/gridSize
         numYChunks=mapData.shape[0]/gridSize
         yChunks=np.linspace(0, mapData.shape[0], numYChunks+1, dtype = int)
@@ -879,7 +880,7 @@ class RealSpaceMatchedFilter(MapFilter):
         """
         dataCube=[]
         noiseCube=[]
-        for key in filteredMaps.keys():
+        for key in list(filteredMaps.keys()):
             mapData=filteredMaps[key]
             mapData=mapTools.convertToY(mapData, float(key))
             RMSMap=self.makeNoiseMap(mapData)
@@ -916,12 +917,12 @@ class RealSpaceMatchedFilter(MapFilter):
             
     def buildAndApply(self):
         
-        print ">>> Building filter %s ..." % (self.label)
+        print(">>> Building filter %s ..." % (self.label))
         
         # We don't want to get rid of this option for the regular matched filter...
         # BUT we don't want it here... because of the way we're implementing the multi-frequency filter for SZ searches
-        if 'mapCombination' in self.params.keys():
-            raise Exception, "mapCombination key should not be given in .par file for RealSpaceMatchedFilter"
+        if 'mapCombination' in list(self.params.keys()):
+            raise Exception("mapCombination key should not be given in .par file for RealSpaceMatchedFilter")
 
         filteredMaps={}
         for mapDict in self.unfilteredMapsDictList:   
@@ -940,12 +941,12 @@ class RealSpaceMatchedFilter(MapFilter):
                                                         wcs.header['NDEMIN'], wcs.header['NDEMAX']],
                                        'applyDecMin': decMin, 'applyDecMax': decMax,
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
-                print "... taking noise from tileDeck image header: %s ..." % (RADecSectionDictList[0]['RADecSection'])
+                print("... taking noise from tileDeck image header: %s ..." % (RADecSectionDictList[0]['RADecSection']))
                 
             elif self.params['noiseParams']['RADecSection'] == 'auto':
                 
                 if self.params['noiseParams']['method'] != 'CMBOnly':
-                    raise Exception, "'auto' option for RADecSection disabled for all methods EXCEPT CMBOnly (needs fixing)"
+                    raise Exception("'auto' option for RADecSection disabled for all methods EXCEPT CMBOnly (needs fixing)")
 
                 # NOTE: hardcoded max size... if we're using CMBOnly, we don't care (no real noise) 
                 cRADeg, cDecDeg=wcs.getCentreWCSCoords()
@@ -1030,12 +1031,12 @@ class RealSpaceMatchedFilter(MapFilter):
                 yOverlap=RADecSectionDict['yOverlap']
                 buff=np.zeros(mapData[yMax:yMax+yOverlap].shape)+mapData[yMax:yMax+yOverlap]
                 t0=time.time()
-                print "... convolving map with kernel [%d:%d] ..." % (yMin, yMax)
+                print("... convolving map with kernel [%d:%d] ..." % (yMin, yMax))
                 mapData[yMin:yMax+yOverlap, :]=ndimage.convolve(mapData[yMin:yMax+yOverlap, :], RADecSectionDict['kern2d'])   
                 filtBuff=np.zeros(mapData[yMax:yMax+yOverlap].shape)+mapData[yMax:yMax+yOverlap]
                 mapData[yMax:yMax+yOverlap]=buff
                 t1=time.time()
-                print "... took %.3f sec ..." % (t1-t0)
+                print("... took %.3f sec ..." % (t1-t0))
                 # Apply the normalisation
                 mapData[yMin:yMax, :]=mapData[yMin:yMax, :]*RADecSectionDict['signalNorm']
                         
@@ -1048,16 +1049,16 @@ class RealSpaceMatchedFilter(MapFilter):
         # Convert to whatever output units we want:
         # Jy/sr (should go to Jy/beam eventually) for sources
         # yc for SZ clusters
-        if 'outputUnits' in self.params.keys():
+        if 'outputUnits' in list(self.params.keys()):
             if self.params['outputUnits'] == 'yc':
                 # Output of below is already in yc
                 combinedMap, RMSMap, SNMap=self.makeSZMap(filteredMaps)
                 combinedObsFreqGHz='yc'
                 mapUnits='yc'
             elif self.params['outputUnits'] == 'uK':
-                if len(filteredMaps.keys()) > 1:
-                    raise Exception, "multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)"
-                keyFreq=filteredMaps.keys()[0]
+                if len(list(filteredMaps.keys())) > 1:
+                    raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+                keyFreq=list(filteredMaps.keys())[0]
                 combinedMap=filteredMaps[keyFreq]
                 combinedObsFreqGHz=float(keyFreq)
                 RMSMap=self.makeNoiseMap(combinedMap)
@@ -1065,13 +1066,13 @@ class RealSpaceMatchedFilter(MapFilter):
                 SNMap[np.isinf(SNMap)]=0.
                 mapUnits='uK'
             elif self.params['outputUnits'] == 'Jy/beam':
-                print "Jy/beam here"
+                print("Jy/beam here")
                 combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
                 mapUnits='Jy/beam'
                 IPython.embed()
                 sys.exit()
             else:
-                raise Exception, 'need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params'
+                raise Exception('need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params')
 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # Fold point source mask into survey mask here
@@ -1342,10 +1343,10 @@ def combinations(iterable, r):
     n = len(pool)
     if r > n:
         return
-    indices = range(r)
+    indices = list(range(r))
     yield tuple(pool[i] for i in indices)
     while True:
-        for i in reversed(range(r)):
+        for i in reversed(list(range(r))):
             if indices[i] != i + n - r:
                 break
         else:

@@ -1,12 +1,13 @@
-# -*- coding: utf-8 -*-
-"""This module contains tools for manipulating maps (e.g. filtering, conversion of units etc.).
+"""
+
+This module contains tools for manipulating maps (e.g. filtering, conversion of units etc.).
 
 """
 
-import mapFilters
-import photometry
-import catalogTools
-import simsTools
+from nemo import mapFilters
+from nemo import photometry
+from nemo import catalogTools
+from nemo import simsTools
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
@@ -86,7 +87,7 @@ def makeTileDeck(parDict):
     
     """
     
-    if 'makeTileDeck' not in parDict.keys():
+    if 'makeTileDeck' not in list(parDict.keys()):
         parDict['makeTileDeck']=False
 
     # Some of this is rather clunky...
@@ -102,13 +103,13 @@ def makeTileDeck(parDict):
             else:
                 for ext in img:
                     if ext.name not in extNames:
-                        raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
+                        raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
     else:
         extNames=[]        
         for mapDict in parDict['unfilteredMaps']:
                         
             # Added an option to define tiles in the .par file... otherwise, we will do the automatic tiling
-            if 'tileDefinitions' in parDict.keys():
+            if 'tileDefinitions' in list(parDict.keys()):
                 tileDeckFileNameLabel="userDefined_%.1f" % (parDict['tileOverlapDeg'])
                 defineTilesAutomatically=False
             else:
@@ -124,7 +125,7 @@ def makeTileDeck(parDict):
             outFileNames=[]
             mapTypeList=[]
             for f in fileNameKeys:
-                if f in mapDict.keys() and mapDict[f] != None:
+                if f in list(mapDict.keys()) and mapDict[f] != None:
                     inFileNames.append(mapDict[f])
                     mapDir, mapFileName=os.path.split(mapDict[f])
                     if mapDir != '':
@@ -152,16 +153,17 @@ def makeTileDeck(parDict):
                 else:
                     for ext in img:
                         if ext.name not in extNames:
-                            raise Exception, "extension names do not match between all maps in unfilteredMapsDictList"
+                            raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             else:
                 
                 # Whether we make tiles automatically or not, we need the WCS from somewhere...
-                if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] != None:
+                if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] != None:
                     wht=pyfits.open(mapDict['surveyMask'])
-                    print ">>> Using survey mask to determine tiling ..."
+                    print(">>> Using survey mask to determine tiling ...")
                 else:
                     wht=pyfits.open(mapDict['weightsFileName'])
-                    print ">>> Using weight map to determine tiling ..."
+                    print(">>> Using weight map to determine tiling ...")
+                    print("... WARNING: same tiling not guaranteed across multiple frequencies ...")
                 wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
                 tileOverlapDeg=parDict['tileOverlapDeg']
    
@@ -190,7 +192,7 @@ def makeTileDeck(parDict):
                     # Starting from bottom left, work our way around the map adding tiles, ignoring blank regions
                     numHorizontalTiles=parDict['numHorizontalTiles']
                     numVerticalTiles=parDict['numVerticalTiles']
-                    ys=edges.keys()
+                    ys=list(edges.keys())
                     ys.sort()
                     ys=np.array(ys)
                     coordsList=[]
@@ -203,7 +205,7 @@ def makeTileDeck(parDict):
                         minXMin=1e6
                         maxXMax=0
                         for k in keys:
-                            if k in edges.keys():
+                            if k in list(edges.keys()):
                                 xMin, xMax=edges[k]
                                 if xMin < minXMin:
                                     minXMin=xMin
@@ -236,7 +238,7 @@ def makeTileDeck(parDict):
                         extNames.append(tileDict['extName'])   
                 
                 # Output a .reg file for debugging (pixel coords)
-                outFile=file(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
+                outFile=open(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
                 outFile.write("# Region file format: DS9 version 4.1\n")
                 outFile.write('global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
                 outFile.write("image\n")
@@ -251,7 +253,7 @@ def makeTileDeck(parDict):
                 # NOTE: now treating surveyMask as special, and zapping overlap regions there (simplify selection function stuff later)
                 for mapType, inMapFileName, outMapFileName in zip(mapTypeList, inFileNames, outFileNames):
                     if os.path.exists(outMapFileName) == False:
-                        print ">>> Writing tileDeck file %s ..." % (outMapFileName)
+                        print(">>> Writing tileDeck file %s ..." % (outMapFileName))
                         deckImg=pyfits.HDUList()
                         # Special handling for case where surveyMask = None in the .par file (tidy later...)
                         if mapType == 'surveyMask' and inMapFileName == None:
@@ -284,11 +286,11 @@ def makeTileDeck(parDict):
                             if ra1 > ra0:
                                 ra1=-(360-ra1)
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
-                            print "... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0)
+                            print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
                             header=clip['wcs'].header.copy()
-                            if 'tileNoiseRegions' in parDict.keys() and name in parDict['tileNoiseRegions'].keys():
+                            if 'tileNoiseRegions' in list(parDict.keys()) and name in list(parDict['tileNoiseRegions'].keys()):
                                 noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=parDict['tileNoiseRegions'][name]
-                                print "... adding noise region [%.3f, %.3f, %.3f, %.3f] to header %s ..." % (noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax, name)
+                                print("... adding noise region [%.3f, %.3f, %.3f, %.3f] to header %s ..." % (noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax, name))
                                 header['NRAMIN']=noiseRAMin
                                 header['NRAMAX']=noiseRAMax
                                 header['NDEMIN']=noiseDecMin
@@ -334,9 +336,8 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     
     # Storage, in case it doesn't already exist
     filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
-    filtersDir=rootOutDir+os.path.sep+"filters"
     diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    dirList=[filteredMapsDir, filtersDir, diagnosticsDir]
+    dirList=[filteredMapsDir, diagnosticsDir]
     for d in dirList:
         if os.path.exists(d) == False:
             os.makedirs(d)
@@ -351,13 +352,13 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     imageDict['mapKeys']=[]
     
     # Make filtered maps for each filter
-    if verbose == True: print ">>> Making filtered maps and S/N maps ..."
+    if verbose == True: print(">>> Making filtered maps and S/N maps ...")
     for f in filtersList:
         
         # Iterate over all extensions (for tileDeck files)...
         for extName in extNames:
             
-            print "--> extName = %s ..." % (extName)
+            print("--> extName = %s ..." % (extName))
             label=f['label']+"#"+extName
             
             filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
@@ -367,10 +368,10 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
 
             if os.path.exists(filteredMapFileName) == False:
                 
-                print "... making filtered map %s ..." % (label) 
+                print("... making filtered map %s ..." % (label)) 
                 filterClass=eval('mapFilters.%s' % (f['class']))
                 filterObj=filterClass(label, unfilteredMapsDictList, f['params'], \
-                                      extName = extName, outDir = filtersDir, 
+                                      extName = extName, 
                                       diagnosticsDir = diagnosticsDir)
                 filteredMapDict=filterObj.buildAndApply()
                     
@@ -389,7 +390,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
                 #astImages.saveFITS(signalMapFileName, filteredMapDict['signalMap'], filteredMapDict['wcs'])            
 
             else:
-                print "... filtered map %s already made ..." % (label) 
+                print("... filtered map %s already made ..." % (label)) 
             
             # Add file names to imageDict
             if label not in imageDict:
@@ -452,7 +453,7 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
             elif mask == 'subtract':         
                 # NOTE: This only makes sense to do on an unfiltered map...
                 if obj['id'] == 1445:
-                    print "Fix oversubtraction... peakValue is pointSource + CMB..."
+                    print("Fix oversubtraction... peakValue is pointSource + CMB...")
                     IPython.embed()
                     sys.exit()
                 peakValue=mapData[int(round(obj['y'])), int(round(obj['x']))]
@@ -518,7 +519,7 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
         if type(mask) == float or type(mask) == int:
             maskedMapData[circleMask]=mask
         elif mask == "subtract":
-            print "Add code to subtract point sources"
+            print("Add code to subtract point sources")
             ipshell()
             sys.exit()
         elif mask == "whiteNoise":
@@ -609,7 +610,7 @@ def clipUsingRADecCoords(imageData, imageWCS, RAMin, RAMax, decMin, decMax, retu
             
             if REPORT_ERRORS == True:
                 
-                print "WARNING: astImages.clipUsingRADecCoords() : no CRPIX1, CRPIX2 keywords found - not updating clipped image WCS."
+                print("WARNING: astImages.clipUsingRADecCoords() : no CRPIX1, CRPIX2 keywords found - not updating clipped image WCS.")
                 
                 clippedData=imageData[Y[0]:Y[1],X[0]:X[1]]
                 clippedWCS=wcs.copy()
@@ -637,11 +638,11 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         elif mapDict['obsFreqGHz'] == 219:
             data=(data/1.318837e+09)*2.726*1e6
         else:
-            raise Exception, "no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
-                    % (mapDict['obsFreqGHz'])
+            raise Exception("no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
+                    % (mapDict['obsFreqGHz']))
 
     # Load weight map if given
-    if 'weightsFileName' in mapDict.keys() and mapDict['weightsFileName'] != None:
+    if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] != None:
         wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
         weights=wht[extName].data
         # For Enki maps... take only I (temperature) for now, add options for this later
@@ -651,21 +652,21 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         weights=np.ones(data.shape)
 
     # Load survey and point source masks, if given
-    if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] !=  None:
+    if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] !=  None:
         smImg=pyfits.open(mapDict['surveyMask'])
         surveyMask=smImg[extName].data
     else:
         surveyMask=np.ones(data.shape)
-    if 'pointSourceMask' in mapDict.keys() and mapDict['pointSourceMask'] != None:
+    if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] != None:
         psImg=pyfits.open(mapDict['pointSourceMask'])
         psMask=psImg[extName].data
     else:
         psMask=np.ones(data.shape)
             
-    print "... opened map %s ..." % (mapDict['mapFileName'])
+    print("... opened map %s ..." % (mapDict['mapFileName']))
     
     # Optional map clipping
-    if 'RADecSection' in mapDict.keys() and mapDict['RADecSection'] != None:
+    if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] != None:
         RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
         clip=astImages.clipUsingRADecCoords(data, wcs, RAMin, RAMax, decMin, decMax)
         data=clip['data']
@@ -678,7 +679,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         wcs=clip['wcs']
         #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
     
-    if 'CMBSimSeed' in mapDict.keys():
+    if 'CMBSimSeed' in list(mapDict.keys()):
         # The old flipper-based routine that did this took 190 sec versus 0.7 sec for enlib
         # NOTE: enlib imports here for now, to save having to install if we're not using it
         from enlib import enmap, utils, powspec
@@ -732,7 +733,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         astImages.saveFITS(outFileName, data, wcs)
         
     # Optional adding of white noise
-    if 'addNoise' in mapDict.keys() and mapDict['addNoise'] != None:
+    if 'addNoise' in list(mapDict.keys()) and mapDict['addNoise'] != None:
         data=addWhiteNoise(data, mapDict['addNoise'])
         if diagnosticsDir != None:
             astImages.saveFITS(diagnosticsDir+os.path.sep+"simMapPlusNoise_%d.fits" \
@@ -740,13 +741,13 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
             
     # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
     # or a wavelet decomposition scale image
-    if 'bckSubScaleArcmin' in mapDict.keys() and mapDict['bckSubScaleArcmin'] != None:
+    if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] != None:
         data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
     
     # Optional removal of point sources, using GaussianWienerFilter to find them
     # We only do this once, and cache the result in the diagnostics dir
     # NOTE: see above for new 'pointSourceMask' option - eventually we may remove the below...
-    if 'pointSourceRemoval' in mapDict.keys() and mapDict['pointSourceRemoval'] != None:
+    if 'pointSourceRemoval' in list(mapDict.keys()) and mapDict['pointSourceRemoval'] != None:
         outFileName=diagnosticsDir+os.path.sep+"psRemoved_%d.fits" % (mapDict['obsFreqGHz'])
         if os.path.exists(outFileName) == False:
             psRemovalMapDict={}
@@ -754,10 +755,10 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
             psRemovalMapDict['wcs']=wcs
             psRemovalMapDict['weights']=weights
             psRemovalMapDict['obsFreqGHz']=mapDict['obsFreqGHz']
-            if 'beamFWHMArcmin' in mapDict.keys():
+            if 'beamFWHMArcmin' in list(mapDict.keys()):
                 psRemovalMapDict['beamFWHMArcmin']=mapDict['beamFWHMArcmin']
                 psRemovalClass=mapFilters.GaussianMatchedFilter
-            if 'beamFileName' in mapDict.keys():
+            if 'beamFileName' in list(mapDict.keys()):
                 psRemovalMapDict['beamFileName']=mapDict['beamFileName']
                 psRemovalClass=mapFilters.BeamMatchedFilter
             psRemovalParams=mapDict['pointSourceRemoval']
@@ -803,8 +804,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Optional masking of point sources from external catalog - needed, e.g., for point source subtracted
     # maps from Jon's pipeline, because otherwise we get negative bits that are detected as spurious 
     # clusters
-    if 'maskPointSourcesFromCatalog' in mapDict.keys() and mapDict['maskPointSourcesFromCatalog'] != None:
-        print "Add code for masking point sources in a catalog"
+    if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] != None:
+        print("Add code for masking point sources in a catalog")
         IPython.embed()
         sys.exit()        
     
