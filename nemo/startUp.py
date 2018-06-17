@@ -53,9 +53,10 @@ def startUp(parDictFileName):
     filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
     diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
     dirList=[rootOutDir, filteredMapsDir]
-    for d in dirList:
-        if os.path.exists(d) == False:
-            os.makedirs(d)
+    if rank == 0:
+        for d in dirList:
+            if os.path.exists(d) == False:
+                os.makedirs(d)
 
     # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
     if 'GNFWParams' not in list(parDict.keys()):

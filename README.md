@@ -55,6 +55,7 @@ earlier and later versions also probably work):
 * Cython (0.24.1)
 * PyYAML (3.12)
 * hmf (3.0.3)
+* mpi4py (3.0.0)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 
 _Note:_ A Python 3.x compatible version of flipper is required. Hopefully this will be added to the
