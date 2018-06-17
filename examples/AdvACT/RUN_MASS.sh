@@ -5,4 +5,4 @@
 #SBATCH --time=12:00:00
 
 source ~/.bashrc
-time nemoMass MF_AdvACT_multiScale_tileDeck_hybrid.yml
+time mpirun nemoMass MF_AdvACT_multiScale_tileDeck_hybrid.yml
