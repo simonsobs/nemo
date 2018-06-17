@@ -24,8 +24,9 @@ Python 3.x compatible version of Flipper (see below).
 
 Listed below are tagged, internal releases of nemo:
 
-* **v18.06:** Brought up-to-date with changes that were made in tileDeck branch; this is the version 
-  used for making S16 point source catalogs (by Sigurd) and preliminary AdvACT cluster catalogs.
+* **v18.06:** Brought up-to-date with changes that were made in tileDeck branch (can run in 
+  parallel using MPI); this is the version used for making S16 point source catalogs (by Sigurd) 
+  and preliminary AdvACT cluster catalogs.
 * **v17.10:** Version of the code at the time of submission of the ACTPol cluster catalog paper.
 
 ## Related codes
