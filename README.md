@@ -53,6 +53,8 @@ earlier and later versions also probably work):
 * astropy (2.0.4)
 * IPython (2.4.1)
 * Cython (0.24.1)
+* PyYAML (3.12)
+* hmf (3.0.3)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 
 _Note:_ A Python 3.x compatible version of flipper is required. Hopefully this will be added to the
@@ -62,7 +64,7 @@ main ACTCollaboration version of flipper (linked to above), but until then,
 `enlib` is currently being used only for CMB-only sky sims (for estimating false positive detection 
 rate), but other parts which currently rely on `flipper` may be replaced in future.
 
-Most of the dependencies can be installed using `pip`.
+All of the dependencies (except flipper, for the reason given above) can be installed using `pip`.
 
 ## Installation
 
