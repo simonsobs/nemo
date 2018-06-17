@@ -13,9 +13,8 @@ import pylab
 import math
 from scipy import ndimage
 from scipy import interpolate
-from nemo import catalogTools
-from nemo import mapTools
-from nemo import simsTools
+from . import catalogTools
+from . import mapTools
 import sys
 import IPython
 np.random.seed()

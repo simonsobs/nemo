@@ -1,6 +1,6 @@
 """
 
-Filter classes are defined in this module.
+Filter classes are defined in this module, together with the filterMaps function that uses them.
 
 There are two main classes of filter: MatchedFilter and RealSpaceMatchedFilter (previously, there was a 
 WienerFilter class, but it has been removed). RealSpaceMatcherFilter is the preferred one to use.
@@ -30,13 +30,6 @@ import pylab as plt
 import os
 from scipy import interpolate
 from scipy import ndimage
-from nemo import mapTools
-from nemo import simsTools
-from nemo import photometry
-from nemo import catalogTools
-from nemo import simsTools
-from nemo import plotSettings
-from nemo import gnfw
 import astropy.io.fits as pyfits
 import copy
 import sys
@@ -45,9 +38,105 @@ import itertools
 import pyximport; pyximport.install()
 import nemoCython
 import nemo
+from . import mapTools
+from . import simsTools
+from . import photometry
+from . import catalogTools
+from . import simsTools
+from . import plotSettings
+from . import gnfw
 import astropy.table as atpy
 import time
 import IPython
+
+#-------------------------------------------------------------------------------------------------------------
+def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], rootOutDir = ".", verbose = True):
+    """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc. All filter
+    operations are done in the filter objects, even if multifrequency (a change from previous behaviour).
+   
+    Filtered maps are written to rootOutDir/filteredMaps
+    Filters, if stored, are written to rootOutDir/filters
+    
+    Returns a dictionary containing a map of filtered maps to keys in filterDict. We'll use this dictionary
+    for keeping track of catalogs etc. subsequently.
+    
+    """
+    
+    # Storage, in case it doesn't already exist
+    filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
+    diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
+    dirList=[filteredMapsDir, diagnosticsDir]
+    for d in dirList:
+        if os.path.exists(d) == False:
+            os.makedirs(d)
+            
+    # Dictionary to keep track of images we're going to make
+    imageDict={}
+    
+    # For handling tileDeck style .fits files
+    imageDict['extNames']=extNames
+    
+    # Since we're putting stuff like extNames in the top level, let's keep a separate list of mapDicts
+    imageDict['mapKeys']=[]
+    
+    # Make filtered maps for each filter
+    if verbose == True: print(">>> Making filtered maps and S/N maps ...")
+    for f in filtersList:
+        
+        # Iterate over all extensions (for tileDeck files)...
+        for extName in extNames:
+            
+            print("--> extName = %s ..." % (extName))
+            label=f['label']+"#"+extName
+            
+            filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
+            SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
+            signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
+            #transferFnFileName=filteredMapsDir+os.path.sep+"%s_transferFunction.fits" % (f['label'])
+
+            if os.path.exists(filteredMapFileName) == False:
+                
+                print("... making filtered map %s ..." % (label)) 
+                filterClass=eval('%s' % (f['class']))
+                filterObj=filterClass(label, unfilteredMapsDictList, f['params'], \
+                                      extName = extName, 
+                                      diagnosticsDir = diagnosticsDir)
+                filteredMapDict=filterObj.buildAndApply()
+                    
+                # Keywords we need for photometry later
+                #filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
+                #filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
+                filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
+                filteredMapDict['wcs'].updateFromHeader()
+
+                #if filteredMapDict['obsFreqGHz'] != 'yc':
+                    #filteredMapDict['data']=convertToY(filteredMapDict['data'], \
+                                                    #obsFrequencyGHz = filteredMapDict['obsFreqGHz'])
+                                                
+                astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
+                #astImages.saveFITS(signalMapFileName, filteredMapDict['signalMap'], filteredMapDict['wcs'])            
+
+            else:
+                print("... filtered map %s already made ..." % (label)) 
+            
+            # Add file names to imageDict
+            if label not in imageDict:
+                imageDict[label]={}
+            imageDict[label]['filteredMap']=filteredMapFileName
+            imageDict[label]['SNMap']=SNMapFileName
+            imageDict[label]['signalMap']=signalMapFileName
+            
+            # Track e.g. reference filter scale with this key
+            imageDict[label]['template']=f['label']
+            
+            # Track which keys have filtered maps that we might want to iterate over
+            imageDict['mapKeys'].append(label)
+            
+            # May be handy to keep track of for plotting etc. later
+            imageDict[label]['unfilteredMapsDictList']=unfilteredMapsDictList  
+            
+    return imageDict
 
 #------------------------------------------------------------------------------------------------------------
 class MapFilter:

@@ -4,10 +4,6 @@ This module contains tools for manipulating maps (e.g. filtering, conversion of 
 
 """
 
-from nemo import mapFilters
-from nemo import photometry
-from nemo import catalogTools
-from nemo import simsTools
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
@@ -22,6 +18,7 @@ import nemoCython
 import time
 import IPython
 import nemo
+from . import catalogTools
 np.random.seed()
 
 #-------------------------------------------------------------------------------------------------------------
@@ -320,95 +317,6 @@ def makeTileDeck(parDict):
             unfilteredMapsDictList.append(mapDict.copy())
     
     return unfilteredMapsDictList, extNames
-
-#-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], rootOutDir = ".", verbose = True):
-    """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc. All filter
-    operations are done in the filter objects, even if multifrequency (a change from previous behaviour).
-   
-    Filtered maps are written to rootOutDir/filteredMaps
-    Filters, if stored, are written to rootOutDir/filters
-    
-    Returns a dictionary containing a map of filtered maps to keys in filterDict. We'll use this dictionary
-    for keeping track of catalogs etc. subsequently.
-    
-    """
-    
-    # Storage, in case it doesn't already exist
-    filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
-    diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    dirList=[filteredMapsDir, diagnosticsDir]
-    for d in dirList:
-        if os.path.exists(d) == False:
-            os.makedirs(d)
-            
-    # Dictionary to keep track of images we're going to make
-    imageDict={}
-    
-    # For handling tileDeck style .fits files
-    imageDict['extNames']=extNames
-    
-    # Since we're putting stuff like extNames in the top level, let's keep a separate list of mapDicts
-    imageDict['mapKeys']=[]
-    
-    # Make filtered maps for each filter
-    if verbose == True: print(">>> Making filtered maps and S/N maps ...")
-    for f in filtersList:
-        
-        # Iterate over all extensions (for tileDeck files)...
-        for extName in extNames:
-            
-            print("--> extName = %s ..." % (extName))
-            label=f['label']+"#"+extName
-            
-            filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
-            SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
-            signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
-            #transferFnFileName=filteredMapsDir+os.path.sep+"%s_transferFunction.fits" % (f['label'])
-
-            if os.path.exists(filteredMapFileName) == False:
-                
-                print("... making filtered map %s ..." % (label)) 
-                filterClass=eval('mapFilters.%s' % (f['class']))
-                filterObj=filterClass(label, unfilteredMapsDictList, f['params'], \
-                                      extName = extName, 
-                                      diagnosticsDir = diagnosticsDir)
-                filteredMapDict=filterObj.buildAndApply()
-                    
-                # Keywords we need for photometry later
-                #filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
-                #filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
-                filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
-                filteredMapDict['wcs'].updateFromHeader()
-
-                #if filteredMapDict['obsFreqGHz'] != 'yc':
-                    #filteredMapDict['data']=convertToY(filteredMapDict['data'], \
-                                                    #obsFrequencyGHz = filteredMapDict['obsFreqGHz'])
-                                                
-                astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-                astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
-                #astImages.saveFITS(signalMapFileName, filteredMapDict['signalMap'], filteredMapDict['wcs'])            
-
-            else:
-                print("... filtered map %s already made ..." % (label)) 
-            
-            # Add file names to imageDict
-            if label not in imageDict:
-                imageDict[label]={}
-            imageDict[label]['filteredMap']=filteredMapFileName
-            imageDict[label]['SNMap']=SNMapFileName
-            imageDict[label]['signalMap']=signalMapFileName
-            
-            # Track e.g. reference filter scale with this key
-            imageDict[label]['template']=f['label']
-            
-            # Track which keys have filtered maps that we might want to iterate over
-            imageDict['mapKeys'].append(label)
-            
-            # May be handy to keep track of for plotting etc. later
-            imageDict[label]['unfilteredMapsDictList']=unfilteredMapsDictList  
-            
-    return imageDict
     
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
@@ -680,6 +588,9 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
     
     if 'CMBSimSeed' in list(mapDict.keys()):
+        # This is the only part of this module that depends on simsTools
+        from . import simsTools
+        
         # The old flipper-based routine that did this took 190 sec versus 0.7 sec for enlib
         # NOTE: enlib imports here for now, to save having to install if we're not using it
         from enlib import enmap, utils, powspec
@@ -743,63 +654,6 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # or a wavelet decomposition scale image
     if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] != None:
         data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
-    
-    # Optional removal of point sources, using GaussianWienerFilter to find them
-    # We only do this once, and cache the result in the diagnostics dir
-    # NOTE: see above for new 'pointSourceMask' option - eventually we may remove the below...
-    if 'pointSourceRemoval' in list(mapDict.keys()) and mapDict['pointSourceRemoval'] != None:
-        outFileName=diagnosticsDir+os.path.sep+"psRemoved_%d.fits" % (mapDict['obsFreqGHz'])
-        if os.path.exists(outFileName) == False:
-            psRemovalMapDict={}
-            psRemovalMapDict['data']=subtractBackground(data, wcs, smoothScaleDeg = 3.0/60.0)
-            psRemovalMapDict['wcs']=wcs
-            psRemovalMapDict['weights']=weights
-            psRemovalMapDict['obsFreqGHz']=mapDict['obsFreqGHz']
-            if 'beamFWHMArcmin' in list(mapDict.keys()):
-                psRemovalMapDict['beamFWHMArcmin']=mapDict['beamFWHMArcmin']
-                psRemovalClass=mapFilters.GaussianMatchedFilter
-            if 'beamFileName' in list(mapDict.keys()):
-                psRemovalMapDict['beamFileName']=mapDict['beamFileName']
-                psRemovalClass=mapFilters.BeamMatchedFilter
-            psRemovalParams=mapDict['pointSourceRemoval']
-            psRemovalParams['FWHMArcmin']=1.4
-            psRemovalParams['noiseParams']={'method': 'dataMap'}
-            gaussFilter=psRemovalClass('psremoval-%d' % (psRemovalMapDict['obsFreqGHz']), \
-                                                            [psRemovalMapDict], psRemovalParams, \
-                                                            diagnosticsDir = diagnosticsDir)
-            psRemoved=gaussFilter.buildAndApply()
-            SNMap=psRemoved['SNMap']
-            imageDict={'psRemoved': {}}
-            imageDict['psRemoved']['SNMap']=SNMap
-            imageDict['psRemoved']['wcs']=psRemoved['wcs']
-            photometry.findObjects(imageDict, SNMap = 'array', 
-                                threshold = mapDict['pointSourceRemoval']['threshold'],
-                                minObjPix = mapDict['pointSourceRemoval']['minObjPix'], 
-                                rejectBorder = mapDict['pointSourceRemoval']['rejectBorder'], 
-                                makeDS9Regions = False, 
-                                writeSegmentationMap = False)            
-            if diagnosticsDir != None:
-                outFileName=diagnosticsDir+os.path.sep+"pointSources-%d.reg" % \
-                            (psRemovalMapDict['obsFreqGHz'])
-                catalogTools.catalog2DS9(imageDict['psRemoved']['catalog'], outFileName)
-                baseKeys=['name', 'RADeg', 'decDeg']
-                baseFormats=["%s", "%.6f", "%.6f"]
-                catalogTools.writeCatalog(imageDict['psRemoved']['catalog'], 
-                                            outFileName.replace(".reg", ".csv"), baseKeys, baseFormats, 
-                                            [], headings = True, writeNemoInfo = False)
-            maskedDict=maskOutSources(data, psRemoved['wcs'], imageDict['psRemoved']['catalog'],
-                                        radiusArcmin = psRemovalParams['radiusArcmin'], 
-                                        mask = psRemovalParams['masking'])
-            if diagnosticsDir != None:
-                astImages.saveFITS(diagnosticsDir+os.path.sep+"psRemoved_%d.fits" \
-                            % (mapDict['obsFreqGHz']), maskedDict['data'], wcs)
-                astImages.saveFITS(diagnosticsDir+os.path.sep+"psMask_%d.fits" \
-                            % (mapDict['obsFreqGHz']), maskedDict['mask'], wcs)
-            data=maskedDict['data']
-        else:
-            # Do we need this? Probably not.
-            img=pyfits.open(outFileName)
-            data=img[0].data
     
     # Optional masking of point sources from external catalog - needed, e.g., for point source subtracted
     # maps from Jon's pipeline, because otherwise we get negative bits that are detected as spurious 

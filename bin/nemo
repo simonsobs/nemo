@@ -30,7 +30,7 @@ else:
     parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
     
     # Filter maps
-    imageDict=mapTools.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
+    imageDict=mapFilters.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
     
     # Find objects in filtered maps
     photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'], 

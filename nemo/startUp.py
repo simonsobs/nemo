@@ -8,7 +8,7 @@ used by all the scripts in bin (nemo, nemoMass, nemoSelFn etc.)
 import os
 import sys
 import yaml
-from nemo import mapTools
+from . import mapTools
 
 #------------------------------------------------------------------------------------------------------------
 def startUp(parDictFileName):

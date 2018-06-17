@@ -14,8 +14,8 @@ import subprocess
 import hmf
 from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
-from nemo import simsTools
-from nemo import catalogTools
+from . import simsTools
+from . import catalogTools
 import pickle
 from scipy import interpolate
 from scipy import stats

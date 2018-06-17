@@ -11,11 +11,11 @@ from scipy import interpolate
 from scipy import stats
 import time
 import astropy.table as atpy
-from nemo import mapTools
-from nemo import catalogTools
-from nemo import photometry
-from nemo import gnfw
-from nemo import plotSettings
+from . import mapTools
+from . import catalogTools
+from . import photometry
+from . import gnfw
+from . import plotSettings
 from flipper import liteMap
 from flipper import fftTools
 import numpy as np
@@ -621,7 +621,7 @@ def fakeSourceSims(fakeSourceSimOptions, unfilteredMapsDictList, filtersList, de
             if os.path.exists(outDir+os.path.sep+"filteredMaps") == True:
                 os.system("rm -r %s" % (outDir+os.path.sep+"filteredMaps"))
                 os.system("rm -r %s" % (outDir+os.path.sep+"diagnostics"))
-            imageDict=mapTools.filterMaps(fakeInputMapsDictList, filtersList, rootOutDir = outDir)
+            imageDict=mapFilters.filterMaps(fakeInputMapsDictList, filtersList, rootOutDir = outDir)
             photometry.findObjects(imageDict, threshold = detectionThresholdSigma, 
                                    minObjPix = detectionMinObjPix, rejectBorder = rejectBorderPix)            
             photometry.measureFluxes(imageDict, photometryOptions, diagnosticsDir, 
@@ -987,7 +987,7 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
                 mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
                 for m in mapFileNames:
                     os.remove(m)
-        simImageDict=mapTools.filterMaps(unfilteredMapsDictList, simParDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
+        simImageDict=mapFilters.filterMaps(unfilteredMapsDictList, simParDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
             
         # Below here is same as inverted maps right now....
         # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
