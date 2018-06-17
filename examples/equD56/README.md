@@ -24,7 +24,7 @@ maps (which are available on LAMBDA). You can download the combined
 map and weight files (403 Mb) using:
 
 ```
-wget http://www.acru.ukzn.ac.za/~mjh/ACT/equD56Maps.tar.gz --user=act --password=atacamallama
+wget http://www.acru.ukzn.ac.za/~mjh/equD56Maps.tar.gz
 ```
 
 Extract this in the current directory (i.e., the same place as the 
