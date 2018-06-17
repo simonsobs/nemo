@@ -992,8 +992,8 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
         # Below here is same as inverted maps right now....
         # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
         photometry.findObjects(simImageDict, threshold = simParDict['thresholdSigma'], minObjPix = simParDict['minObjPix'],
-                            rejectBorder = simParDict['rejectBorder'], diagnosticsDir = diagnosticsDir,
-                            invertMap = False, makeDS9Regions = True)    
+                               rejectBorder = simParDict['rejectBorder'], diagnosticsDir = diagnosticsDir,
+                               invertMap = False, makeDS9Regions = True, useInterpolator = simParDict['useInterpolator'])    
 
         # For fixed filter scale
         # Adds fixed_SNR values to catalogs for all maps

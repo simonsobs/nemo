@@ -24,7 +24,7 @@ np.random.seed()
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
                 findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
                 diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
-                verbose = True):
+                verbose = True, useInterpolator = True):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
     

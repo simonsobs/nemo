@@ -170,7 +170,7 @@ def makeTileDeck(parDict):
                 if defineTilesAutomatically == True:
                     
                     if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] == None:
-                        print "... WARNING: same tiling not guaranteed across multiple frequencies ..."
+                        print("... WARNING: same tiling not guaranteed across multiple frequencies ...")
                     
                     # NOTE: here we look at surveyMask first to determine where to put down tiles
                     # since this will ensure algorithm uses same tiles for multi-freq data
