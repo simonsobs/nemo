@@ -3,8 +3,8 @@
 Map filtering and SZ cluster detection and characterization pipeline. *Not* the pipeline used
 for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), but should 
 give similar results for signal-to-noise, given the same map (or at least it did in the past).
-*It is* the pipeline, that has been used for the two-season ACTPol cluster catalog 
-[paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
+*It is* the pipeline, that has been used for the [two-season ACTPol cluster catalog 
+paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
 
 A slightly modified version of Matthew Hasselfield's `gnfw.py` code (used for modeling cluster
 pressure profiles) is included in nemo.
@@ -24,16 +24,16 @@ Python 3.x compatible version of Flipper (see below).
 
 Listed below are tagged, internal releases of nemo:
 
-* v18.06: Brought up-to-date with changes that were made in tileDeck branch; this is the version 
+* **v18.06:** Brought up-to-date with changes that were made in tileDeck branch; this is the version 
   used for making S16 point source catalogs (by Sigurd) and preliminary AdvACT cluster catalogs.
-* v17.10: Version of the code at the time of submission of the ACTPol cluster catalog paper.
+* **v17.10:** Version of the code at the time of submission of the ACTPol cluster catalog paper.
 
 ## Related codes
 
 Catalogs produced by nemo can be fed into:
 
-* [Sourcery](https://github.com/mattyowl/sourcery) - a package which creates and serves a live, 
-  editable web database.
+* [Sourcery](https://github.com/mattyowl/sourcery) - a package that creates and serves a live, 
+  editable web database with multi-wavelength imaging.
 * [zCluster](https://github.com/ACTCollaboration/zCluster) - a code for estimating cluster 
   photometric redshifts.
 
