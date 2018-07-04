@@ -645,8 +645,10 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
         weights=wht[extName].data
         # For Enki maps... take only I (temperature) for now, add options for this later
-        if weights.ndim == 3:
+        if weights.ndim == 3:       # I, Q, U
             weights=weights[0, :]
+        elif weights.ndim == 4:     # I, Q, U and also a covariance matrix
+            weights=weights[0, 0, :]
     else:
         weights=np.ones(data.shape)
 
