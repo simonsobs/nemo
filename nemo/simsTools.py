@@ -1677,32 +1677,60 @@ def getQCoeffsH13():
     return coeffs
 
 #------------------------------------------------------------------------------------------------------------
-def calcFRel(z, M500):
-    """Calculates relativistic correction to SZ effect, given z, M500 in MSun, as per H13. 
-    
+def calcFRel(z, M500, obsFreqGHz = 148.0):
+    """Calculates relativistic correction to SZ effect at specified frequency, given z, M500 in MSun.
+       
     This assumes the Arnaud et al. (2005) M-T relation, and applies formulae of Itoh et al. (1998)
     
-    See H13 Section 2.2.
-    
+    As for H13, we return fRel = 1 + delta_SZE (see also Marriage et al. 2011)
+
     """
     
-    #kB=1.38e-23
-    #me=9.11e-31
-    #e=1.6e-19
-    #c=3e8
+    # NOTE: we should define constants somewhere else...
+    h=6.63e-34
+    kB=1.38e-23
+    sigmaT=6.6524586e-29
+    me=9.11e-31
+    e=1.6e-19
+    c=3e8
+    TCMB=2.726
     
-    ## Get T in keV from Arnaud et al. 2005
-    #A=3.84e14
-    #B=1.71
-    #TkeV=5.*np.power(((astCalc.Ez(z)*M500)/A), 1/B)
-    #T=(((TkeV*1000)*e)/kB)
-    
-    #t=(kB*T)/(me*c**2)
+    # Using Arnaud et al. (2005) M-T to get temperature
+    A=3.84e14
+    B=1.71
+    TkeV=5.*np.power(((astCalc.Ez(z)*M500)/A), 1/B)
+    TKelvin=TkeV*((1000*e)/kB)
 
-    # H13
-    m=M500/3e14
-    t=-0.00848*np.power(m*astCalc.Ez(z), -0.585)
-    fRel=1+3.79*t-28.2*t*t
+    # Itoh et al. (1998) eqns. 2.25 - 2.30
+    thetae=(kB*TKelvin)/(me*c**2)
+    X=(h*obsFreqGHz*1e9)/(kB*TCMB)
+    Xtw=X*(np.cosh(X/2.)/np.sinh(X/2.))
+    Stw=X/np.sinh(X/2.)
+
+    Y0=-4+Xtw
+
+    Y1=-10. + (47/2.)*Xtw - (42/5.)*Xtw**2 + (7/10.)*Xtw**3 + np.power(Stw, 2)*(-(21/5.) + (7/5.)*Xtw)
+
+    Y2=-(15/2.) +  (1023/8.)*Xtw - (868/5.)*Xtw**2 + (329/5.)*Xtw**3 - (44/5.)*Xtw**4 + (11/30.)*Xtw**5 \
+        + np.power(Stw, 2)*(-(434/5.) + (658/5.)*Xtw - (242/5.)*Xtw**2 + (143/30.)*Xtw**3) \
+        + np.power(Stw, 4)*(-(44/5.) + (187/60.)*Xtw)
+
+    Y3=(15/2.) + (2505/8.)*Xtw - (7098/5.)*Xtw**2 + (14253/10.)*Xtw**3 - (18594/35.)*Xtw**4 + (12059/140.)*Xtw**5 - (128/21.)*Xtw**6 + (16/105.)*Xtw**7 \
+        + np.power(Stw, 2)*(-(7098/10.) + (14253/5.)*Xtw - (102267/35.)*Xtw**2 + (156767/140.)*Xtw**3 - (1216/7.)*Xtw**4 + (64/7.)*Xtw**5) \
+        + np.power(Stw, 4)*(-(18594/35.) + (205003/280.)*Xtw - (1920/7.)*Xtw**2 + (1024/35.)*Xtw**3) \
+        + np.power(Stw, 6)*(-(544/21.) + (992/105.)*Xtw)
+
+    Y4=-(135/32.) + (30375/128.)*Xtw - (62391/10.)*Xtw**2 + (614727/40.)*Xtw**3 - (124389/10.)*Xtw**4 \
+        + (355703/80.)*Xtw**5 - (16568/21.)*Xtw**6 + (7516/105.)*Xtw**7 - (22/7.)*Xtw**8 + (11/210.)*Xtw**9 \
+        + np.power(Stw, 2)*(-(62391/20.) + (614727/20.)*Xtw - (1368279/20.)*Xtw**2 + (4624139/80.)*Xtw**3 - (157396/7.)*Xtw**4 \
+        + (30064/7.)*Xtw**5 - (2717/7.)*Xtw**6 + (2761/210.)*Xtw**7) \
+        + np.power(Stw, 4)*(-(124389/10.) + (6046951/160.)*Xtw - (248520/7.)*Xtw**2 + (481024/35.)*Xtw**3 - (15972/7.)*Xtw**4 + (18689/140.)*Xtw**5) \
+        + np.power(Stw, 6)*(-(70414/21.) + (465992/105.)*Xtw - (11792/7.)*Xtw**2 + (19778/105.)*Xtw**3) \
+        + np.power(Stw, 8)*(-(682/7.) + (7601/210.)*Xtw)
+
+    deltaSZE=((X**3)/(np.exp(X)-1)) * ((thetae*X*np.exp(X))/(np.exp(X)-1)) * (Y0 + Y1*thetae + Y2*thetae**2 + Y3*thetae**3 + Y4*thetae**4)
+
+    fRel=1+deltaSZE
     
     return fRel
 
