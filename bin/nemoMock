@@ -1,0 +1,140 @@
+#!/usr/bin/env python
+
+"""
+
+Generate mock cluster catalogs - runs on output from nemo, nemoMass, nemoSelFn
+
+"""
+
+import os
+import sys
+import resource
+import glob
+import numpy as np
+import pylab as plt
+import astropy.table as atpy
+from astLib import *
+from scipy import stats
+from scipy import interpolate
+from scipy import ndimage
+from scipy import optimize
+from nemo import simsTools
+from nemo import mapTools
+from nemo import catalogTools
+from nemo import MockSurvey
+from nemo import selFnTools
+from nemo import plotSettings
+from nemo import startUp
+import types
+import pickle
+import astropy.io.fits as pyfits
+import time
+import yaml
+import IPython
+plt.matplotlib.interactive(False)
+
+#------------------------------------------------------------------------------------------------------------
+# Main
+if len(sys.argv) < 2:
+    print("Run: % nemoMock <.yml config file>")
+else:
+    
+    parDictFileName=sys.argv[1]
+    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
+
+    mocksDir=rootOutDir+os.path.sep+"mocks"
+    if 'makeMockCatalogs' in parDict.keys():
+        numMocksToMake=parDict['makeMockCatalogs']
+    else:
+        numMocksToMake=1
+
+    # Remove this once we re-jig for MPI
+    if parDict['useMPI'] == True and numMocksToMake > 1:
+        raise Exception("nemoMock needs to be adapted for MPI if making multiple mocks - not done yet")
+    
+    # Q varies across tiles
+    tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+
+    # We only care about the filter used for fixed_ columns
+    photFilterLabel=parDict['photometryOptions']['photFilter']
+    for filterDict in parDict['mapFilters']:
+        if filterDict['label'] == photFilterLabel:
+            break
+
+    # The same as was used for detecting objects
+    thresholdSigma=parDict['thresholdSigma']
+
+    # We need an assumed scaling relation for mock observations
+    scalingRelationDict=parDict['massOptions']
+    
+    for i in range(numMocksToMake):
+        for extName in extNames:
+
+            # Need area covered 
+            areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+            areaMask=areaImg[0].data
+            wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+            areaDeg2=(areaMask*mapTools.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
+
+            # Need RMS map to apply selection function
+            RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
+            RMSMap=RMSImg[0].data
+        
+            # For a mock, we could vary the input cosmology...
+            minMass=5e13
+            zMin=0.0
+            zMax=2.0
+            H0=70.
+            Om0=0.30
+            Ob0=0.05
+            sigma_8=0.8
+            mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
+            
+            # New
+            t0=time.time()
+            mockCatalog=mockSurvey.drawSample(thresholdSigma, areaMask, RMSMap, wcs, scalingRelationDict, tckQFitDict, 
+                                            photFilterLabel = photFilterLabel, extName = extName)
+            t1=time.time()
+            print("... making mock catalog %d for extName = %s took %.3f sec ..." % (i+1, extName, t1-t0))
+            
+        # MPI: gather together mocks so we can write out global catalogs
+        if parDict['useMPI'] == True:
+            gathered_mockCatalogs=comm.gather(mockCatalog, root = 0)
+            if rank != 0:
+                assert gathered_mockCatalogs is None
+                print("... MPI rank %d finished ..." % (rank))
+                sys.exit()
+            else:
+                print("... gathering mock catalogs ...")
+                mockCatalog=[]
+                for cat in gathered_mockCatalogs:
+                    mockCatalog=mockCatalog+cat
+
+        # Write catalog and .reg file
+        colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'err_fixed_y_c']
+        colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
+        tab=catalogTools.catalogToTab(mockCatalog, colNames, colFmts, [])
+        mockCatalogFileName=mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
+        catalogTools.writeCatalogFromTab(tab, mockCatalogFileName, colNames, colFmts, 
+                                            constraintsList = [], headings = True)
+
+        addInfo=[{'key': 'fixed_SNR', 'fmt': '%.1f'}]
+        catalogTools.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 
+                                addInfo = addInfo, color = "cyan") 
+        
+    # Lazy way to make merged catalog...
+    if 'combineMocks' in parDict.keys() and parDict['combineMocks'] == True:
+        tab=None
+        for i in range(numMocksToMake):
+            mockCatalogFileName=mocksDir+os.path.sep+"mockCatalog_%d.fits" % (i+1)
+            stackTab=atpy.Table().read(mockCatalogFileName)
+            if tab == None:
+                tab=stackTab
+            else:
+                for row in stackTab:
+                    tab.add_row(row)
+        outFileName=mocksDir+os.path.sep+"mockCatalog_combined.fits"
+        if os.path.exists(outFileName) == True:
+            os.remove(outFileName)
+        tab.write(outFileName)
+            

@@ -52,7 +52,8 @@ def startUp(parDictFileName):
         rootOutDir=parDictFileName.replace(".yml", "")
     filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
     diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    dirList=[rootOutDir, filteredMapsDir]
+    mocksDir=rootOutDir+os.path.sep+"mocks"
+    dirList=[rootOutDir, filteredMapsDir, mocksDir]
     if rank == 0:
         for d in dirList:
             if os.path.exists(d) == False:

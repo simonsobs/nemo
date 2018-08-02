@@ -69,20 +69,21 @@ else:
     # We'll only calculate completeness for this given selection
     SNRCut=parDict['selFnOptions']['fixed_SNR_cut']
 
-    # Run the selection function calculation on each tile in turn
+    # Run the selection function calculation on each tile in turn (by default, we only calculate tile/survey averages)
     selFnDictList=[]
     for extName in extNames:
+        
         tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir)
         y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
         fitTab=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
                                             fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName))
         # We will eventually want to use interpolation of fitTab results to make 2d completeness array on mockSurvey grid, as used in HSC stuff
         selFnDict={'extName': extName,
-                    'y0Noise': y0Noise,
-                    'tileAreaDeg2': tileAreaDeg2,
-                    'fitTab': fitTab}
+                   'y0Noise': y0Noise,
+                   'tileAreaDeg2': tileAreaDeg2,
+                   'fitTab': fitTab}
         selFnDictList.append(selFnDict)
-
+        
         # Optional mass-limit maps
         if 'massLimitMaps' in list(parDict['selFnOptions'].keys()):
             for massLimitDict in parDict['selFnOptions']['massLimitMaps']:

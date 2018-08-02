@@ -306,7 +306,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         #plt.legend()
 
     return fitTab
-
+        
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRelationDict, tckQFitDict, 
                      diagnosticsDir):
@@ -315,7 +315,7 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
     """
     
     # Get the stuff we need...
-    RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits" % (extName))
+    RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
     RMSMap=RMSImg[0].data
     areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
     areaMap=areaImg[0].data

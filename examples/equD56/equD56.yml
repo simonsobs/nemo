@@ -65,8 +65,9 @@ massOptions: {tenToA0: 4.95e-5,
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 selFnOptions: {fixed_SNR_cut: 5.0, 
+               fullCompleteness: True,
                massLimitMaps: [{z: 0.5}]}
-
+               
 # Filter definitions
 mapFilters:
     - {label: "Arnaud_M5p5e14_z0p2",
@@ -428,3 +429,8 @@ numSkySims: 1
 # Set this to True to estimate contamination by running cluster finder over inverted maps
 # This is sensitive to how well point source masking is done
 estimateContaminationFromInvertedMaps: False
+
+# Used by nemoMock only: generate mock catalogs? If so, how many?
+# If combineMocks is True, concatenate all of the mock catalogs made into one giant catalog (for convenience)
+makeMockCatalogs: 10
+combineMocks: True

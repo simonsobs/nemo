@@ -44,6 +44,13 @@ class MockSurvey(object):
         cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
         cosmo.Cosmology(cosmo_model = cosmo_model)
         
+        # For drawSample, we use astLib routines (a few times faster than cosmo_model)
+        # This is just to make sure we used the same parameters
+        # H0, OmegaM0, OmegaL0 used for E(z), theta500 calcs in Q
+        astCalc.H0=H0
+        astCalc.OMEGA_M0=Om0
+        astCalc.OMEGA_L0=1.0-Om0
+        
         self.minMass=minMass
         
         # It's much faster to generate one mass function and then update its parameters (e.g., z)
@@ -60,12 +67,7 @@ class MockSurvey(object):
 
         self._doClusterCount()
         
-        # Stuff to enable us to draw mock samples:
-        # We work with the mass function itself, and apply selection function at the end
-        # Selection function gives detection probability for inclusion in sample for given fixed_SNR cut
-        # We make draws = self.numClusters 
-        # For each draw, we first draw z from the overall z distribution, then log10M from the mass distribution at the given z
-        # We then roll 0...1 : if we roll < the detection probability score for M, z cell then we include it in the mock sample 
+        # Stuff to enable us to draw mock samples (see drawSample):
         if enableDrawSample == True:
             self.enableDrawSample=True
             # For drawing from overall z distribution
@@ -221,115 +223,95 @@ class MockSurvey(object):
         return PLog10M
     
     
-    def drawSample(self, SNRLimit = None, wcs = None, areaMask = None, RMSMap = None):
-        """Draw a cluster sample from the MockSurvey. We can either apply the survey averaged
-        selection function, or use a user-specified area mask and noise map. If the latter, we'll
-        also give mock clusters RA and dec coords while we're at it.
+    def drawSample(self, SNRLimit, areaMask, RMSMap, wcs, scalingRelationDict, tckQFitDict, 
+                   photFilterLabel = None, extName = None):
+        """Draw a cluster sample from the mass function, generate mock y0~ values by applying the given 
+        scaling relation parameters, and then apply the survey selection function using the given
+        SNRLimit.
         
-        NOTE: survey-averaged version has bugs currently (and e.g., it won't make sense to use
-        SNRLimit with that, as the SelFn object has some SNRCut applied to it anyway).
+        scalingRelationDict should contain keys 'tenToA0', 'B0', 'Mpivot', 'sigma_int' (this is the
+        contents of massOptions in nemo .yml config files).
         
-        Returns an astropy Table object containing the mock catalog. Optional SNRCut can be
-        applied to that.
+        Most likely you should set SNRLimit to thresholdSigma, as given in the nemo .yml config file
+        (the resulting catalog could be cut in z, fixed_SNR afterwards anyway).
         
-        NOTE: units of M500 are 1e14 MSun
+        photFilterLabel and extName are only used for adding a 'template' key to each object: useful
+        for quickly checking which tile (extName) an object is in.
         
+        This routine is used in the nemoMock script.
+
+        Returns a catalog (list containing object dictionaries).
+                
         """
         
-        if SNRLimit == None:
-            SNRLimit=0.
-                    
-        # If we want to draw coords
-        if np.any(areaMask) != None and np.any(RMSMap) != None:
-            ysInMask, xsInMask=np.where(areaMask != 0)
-            useRMSMap=True
-        else:
-            useRMSMap=False
+        tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
+                                        scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
+            
+        numClusters=int(round(self.numClusters))
+        
+        # Draw coords (assuming clusters aren't clustered - which they are...)
+        ysInMask, xsInMask=np.where(areaMask != 0)
+        coordIndices=np.random.randint(0, len(xsInMask), numClusters)
+        ys=ysInMask[coordIndices]
+        xs=xsInMask[coordIndices]
+        RADecCoords=wcs.pix2wcs(xs, ys)
+        RADecCoords=np.array(RADecCoords)
+        RAs=RADecCoords[:, 0]
+        decs=RADecCoords[:, 1]
 
-        # This takes ~16 sec for [200, 300]-shaped z, log10M500 grid using survey-averaged selection function
-        #t0=time.time()
-        mockCatalog=[]
-        for i in range(int(self.numClusters)):
-            #t0=time.time()
-            #print "... %d/%d ..." % (i, self.numClusters)
-            # Draw z
-            zRoll=np.random.uniform(0, 1)
-            z=interpolate.splev(zRoll, self.tck_zRoller)
-            zIndex=np.where(abs(self.z-z) == abs(self.z-z).min())[0][0]
+        # Roll for redshifts
+        zs=interpolate.splev(np.random.uniform(0, 1, numClusters), self.tck_zRoller)
+                
+        # Draw from mass function - takes ~6 sec for E-D56
+        log10Ms=[]
+        t0=time.time()
+        for z in zs:
             # Draw M|z
+            zIndex=np.where(abs(self.z-z) == abs(self.z-z).min())[0][0]
             MRoll=np.random.uniform(0, 1)
             log10M=interpolate.splev(MRoll, self.tck_log10MRoller[zIndex])
-            log10MIndex=np.where(abs(self.log10M-log10M) == abs(self.log10M-log10M).min())[0][0]
-            
-            # Using mask and noise map
-            if useRMSMap == True:
-                coordIndex=np.random.randint(0, len(xsInMask))
-                y0Noise=RMSMap[ysInMask[coordIndex], xsInMask[coordIndex]]
-                true_y0, theta500Arcmin, Q=simsTools.y0FromLogM500(log10M, z, self.selFn.tckQFit)
-                measured_y0=np.exp(np.random.normal(np.log(true_y0), self.scalingRelationDict['sigma_int']))
-                measured_y0=np.random.normal(measured_y0, y0Noise)
-                measured_y0=true_y0+np.random.normal(0, y0Noise)
-                RADeg, decDeg=wcs.pix2wcs(xsInMask[coordIndex], ysInMask[coordIndex]) # Not the bottleneck
-            else:   # Survey-averaged selection function
-                detP=self.M500Completeness_surveyAverage[zIndex, log10MIndex]
-                PRoll=np.random.uniform(0, 1)
-                if PRoll < detP:
-                    # y0 from M500... we add scatter (both intrinsic and from error bar) here
-                    # We should then feed this back through to get what our inferred mass would be...
-                    # (i.e., we go true mass -> true y0 -> "measured" y0 -> inferred mass)
-                    # NOTE: we've applied the selection function, so we've already applied the noise...?
-                    # Survey-averaged, so here is the 1-sigma noise on y0~
-                    y0Noise=self.selFn.ycLimit_surveyAverage.mean()/self.selFn.SNRCut
-                    true_y0, theta500Arcmin, Q=simsTools.y0FromLogM500(log10M, z, self.selFn.tckQFit)
-                    measured_y0=np.exp(np.random.normal(np.log(true_y0), self.scalingRelationDict['sigma_int']))
-                    measured_y0=np.random.normal(measured_y0, y0Noise)
-                    measured_y0=true_y0+np.random.normal(0, y0Noise)
-                    RADeg=0.
-                    decDeg=0.
-            
-            # inferred mass (full blown M500 UPP, mass function shape de-biased)
-            # NOTE: we may get confused about applying de-biasing term or not here...
-            if measured_y0 / y0Noise > SNRLimit:
-                M500Dict=simsTools.calcM500Fromy0(measured_y0, y0Noise, z, 0.0, 
-                                                    tenToA0 = self.scalingRelationDict['tenToA0'],
-                                                    B0 = self.scalingRelationDict['B0'],
-                                                    Mpivot = self.scalingRelationDict['Mpivot'], 
-                                                    sigma_int = self.scalingRelationDict['sigma_int'],
-                                                    tckQFit = self.selFn.tckQFit, mockSurvey = self, 
-                                                    applyMFDebiasCorrection = True, calcErrors = True)
-                # Add to catalog
-                if RADeg != 0 and decDeg != 0:
-                    name=catalogTools.makeACTName(RADeg, decDeg, prefix = 'MOCK-CL')
-                else:
-                    name='MOCK-CL %d' % (i+1)
-                    
+            log10Ms.append(float(log10M))
+        log10Ms=np.array(log10Ms)
+        t1=time.time()
+        
+        # Mock observations - takes < 1 min for E-D56
+        # NOTE: we need to re-jig where fRel is applied generally for multi-freq analysis
+        mockCatalog=[]
+        for x, y, RADeg, decDeg, z, log10M in zip(xs, ys, RAs, decs, zs, log10Ms):
+            # NOTE: Cosmology changes from astLib defaults handled in __init__
+            # We're still using astCalc here as it's several times faster for da than cosmo_model above
+            Ez=astCalc.Ez(z)
+            Hz=Ez*astCalc.H0
+            G=4.301e-9  # in MSun-1 km2 s-2 Mpc
+            criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+            M500=np.power(10, log10M)
+            R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
+            theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+            Q=interpolate.splev(theta500Arcmin, tckQFitDict[extName])
+            fRel=simsTools.calcFRel(z, M500)
+            true_y0=tenToA0*np.power(Ez, 2)*np.power(M500/Mpivot, 1+B0)*Q*fRel   
+            if true_y0 < 0:
+                continue    # This happens if extremely low mass / wander out of range where Q fit is valid
+            # Mock "observations" (apply intrinsic scatter and noise)...
+            scattered_y0=np.exp(np.random.normal(np.log(true_y0), sigma_int))        
+            y0Noise=RMSMap[y, x]
+            measured_y0=np.random.normal(scattered_y0, y0Noise)
+            if measured_y0 > y0Noise*SNRLimit and y0Noise > 0:
+                name=catalogTools.makeACTName(RADeg, decDeg, prefix = 'MOCK-CL')
                 objDict={'name': name, 
                          'RADeg': RADeg,
                          'decDeg': decDeg,
-                         'true_M500': np.power(10, log10M)/1e14,
+                         'true_M500': M500/1e14,
                          'true_fixed_y_c': true_y0/1e-4,
                          'fixed_y_c': measured_y0/1e-4,
                          'err_fixed_y_c': y0Noise/1e-4,
                          'fixed_SNR': measured_y0/y0Noise,
-                         'redshift': float(z),
+                         'redshift': z,
                          'redshiftErr': 0}
-                for key in M500Dict:
-                    objDict[key]=M500Dict[key]
+                # Usefull to quickly check which tile something is in
+                if photFilterLabel != None and extName != None:
+                    objDict['template']=photFilterLabel+"#"+extName
                 mockCatalog.append(objDict)
-            
-            #t1=time.time()
-            #print "... took %.3f sec ..." % (t1-t0)
-            
-        # Convert to table
-        # NOTE: left out Uncorr confusion for now... i.e., we use 'Uncorr' here...
-        tab=atpy.Table()
-        keyList=['name', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'err_fixed_y_c', 
-                 'M500Uncorr', 'M500Uncorr_errPlus', 'M500Uncorr_errMinus']
-        for key in keyList:
-            arr=[]
-            for objDict in mockCatalog:
-                arr.append(objDict[key])
-            tab.add_column(atpy.Column(arr, key))
-        
-        return tab
+
+        return mockCatalog
         
