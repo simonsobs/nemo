@@ -103,3 +103,19 @@ are cached, so repeat runs are much quicker.
 Note that `nemoSelFn` has been completely rewritten and is different
 to the version used for the ACTPol paper. Hence, the results are 
 slightly different.
+
+You can also generate mock cluster catalogs using the output from nemo
+by using the `nemoMock` script:
+
+```
+nemoMock equD56.yml
+```
+
+The `makeMockCatalogs` and `combineMocks` parameters control the number
+of catalogs to make and whether or not to stitch them all together to
+form one giant catalog (which may be useful for some applications). For
+this example, 10 mock catalogs would be made, stored under 
+`equD56/mocks/`. The mocks assume a fixed cosmology and the mass scaling
+relation parameters given in the `massOptions` dictionary - so for the
+Arnaud et al. (2010) based scaling relation, the number of clusters in
+the mocks will be larger than what is observed.

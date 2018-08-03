@@ -1165,8 +1165,12 @@ class RealSpaceMatchedFilter(MapFilter):
 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # Fold point source mask into survey mask here
-        gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-        edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (int(round(gridSize*3.0)), int(round(gridSize*3.0))))
+        if 'edgeTrimArcmin' in self.params.keys():
+            trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+        else:
+            gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+            trimSizePix=int(round(gridSize*3.0))
+        edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (trimSizePix, trimSizePix))
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
         combinedMap=combinedMap*edgeCheck
         apodMask=np.not_equal(combinedMap, 0)

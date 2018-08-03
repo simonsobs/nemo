@@ -8,6 +8,8 @@ used by all the scripts in bin (nemo, nemoMass, nemoSelFn etc.)
 import os
 import sys
 import yaml
+import copy
+import IPython
 from . import mapTools
 
 #------------------------------------------------------------------------------------------------------------
@@ -29,6 +31,33 @@ def startUp(parDictFileName):
 
     with open(parDictFileName, "r") as stream:
         parDict=yaml.safe_load(stream)
+        # Apply global filter options (defined in allFilters) to mapFilters
+        # Note that anything defined in mapFilters has priority
+        # Bit ugly... we only support up to three levels of nested dictionaries...
+        if 'allFilters' in parDict.keys():
+            mapFiltersList=[]
+            for filterDict in parDict['mapFilters']:
+                newDict=copy.deepcopy(parDict['allFilters'])
+                for key in filterDict.keys():
+                    if type(filterDict[key]) == dict: 
+                        if key not in newDict.keys():
+                            newDict[key]={}
+                        for subkey in filterDict[key].keys():
+                            if type(filterDict[key][subkey]) == dict:
+                                if subkey not in filterDict[key].keys():
+                                    newDict[key][subkey]={}
+                                for subsubkey in filterDict[key][subkey].keys():
+                                    if type(filterDict[key][subkey][subsubkey]) == dict:
+                                        if subsubkey not in filterDict[key][subkey].keys():
+                                            newDict[key][subkey][subsubkey]={}                                    
+                                    # No more levels please...
+                                    newDict[key][subkey][subsubkey]=filterDict[key][subkey][subsubkey]                                    
+                            else:
+                                newDict[key][subkey]=filterDict[key][subkey]
+                    else:
+                        newDict[key]=filterDict[key]
+                mapFiltersList.append(newDict)
+            parDict['mapFilters']=mapFiltersList
 
     MPIEnabled=parDict['useMPI']
     if MPIEnabled == True:
