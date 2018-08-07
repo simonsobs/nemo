@@ -67,7 +67,7 @@ else:
             break
 
     # We'll only calculate completeness for this given selection
-    SNRCut=parDict['selFnOptions']['fixed_SNR_cut']
+    SNRCut=parDict['selFnOptions']['fixedSNRCut']
 
     # Run the selection function calculation on each tile in turn (by default, we only calculate tile/survey averages)
     selFnDictList=[]
@@ -75,13 +75,13 @@ else:
         
         tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir)
         y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
-        fitTab=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
-                                            fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName))
-        # We will eventually want to use interpolation of fitTab results to make 2d completeness array on mockSurvey grid, as used in HSC stuff
+        fitTab, compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
+                                                   fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName))
         selFnDict={'extName': extName,
                    'y0Noise': y0Noise,
                    'tileAreaDeg2': tileAreaDeg2,
-                   'fitTab': fitTab}
+                   'fitTab': fitTab,
+                   'compMz': compMz}
         selFnDictList.append(selFnDict)
         
         # Optional mass-limit maps
@@ -101,7 +101,7 @@ else:
             print("... gathering selection function results ...")
             all_selFnDictList=[]
             for dictList in gathered_selFnDictLists:
-                all_selFnDictList=selFnDictList+dictList
+                all_selFnDictList=all_selFnDictList+dictList
     else:
         all_selFnDictList=selFnDictList
             
@@ -124,10 +124,21 @@ else:
     print(("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun" % (massLimit_90Complete[np.where(zRange == 0.5)][0])))
     print(("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete)))
 
+    # Make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
+    # For surveys like KiDS, HSC etc.. we calculate area of intersection for each footprint with each tile (extName), and weight accordingly
+    footprintsList=[{'label': 'surveyAverage', 'maskList': []}]
+    if 'selFnFootprints' in parDict.keys():
+        footprintsList=footprintsList+parDict['selFnFootprints']
+    for footprintDict in footprintsList:
+        print(">>> Creating (M, z) completeness grid for %s footprint ..." % (footprintDict['label']))
+        selFnTools.saveMzCompletenessGrid(footprintDict['label'], all_selFnDictList, mockSurvey, diagnosticsDir, 
+                                          extraMasksList = footprintDict['maskList'])
+
     # If we made mass limit maps...
     # ... make cumulative area versus mass limit plot(s)
     # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit
     if 'massLimitMaps' in parDict['selFnOptions'].keys():
+        print(">>> Making cumulative area plots and full survey mass limit plots ...")
         for massLimitDict in parDict['selFnOptions']['massLimitMaps']:
             selFnTools.cumulativeAreaMassLimitPlot(massLimitDict['z'], diagnosticsDir) 
             selFnTools.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], diagnosticsDir)

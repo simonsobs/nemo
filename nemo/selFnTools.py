@@ -32,9 +32,19 @@ plt.matplotlib.interactive(False)
 #warnings.filterwarnings('error')
 
 #------------------------------------------------------------------------------------------------------------
-def getTileTotalAreaDeg2(extName, diagnosticsDir):
+def getTileTotalAreaDeg2(extName, diagnosticsDir, extraMasksList = [], extraMasksLabel = ""):
     """Returns total area of the tile pointed at by extName (taking into account survey mask and point
     source masking).
+    
+    A list of other survey masks (e.g., from optical surveys like KiDS, HSC) can be given in extraMasksList. 
+    These should be file names for .fits images where 1 defines valid survey area, 0 otherwise. If given,
+    this routine will return the area of intersection between the extra masks and the SZ survey.
+    
+    Calculating the intersection is slow (~30 sec per tile per extra mask for KiDS), so intersection masks 
+    are cached.
+    
+    extraMasksLabel is only used for cached intersection mask output file names 
+    (e.g., diagnosticsDir/intersect_label#extName.fits)
     
     """
     
@@ -44,6 +54,31 @@ def getTileTotalAreaDeg2(extName, diagnosticsDir):
     areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
     totalAreaDeg2=areaMapSqDeg.sum()
     
+    if extraMasksList != []:
+        if extraMasksLabel == "":
+            raise Exception("need extraMasksLabel if extraMasksList is not empty")
+        #t0=time.time()    
+        intersectFileName=diagnosticsDir+os.path.sep+"intersect_%s#%s.fits.gz" % (extraMasksLabel, extName)
+        if os.path.exists(intersectFileName) == True:
+            intersectImg=pyfits.open(intersectFileName)
+            intersectMask=intersectImg[0].data
+        else:
+            print("... creating %s intersection mask (%s) ..." % (extraMasksLabel, extName)) 
+            intersectMask=np.zeros(areaMap.shape)
+            for fileName in extraMasksList:
+                maskImg=pyfits.open(fileName)
+                maskWCS=astWCS.WCS(maskImg[0].header, mode = 'pyfits')
+                maskData=maskImg[0].data
+                ys, xs=np.where(maskData == 1)
+                RADec=maskWCS.pix2wcs(xs, ys)
+                for coord in RADec:
+                    x, y=wcs.wcs2pix(coord[0], coord[1])
+                    if x >=0 and x < areaMap.shape[1]-1 and y >= 0 and y < areaMap.shape[0]-1:
+                        intersectMask[int(round(y)), int(round(x))]=1
+            astImages.saveFITS(intersectFileName, intersectMask, wcs)
+        #t1=time.time()        
+        totalAreaDeg2=(areaMapSqDeg*intersectMask).sum()        
+        
     return totalAreaDeg2
 
 #------------------------------------------------------------------------------------------------------------
@@ -106,6 +141,59 @@ def rayleighFlipped(log10M, loc, scale):
     return (1-stats.rayleigh.cdf(log10M, loc = loc, scale = scale))[::-1]
 
 #------------------------------------------------------------------------------------------------------------
+def makeMzCompletenessGrid(fitTab, mockSurvey):
+    """Returns completeness (M, z) on same grid/binning as mockSurvey. 
+    
+    Takes fitTab made by calcCompleteness as input
+    
+    """
+    
+    # Make completeness (M, z) grid with same binning as mock survey (this takes ~0.02 sec only)
+    # We assume that we can interpolate each fit parameter independently (they are actually correlated though, but both fns. of z)
+    tckLoc=interpolate.splrep(fitTab['z'], fitTab['loc'])
+    tckScale=interpolate.splrep(fitTab['z'], fitTab['scale'])
+    mockSurvey_locs=interpolate.splev(mockSurvey.z, tckLoc)
+    mockSurvey_scales=interpolate.splev(mockSurvey.z, tckScale)
+    comp_Mz=np.zeros(mockSurvey.clusterCount.shape)
+    for i in range(mockSurvey.z.shape[0]):
+        comp_Mz[i]=rayleighFlipped(mockSurvey.log10M, mockSurvey_locs[i], mockSurvey_scales[i])
+    #np.savez('M500Completeness_test_SNRCut%.1f.npz' % (SNRCut), z = mockSurvey.z, log10M500c = mockSurvey.log10M, M500Completeness = comp_Mz)
+    
+    return comp_Mz
+
+#------------------------------------------------------------------------------------------------------------
+def saveMzCompletenessGrid(label, selFnDictList, mockSurvey, diagnosticsDir, extraMasksList = []):
+    """Write out average (M, z) grid for all tiles (extNames) given in selFnDictList, weighted by fraction
+    of total survey area.
+    
+    Output is written to a file named diagnosticsDir/MzCompleteness_label.npz
+
+    A list of other survey masks (e.g., from optical surveys like KiDS, HSC) can be given in extraMasksList. 
+    These should be file names for .fits images where 1 defines valid survey area, 0 otherwise. The 
+    intersection of these masks with the SZ survey will be calculated and used to weight the completeness
+    estimates from each tile.   
+    
+    """
+    
+    tileAreas=[]
+    compMzCube=[]
+    for selFnDict in selFnDictList:
+        tileAreas.append(getTileTotalAreaDeg2(selFnDict['extName'], diagnosticsDir, extraMasksList = extraMasksList,
+                                              extraMasksLabel = label))
+        compMzCube.append(selFnDict['compMz'])
+    tileAreas=np.array(tileAreas)
+    if np.sum(tileAreas) == 0:
+        print("... no overlapping area with %s ..." % (label))
+        return None
+    fracArea=tileAreas/np.sum(tileAreas)
+    compMzCube=np.array(compMzCube)
+    compMz_surveyAverage=np.average(compMzCube, axis = 0, weights = fracArea)
+
+    outFileName=diagnosticsDir+os.path.sep+"MzCompleteness_%s.npz" % (label)
+    np.savez(outFileName, z = mockSurvey.z, log10M500c = mockSurvey.log10M, 
+             M500Completeness = compMz_surveyAverage)
+    
+#------------------------------------------------------------------------------------------------------------
 def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
                      zRange = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0],
                      fitTabFileName = None):
@@ -115,13 +203,14 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     If fitTabFileName != None, saves the resulting model (and sim results) as .fits table(s) under 
     diagnosticsDir. Also saves a diagnostic plot of completeness for that tile.
     
-    Returns fitTab
+    Returns fitTab, 2d (M, z) array of completeness with same binning as mockSurvey
     
     """
     
     if fitTabFileName != None and os.path.exists(fitTabFileName) == True:
         fitTab=atpy.Table().read(fitTabFileName)
-        return fitTab
+        comp_Mz=makeMzCompletenessGrid(fitTab, mockSurvey)
+        return fitTab, comp_Mz
     
     # What we'll generally want is the completeness at some fixed z, for some assumed scaling relation
     tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
@@ -136,7 +225,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     minDrawNoiseMultiplier=SNRCut-3.  # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
 
     # Binning used for fitting
-    binEdges=np.arange(13.5, 16.0, 0.05)
+    binEdges=np.arange(mockSurvey.log10M.min(), mockSurvey.log10M.max(), 0.05)
     binCentres=(binEdges[:-1]+binEdges[1:])/2.
 
     # For storing results - this one is not strictly necessary, but could be used for sanity checking fit results
@@ -146,15 +235,20 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
 
     t00=time.time()
 
-    # Stores Rayleigh cumulative distribution function (flipped etc.) fits at each z
+    # Stores Rayleigh cumulative distribution function (flipped etc.) fits at each z (in terms of mass)
     fitTab=atpy.Table()
     fitTab.add_column(atpy.Column(zRange, 'z'))
     fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'loc'))
     fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'scale'))
-
     # Need these when applying the fit - only valid in this range for given loc, scale
     fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10MMin'))  
     fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10MMax'))
+    
+    # As above, but in terms of y0~
+    #fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10y0_loc'))
+    #fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10y0_scale'))
+    #fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10y0Min'))  
+    #fitTab.add_column(atpy.Column(np.zeros(len(zRange)), 'log10y0Max'))
 
     # We may as well store 90% completeness limit in here as well
     fraction=0.9
@@ -194,7 +288,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             log10Ms=log10Ms[::-1]
             
             # For speedy mock "observations" - since we have fixed z
-            fitM500s=np.power(10, np.linspace(log10Ms.min(), log10Ms.max(), 100))
+            fitM500s=np.power(10, np.linspace(mockSurvey.log10M.min(), mockSurvey.log10M.max(), 100))
             fitTheta500s=np.zeros(len(fitM500s))
             for i in range(len(fitM500s)):
                 M500=fitM500s[i]
@@ -238,7 +332,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         allArr=np.arange(1, len(log10Ms)+1, 1, dtype = float)
         completeness=detArr/allArr
         
-        # Average/downsample: both for storage, and to deal with low numbers at high mass end (and spline fits later)
+        # Average/downsample: both for storage, and to deal with low numbers at high mass end (for fitting)
         binnedCompleteness=np.zeros(len(binEdges)-1)
         binnedCounts=np.zeros(len(binEdges)-1, dtype = float)
         for i in range(len(binEdges)-1):
@@ -246,7 +340,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             if mask.sum() > 0:
                 binnedCompleteness[i]=np.median(completeness[mask])
             binnedCounts[i]=mask.sum()
-            # Never allow completness to decrease at higher mass (this would be a lower limit)
+            # Never allow completeness to decrease at higher mass (this would be a lower limit)
             if binnedCompleteness[i] < binnedCompleteness[i-1]:
                 binnedCompleteness[i]=binnedCompleteness[i-1]
         completenessTab.add_column(atpy.Column(binnedCompleteness, z))
@@ -256,13 +350,44 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         # We need the min, max of the range the fit is done over for finer binning to work (see below)
         fraction=0.5
         locGuess=log10Ms[np.argmin(abs(fraction-completeness))]
-        fitResult=optimize.curve_fit(rayleighFlipped, binCentres, binnedCompleteness, p0 =[locGuess, 0.2])
+        fitResult=optimize.curve_fit(rayleighFlipped, binCentres, binnedCompleteness, p0 = [locGuess, 0.2])
         fittedLoc=fitResult[0][0]
         fittedScale=fitResult[0][1]
         fitTab['loc'][iz]=fittedLoc
         fitTab['scale'][iz]=fittedScale   
         fitTab['log10MMin'][iz]=binCentres.min()
         fitTab['log10MMax'][iz]=binCentres.max()
+        
+        #---
+        ## New stuff: test of re-doing completeness in terms of y0~ - map between mass and y0~
+        ## Above, we've dealt with the effects of scatter, mass function etc. by doing completeness in terms of mass
+        ## So here we can just map from mass back to y0
+        ## Turns out (see sanity check plot at the very bottom) this doesn't help: y0~ completeness varies with z too
+        ## Presumably because the mass function varies with z, so effect of scatter etc.. is not the same
+
+        ## y0s corresponding to the mass bins used for fitting
+        #binCentre_theta500s=interpolate.splev(binCentres, tckLog10MToTheta500)
+        #binCentre_Qs=interpolate.splev(binCentre_theta500s, tckQFitDict[extName])
+        #binCentre_fRels=simsTools.calcFRel(z, np.power(10, binCentres))
+        #binCentre_true_y0s=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(np.power(10, binCentres)/Mpivot, 1+B0)*binCentre_Qs*binCentre_fRels
+        
+        ## Fit with log10(y0~) instead of mass
+        #fraction=0.5
+        #locGuess=np.log10(true_y0s[np.argmin(abs(fraction-completeness))])
+        #y0_fitResult=optimize.curve_fit(rayleighFlipped, np.log10(binCentre_true_y0s), binnedCompleteness, p0 = [locGuess, 0.2])
+        #y0_fittedLoc=y0_fitResult[0][0]
+        #y0_fittedScale=y0_fitResult[0][1]
+        #fitTab['log10y0_loc'][iz]=y0_fittedLoc
+        #fitTab['log10y0_scale'][iz]=y0_fittedScale
+        #fitTab['log10y0Min'][iz]=np.log10(binCentre_true_y0s.min())
+        #fitTab['log10y0Max'][iz]=np.log10(binCentre_true_y0s.max())
+
+        ## Sanity check: completeness versus y0 (fitted for y0~ versus using fit in terms of mass)
+        ##tck=interpolate.splrep(binCentres, binCentre_true_y0s)
+        ##plt.plot(binCentre_true_y0s, rayleighFlipped(binCentres, fittedLoc, fittedScale), 'ro')                         # in terms of mass
+        ##plt.plot(binCentre_true_y0s, rayleighFlipped(np.log10(binCentre_true_y0s), y0_fittedLoc, y0_fittedScale), 'k-') # in terms of y0~
+        ##plt.semilogx()
+        #---
 
         # While we're here, we may as well store 90% completeness limit
         fraction=0.9    
@@ -274,9 +399,12 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         t1=time.time()
         #print("... time taken = %.3f sec ..." % (t1-t0))
 
+    # Make completeness (M, z) grid with same binning as mock survey (this takes ~0.02 sec only)
+    comp_Mz=makeMzCompletenessGrid(fitTab, mockSurvey)
+
     t11=time.time()
     #print("... total time take for %s = %.3f sec ..." % (extName, t11-t00))
-    
+
     if fitTabFileName != None:
 
         # Save both the fit results and the binned data they are based on
@@ -304,8 +432,18 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
                 #plt.plot(completenessTab['log10M'], rayleighFlipped(completenessTab['log10M'], 
                                                                     #fitTab['loc'][fitMask], fitTab['scale'][fitMask]), label = key)
         #plt.legend()
+        
+        ## And another sanity check plot: y0~ completeness at different zs
+        ## This shows that no, you can't compress down to just selection based on y0~ as that also varies with z
+        ## (presumably because mass function varies with z)
+        #plt.ion()
+        #plt.close()
+        #for row in fitTab:
+            #log_y0s=np.linspace(row['log10y0Min'], row['log10y0Max'], 1000)
+            #plt.plot(log_y0s, rayleighFlipped(log_y0s, row['log10y0_loc'], row['log10y0_scale']), label = row['z']) 
+        #plt.legend()
 
-    return fitTab
+    return fitTab, comp_Mz
         
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRelationDict, tckQFitDict, 
@@ -333,8 +471,8 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
         for y0Noise in RMSTab['y0RMS']:
             count=count+1
             print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
-            fitTab=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
-                                    zRange = [z], fitTabFileName = None)
+            fitTab, compMz=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
+                                            zRange = [z], fitTabFileName = None)
             fitTab.rename_column('z', 'y0RMS')
             fitTab['y0RMS'][0]=y0Noise
             massLimMap[np.where(RMSMap == y0Noise)]=fitTab['log10MLimit_90%'][0]

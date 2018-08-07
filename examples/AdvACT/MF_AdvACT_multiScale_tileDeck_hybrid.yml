@@ -148,8 +148,14 @@ massOptions: {tenToA0: 4.95e-5,
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
-selFnOptions: {fixed_SNR_cut: 5.0, 
+# Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
+selFnOptions: {fixedSNRCut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
+selFnFootprints: 
+    - {label: "HSC",
+       maskList: ["HSCCheckAndSelFn/S16A_02h_Hironao.fits"]}
+    - {label: "KiDS",
+       maskList: ["KiDSSelFn/mask_KiDSN.fits.gz", "KiDSSelFn/mask_KiDSS.fits.gz"]}
 
 # Filter definitions:
 # allFilters is a dictionary of parameters that will be copied into all mapFilters
