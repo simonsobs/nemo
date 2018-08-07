@@ -58,7 +58,17 @@ def startUp(parDictFileName):
                         newDict[key]=filterDict[key]
                 mapFiltersList.append(newDict)
             parDict['mapFilters']=mapFiltersList
-
+        # We always need RMSMap and freqWeightsMap to do any photometry
+        # So we may as well force inclusion if they have not been explicitly given
+        if 'photometryOptions' in parDict.keys():
+            photometryOptions=parDict['photometryOptions']
+            if 'photFilter' in list(photometryOptions.keys()):
+                photFilter=photometryOptions['photFilter']
+                for filtDict in parDict['mapFilters']:
+                    if filtDict['label'] == photFilter:
+                        filtDict['params']['saveRMSMap']=True
+                        filtDict['params']['saveFreqWeightMap']=True
+                        
     MPIEnabled=parDict['useMPI']
     if MPIEnabled == True:
         from mpi4py import MPI

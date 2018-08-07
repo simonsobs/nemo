@@ -323,7 +323,45 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
                         print("add photometry.measureFluxes() Jy/beam photometry")
                         IPython.embed()
                         sys.exit()
-                
+
+#------------------------------------------------------------------------------------------------------------
+def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
+    """Add relative weighting by frequency for each object in the optimal catalog, extracted from the 
+    data cube saved under diagnosticsDir (this is made by makeSZMap in RealSpaceMatchedFilter). This is
+    needed for multi-frequency cluster finding / analysis - for, e.g., weighting relativistic corrections to
+    y0~ (which was estimated from the inverse variance weighted average of y0~ from each frequency map).
+    
+    NOTE: this is only applied for the reference filter (pointed to by photometryOptions['photFilter']).
+    
+    """
+
+    # We only For fixed filter scale
+    if 'photFilter' in list(photometryOptions.keys()):
+        photFilter=photometryOptions['photFilter']
+    else:
+        return None
+
+    catalog=imageDict['optimalCatalog']
+    for extName in imageDict['extNames']:
+        label=photFilter+"#"+extName
+        freqWeightMapFileName=diagnosticsDir+os.path.sep+"freqRelativeWeights_%s.fits" % (label)
+        if os.path.exists(freqWeightMapFileName) == True:
+            img=pyfits.open(freqWeightMapFileName)
+            freqCube=img[0].data
+            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            obsFreqGHzDict={}
+            for key in wcs.header.keys():
+                if key.find("FREQGHZ") != -1:
+                    obsFreqGHzDict[int(key.split("FREQGHZ")[0])]=wcs.header[key]
+            for objDict in catalog:
+                if objDict['template'].split("#")[-1] == extName:
+                    x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
+                    x=int(round(x))
+                    y=int(round(y))
+                    freqWeights=freqCube[:, y, x]
+                    for i in range(len(obsFreqGHzDict.keys())):
+                        objDict['fixed_y_c_weight_%.1fGHz' % (obsFreqGHzDict[i])]=freqWeights[i]
+
 #------------------------------------------------------------------------------------------------------------
 def getRadialDistanceMap(objDict, data, wcs):
     """Returns an array of same dimensions as data but containing radial distance to the object specified

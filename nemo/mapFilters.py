@@ -969,7 +969,9 @@ class RealSpaceMatchedFilter(MapFilter):
         """
         dataCube=[]
         noiseCube=[]
+        obsFreqs=[]
         for key in list(filteredMaps.keys()):
+            obsFreqs.append(float(key))
             mapData=filteredMaps[key]
             mapData=mapTools.convertToY(mapData, float(key))
             RMSMap=self.makeNoiseMap(mapData)
@@ -982,7 +984,7 @@ class RealSpaceMatchedFilter(MapFilter):
         
         # Zap very low values as rounding errors (so have zero weight in combination)
         noiseCube[np.less(noiseCube, 1e-7)]=0.
-        
+                
         # Combining - inverse variance weighted average
         if dataCube.shape[0] > 1:
             invVar=1./noiseCube**2
@@ -991,15 +993,34 @@ class RealSpaceMatchedFilter(MapFilter):
             zeroMask=np.equal(np.sum(invVar, axis = 0), 0)
             for z in range(invVar.shape[0]):
                 invVar[z][zeroMask]=1.
+            # Make relative weights cube from inv var (for convenience really)
+            # Since we used inverse variance for making a combined y0~ estimate,
+            # we need these to weight fRel in mass estimates (see simsTools.calcM500Fromy0)
+            relWeightsCube=np.zeros(dataCube.shape)
+            for i in range(invVar.shape[0]):
+                relWeightsCube[i]=invVar[i]/np.sum(invVar, axis = 0)
             weightedMap=np.average(dataCube, weights = invVar, axis = 0)
             weightedNoise=np.sqrt(1./np.sum(invVar, axis = 0))
             weightedNoise[np.isinf(weightedNoise)]=0.
         else:
             weightedMap=dataCube[0]
             weightedNoise=noiseCube[0]
-            
+            relWeightsCube=np.ones(dataCube.shape)
+        
         weightedSNMap=weightedMap/weightedNoise
         weightedSNMap[np.isinf(weightedSNMap)]=0.
+        
+        # Write out relative weights cube as .fits - handy not just for fRel, but also for coverage checking
+        # i.e., we can put this info into object catalogs - indicate where map was 148 GHz only, for example
+        # We store frequency info in FITS header as 0FREQGHZ 1FREQGHZ etc.
+        if 'saveFreqWeightMap' in self.params and self.params['saveFreqWeightMap'] == True:
+            cubeWCS=self.wcs.copy()
+            count=0
+            for obsFreqGHz in obsFreqs:
+                cubeWCS.header['%dFREQGHZ' % (count)]=obsFreqGHz
+                count=count+1
+            outFileName=self.diagnosticsDir+os.path.sep+"freqRelativeWeights_%s.fits" % (self.label)
+            astImages.saveFITS(outFileName, relWeightsCube, cubeWCS)
         
         return weightedMap, weightedNoise, weightedSNMap
                 
@@ -1107,7 +1128,7 @@ class RealSpaceMatchedFilter(MapFilter):
                                                                       decDeg = RADecSectionDict['applyDecCentre'],
                                                                       smoothScaleDeg = RADecSectionDict['bckSubScaleArcmin']/60.)
                     mapData[yMax:yMax+yOverlap]=buff
-            if 'saveHighPassMap' in self.params['noiseParams'] and self.params['noiseParams']['saveHighPassMap'] == True:
+            if 'saveHighPassMap' in self.params and self.params['saveHighPassMap'] == True:
                 bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
                 #astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
                 astImages.saveFITS(bckSubFileName, mapData, mapDict['wcs'])
@@ -1187,7 +1208,7 @@ class RealSpaceMatchedFilter(MapFilter):
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), mapDict['wcs'])
         
-        if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+        if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
             astImages.saveFITS(RMSFileName, RMSMap, mapDict['wcs'])
 

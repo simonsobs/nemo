@@ -61,7 +61,7 @@ else:
                 tab.rename_column(k+"_1", k)
         colsToRemove=[]
         for k in list(tab.keys()):
-            if k not in colsToKeep:
+            if k not in colsToKeep and k.find('fixed_y_c_weight') == -1:
                 colsToRemove.append(k)
         tab.remove_columns(colsToRemove)
     
@@ -103,6 +103,11 @@ else:
         imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
         photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
         
+        # Just so that we remember we need to fix this...
+        raise Exception("need to add code to handle multi-freq relative weights to forced photometry mode")
+        # This operates on imageDict['optimalCatalog'], which we don't currently have in here
+        photometry.addFreqWeightsToCatalog(imageDict, parDict['photometryOptions'], diagnosticsDir)
+
         # Make into an atpy table
         # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
         wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
@@ -182,7 +187,6 @@ else:
     # NOTE: should add sanity check that mockSurvey parameters match astCalc ones
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, OmegaM0, OmegaB0, sigma8)
     
-    # Calc masses
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M500"))
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errPlus"))
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errMinus"))
@@ -201,9 +205,20 @@ else:
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr_errMinus"))
     #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q"))
     #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q_err"))
+    
+    # For fRel calc (multi-freq)
+    fRelKeysDict={}
+    for key in tab.keys():
+        if key.find("fixed_y_c_weight") != -1:
+            obsFreqGHz=float(key.split("_")[-1].split("GHz")[0])
+            fRelKeysDict[key]=obsFreqGHz
+    
     for row in tab:
         print("... %s (%.3f +/- %.3f) ..." % (row['name'], row['redshift'], row['redshiftErr']))
         extName=row['template'].split("#")[-1]
+        fRelWeightsDict={}
+        for key in fRelKeysDict:
+            fRelWeightsDict[fRelKeysDict[key]]=row[key]
         massDict=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                             row['redshift'], row['redshiftErr'],
                                             tenToA0 = massOptions['tenToA0'],
@@ -212,7 +227,8 @@ else:
                                             sigma_int = massOptions['sigma_int'],
                                             tckQFit = tckQFitDict[extName], mockSurvey = mockSurvey, 
                                             applyMFDebiasCorrection = True,
-                                            H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0)
+                                            H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0,
+                                            fRelWeightsDict = fRelWeightsDict)
         row['M500']=massDict['M500']
         row['M500_errPlus']=massDict['M500_errPlus']
         row['M500_errMinus']=massDict['M500_errMinus']

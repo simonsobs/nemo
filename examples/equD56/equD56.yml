@@ -77,10 +77,10 @@ allFilters: {class: "ArnaudModelRealSpaceMatchedFilter",
                                     RADecSection: [32.3, 38.2, -7.5, -2.5],
                                     kernelMaxArcmin: 7.,
                                     symmetrize: True,
-                                    noiseGridArcmin: 20.,
-                                    saveHighPassMap: False,
-                                    saveRMSMap: False},
+                                    noiseGridArcmin: 20.},
                       bckSub: True,
+                      saveHighPassMap: False,
+                      saveRMSMap: False,
                       outputUnits: 'yc',
                       edgeTrimArcmin: 100.0}
             }
@@ -101,7 +101,7 @@ mapFilters:
     - {label: "Arnaud_M1e14_z0p4",
        params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
-       params: {M500MSun: 2.0e+14, z: 0.4, noiseParams: {saveHighPassMap: True, saveRMSMap: True}}}
+       params: {M500MSun: 2.0e+14, z: 0.4}}
     - {label: "Arnaud_M4e14_z0p4",
        params: {M500MSun: 4.0e+14, z: 0.4}}
     - {label: "Arnaud_M8e14_z0p4",

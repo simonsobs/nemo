@@ -78,10 +78,10 @@ mapFilters:
                               RADecSection: [32.3, 38.2, -7.5, -2.5],
                               kernelMaxArcmin: 7.,
                               symmetrize: True, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: True,
-                              saveRMSMap: True},
+                              noiseGridArcmin: 20.},
                 bckSub: True, 
+                saveHighPassMap: True,
+                saveRMSMap: True,
                 outputUnits: 'yc'}}
                 
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination

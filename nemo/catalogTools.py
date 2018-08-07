@@ -483,7 +483,7 @@ def selectFromCatalog(catalog, constraintsList):
     return passedConstraint
 
 #------------------------------------------------------------------------------------------------------------
-def catalogToTab(catalog, keysToWrite, keyFormats, constraintsList):
+def catalogToTab(catalog, keysToWrite, constraintsList):
     """Converts a nemo catalog (list of dictionaries) into astropy.table format.
     
     constraintsList works as in the selectFromCatalog function.
@@ -495,8 +495,12 @@ def catalogToTab(catalog, keysToWrite, keyFormats, constraintsList):
     cutCatalog=selectFromCatalog(catalog, constraintsList)                                           
     availKeys=list(cutCatalog[0].keys())
     
+    # A fudge: we don't know what names y_c_weight keys will have in advance, so they aren't already given
+    for key in availKeys:
+        if key.find("fixed_y_c_weight") != -1 and key not in keysToWrite:
+            keysToWrite.append(key)
+    
     # Write a .fits version (easier for topcatting)
-    # NOTE: switched to astropy (v1.3) tables interface
     tab=atpy.Table()
     for key in keysToWrite:
         if key in availKeys:
@@ -507,7 +511,7 @@ def catalogToTab(catalog, keysToWrite, keyFormats, constraintsList):
                 else:
                     arr.append(-99)
             tab.add_column(atpy.Column(arr, key))
-    
+
     return tab
 
 #------------------------------------------------------------------------------------------------------------
@@ -560,10 +564,6 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
     constraintsList works as in the selectFromCatalog function.
     
     NOTE: Now writing a .fits table too.
-    
-    NOTE: Not using this to write final nemo output anymore - as we need to take care of duplicates if 
-    running under MPI with maps that overlap. But this is still used by other routines (e.g., individual
-    catalogs output by the routines in the photometry module).
     
     """
         
@@ -625,7 +625,7 @@ def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList,
     
     # Write a .fits version (easier for topcatting)
     # NOTE: switched to astropy (v1.3) tables interface
-    tab=catalogToTab(catalog, keysToWrite, keyFormats, constraintsList)
+    tab=catalogToTab(catalog, keysToWrite, constraintsList)
     writeTab(tab, outFileName.replace(".csv", ".fits"))
 
 #------------------------------------------------------------------------------------------------------------

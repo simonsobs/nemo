@@ -1775,13 +1775,16 @@ def getM500FromP(P, log10M, calcErrors = True):
 
 #------------------------------------------------------------------------------------------------------------
 def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2,
-                  H0 = None, OmegaM0 = None, OmegaL0 = None):
+                  H0 = None, OmegaM0 = None, OmegaL0 = None, fRelWeightsDict = {148.0: 1.0}):
     """Predict y0~ given logM500 (in MSun) and redshift. Default scaling relation parameters are A10 (as in
     H13).
     
     Use H0, OmegaM0, OmegaL0 to specify different cosmological parameters to the default stored under
     astCalc.H0, astCalc.OMEGA_M0, astCalc.OMEGA_L0 (used for E(z) and angular size calculation). If these
     are set to None, the defaults will be used.
+    
+    fRelWeightsDict is used to account for the relativistic correction when y0~ has been constructed
+    from multi-frequency maps. Weights should sum to 1.0; keys are observed frequency in GHz.
     
     Returns y0~, theta500Arcmin, Q
     
@@ -1806,10 +1809,20 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     M500=np.power(10, log10M500)
     theta500Arcmin=calcTheta500Arcmin(z, M500)
     Q=calcQ(theta500Arcmin, tckQFit)
+    
+    # Relativistic correction: now a little more complicated, to account for fact y0~ maps are weighted sum
+    # of individual frequency maps, and relativistic correction size varies with frequency
+    fRels=[]
+    freqWeights=[]
+    for obsFreqGHz in fRelWeightsDict.keys():
+        fRels.append(calcFRel(z, M500, obsFreqGHz = obsFreqGHz))
+        freqWeights.append(fRelWeightsDict[obsFreqGHz])
+    fRel=np.average(fRels, weights = freqWeights)
+    
     # UPP relation according to H13
     # NOTE: m in H13 is M/Mpivot
     # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
-    y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*calcFRel(z, M500)
+    y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*fRel
             
     # Restore cosmology if we changed it for this call
     if H0 != None:
@@ -1824,7 +1837,7 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
 #------------------------------------------------------------------------------------------------------------
 def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
                    tckQFit = None, mockSurvey = None, applyMFDebiasCorrection = True, calcErrors = True,
-                   H0 = None, OmegaM0 = None, OmegaL0 = None):
+                   H0 = None, OmegaM0 = None, OmegaL0 = None, fRelWeightsDict = {148.0: 1.0}):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
@@ -1837,6 +1850,9 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
     If applyMFDebiasCorrection == True, apply correction that accounts for steepness of mass function.
     
     If calcErrors == False, error bars are not calculated, they are just set to zero.
+    
+    fRelWeightsDict is used to account for the relativistic correction when y0~ has been constructed
+    from multi-frequency maps. Weights should sum to 1.0; keys are observed frequency in GHz.
     
     Use H0, OmegaM0, OmegaL0 to specify different cosmological parameters to the default stored under
     astCalc.H0, astCalc.OMEGA_M0, astCalc.OMEGA_L0 (used for E(z) and angular size calculation). If these
@@ -1889,7 +1905,7 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
             # UPP relation according to H13
             # NOTE: m in H13 is M/Mpivot
             y0pred, theta500Arcmin, Q=y0FromLogM500(log10M500, zi, tckQFit, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int,
-                                                    H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0)
+                                                    H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0, fRelWeightsDict = fRelWeightsDict)
             theta500ArcminArr.append(theta500Arcmin)
             QArr.append(Q)
             if y0pred > 0:

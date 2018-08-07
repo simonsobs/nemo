@@ -107,7 +107,8 @@ tileNoiseRegions:
 
 # Use this to test on only a particular set of tiles
 # i.e., all operations will only be performed on these tiles (respected by nemo, nemoMass, nemoSelFn)
-extNameList: ['2_1', '2_2', '3_1', '5_1']
+#extNameList: ['2_1', '2_2', '3_1', '5_1']
+extNameList: ['5_1']
 
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
@@ -163,10 +164,11 @@ mapFilters:
                               RADecSection: "tileNoiseRegions",
                               kernelMaxArcmin: 7.,
                               symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: True},
+                              noiseGridArcmin: 20.},
                 bckSub: True, 
+                saveHighPassMap: False,
+                saveRMSMap: True,
+                saveFreqWeightMap: True,
                 outputUnits: 'yc'}}
 
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination

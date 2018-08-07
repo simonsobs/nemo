@@ -151,135 +151,50 @@ massOptions: {tenToA0: 4.95e-5,
 selFnOptions: {fixed_SNR_cut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
 
-# Filter definitions
-# NOTE: Arnaud_M5p5e14_z0p2 gives theta500 = 5.9', for comparison with H13
+# Filter definitions:
+# allFilters is a dictionary of parameters that will be copied into all mapFilters
+# (these can be overridden by keys with the same name in mapFilters)
+allFilters: {class: "ArnaudModelRealSpaceMatchedFilter",
+             params: {noiseParams: {method: "max(dataMap,CMB)",
+                                    matchedFilterClass: 'ArnaudModelMatchedFilter',
+                                    RADecSection: "tileNoiseRegions",
+                                    kernelMaxArcmin: 7.,
+                                    symmetrize: False, 
+                                    noiseGridArcmin: 20.},
+                      bckSub: True, 
+                      saveHighPassMap: False,
+                      saveRMSMap: False,
+                      outputUnits: 'yc',
+                      edgeTrimArcmin: 60.0}
+            }
+                
+# mapFilters is a list of all the different filters to apply
+# (keys in mapFilters with the same name as those in allFilters take priority)
 mapFilters:
+    - {label: "Arnaud_M1e14_z0p2",
+       params: {M500MSun: 1.0e+14, z: 0.2}}
     - {label: "Arnaud_M2e14_z0p2",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 2.0e+14, 
-                z: 0.2,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 2.0e+14, z: 0.2}}
     - {label: "Arnaud_M4e14_z0p2",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 4.0e+14, 
-                z: 0.2,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 4.0e+14, z: 0.2}}
     - {label: "Arnaud_M8e14_z0p2",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 8.0e+14, 
-                z: 0.2,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 8.0e+14, z: 0.2}}
+    - {label: "Arnaud_M1e14_z0p4",
+       params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 2.0e+14, 
-                z: 0.4,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: True},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 2.0e+14, z: 0.4}}
     - {label: "Arnaud_M4e14_z0p4",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 4.0e+14, 
-                z: 0.4,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 4.0e+14, z: 0.4}}
     - {label: "Arnaud_M8e14_z0p4",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 8.0e+14, 
-                z: 0.4,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 8.0e+14, z: 0.4}}              
+    - {label: "Arnaud_M1e14_z0p8",
+       params: {M500MSun: 1.0e+14, z: 0.8}}
     - {label: "Arnaud_M2e14_z0p8",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 2.0e+14, 
-                z: 0.8,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 2.0e+14, z: 0.8}}
     - {label: "Arnaud_M4e14_z0p8",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 4.0e+14, 
-                z: 0.8,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 4.0e+14, z: 0.8}}
     - {label: "Arnaud_M8e14_z0p8",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 8.0e+14, 
-                z: 0.8,
-                noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'yc'}}
+       params: {M500MSun: 8.0e+14, z: 0.8}}
 
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
 # Set numSkySims to number required - we need to average over many as results vary a fair bit
