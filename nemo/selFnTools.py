@@ -180,7 +180,7 @@ def saveMzCompletenessGrid(label, selFnDictList, mockSurvey, diagnosticsDir, ext
     for selFnDict in selFnDictList:
         tileAreas.append(getTileTotalAreaDeg2(selFnDict['extName'], diagnosticsDir, extraMasksList = extraMasksList,
                                               extraMasksLabel = label))
-        compMzCube.append(selFnDict['compMz'])
+        compMzCube.append(makeMzCompletenessGrid(selFnDict['fitTab'], mockSurvey))
     tileAreas=np.array(tileAreas)
     if np.sum(tileAreas) == 0:
         print("... no overlapping area with %s ..." % (label))
@@ -203,14 +203,13 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     If fitTabFileName != None, saves the resulting model (and sim results) as .fits table(s) under 
     diagnosticsDir. Also saves a diagnostic plot of completeness for that tile.
     
-    Returns fitTab, 2d (M, z) array of completeness with same binning as mockSurvey
+    Returns fitTab
     
     """
     
     if fitTabFileName != None and os.path.exists(fitTabFileName) == True:
         fitTab=atpy.Table().read(fitTabFileName)
-        comp_Mz=makeMzCompletenessGrid(fitTab, mockSurvey)
-        return fitTab, comp_Mz
+        return fitTab
     
     # What we'll generally want is the completeness at some fixed z, for some assumed scaling relation
     tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
@@ -399,9 +398,6 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         t1=time.time()
         #print("... time taken = %.3f sec ..." % (t1-t0))
 
-    # Make completeness (M, z) grid with same binning as mock survey (this takes ~0.02 sec only)
-    comp_Mz=makeMzCompletenessGrid(fitTab, mockSurvey)
-
     t11=time.time()
     #print("... total time take for %s = %.3f sec ..." % (extName, t11-t00))
 
@@ -443,7 +439,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             #plt.plot(log_y0s, rayleighFlipped(log_y0s, row['log10y0_loc'], row['log10y0_scale']), label = row['z']) 
         #plt.legend()
 
-    return fitTab, comp_Mz
+    return fitTab
         
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRelationDict, tckQFitDict, 
@@ -471,8 +467,8 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
         for y0Noise in RMSTab['y0RMS']:
             count=count+1
             print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
-            fitTab, compMz=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
-                                            zRange = [z], fitTabFileName = None)
+            fitTab=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
+                                    zRange = [z], fitTabFileName = None)
             fitTab.rename_column('z', 'y0RMS')
             fitTab['y0RMS'][0]=y0Noise
             massLimMap[np.where(RMSMap == y0Noise)]=fitTab['log10MLimit_90%'][0]

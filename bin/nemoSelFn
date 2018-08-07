@@ -75,13 +75,12 @@ else:
         
         tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir)
         y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
-        fitTab, compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
-                                                   fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName))
+        fitTab=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
+                                           fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName))
         selFnDict={'extName': extName,
                    'y0Noise': y0Noise,
                    'tileAreaDeg2': tileAreaDeg2,
-                   'fitTab': fitTab,
-                   'compMz': compMz}
+                   'fitTab': fitTab}
         selFnDictList.append(selFnDict)
         
         # Optional mass-limit maps
