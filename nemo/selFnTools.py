@@ -20,6 +20,7 @@ from nemo import simsTools
 from nemo import mapTools
 from nemo import MockSurvey
 from nemo import plotSettings
+import colorcet
 import types
 import pickle
 import astropy.io.fits as pyfits
@@ -32,60 +33,87 @@ plt.matplotlib.interactive(False)
 #warnings.filterwarnings('error')
 
 #------------------------------------------------------------------------------------------------------------
-def getTileTotalAreaDeg2(extName, diagnosticsDir, extraMasksList = [], extraMasksLabel = ""):
-    """Returns total area of the tile pointed at by extName (taking into account survey mask and point
-    source masking).
+def loadAreaMask(extName, diagnosticsDir):
+    """Loads the survey area mask (i.e., after edge-trimming and point source masking, produced by nemo).
     
-    A list of other survey masks (e.g., from optical surveys like KiDS, HSC) can be given in extraMasksList. 
-    These should be file names for .fits images where 1 defines valid survey area, 0 otherwise. If given,
-    this routine will return the area of intersection between the extra masks and the SZ survey.
-    
-    Calculating the intersection is slow (~30 sec per tile per extra mask for KiDS), so intersection masks 
-    are cached.
-    
-    extraMasksLabel is only used for cached intersection mask output file names 
-    (e.g., diagnosticsDir/intersect_label#extName.fits)
+    Returns map array, wcs
     
     """
     
     areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
     areaMap=areaImg[0].data
     wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+    
+    return areaMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def getTileTotalAreaDeg2(extName, diagnosticsDir, masksList = [], footprintLabel = None):
+    """Returns total area of the tile pointed at by extName (taking into account survey mask and point
+    source masking).
+    
+    A list of other survey masks (e.g., from optical surveys like KiDS, HSC) can be given in masksList. 
+    These should be file names for .fits images where 1 defines valid survey area, 0 otherwise. If given,
+    this routine will return the area of intersection between the extra masks and the SZ survey.
+            
+    """
+    
+    areaMap, wcs=loadAreaMask(extName, diagnosticsDir)
     areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
     totalAreaDeg2=areaMapSqDeg.sum()
     
-    if extraMasksList != []:
-        if extraMasksLabel == "":
-            raise Exception("need extraMasksLabel if extraMasksList is not empty")
-        #t0=time.time()    
-        intersectFileName=diagnosticsDir+os.path.sep+"intersect_%s#%s.fits.gz" % (extraMasksLabel, extName)
-        if os.path.exists(intersectFileName) == True:
-            intersectImg=pyfits.open(intersectFileName)
-            intersectMask=intersectImg[0].data
-        else:
-            print("... creating %s intersection mask (%s) ..." % (extraMasksLabel, extName)) 
-            intersectMask=np.zeros(areaMap.shape)
-            for fileName in extraMasksList:
-                maskImg=pyfits.open(fileName)
-                maskWCS=astWCS.WCS(maskImg[0].header, mode = 'pyfits')
-                maskData=maskImg[0].data
-                ys, xs=np.where(maskData == 1)
-                RADec=maskWCS.pix2wcs(xs, ys)
-                for coord in RADec:
-                    x, y=wcs.wcs2pix(coord[0], coord[1])
-                    if x >=0 and x < areaMap.shape[1]-1 and y >= 0 and y < areaMap.shape[0]-1:
-                        intersectMask[int(round(y)), int(round(x))]=1
-            astImages.saveFITS(intersectFileName, intersectMask, wcs)
-        #t1=time.time()        
+    if footprintLabel != None:  
+        intersectMask=makeIntersectionMask(extName, diagnosticsDir, footprintLabel, masksList = masksList)
         totalAreaDeg2=(areaMapSqDeg*intersectMask).sum()        
         
     return totalAreaDeg2
 
 #------------------------------------------------------------------------------------------------------------
-def getRMSTab(extName, photFilterLabel, diagnosticsDir):
+def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
+    """Creates intersection mask between mask files given in masksList.
+    
+    Calculating the intersection is slow (~30 sec per tile per extra mask for KiDS), so intersection masks 
+    are cached; label is used in output file names (e.g., diagnosticsDir/intersect_label#extName.fits)
+    
+    Can optionally be called without extraMasksList, IF the intersection mask has already been created and
+    cached.
+    
+    Returns intersectionMask as array (1 = valid area, 0 = otherwise)
+    
+    """
+        
+    areaMap, wcs=loadAreaMask(extName, diagnosticsDir)
+    intersectFileName=diagnosticsDir+os.path.sep+"intersect_%s#%s.fits.gz" % (label, extName)
+    if os.path.exists(intersectFileName) == True:
+        intersectImg=pyfits.open(intersectFileName)
+        intersectMask=intersectImg[0].data
+    else:
+        if extraMasksList == []:
+            raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty extraMasksList")
+        print("... creating %s intersection mask (%s) ..." % (label, extName)) 
+        intersectMask=np.zeros(areaMap.shape)
+        for fileName in extraMasksList:
+            maskImg=pyfits.open(fileName)
+            maskWCS=astWCS.WCS(maskImg[0].header, mode = 'pyfits')
+            maskData=maskImg[0].data
+            ys, xs=np.where(maskData == 1)
+            RADec=maskWCS.pix2wcs(xs, ys)
+            for coord in RADec:
+                x, y=wcs.wcs2pix(coord[0], coord[1])
+                if x >=0 and x < areaMap.shape[1]-1 and y >= 0 and y < areaMap.shape[0]-1:
+                    intersectMask[int(round(y)), int(round(x))]=1
+        astImages.saveFITS(intersectFileName, intersectMask, wcs)
+    
+    return intersectMask
+
+#------------------------------------------------------------------------------------------------------------
+def getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = None):
     """Makes a table containing fraction of map area in tile pointed to by extName against RMS values
     (so this compresses the information in the RMS maps). The first time this is run takes ~200 sec (for a
     1000 sq deg tile), but the result is cached.
+    
+    Can optionally take extra masks for specifying e.g. HSC footprint. Here, we assume these have already
+    been made by makeIntersectionMask, and we can load them from the cache, identifying them through
+    footprintLabel
         
     Returns RMSTab
     
@@ -93,16 +121,23 @@ def getRMSTab(extName, photFilterLabel, diagnosticsDir):
     
     # This can probably be sped up, but takes ~200 sec for a ~1000 sq deg tile, so we cache
     RMSTabFileName=diagnosticsDir+os.path.sep+"RMSTab_%s.fits" % (extName)
+    if footprintLabel != None:
+        RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
     if os.path.exists(RMSTabFileName) == False:
         print(("... making %s ..." % (RMSTabFileName)))
         RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits" % (extName))
         RMSMap=RMSImg[0].data
+
+        areaMap, wcs=loadAreaMask(extName, diagnosticsDir)
+        areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+        
+        if footprintLabel != None:  
+            intersectMask=makeIntersectionMask(extName, diagnosticsDir, footprintLabel)
+            areaMapSqDeg=areaMapSqDeg*intersectMask        
+            RMSMap=RMSMap*intersectMask
+
         RMSValues=np.unique(RMSMap[np.nonzero(RMSMap)])
 
-        areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
-        areaMap=areaImg[0].data
-        wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
-        areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
         totalAreaDeg2=areaMapSqDeg.sum()
         
         fracArea=np.zeros(len(RMSValues))
@@ -119,12 +154,12 @@ def getRMSTab(extName, photFilterLabel, diagnosticsDir):
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
-def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir):
+def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = None):
     """Returns weighted average noise value in the tile.
     
     """
 
-    RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir)
+    RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintLabel)
     RMSValues=np.array(RMSTab['y0RMS'])
     fracArea=np.array(RMSTab['fracArea'])
     tileRMSValue=np.average(RMSValues, weights = fracArea)
@@ -162,37 +197,92 @@ def makeMzCompletenessGrid(fitTab, mockSurvey):
     return comp_Mz
 
 #------------------------------------------------------------------------------------------------------------
-def saveMzCompletenessGrid(label, selFnDictList, mockSurvey, diagnosticsDir, extraMasksList = []):
-    """Write out average (M, z) grid for all tiles (extNames) given in selFnDictList, weighted by fraction
-    of total survey area.
+def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir):
+    """Write out average (M, z) grid for all tiles (extNames) given in selFnCollection (a dictionary with 
+    keys corresponding to footprints: 'full' is the entire survey), weighted by fraction of total survey area
+    within the footprint. We also produce a bunch of other stats and plots to do with completeness versus 
+    redshift.
     
-    Output is written to a file named diagnosticsDir/MzCompleteness_label.npz
-
-    A list of other survey masks (e.g., from optical surveys like KiDS, HSC) can be given in extraMasksList. 
-    These should be file names for .fits images where 1 defines valid survey area, 0 otherwise. The 
-    intersection of these masks with the SZ survey will be calculated and used to weight the completeness
-    estimates from each tile.   
+    Output is written to files named e.g. diagnosticsDir/MzCompleteness_label.npz, where label is the 
+    footprint (key in selFnCollection); 'full' is the default (survey-wide average).
     
     """
     
-    tileAreas=[]
-    compMzCube=[]
-    for selFnDict in selFnDictList:
-        tileAreas.append(getTileTotalAreaDeg2(selFnDict['extName'], diagnosticsDir, extraMasksList = extraMasksList,
-                                              extraMasksLabel = label))
-        compMzCube.append(makeMzCompletenessGrid(selFnDict['fitTab'], mockSurvey))
-    tileAreas=np.array(tileAreas)
-    if np.sum(tileAreas) == 0:
-        print("... no overlapping area with %s ..." % (label))
-        return None
-    fracArea=tileAreas/np.sum(tileAreas)
-    compMzCube=np.array(compMzCube)
-    compMz_surveyAverage=np.average(compMzCube, axis = 0, weights = fracArea)
+    for footprintLabel in selFnCollection.keys():
+        print(">>> Survey-averaged results inside footprint: %s ..." % (footprintLabel))
+        selFnDictList=selFnCollection[footprintLabel]
+        tileAreas=[]
+        compMzCube=[]
+        completeness=[]
+        for selFnDict in selFnDictList:
+            tileAreas.append(selFnDict['tileAreaDeg2'])
+            completeness.append(np.array(selFnDict['fitTab']['log10MLimit_90%']))
+            compMzCube.append(makeMzCompletenessGrid(selFnDict['fitTab'], mockSurvey))
+        tileAreas=np.array(tileAreas)
+        completeness=np.array(completeness)
+        if np.sum(tileAreas) == 0:
+            print("... no overlapping area with %s ..." % (footprintLabel))
+            continue
+        fracArea=tileAreas/np.sum(tileAreas)
+        compMzCube=np.array(compMzCube)
+        compMz_surveyAverage=np.average(compMzCube, axis = 0, weights = fracArea)
 
-    outFileName=diagnosticsDir+os.path.sep+"MzCompleteness_%s.npz" % (label)
-    np.savez(outFileName, z = mockSurvey.z, log10M500c = mockSurvey.log10M, 
-             M500Completeness = compMz_surveyAverage)
+        outFileName=diagnosticsDir+os.path.sep+"MzCompleteness_%s.npz" % (footprintLabel)
+        np.savez(outFileName, z = mockSurvey.z, log10M500c = mockSurvey.log10M, 
+                 M500Completeness = compMz_surveyAverage)
+        
+        makeMzCompletenessPlot(compMz_surveyAverage, mockSurvey.log10M, mockSurvey.z, footprintLabel, 
+                               diagnosticsDir+os.path.sep+"MzCompleteness_%s.pdf" % (footprintLabel))
+
+        # 90% mass completeness limit and plots
+        zRange=np.array(selFnDict['fitTab']['z'])
+        massLimit_90Complete=np.average(np.power(10, completeness)/1e14, axis = 0, weights = fracArea)  # agrees with full mass limit map
+        makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent_%s.pdf" % (footprintLabel))
+        
+        averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
+        print(("... total survey area (after masking) = %.3f sq deg ..." % (np.sum(tileAreas))))
+        print(("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun ..." % (massLimit_90Complete[np.where(zRange == 0.5)][0])))
+        print(("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun ..." % (averageMassLimit_90Complete)))
+
+#------------------------------------------------------------------------------------------------------------
+def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
+    """Makes a (M, z) plot. Here, compMz is a 2d array, and log10M and z are arrays corresponding to the axes.
     
+    """
+    
+    plotSettings.update_rcParams()
+    plt.figure(figsize=(9.5,6.5))
+    ax=plt.axes([0.11, 0.11, 0.87, 0.80])
+
+    plt.imshow((compMz*100).transpose(), cmap = colorcet.m_rainbow, origin = 'lower', aspect = 0.8)
+    
+    y_tck=interpolate.splrep(log10M, np.arange(log10M.shape[0]))
+    plot_log10M=np.linspace(13.5, 15.5, 9)
+    coords_log10M=interpolate.splev(plot_log10M, y_tck)
+    labels_log10M=[]
+    for lm in plot_log10M:
+        labels_log10M.append("%.2f" % (lm))
+    plt.yticks(interpolate.splev(plot_log10M, y_tck), labels_log10M)
+    plt.ylim(coords_log10M.min(), coords_log10M.max())
+    plt.ylabel("log$_{10}$ ($M / M_{\odot}$)")
+    
+    x_tck=interpolate.splrep(z, np.arange(z.shape[0]))
+    plot_z=np.linspace(0.0, 2.0, 11)
+    coords_z=interpolate.splev(plot_z, x_tck)
+    labels_z=[]
+    for lz in plot_z:
+        labels_z.append("%.1f" % (lz))
+    plt.xticks(interpolate.splev(plot_z, x_tck), labels_z)
+    plt.xlim(coords_z.min(), coords_z.max())
+    plt.xlabel("$z$")
+    
+    plt.colorbar(pad = 0.03)
+    cbLabel="Completeness (%)" 
+    plt.figtext(0.96, 0.52, cbLabel, ha="center", va="center", family = "sans-serif", rotation = "vertical")
+
+    plt.title(title)
+    plt.savefig(outFileName)
+        
 #------------------------------------------------------------------------------------------------------------
 def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
                      zRange = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0],
@@ -682,7 +772,6 @@ def makeFullSurveyMassLimitMapPlot(z, diagnosticsDir):
         astImages.saveFITS(outFileName, reproj/sumPix, wcs)
     
     # Make plot
-    import colorcet
     img=pyfits.open(outFileName)
     reproj=np.nan_to_num(img[0].data)
     #reproj=np.ma.masked_where(reproj == np.nan, reproj)
