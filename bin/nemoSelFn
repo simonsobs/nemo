@@ -97,14 +97,15 @@ else:
         for footprintDict in footprintsList:
             selFnTools.makeIntersectionMask(extName, diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
             tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir, footprintLabel = footprintDict['label'])
-            y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
-            fitTab=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
-                                               fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s_%s.fits" % (extName, footprintDict['label']))
-            selFnDict={'extName': extName,
-                       'y0Noise': y0Noise,
-                       'tileAreaDeg2': tileAreaDeg2,
-                       'fitTab': fitTab}
-            selFnCollection[footprintDict['label']].append(selFnDict)
+            if tileAreaDeg2 > 0:
+                y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
+                fitTab=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
+                                                fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s_%s.fits" % (extName, footprintDict['label']))
+                selFnDict={'extName': extName,
+                        'y0Noise': y0Noise,
+                        'tileAreaDeg2': tileAreaDeg2,
+                        'fitTab': fitTab}
+                selFnCollection[footprintDict['label']].append(selFnDict)
         
         # Optional mass-limit maps
         if 'massLimitMaps' in list(parDict['selFnOptions'].keys()):
