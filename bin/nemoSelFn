@@ -129,39 +129,11 @@ else:
                 for key in all_selFnCollection.keys():
                     all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
             selFnCollection=all_selFnCollection
-            
-    # Survey-averaged 90% mass completeness limit
-    #tileAreas=[]
-    #completeness=[]
-    #for selFnDict in all_selFnDictList:
-        #tileAreas.append(selFnDict['tileAreaDeg2'])
-        #completeness.append(np.array(selFnDict['fitTab']['log10MLimit_90%']))
-    #tileAreas=np.array(tileAreas)
-    #fracArea=tileAreas/np.sum(tileAreas)
-    #completeness=np.array(completeness)
-    #zRange=np.array(selFnDict['fitTab']['z'])
-    #massLimit_90Complete=np.average(np.power(10, completeness)/1e14, axis = 0, weights = fracArea)  # agrees with full mass limit map
-    #selFnTools.makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent_surveyAverage.pdf")
-    
-    #print(">>> Survey-averaged results:")
-    #averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
-    #print(("... total survey area (after masking) = %.3f sq deg ..." % (np.sum(tileAreas))))
-    #print(("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun" % (massLimit_90Complete[np.where(zRange == 0.5)][0])))
-    #print(("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete)))
 
     # Survey completeness stats now all lumped together in one routine
     # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
-    # For surveys like KiDS, HSC etc.. we calculate area of intersection for each footprint with each tile (extName), and weight accordingly
     selFnTools.completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir)
     
-    #footprintsList=[{'label': 'surveyAverage', 'maskList': []}]
-    #if 'selFnFootprints' in parDict.keys():
-        #footprintsList=footprintsList+parDict['selFnFootprints']
-    #for footprintDict in footprintsList:
-        #print(">>> Creating (M, z) completeness grid and completeness stats for %s footprint ..." % (footprintDict['label']))
-        #selFnTools.completenessInFootprint(footprintDict['label'], all_selFnDictList, mockSurvey, diagnosticsDir, 
-                                           #extraMasksList = footprintDict['maskList'])
-
     # If we made mass limit maps...
     # ... make cumulative area versus mass limit plot(s)
     # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit

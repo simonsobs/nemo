@@ -93,7 +93,7 @@ else:
             # New
             t0=time.time()
             mockCatalog=mockSurvey.drawSample(thresholdSigma, areaMask, RMSMap, wcs, scalingRelationDict, tckQFitDict, 
-                                            photFilterLabel = photFilterLabel, extName = extName)
+                                              photFilterLabel = photFilterLabel, extName = extName)
             t1=time.time()
             print("... making mock catalog %d for extName = %s took %.3f sec ..." % (i+1, extName, t1-t0))
             

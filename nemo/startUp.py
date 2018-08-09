@@ -13,8 +13,11 @@ import IPython
 from . import mapTools
 
 #------------------------------------------------------------------------------------------------------------
-def startUp(parDictFileName):
+def startUp(parDictFileName, ignoreMPI = False):
     """Does start-up tasks that are common to the nemo scripts (nemo, nemoMass, nemoSelFn etc.).
+    
+    Set ignoreMPI = True to disregard useMPI given in config file - this will return a complete set of 
+    extNames raher than just those for a given node)
     
     Returns: 
         * parDict (dictionary containing the contents of the config file)
@@ -68,7 +71,11 @@ def startUp(parDictFileName):
                     if filtDict['label'] == photFilter:
                         filtDict['params']['saveRMSMap']=True
                         filtDict['params']['saveFreqWeightMap']=True
-                        
+    
+    # Useful to throttle this way sometimes
+    if ignoreMPI == True:
+        parDict['useMPI']=False
+        
     MPIEnabled=parDict['useMPI']
     if MPIEnabled == True:
         from mpi4py import MPI

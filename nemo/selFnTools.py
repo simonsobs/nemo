@@ -282,7 +282,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
 
     plt.title(title)
     plt.savefig(outFileName)
-        
+
 #------------------------------------------------------------------------------------------------------------
 def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, diagnosticsDir,
                      zRange = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0],
@@ -311,7 +311,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     numMockClusters=10000
     minAllowedDetections=4000
     maxMultiplier=8000
-    minDrawNoiseMultiplier=SNRCut-3.  # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
+    #minDrawNoiseMultiplier=SNRCut-4.  # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
 
     # Binning used for fitting
     binEdges=np.arange(mockSurvey.log10M.min(), mockSurvey.log10M.max(), 0.05)
@@ -345,60 +345,71 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
 
     for iz in range(len(zRange)):
 
-        t0=time.time()    
+        #t0=time.time()    
         z=zRange[iz]
         #print("... z = %.2f ..." % (z))
         zIndex=np.where(abs(mockSurvey.z-z) == abs(mockSurvey.z-z).min())[0][0]
-        
-        # Used in Q-calc below...
+                          
+        # For quick Q, fRel calc (this bit takes ~0.01 sec)
         Ez=astCalc.Ez(z)
         Hz=astCalc.Ez(z)*astCalc.H0  
         G=4.301e-9  # in MSun-1 km2 s-2 Mpc
         criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+        interpLim_minLog10M=mockSurvey.log10M.min()
+        interpLim_maxLog10M=mockSurvey.log10M.max()
+        interpPoints=100
+        fitM500s=np.power(10, np.linspace(interpLim_minLog10M, interpLim_maxLog10M, interpPoints))
+        fitTheta500s=np.zeros(len(fitM500s))
+        fitFRels=np.zeros(len(fitM500s))
+        for i in range(len(fitM500s)):
+            M500=fitM500s[i]
+            R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
+            theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+            fitTheta500s[i]=theta500Arcmin
+            fitFRels[i]=simsTools.calcFRel(z, M500)
+        tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
+        tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
         
         # Ajusting mass limit for draws according to RMS - trick to avoid drawing loads of clusters we'll never see
-        # This is ok as just a rough estimate
-        minLog10MDraw=np.log10(Mpivot*np.power((y0Noise*minDrawNoiseMultiplier)/(tenToA0*np.power(astCalc.Ez(z), 2)), 1/(1+B0)))
+        # This is ok as just a rough estimate - turns out that Q estimate is crucial for this at high z
+        # (we can ignore fRel as low mass end anyway)
+        minLog10MDraw=np.log10(Mpivot*np.power(y0Noise/(tenToA0*np.power(astCalc.Ez(z), 2)), 1/(1+B0)))
+        diff=1e6
+        tolerance=1e-3
+        while diff > tolerance:
+            Q_minLog10MDraw=interpolate.splev(interpolate.splev(minLog10MDraw, tckLog10MToTheta500), tckQFitDict[extName])
+            old=minLog10MDraw
+            minLog10MDraw=np.log10(Mpivot*np.power(y0Noise/(tenToA0*np.power(astCalc.Ez(z), 2)*Q_minLog10MDraw), 1/(1+B0)))
+            diff=abs(minLog10MDraw-old)
         testDraws=np.linspace(0, 1, 1000000)
         testLog10M=interpolate.splev(testDraws, mockSurvey.tck_log10MRoller[zIndex])
         minDraw=testDraws[np.argmin(abs(testLog10M-minLog10MDraw))]
         if minDraw == 1.0:
             raise Exception("minDraw == 1 - very noisy pixel, try increasing number of test draws?")
-            
+        
         # Draw masses from the mass function...    
         numDetected=0
         mockClusterMultiplier=1
         exceededMultiplierCount=0
+        numIterations=0
         while numDetected < minAllowedDetections:
+            t00=time.time()
             log10Ms=interpolate.splev(np.random.uniform(minDraw, 1, int(mockClusterMultiplier*numMockClusters)), mockSurvey.tck_log10MRoller[zIndex])
                         
             # Sort masses here, as we need in order biggest -> smallest for fast completeness calc
             log10Ms.sort()
             log10Ms=log10Ms[::-1]
             
-            # For speedy mock "observations" - since we have fixed z
-            fitM500s=np.power(10, np.linspace(mockSurvey.log10M.min(), mockSurvey.log10M.max(), 100))
-            fitTheta500s=np.zeros(len(fitM500s))
-            for i in range(len(fitM500s)):
-                M500=fitM500s[i]
-                R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
-                theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
-                fitTheta500s[i]=theta500Arcmin
-            tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
+            # Mock "observations" (apply intrinsic scatter and noise)...
             theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500)
             Qs=interpolate.splev(theta500s, tckQFitDict[extName])
-            fRels=simsTools.calcFRel(z, np.power(10, log10Ms))
+            fRels=interpolate.splev(log10Ms, tckLog10MToFRel)   
             true_y0s=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
-            
-            # Mock "observations" (apply intrinsic scatter and noise)...
             scattered_y0s=np.exp(np.random.normal(np.log(true_y0s), sigma_int, len(true_y0s)))        
             measured_y0s=np.random.normal(scattered_y0s, y0Noise)
-            # Comment out above and uncomment below to switch off intrinsic scatter
-            #measured_y0s=np.random.normal(true_y0s, y0Noise)
-            
+
             # Check selection - did we manage to select enough objects?
             y0Lim_selection=SNRCut*y0Noise  # y0Noise = RMS
-            t111=time.time()
             try:
                 numDetected=np.greater(measured_y0s, y0Lim_selection).sum()
             except:
@@ -415,12 +426,16 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
                     exceededMultiplierCount=exceededMultiplierCount+1
                 if exceededMultiplierCount > 2:
                     raise Exception("exceeded maxMultiplier too many times")
+            numIterations=numIterations+1
+        
+        #t1=time.time()
         
         # Calculate completeness
         detArr=np.cumsum(np.greater(measured_y0s, y0Lim_selection))
         allArr=np.arange(1, len(log10Ms)+1, 1, dtype = float)
         completeness=detArr/allArr
-        
+        #print("... calcCompleteness: z = %.2f took %.3f sec (N = %d) ..." % (z, t1-t0, len(log10Ms)))
+            
         # Average/downsample: both for storage, and to deal with low numbers at high mass end (for fitting)
         binnedCompleteness=np.zeros(len(binEdges)-1)
         binnedCounts=np.zeros(len(binEdges)-1, dtype = float)
