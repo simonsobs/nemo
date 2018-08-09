@@ -96,13 +96,18 @@ survey (in this case the E-D56 field), and an equivalent mass limit
 map, evaluated at z = 0.5 (a .fits image). It is making the latter
 that takes up most of the time - this can be disabled by removing
 the `massLimitMaps` key from the `selFnOptions` dictionary in the .yml
-file. No doubt this part could be sped up, but at the time of writing,
-this script takes ~40 minutes to run. As with `nemoMass`, some results
-are cached, so repeat runs are much quicker.
+file. 
 
 Note that `nemoSelFn` has been completely rewritten and is different
 to the version used for the ACTPol paper. Hence, the results are 
 slightly different.
+
+An script which shows an example of how to use the selection function
+can be found in this directory. You can run it with:
+
+```
+python selFnExample.py equD56.yml
+```
 
 You can also generate mock cluster catalogs using the output from nemo
 by using the `nemoMock` script:

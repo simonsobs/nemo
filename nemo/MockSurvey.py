@@ -58,14 +58,14 @@ class MockSurvey(object):
         # Internally, it's better to stick with how hmf does this, i.e., use these units
         # Externally, we still give  inputs without h^-1
         self.mf=hmf.MassFunction(z = zRange[0], Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
-                            sigma_8 = sigma_8, cosmo_model = cosmo_model)#, force_flat = True, cut_fit = False)
+                                 sigma_8 = sigma_8, cosmo_model = cosmo_model)#, force_flat = True, cut_fit = False)
             
         self.log10M=np.log10(self.mf.m/self.mf.cosmo.h)
         self.areaSr=areaSr
         self.zBinEdges=zRange
         self.z=(zRange[:-1]+zRange[1:])/2.
 
-        self._doClusterCount()
+        self.update(H0, Om0, Ob0, sigma_8)
         
         # Stuff to enable us to draw mock samples (see drawSample):
         if enableDrawSample == True:
@@ -100,7 +100,17 @@ class MockSurvey(object):
         """Recalculate cluster counts if cosmological parameters updated.
         
         """
-        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0)
+        # We're using both astLib and astropy... 
+        # astLib is used for E(z) etc. in selFnTools where it's quicker
+        # We're also keeping track inside MockSurvey itself just for convenience
+        self.H0=H0
+        self.Om0=Om0
+        self.Ob0=Ob0
+        self.sigma_8=sigma_8
+        astCalc.H0=H0
+        astCalc.OMEGA_M0=Om0
+        astCalc.OMEGA_L0=1.0-Om0
+        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
         self.mf.update(cosmo_model = cosmo_model, sigma_8 = sigma_8)
         self._doClusterCount()
         
@@ -123,7 +133,10 @@ class MockSurvey(object):
             zShellMax=zRange[i+1]
             zShellMid=(zShellMax+zShellMin)/2.  
             mf.update(z = zShellMid)
-            n=hmf.integrate_hmf.hmf_integral_gtm(mf.m/mf.cosmo.h, mf.dndm*(mf.cosmo.h**4))  # Need to account for h^-1 in mass, h^4 in dndm
+            try:
+                n=hmf.integrate_hmf.hmf_integral_gtm(mf.m/mf.cosmo.h, mf.dndm*(mf.cosmo.h**4))  # Need to account for h^-1 in mass, h^4 in dndm
+            except:
+                raise Exception("Integrating hmf mass function probably failed due to mf.update using cosmo_model without Tcmb0 given?")
             n=abs(np.gradient(n))# Above is cumulative integral (n > m), need this for actual number count 
             numberDensity.append(n)
             shellVolumeMpc3=mf.cosmo.comoving_volume(zShellMax).value-mf.cosmo.comoving_volume(zShellMin).value
@@ -138,70 +151,19 @@ class MockSurvey(object):
         self.numClusters=np.sum(clusterCount)
         self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
         
-        
-    def addSelFn(self, selFn, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2):
-        """Given SelFn object selFn, calculates completeness over the (self.z, self.mf.M) grid.
-        
-        Result stored as self.M500Completeness
-        
-        Can then just multiply by self.clusterCount and sum to get expected number of clusters.
-        
-        """
-        
-        self.selFn=selFn
-        
-        # We may need these elsewhere...
-        self.scalingRelationDict={'tenToA0': tenToA0, 'B0': B0, 'Mpivot': Mpivot, 'sigma_int': sigma_int}
 
-        # We should apply the intrinsic scatter in M500 at fixed y0~ somewhere here
-        
-        # This takes ~95 sec
-        print("... calculating (M, z) detection probabilities in each tile (takes ~100 sec on E-D56) ...")
-        self.M500Completeness=np.zeros([len(self.selFn.ycLimitTab), self.clusterCount.shape[0], self.clusterCount.shape[1]])
-        t0=time.time()        
-        ycLimits=self.selFn.ycLimitTab['ycLimit']
-        ycErr=ycLimits/self.selFn.SNRCut
-        M=(self.mf.m/self.mf.cosmo.h)
-        logM=np.log10(M)
-        for i in range(len(self.z)):
-            z=self.z[i]
-            for j in range(M.shape[0]):
-                yc, theta500Arcmin, Q=simsTools.y0FromLogM500(logM[j], z, self.selFn.tckQFit, tenToA0 = tenToA0,
-                                                              B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int)
-                self.M500Completeness[:, i, j]=stats.norm.sf(ycLimits, loc = yc, scale = ycErr)
-        t1=time.time()
-        
-        # This takes ~7.5 sec
-        M=(self.mf.m/self.mf.cosmo.h)
-        logM=np.log10(M)
-        self.M500Completeness_surveyAverage=np.zeros(self.clusterCount.shape)
-        for i in range(len(self.z)):
-            z=self.z[i]
-            ycLimitAtClusterRedshift=selFn.getSurveyAverage_ycLimitAtRedshift(z)
-            for j in range(M.shape[0]):
-                yc, theta500Arcmin, Q=simsTools.y0FromLogM500(logM[j], z, selFn.tckQFit, tenToA0 = tenToA0,
-                                                              B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int)
-                ycErr=ycLimitAtClusterRedshift/selFn.SNRCut
-                detP=stats.norm.sf(ycLimitAtClusterRedshift, loc = yc, scale = ycErr)
-                self.M500Completeness_surveyAverage[i, j]=detP
-
-
-    def calcNumClustersExpected(self, M500Limit = 0.1, zMin = 0.0, zMax = 2.0, applySelFn = False, 
-                                useSurveyAverageSelFn = True):
-        """Calculate the number of clusters expected above a given mass limit. If applySelFn = True, apply
+    def calcNumClustersExpected(self, M500Limit = 0.1, zMin = 0.0, zMax = 2.0, selFn = None):
+        """Calculate the number of clusters expected above a given mass limit. If selFn is not None, apply
         the selection function (in which case M500Limit isn't important, so long as it is low).
+        
+        selFn should be an (M, z) grid that corresponds with self.log10M, self.z
         
         NOTE: units of M500Limit are 1e14 MSun.
         
         """
         
-        if applySelFn == True:
-            if useSurveyAverageSelFn == True:
-                numClusters=self.M500Completeness_surveyAverage*self.clusterCount
-            else:
-                numClusters=0
-                for i in range(len(self.selFn.ycLimitTab)):
-                    numClusters=numClusters+self.M500Completeness[i]*self.clusterCount*self.selFn.ycLimitTab['fracSurveyArea'][i]
+        if type(selFn) == np.ndarray:
+            numClusters=selFn*self.clusterCount
         else:
             numClusters=self.clusterCount
         
