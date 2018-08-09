@@ -87,8 +87,8 @@ def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
         intersectImg=pyfits.open(intersectFileName)
         intersectMask=intersectImg[0].data
     else:
-        if extraMasksList == []:
-            raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty extraMasksList")
+        if masksList == []:
+            raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
         print("... creating %s intersection mask (%s) ..." % (label, extName)) 
         intersectMask=np.zeros(areaMap.shape)
         for fileName in extraMasksList:
