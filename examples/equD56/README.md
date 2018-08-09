@@ -102,7 +102,7 @@ Note that `nemoSelFn` has been completely rewritten and is different
 to the version used for the ACTPol paper. Hence, the results are 
 slightly different.
 
-An script which shows an example of how to use the selection function
+A script that shows an example of how to use the selection function
 can be found in this directory. You can run it with:
 
 ```
