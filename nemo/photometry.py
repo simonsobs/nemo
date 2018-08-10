@@ -360,7 +360,8 @@ def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
                     y=int(round(y))
                     freqWeights=freqCube[:, y, x]
                     for i in range(len(obsFreqGHzDict.keys())):
-                        objDict['fixed_y_c_weight_%.1fGHz' % (obsFreqGHzDict[i])]=freqWeights[i]
+                        freqStr=("%.1f" % (obsFreqGHzDict[i])).replace(".", "p")    # MongoDB doesn't like '.' in key names
+                        objDict['fixed_y_c_weight_%sGHz' % (freqStr)]=freqWeights[i]
 
 #------------------------------------------------------------------------------------------------------------
 def getRadialDistanceMap(objDict, data, wcs):

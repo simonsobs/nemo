@@ -210,7 +210,7 @@ else:
     fRelKeysDict={}
     for key in tab.keys():
         if key.find("fixed_y_c_weight") != -1:
-            obsFreqGHz=float(key.split("_")[-1].split("GHz")[0])
+            obsFreqGHz=float(key.split("_")[-1].split("GHz")[0].replace("p", "."))  
             fRelKeysDict[key]=obsFreqGHz
     
     for row in tab:
