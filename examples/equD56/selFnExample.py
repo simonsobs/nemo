@@ -23,10 +23,12 @@ def printNumClusters(H0, Om0, Ob0, sigma_8, scalingRelationDict = None):
     
     """
     
+    # This function has to be called every time a parameter value is changed
     selFn.update(H0, Om0, Ob0, sigma_8, scalingRelationDict = scalingRelationDict)
-    print(">>> H0 = %.2f km/s/Mpc Om0 = %.2f Ob0 = %.2f sigma_8 = %.2f tenToA0 = %.3e" % (selFn.mockSurvey.H0, selFn.mockSurvey.Om0, 
-                                                                                          selFn.mockSurvey.Ob0, selFn.mockSurvey.sigma_8,
-                                                                                          selFn.scalingRelationDict['tenToA0']))
+    
+    print(">>> H0 = %.2f km/s/Mpc Om0 = %.2f Ob0 = %.2f sigma_8 = %.2f tenToA0 = %.3e sigma_int = %.2f" \
+        % (selFn.mockSurvey.H0, selFn.mockSurvey.Om0, selFn.mockSurvey.Ob0, selFn.mockSurvey.sigma_8, 
+           selFn.scalingRelationDict['tenToA0'], selFn.scalingRelationDict['sigma_int']))
     numClusters=selFn.mockSurvey.calcNumClustersExpected(selFn = selFn.compMz)
     print("... number of clusters expected = %.2f (in %.2f square degrees) ..." %  (numClusters, selFn.totalAreaDeg2))
     
@@ -48,8 +50,7 @@ else:
     
     # A complete iteration of changing cosmological parameters    
     t0=time.time()
-    H0, Om0, Ob0, sigma_8 = 70.0, 0.30, 0.05, 0.80    
-    #H0, Om0, Ob0, sigma_8 = 72.0, 0.27, 0.05, 0.74    
+    H0, Om0, Ob0, sigma_8 = 72.0, 0.27, 0.05, 0.74    
     printNumClusters(H0, Om0, Ob0, sigma_8, scalingRelationDict = scalingRelationDict)
     t1=time.time()
     print("... iteration took %.3f sec ..." % (t1-t0))
@@ -62,4 +63,12 @@ else:
     t1=time.time()
     print("... iteration took %.3f sec ..." % (t1-t0))
     selFnTools.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test2", "test2_Mz.pdf")
-    
+
+    # Changing the scaling relation intrinsic scatter
+    t0=time.time()
+    scalingRelationDict['tenToA0']=4.95e-5
+    scalingRelationDict['sigma_int']=0.001
+    printNumClusters(H0, Om0, Ob0, sigma_8, scalingRelationDict = scalingRelationDict)
+    t1=time.time()
+    print("... iteration took %.3f sec ..." % (t1-t0))
+    selFnTools.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test3", "test3_Mz.pdf")    

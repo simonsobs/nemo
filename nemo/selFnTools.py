@@ -298,7 +298,10 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     """
     
     if fitTabFileName != None and os.path.exists(fitTabFileName) == True:
-        fitTab=atpy.Table().read(fitTabFileName)
+        try:
+            fitTab=atpy.Table().read(fitTabFileName)
+        except:
+            raise Exception("coudn't load fitTab %s - file corrupted?" % (fitTabFileName))
         return fitTab
     
     # What we'll generally want is the completeness at some fixed z, for some assumed scaling relation
