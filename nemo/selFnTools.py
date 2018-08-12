@@ -77,11 +77,15 @@ def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
     Can optionally be called without extraMasksList, IF the intersection mask has already been created and
     cached.
     
+    NOTE: We assume masks have dec aligned with y direction for speed.
+    
     Returns intersectionMask as array (1 = valid area, 0 = otherwise)
     
     """
         
     areaMap, wcs=loadAreaMask(extName, diagnosticsDir)
+    RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
+    
     intersectFileName=diagnosticsDir+os.path.sep+"intersect_%s#%s.fits.gz" % (label, extName)
     if os.path.exists(intersectFileName) == True:
         intersectImg=pyfits.open(intersectFileName)
@@ -93,14 +97,26 @@ def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
         intersectMask=np.zeros(areaMap.shape)
         for fileName in masksList:
             maskImg=pyfits.open(fileName)
-            maskWCS=astWCS.WCS(maskImg[0].header, mode = 'pyfits')
-            maskData=maskImg[0].data
-            ys, xs=np.where(maskData == 1)
-            RADec=maskWCS.pix2wcs(xs, ys)
-            for coord in RADec:
-                x, y=wcs.wcs2pix(coord[0], coord[1])
-                if x >=0 and x < areaMap.shape[1]-1 and y >= 0 and y < areaMap.shape[0]-1:
-                    intersectMask[int(round(y)), int(round(x))]=1
+            for hdu in maskImg:
+                if type(hdu) == pyfits.ImageHDU:
+                    break
+            maskWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
+            # For speed: assuming mask is aligned with dec in y direction and no rotation
+            blah, yMin=maskWCS.wcs2pix(0.0, decMin)
+            blah, yMax=maskWCS.wcs2pix(0.0, decMax)
+            yMin=int(round(yMin))
+            yMax=int(round(yMax))
+            maskData=hdu.data
+            ys, xs=np.where(maskData[yMin:yMax] == 1)
+            RADec=maskWCS.pix2wcs(xs, ys+yMin)
+            RADec=np.array(RADec)
+            areaMapCoords=wcs.wcs2pix(RADec[:, 0], RADec[:, 1])
+            areaMapCoords=np.array(areaMapCoords)
+            areaMapCoords=np.array(np.round(areaMapCoords), dtype = int)
+            xMask=np.logical_and(np.greater_equal(areaMapCoords[:, 0], 0), np.less(areaMapCoords[:, 0], areaMap.shape[1]-1))
+            yMask=np.logical_and(np.greater_equal(areaMapCoords[:, 1], 0), np.less(areaMapCoords[:, 1], areaMap.shape[0]-1))
+            for coord in areaMapCoords[np.logical_and(xMask, yMask)]:
+                intersectMask[coord[1], coord[0]]=1
         astImages.saveFITS(intersectFileName, intersectMask, wcs)
     
     return intersectMask
