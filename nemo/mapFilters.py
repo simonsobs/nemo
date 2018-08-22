@@ -31,6 +31,7 @@ import os
 from scipy import interpolate
 from scipy import ndimage
 import astropy.io.fits as pyfits
+import astropy.stats as apyStats
 import copy
 import sys
 import glob
@@ -905,7 +906,6 @@ class RealSpaceMatchedFilter(MapFilter):
         # We could make below behaviour default if match photFilter? Would need to see photFilter though...
         #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
         RMSMap=np.zeros(mapData.shape)
-        t0=time.time()
         for i in range(len(yChunks)-1):
             for k in range(len(xChunks)-1):
                 y0=yChunks[i]-overlapPix
@@ -921,42 +921,34 @@ class RealSpaceMatchedFilter(MapFilter):
                 if x1 > mapData.shape[1]:
                     x1=mapData.shape[1]
                 chunkValues=mapData[y0:y1, x0:x1]
-                # 3-sigma clipped stdev - 12 sec
-                # Tried biweight scale version, 10 x slower than this
-                if np.not_equal(chunkValues, 0).sum() != 0:
-                    goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
-                    chunkMean=np.mean(chunkValues[goodAreaMask])
-                    chunkRMS=np.std(chunkValues[goodAreaMask])
-                    sigmaClip=3.0
-                    for c in range(10):
-                        mask=np.less(abs(chunkValues), abs(chunkMean+sigmaClip*chunkRMS))
-                        mask=np.logical_and(goodAreaMask, mask)
-                        chunkMean=np.mean(chunkValues[mask])
-                        chunkRMS=np.std(chunkValues[mask])
+
+                goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                
+                if 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'biweight':
+                    if goodAreaMask.sum() >= 10:
+                        # Astropy version is faster but gives identical results
+                        chunkRMS=apyStats.biweight_scale(chunkValues[goodAreaMask], c = 9.0, modify_sample_size = True)
+                        #chunkRMS=astStats.biweightScale(chunkValues[goodAreaMask], 6.0)
+                    else:
+                        chunkRMS=0.
                 else:
-                    chunkRMS=0.
+                    # Default: 3-sigma clipped stdev
+                    if np.not_equal(chunkValues, 0).sum() != 0:
+                        goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                        chunkMean=np.mean(chunkValues[goodAreaMask])
+                        chunkRMS=np.std(chunkValues[goodAreaMask])
+                        sigmaClip=3.0
+                        for c in range(10):
+                            mask=np.less(abs(chunkValues), abs(chunkMean+sigmaClip*chunkRMS))
+                            mask=np.logical_and(goodAreaMask, mask)
+                            chunkMean=np.mean(chunkValues[mask])
+                            chunkRMS=np.std(chunkValues[mask])
+                    else:
+                        chunkRMS=0.
+                
                 if chunkRMS > 0:
-                    #SNMap[y0:y1, x0:x1]=mapData[y0:y1, x0:x1]/chunkRMS
-                    #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
                     RMSMap[y0:y1, x0:x1]=chunkRMS
-        t1=time.time()
-        #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
-            #RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
-            #astImages.saveFITS(RMSFileName, RMSMap, mapDict['wcs'])
-        #print "... took %.3f sec ..." % (t1-t0)
-        
-        # Below is global RMS, for comparison
-        #apodMask=np.not_equal(mapData, 0)
-        #goodAreaMask=np.greater_equal(apodMask, 1.0) # don't want the apodized edges of the map to bias this
-        #mapMean=np.mean(combinedMap[goodAreaMask])
-        #mapRMS=np.std(combinedMap[goodAreaMask])
-        #sigmaClip=3.0
-        #for i in range(10):
-            #mask=np.less(abs(combinedMap), abs(mapMean+sigmaClip*mapRMS))
-            #mask=np.logical_and(goodAreaMask, mask)
-            #mapMean=np.mean(combinedMap[mask])
-            #mapRMS=np.std(combinedMap[mask])
-        
+                
         return RMSMap
     
     
