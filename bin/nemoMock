@@ -113,7 +113,7 @@ else:
         # Write catalog and .reg file
         colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'err_fixed_y_c']
         colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
-        tab=catalogTools.catalogToTab(mockCatalog, colNames, colFmts, [])
+        tab=catalogTools.catalogToTab(mockCatalog, colNames, [])
         mockCatalogFileName=mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
         catalogTools.writeCatalogFromTab(tab, mockCatalogFileName, colNames, colFmts, 
                                             constraintsList = [], headings = True)
