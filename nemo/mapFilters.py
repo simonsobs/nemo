@@ -813,7 +813,10 @@ class RealSpaceMatchedFilter(MapFilter):
         kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
         
         # This is what to high pass filter on
-        bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
+        if 'bckSubScaleArcmin' in self.params.keys():
+            bckSubScaleArcmin=self.params['bckSubScaleArcmin']
+        else:
+            bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
         
         # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
         # 1. The high pass filter (bck sub step)

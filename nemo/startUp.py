@@ -13,25 +13,13 @@ import IPython
 from . import mapTools
 
 #------------------------------------------------------------------------------------------------------------
-def startUp(parDictFileName, ignoreMPI = False):
-    """Does start-up tasks that are common to the nemo scripts (nemo, nemoMass, nemoSelFn etc.).
+def parseConfigFile(parDictFileName):
+    """Parse a nemo .yml config file.
     
-    Set ignoreMPI = True to disregard useMPI given in config file - this will return a complete set of 
-    extNames raher than just those for a given node)
+    Returns a dictionary of parameters
     
-    Returns: 
-        * parDict (dictionary containing the contents of the config file)
-        * rootOutDir (name of the directory where all output will be written)
-        * filteredMapsDir (name of the directory where filtered maps will be written)
-        * diagnosticsDir (name of the directory where e.g. filter kernels will be written)
-        * unfilteredMapsDictList (list of dictionaries corresponding to maps needed)
-        * extNames (list of map tiles to operate on)
-        * comm, rank, size (used by MPI)
-        
     """
-
-    print(">>> Running .yml config file: %s" % (parDictFileName))
-
+    
     with open(parDictFileName, "r") as stream:
         parDict=yaml.safe_load(stream)
         # Apply global filter options (defined in allFilters) to mapFilters
@@ -71,6 +59,30 @@ def startUp(parDictFileName, ignoreMPI = False):
                     if filtDict['label'] == photFilter:
                         filtDict['params']['saveRMSMap']=True
                         filtDict['params']['saveFreqWeightMap']=True
+    
+    return parDict
+                        
+#------------------------------------------------------------------------------------------------------------
+def startUp(parDictFileName, ignoreMPI = False):
+    """Does start-up tasks that are common to the nemo scripts (nemo, nemoMass, nemoSelFn etc.).
+    
+    Set ignoreMPI = True to disregard useMPI given in config file - this will return a complete set of 
+    extNames raher than just those for a given node)
+    
+    Returns: 
+        * parDict (dictionary containing the contents of the config file)
+        * rootOutDir (name of the directory where all output will be written)
+        * filteredMapsDir (name of the directory where filtered maps will be written)
+        * diagnosticsDir (name of the directory where e.g. filter kernels will be written)
+        * unfilteredMapsDictList (list of dictionaries corresponding to maps needed)
+        * extNames (list of map tiles to operate on)
+        * comm, rank, size (used by MPI)
+        
+    """
+
+    print(">>> Running .yml config file: %s" % (parDictFileName))
+
+    parDict=parseConfigFile(parDictFileName)
     
     # Useful to throttle this way sometimes
     if ignoreMPI == True:

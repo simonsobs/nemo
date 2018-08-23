@@ -953,7 +953,11 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
     Returns a dictionaries containing the results
     
     """
-        
+    
+    # These may break in python3, so only here to limit damage...
+    from . import mapFilters
+    from . import startUp
+    
     resultsList=[]
     for i in range(numSkySims):
         
@@ -964,8 +968,7 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
         # We use the seed here to keep the CMB sky the same across frequencies...
         CMBSimSeed=np.random.randint(16777216)
         
-        with open(parDictFileName, "r") as stream:
-            simParDict=yaml.safe_load(stream)
+        simParDict=startUp.parseConfigFile(parDictFileName)
             
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
         if 'GNFWParams' not in list(simParDict.keys()):
@@ -1015,7 +1018,7 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
         # Write out sim map catalogs for debugging
         skySimDir=diagnosticsDir+os.path.sep+"skySim"
         if len(simImageDict['optimalCatalog']) > 0:
-            tab=catalogTools.catalogToTab(simImageDict['optimalCatalog'], catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, ["SNR > 0.0"])    
+            tab=catalogTools.catalogToTab(simImageDict['optimalCatalog'], catalogTools.COLUMN_NAMES, ["SNR > 0.0"])    
             optimalCatalogFileName=skySimDir+os.path.sep+"skySim%d_optimalCatalog.csv" % (i)           
             catalogTools.writeCatalogFromTab(tab, optimalCatalogFileName, \
                                             catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
@@ -1109,6 +1112,9 @@ def estimateContaminationFromInvertedMaps(imageDict, extNames, thresholdSigma, m
 def plotContamination(contaminTabDict, diagnosticsDir):
     """Makes contamination rate plots, output stored under diagnosticsDir
     
+    While we're at it, we write out a text file containing interpolated values for e.g., 5%, 10% 
+    contamination levels
+    
     """
 
     plotSettings.update_rcParams()
@@ -1136,6 +1142,17 @@ def plotContamination(contaminTabDict, diagnosticsDir):
         #plt.legend()
         plt.savefig(diagnosticsDir+os.path.sep+"%s_contaminationEstimate.pdf" % (k))
         plt.close()  
+        
+        tck=interpolate.splrep(binEdges, contaminTabDict[k]['cumContamination'])
+        fineSNRs=np.linspace(binEdges.min(), binEdges.max(), 1000)
+        fineContamination=interpolate.splev(fineSNRs, tck, ext = 1)
+        with open(diagnosticsDir+os.path.sep+"%s_contaminationEstimate_usefulFractions.txt" % (k), "w") as outFile:
+            fracs=[0.4, 0.3, 0.2, 0.1, 0.05, 0.01]
+            for f in fracs:
+                SNRf=fineSNRs[np.argmin(abs(fineContamination-f))]
+                logStr="... contamination fraction = %.2f for %s > %.3f ..." % (f, SNRKey, SNRf)
+                print(logStr)
+                outFile.write(logStr+"\n")
         
 #------------------------------------------------------------------------------------------------------------
 def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsDir):
