@@ -105,18 +105,11 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
                 filteredMapDict=filterObj.buildAndApply()
                     
                 # Keywords we need for photometry later
-                #filteredMapDict['wcs'].header['BBIAS']=filteredMapDict['beamDecrementBias']
-                #filteredMapDict['wcs'].header['ASCALING']=filteredMapDict['signalAreaScaling']
                 filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
                 filteredMapDict['wcs'].updateFromHeader()
-
-                #if filteredMapDict['obsFreqGHz'] != 'yc':
-                    #filteredMapDict['data']=convertToY(filteredMapDict['data'], \
-                                                    #obsFrequencyGHz = filteredMapDict['obsFreqGHz'])
                                                 
                 astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
                 astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
-                #astImages.saveFITS(signalMapFileName, filteredMapDict['signalMap'], filteredMapDict['wcs'])            
 
             else:
                 print("... filtered map %s already made ..." % (label)) 
@@ -424,6 +417,9 @@ class MapFilter:
         ell=tab['L']
         DEll=tab['TT']
         Cl=(DEll*2*np.pi)/(ell*(ell+1)) #uK^2
+        
+        # Arbitrarily re-scale (to test effect)
+        #Cl=Cl*
                             
         # FFT stuff
         templm=liteMap.liteMapFromDataAndWCS(np.ones(self.unfilteredMapsDictList[0]['data'].shape), self.wcs)
@@ -568,9 +564,28 @@ class MatchedFilter(MapFilter):
                     print("... taking noise power from max(map noise power, model CMB power spectrum) ...")
                     NP=fftTools.powerFromFFT(fMaskedMap)
                     NPCMB=self.makeForegroundsPower(mapDict['obsFreqGHz'], 0.0)
+                    #---
+                    # Rescaling of theoretical CMB power to match map power (l = 300 is ~35')
+                    lowLPowerNP, blah, blah=NP.meanPowerInAnnulus(100, 300)
+                    lowLPowerNPCMB, blah, blah=NPCMB.meanPowerInAnnulus(100, 300)
+                    NPCMB.powerMap=NPCMB.powerMap*(lowLPowerNP/lowLPowerNPCMB)
+                    #---
                     NP.powerMap=np.maximum.reduce([NP.powerMap, NPCMB.powerMap])
                 else:
                     raise Exception("noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'")
+                
+                # Save plot of 2d noise power (to easily compare different methods / frequencies)
+                plotSettings.update_rcParams()
+                plt.figure(figsize=(9.5,9.5))
+                ax=plt.axes([0.05, 0.05, 0.9, 0.9])
+                plotData=np.log10(fft.fftshift(NP.powerMap/NP.powerMap.sum()))
+                #cutImage=astImages.intensityCutImage(plotData, ['relative', 99.5])
+                cutImage=astImages.intensityCutImage(plotData, [plotData.min(), plotData.max()])
+                plt.imshow(cutImage['image'], cmap = 'gray', norm = cutImage['norm'], origin = 'lower')
+                plt.xticks([], [])
+                plt.yticks([], [])
+                plt.savefig(self.diagnosticsDir+os.path.sep+self.label.replace("realSpaceKernel", "noisePower%.1f" % (mapDict['obsFreqGHz']))+".png")
+                plt.close()
                 
                 # FFT of signal
                 signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
@@ -740,14 +755,36 @@ class RealSpaceMatchedFilter(MapFilter):
         
     """
 
+    def loadKernel(self, kern2DFileName):
+        """Loads a previously cached kernel.
+        
+        Returns kern2d, signalNorm, bckSubScaleArcmin
+        
+        """
+        
+        print("... loading previously cached kernel %s ..." % (kern2DFileName))
+        img=pyfits.open(kern2DFileName)
+        kern2d=img[0].data
+        signalNorm=img[0].header['SIGNORM']
+        bckSubScaleArcmin=img[0].header['BCKSCALE']
+
+        return kern2d, signalNorm, bckSubScaleArcmin
+
+        
     def buildKernel(self, mapDict, RADecSection, RADeg = 'centre', decDeg = 'centre'):
         """Builds the real space kernel itself. 
         
         RADeg, decDeg are used for figuring out pixel scales for background subtraction
         
-        Returns kern2d, signalNorm, bckSubScaleArcmin, signalProperties
+        Returns kern2d, signalNorm, bckSubScaleArcmin
         
         """
+        
+        # We will cache the kernel... we also may want to re-load it later (for e.g. sky sim contamination tests)
+        freqLabel=int(mapDict['obsFreqGHz'])
+        kern2DFileName=self.diagnosticsDir+os.path.sep+"kern2d_%s_%d.fits" % (self.label, freqLabel)
+        if os.path.exists(kern2DFileName) == True:
+            return self.loadKernel(kern2DFileName)
         
         wcs=mapDict['wcs']
             
@@ -860,9 +897,7 @@ class RealSpaceMatchedFilter(MapFilter):
             kernWCS.header['BCKSCALE']=bckSubScaleArcmin
         kernWCS.header['SIGNORM']=signalNorm
         RADecLabel=str(RADecSection).replace(",", "_").replace(" ", "").replace("[", "").replace("]", "").replace(".", "p")
-        freqLabel=int(mapDict['obsFreqGHz'])
-        astImages.saveFITS(self.diagnosticsDir+os.path.sep+"kern2d_%s_%d.fits" \
-                           % (self.label, freqLabel), kern2d, kernWCS)
+        astImages.saveFITS(kern2DFileName, kern2d, kernWCS)
         
         # Filter profile plot   
         # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
@@ -888,7 +923,7 @@ class RealSpaceMatchedFilter(MapFilter):
         plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s_%d.pdf" % (self.label, freqLabel))
         plt.close()
         
-        return kern2d, signalNorm, bckSubScaleArcmin, signalProperties
+        return kern2d, signalNorm, bckSubScaleArcmin
 
 
     def makeNoiseMap(self, mapData):
@@ -1095,12 +1130,11 @@ class RealSpaceMatchedFilter(MapFilter):
                 yMax=int(round(yMax))
                 
                 # Build the matched-filter kernel in a small section of the map
-                kern2d, signalNorm, bckSubScaleArcmin, signalProperties=self.buildKernel(mapDict, RADecSectionDict['RADecSection'],
-                                                                                         RADeg = applyRACentre, decDeg = applyDecCentre)
+                kern2d, signalNorm, bckSubScaleArcmin=self.buildKernel(mapDict, RADecSectionDict['RADecSection'],
+                                                                       RADeg = applyRACentre, decDeg = applyDecCentre)
                 RADecSectionDict['kern2d']=kern2d
                 RADecSectionDict['signalNorm']=signalNorm
                 RADecSectionDict['bckSubScaleArcmin']=bckSubScaleArcmin
-                RADecSectionDict['signalProperties']=signalProperties
                 RADecSectionDict['applyRACentre']=applyRACentre
                 RADecSectionDict['applyDecCentre']=applyDecCentre
                 RADecSectionDict['yMin']=yMin
@@ -1207,10 +1241,8 @@ class RealSpaceMatchedFilter(MapFilter):
             RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
             astImages.saveFITS(RMSFileName, RMSMap, mapDict['wcs'])
 
-        # NOTE: if multi-freq filter, then kern2d won't make any sense...
         return {'data': combinedMap, 'simData': None, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
-                'SNMap': SNMap, 'signalMap': kern2d, 'mapUnits': mapUnits,
-                'inputSignalProperties': signalProperties}
+                'SNMap': SNMap, 'mapUnits': mapUnits}
             
 #------------------------------------------------------------------------------------------------------------
 class GaussianFilter(MapFilter):

@@ -30,6 +30,7 @@ import pyximport; pyximport.install()
 import nemoCython
 import nemo
 import glob
+import shutil
 import yaml
 import IPython
 np.random.seed()
@@ -958,6 +959,20 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
     from . import mapFilters
     from . import startUp
     
+    # To ensure we use the same kernel for filtering the sim maps as was used on the real data, copy kernels to sims dir
+    # The kernel will then be loaded automatically when filterMaps is called 
+    # Yes, this is a bit clunky...
+    rootOutDir=diagnosticsDir+os.path.sep+"skySim"
+    kernelCopyDestDir=rootOutDir+os.path.sep+"diagnostics"
+    dirList=[rootOutDir, kernelCopyDestDir]
+    for d in dirList:
+        if os.path.exists(d) == False:
+            os.makedirs(d)
+    for extName in extNames:
+        fileNames=glob.glob(diagnosticsDir+os.path.sep+"kern2d*#%s*.fits" % (extName))
+        for f in fileNames:
+            shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
+                
     resultsList=[]
     for i in range(numSkySims):
         
@@ -982,14 +997,13 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
         # Filling in with sim will be done when mapTools.preprocessMapDict is called by the filter object
         for mapDict in unfilteredMapsDictList:
             mapDict['CMBSimSeed']=CMBSimSeed
-                            
-        rootOutDir=diagnosticsDir+os.path.sep+"skySim"
-        if os.path.exists(rootOutDir) == True:
-            # NOTE: we need to zap ONLY specific maps for when we are running in parallel
-            for extName in extNames:
-                mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
-                for m in mapFileNames:
-                    os.remove(m)
+                    
+        # NOTE: we need to zap ONLY specific maps for when we are running in parallel
+        for extName in extNames:
+            mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
+            for m in mapFileNames:
+                os.remove(m)
+        
         simImageDict=mapFilters.filterMaps(unfilteredMapsDictList, simParDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
             
         # Below here is same as inverted maps right now....

@@ -590,6 +590,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
     
     if 'CMBSimSeed' in list(mapDict.keys()):
+        print("... filling map with CMB + noise sim ...")
         # This is the only part of this module that depends on simsTools
         from . import simsTools
         
