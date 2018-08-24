@@ -7,6 +7,7 @@ nemo driver script: for filtering maps and finding clusters
 """
 
 import sys
+print("Running under python: %s" % (sys.version))
 import os
 import datetime
 from nemo import *
