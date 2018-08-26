@@ -19,8 +19,7 @@ point sources.
 
 **Note**: Versions in the git respository after the last tagged release (v18.06) use a new config 
 file format (.yml) - see the [examples/](examples/) directory. Nemo is now also compatible with 
-both Python 3.x and Python 2.x. In future, we may support only Python 3.x. This requires a
-Python 3.x compatible version of Flipper (see below).
+both Python 3.x and Python 2.x. In future, we may support only Python 3.x.
 
 Listed below are tagged, internal releases of nemo:
 
