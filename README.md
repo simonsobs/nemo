@@ -48,7 +48,7 @@ earlier and later versions also probably work):
 * scipy (0.17.1)
 * matplotlib (2.1.0)
 * astLib (0.10.x + or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
-* flipper ([ACT collaboration git version](https://github.com/ACTCollaboration/flipper))
+* sotools (currently [this fork](https://github.com/mattyowl/sotools))
 * Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)
 * astropy (2.0.4)
 * IPython (2.4.1)
@@ -58,14 +58,7 @@ earlier and later versions also probably work):
 * mpi4py (3.0.0)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 
-_Note:_ A Python 3.x compatible version of flipper is required. Hopefully this will be added to the
-main ACTCollaboration version of flipper (linked to above), but until then, 
-[here is a compatible fork](https://github.com/mattyowl/flipper).
-
-`enlib` is currently being used only for CMB-only sky sims (for estimating false positive detection 
-rate), but other parts which currently rely on `flipper` may be replaced in future.
-
-All of the dependencies (except flipper, for the reason given above) can be installed using `pip`.
+All of the dependencies (except sotools, at the moment) can be installed using `pip`.
 
 ## Installation
 
