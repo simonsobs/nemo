@@ -163,7 +163,12 @@ class MapFilter(object):
         self.wcs=mapDict['wcs']
         
         # For sotools / enmap
-        self.enwcs=enwcs.WCS(mapDict['wcs'].header)
+        # NOTE: enki maps can have an additional axis, which we don't want
+        enheader=mapDict['wcs'].header
+        if 'NAXIS3' in enheader.keys():
+            del enheader['NAXIS3']
+        enheader['NAXIS']=2
+        self.enwcs=enwcs.WCS(enheader)
 
         # We could make this adjustable... added after switch to sotools
         self.apodPix=20
@@ -400,7 +405,12 @@ class MatchedFilter(MapFilter):
             # NOTE: modLMap, modThetaMap are not exactly the same as flipper gives... doesn't seem to be python3 thing
             # Normalisation is different to flipper, but doesn't matter if we are consistent throughout
             fMaskedData=enmap.fft(enmap.apod(maskedData, self.apodPix))
-            modThetaMap=180.0/(enmap.modlmap(fMaskedData.shape, self.enwcs)+1)
+            try:
+                modThetaMap=180.0/(enmap.modlmap(fMaskedData.shape, self.enwcs)+1)
+            except:
+                print("shape business")
+                IPython.embed()
+                sys.exit()
                             
             # Make noise power spectrum
             if self.params['noiseParams']['method'] == 'dataMap':
