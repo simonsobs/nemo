@@ -614,7 +614,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         degreesMap=nemoCython.makeDegreesDistanceMap(clip['data'], clip['wcs'], RADeg, decDeg, 0.5)
         beamSignalMap, inputSignalProperties=simsTools.makeBeamModelSignalMap(mapDict['obsFreqGHz'], degreesMap, 
                                                                     clip['wcs'], mapDict['beamFileName'])
-        randMap=ndimage.convolve(np.array(randMap), beamSignalMap.data/beamSignalMap.data.sum()) 
+        randMap=ndimage.convolve(np.array(randMap), beamSignalMap/beamSignalMap.sum()) 
         # Add white noise that varies according to inv var map...
         # Noise needed is the extra noise we need to add to match the real data, scaled by inv var map
         # This initial estimate is too high, so we use a grid search to get a better estimate

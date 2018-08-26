@@ -4,6 +4,8 @@ This module contains routines for comparing measured fluxes to input sims.
 
 """
 
+from sotools import enmap
+import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
 from astLib import *
 from scipy import ndimage
@@ -16,8 +18,6 @@ from . import catalogTools
 from . import photometry
 from . import gnfw
 from . import plotSettings
-from flipper import liteMap
-from flipper import fftTools
 import numpy as np
 import numpy.fft as fft
 import os
@@ -1354,7 +1354,7 @@ def calcY500FromM500_Arnaud(M500, z, units = 'sr'):
 def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
     """Makes a 2d signal only map containing the given beam.
     
-    Returns signalMap, inputSignalProperties
+    Returns signalMap (2d array), inputSignalProperties
     
     """
     
@@ -1367,7 +1367,8 @@ def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
     rRadians=np.radians(rArcmin/60.0)
     r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
     profile2d=r2p(np.radians(degreesMap))
-    signalMap=liteMap.liteMapFromDataAndWCS(profile2d, wcs)
+    #signalMap=liteMap.liteMapFromDataAndWCS(profile2d, wcs)
+    signalMap=profile2d
             
     # The ratio by which beam smoothing biases the intrinsic deltaT0
     beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
@@ -1452,7 +1453,8 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     smoothedProfile2d=fft.fftshift(fft.ifft2(fft.fft2(profile2d)*fft.fft2(profile2d_beam))).real
     normFactor=profile2d.sum()/smoothedProfile2d.sum()
     smoothedProfile2d=smoothedProfile2d*normFactor
-    signalMap=liteMap.liteMapFromDataAndWCS(smoothedProfile2d, wcs)        
+    signalMap=smoothedProfile2d
+    #signalMap=liteMap.liteMapFromDataAndWCS(smoothedProfile2d, wcs)        
     
     # Check profile2d integrates to give Arnaud value
     # Need solid angle map for this
@@ -1460,7 +1462,7 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     # With beam smoothing, get less than Arnaud value because the smoothing shifts some signal beyond R500 cut off
     # This makes sense
     # NOTE: to do area-type map scaling, we do need the area mask also
-    pixAreaMapArcmin2=mapTools.getPixelAreaArcmin2Map(signalMap.data, wcs)
+    pixAreaMapArcmin2=mapTools.getPixelAreaArcmin2Map(signalMap, wcs)
     R500Radians=np.radians(theta500Arcmin/60.0)
     mask=np.less(radiansMap, R500Radians)
     #YRec=mapTools.convertToY(np.sum(profile2d[mask]*pixAreaMapArcmin2[mask]), obsFrequencyGHz = mapObsFreqGHz)

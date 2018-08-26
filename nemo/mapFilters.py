@@ -21,8 +21,10 @@ etc.
 """
 
 import math
-from flipper import liteMap
-from flipper import fftTools
+from sotools import enmap
+from sotools import fft as enfft
+from sotools import powspec
+import astropy.wcs as enwcs
 from astLib import *
 import numpy as np
 from numpy import fft
@@ -133,7 +135,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     return imageDict
 
 #------------------------------------------------------------------------------------------------------------
-class MapFilter:
+class MapFilter(object):
     """Generic map filter base class. Defines common interface.
     
     """
@@ -159,12 +161,21 @@ class MapFilter:
             mapDict=mapTools.preprocessMapDict(mapDict.copy(), extName = extName, diagnosticsDir = diagnosticsDir)
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
+        
+        # For sotools / enmap
+        self.enwcs=enwcs.WCS(mapDict['wcs'].header)
 
+        # We could make this adjustable... added after switch to sotools
+        self.apodPix=20
+        
         # Sanity check that all maps are the same dimensions
         shape=self.unfilteredMapsDictList[0]['data'].shape
         for mapDict in self.unfilteredMapsDictList:
             if mapDict['data'].shape != shape:
                 raise Exception("Maps at different frequencies have different dimensions!")
+        
+        # This is used by routines that make signal templates
+        self.makeRadiansMap()
                                         
         # Set up storage if necessary, build this filter if not already stored
         self.diagnosticsDir=diagnosticsDir
@@ -172,7 +183,7 @@ class MapFilter:
                
         
     def makeRadiansMap(self):
-        """Makes a map of distance in radians from centre, based on dimensions of sciMap.data.
+        """Makes a map of distance in radians from centre, for the map being filtered.
         
         """
         
@@ -292,119 +303,6 @@ class MapFilter:
         return [2*np.pi*besselTransformedArray, lArray]
                 
 
-    def noisePowerFrom4WayMaps(self, weights, obsFreqGHz):
-        """This makes a noise power spectrum from combinations of the 4-way difference maps, and adds on
-        noise from the CMB, point sources etc. from l-space templates.
-        
-        """
-                
-        noiseParams=self.params['noiseParams']       
-        
-        powerPath=self.diagnosticsDir+os.path.sep+"4WayNoise_power_%s.fits" % (int(obsFreqGHz))
-        if os.path.exists(powerPath) == False:
-            ar1MapFileNames=glob.glob(noiseParams['4WayMapsPattern_%s' % int(obsFreqGHz)])
-            ar1MapFileNames.sort()
-            
-            # Run all null map combinations, take average
-            # Corrected from previous version... scaling was all wrong
-            combinations=[[0, 1, 2, 3], [0, 2, 1, 3], [0, 3, 1, 2]]
-            sumNullMap=None
-            countNullMaps=0
-            for c in combinations:
-                mapFileNames=(np.array(ar1MapFileNames)[c]).tolist()
-                countNullMaps=countNullMaps+1
-                nullMap=None
-                splitCount=0
-                for f in mapFileNames:
-                    img=pyfits.open(f)
-                    wcs=astWCS.WCS(f)
-                    if sumNullMap == None:
-                        sumNullMap=np.zeros(img[0].data.shape)
-                    if nullMap == None:
-                        nullMap=img[0].data
-                    elif splitCount < 2:
-                        nullMap=nullMap+img[0].data
-                    else:
-                        nullMap=nullMap-img[0].data
-                    splitCount=splitCount+1
-                nullMap=nullMap/8.0   # scales to same noise level as in full map
-                sumNullMap=sumNullMap+nullMap
-            nullMap=sumNullMap/countNullMaps
-
-            # Corrected from previous version... scaling was all wrong
-            #nullMap=None
-            #splitCount=0
-            #for f in ar1MapFileNames:
-                #img=pyfits.open(f)
-                #wcs=astWCS.WCS(f)
-                #if nullMap == None:
-                    #nullMap=img[0].data
-                #elif splitCount < 2:
-                    #nullMap=nullMap+img[0].data
-                #else:
-                    #nullMap=nullMap-img[0].data
-                #splitCount=splitCount+1
-            #nullMap=nullMap/8.0   # scales to same noise level as in full map
-            
-            # Trim, subtract background if needed
-            if 'RADecSection' in list(self.unfilteredMapsDictList[0].keys()) and self.unfilteredMapsDictList[0]['RADecSection'] != None:
-                clipSection=True
-            else:
-                clipSection=False
-            if 'backgroundSubtraction' in list(self.unfilteredMapsDictList[0].keys()) and self.unfilteredMapsDictList[0]['backgroundSubtraction'] == True:
-                bckSub=True      
-            else:
-                bckSub=False
-            if clipSection == True:
-                RAMin, RAMax, decMin, decMax=self.unfilteredMapsDictList[0]['RADecSection']
-                clip=mapTools.clipUsingRADecCoords(nullMap, wcs, RAMin, RAMax, decMin, decMax)
-                mapData=clip['data']
-                mapWCS=clip['wcs']
-            if bckSub == True:
-                mapData=mapTools.subtractBackground(mapData, mapWCS)                
-                
-            # Make some noise - have to treat same way as data
-            lm=liteMap.liteMapFromDataAndWCS(mapData*np.sqrt(weights/weights.max()), mapWCS)
-            apodlm=lm.createGaussianApodization(pad=10, kern=5)
-            apod=apodlm.data
-            plm=liteMap.liteMapFromDataAndWCS(mapData*apod, mapWCS) # Note: apply apodization here
-            power=fftTools.powerFromLiteMap(plm)
-            powerMap=power.powerMap
-            
-            # Set noise to infinite where we have horizontal striping (although this doesn't look to be doing anything
-            lxMap=np.array([power.lx]*power.ly.shape[0])
-            mask=np.less(abs(lxMap), 100)
-            powerMap[mask]=1e30
-            #lyMap=np.array([power.ly]*power.lx.shape[1]).transpose()
-            #mask=np.less(abs(lyMap), 100)
-            #powerMap[mask]=1e30
-            
-            # Or just admit we're not going to cope with any really large scale power... 
-            mask=np.less(abs(power.modLMap), 1000)
-            powerMap[mask]=1e30
-            
-            astImages.saveFITS(powerPath, fft.fftshift(powerMap), None)
-        else:
-            img=pyfits.open(powerPath)
-            powerMap=fft.fftshift(img[0].data)
-                    
-        # Now add in noise from CMB power spec and point sources ...
-        foregroundsPower=self.makeForegroundsPower(obsFreqGHz)
-        
-
-        
-        # Combine it all together - has to be returned as a flipper Power2D object
-        NP=foregroundsPower
-        try:
-            NP.powerMap=NP.powerMap+powerMap
-        except:
-            print("Hmm? 4WayNoise")
-            ipshell()
-            sys.exit()
-                
-        return NP
-        
-
     def makeForegroundsPower(self, obsFreqGHz, whiteNoiseLevel):
         """Returns a Power2D object with foregrounds power from the CMB and white noise only.
         
@@ -412,34 +310,17 @@ class MapFilter:
                        
         """
                     
-        # CAMB power spec with Planck 2015 parameters (ish)
-        tab=atpy.Table().read(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", format = 'ascii')
-        ell=tab['L']
-        DEll=tab['TT']
-        Cl=(DEll*2*np.pi)/(ell*(ell+1)) #uK^2
-        
-        # Arbitrarily re-scale (to test effect)
-        #Cl=Cl*
-                            
-        # FFT stuff
-        templm=liteMap.liteMapFromDataAndWCS(np.ones(self.unfilteredMapsDictList[0]['data'].shape), self.wcs)
-        fTempMap=fftTools.fftFromLiteMap(templm)
-
-        # Make 2d
-        ll=np.ravel(fTempMap.modLMap)
-        fgPowerMap=np.zeros(fTempMap.kMap.shape)
-        interpolator=interpolate.interp1d(ell, Cl, fill_value=0.0, bounds_error=False)
-        kk=interpolator(ll)
-        fgPowerMap=np.reshape(kk, [fTempMap.Ny, fTempMap.Nx])
-        
-        fgPower=fftTools.powerFromFFT(fTempMap)
-        fgPower.powerMap=fgPowerMap
+        # CAMB power spec with Planck 2015 parameters (ish)        
+        ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", scale = True)
+        randMap=enmap.rand_map(self.unfilteredMapsDictList[0]['data'].shape, self.enwcs, ps)
+        fMaskedData=enmap.fft(randMap)#(enmap.apod(randMap, self.apodPix))
+        fgPower=np.real(fMaskedData*fMaskedData.conj())
         
         # Add some white noise to avoid ringing
-        whiteNoise=np.random.normal(0, whiteNoiseLevel, fgPowerMap.shape)
-        lm=liteMap.liteMapFromDataAndWCS(whiteNoise, self.wcs)
-        whiteNoisePower=fftTools.powerFromLiteMap(lm)
-        fgPower.powerMap=fgPower.powerMap+whiteNoisePower.powerMap
+        #whiteNoise=np.random.normal(0, whiteNoiseLevel, fgPowerMap.shape)
+        #lm=liteMap.liteMapFromDataAndWCS(whiteNoise, self.wcs)
+        #whiteNoisePower=fftTools.powerFromLiteMap(lm)
+        #fgPower.powerMap=fgPower.powerMap+whiteNoisePower.powerMap
                 
         return fgPower
         
@@ -501,172 +382,116 @@ class MapFilter:
                     
 #------------------------------------------------------------------------------------------------------------
 class MatchedFilter(MapFilter):
-    """Yes, it doesn't make that much sense deriving this from Wiener filter, but this is a quick and
-    dirty test for now and I want the noise stuff.
+    """Matched filter...
     
     """
 
     def buildAndApply(self):
         
         print(">>> Building filter %s ..." % (self.label))
-
-        self.makeRadiansMap()
-
-        if 'iterations' not in list(self.params.keys()):
-            self.params['iterations']=1
-        iterations=self.params['iterations']
-        clusterCatalog=[]
-        for i in range(iterations):
+                    
+        # Filter both maps with the same scale filter
+        filteredMaps={}
+        for mapDict in self.unfilteredMapsDictList:   
+                        
+            maskedData=mapDict['data']
             
-            #print "... iteration %d ..." % (i) 
+            # Replaced flipper with sotools
+            # NOTE: modLMap, modThetaMap are not exactly the same as flipper gives... doesn't seem to be python3 thing
+            # Normalisation is different to flipper, but doesn't matter if we are consistent throughout
+            fMaskedData=enmap.fft(enmap.apod(maskedData, self.apodPix))
+            modThetaMap=180.0/(enmap.modlmap(fMaskedData.shape, self.enwcs)+1)
+                            
+            # Make noise power spectrum
+            if self.params['noiseParams']['method'] == 'dataMap':
+                print("... taking noise power for filter from map ...")
+                NP=np.real(fMaskedData*fMaskedData.conj())
+            elif self.params['noiseParams']['method'] == 'CMBOnly':
+                print("... taking noise power for filter from model CMB power spectrum ...")
+                highPassMap=mapTools.subtractBackground(maskedData, self.wcs, 0.25/60.0)
+                whiteNoiseLevel=np.std(highPassMap)
+                NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
+            elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
+                print("... taking noise power from max(map noise power, model CMB power spectrum) ...")
+                NP=np.real(fMaskedData*fMaskedData.conj())
+                NPCMB=self.makeForegroundsPower(mapDict['obsFreqGHz'], 0.0)
+                NP=np.maximum.reduce([NP, NPCMB])
+            else:
+                raise Exception("noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'")
             
-            # Filter both maps with the same scale filter
-            filteredMaps={}
-            for mapDict in self.unfilteredMapsDictList:   
-                
-                # Iterative filtering stuff currently disabled
-                # Mask out clusters so they don't go into the noise component of the filter
-                #maskedDict=mapTools.maskOutSources(mapDict['data'], self.wcs, clusterCatalog, 
-                                                   #radiusArcmin = self.params['maskingRadiusArcmin'], 
-                                                   #mask = 'whiteNoise')
-                #maskedData=maskedDict['data']
-                #if self.diagnosticsDir != None:
-                    #outPath=self.diagnosticsDir+os.path.sep+"iteration_%d_%s_mask.fits" % (i, self.label)
-                    #astImages.saveFITS(outPath, maskedDict['mask'], self.wcs)
-                
-                maskedData=mapDict['data']
-                
-                # FFT - note using flipper 0.1.3 Gaussian apodization
-                # The apodization here is only used if we're estimating noise power directly from the map itself
-                # otherwise, the FFT here is just so we have the modThetaMap etc. which we would use if
-                # using e.g. beta model templates where we're setting our own normalisation, rather than
-                # using e.g. the profile models.
-                lm=liteMap.liteMapFromDataAndWCS(maskedData, self.wcs) 
-                lm.data=lm.data*np.sqrt(mapDict['weights']/mapDict['weights'].max()) # this appears to make no difference
-                apodlm=lm.createGaussianApodization(pad=10, kern=5)               
-                lm.data=lm.data*apodlm.data
-                fMaskedMap=fftTools.fftFromLiteMap(lm)
-                fMaskedMap.modThetaMap=180.0/(fMaskedMap.modLMap+1)       
-                                
-                # Make noise power spectrum
-                if self.params['noiseParams']['method'] == 'dataMap':
-                    print("... taking noise power for filter from map ...")
-                    NP=fftTools.powerFromFFT(fMaskedMap)
-                elif self.params['noiseParams']['method'] == '4WayMaps':
-                    print("... taking noise power for filter from 4 way maps ...")
-                    NP=self.noisePowerFrom4WayMaps(mapDict['weights'], mapDict['obsFreqGHz'])
-                elif self.params['noiseParams']['method'] == 'CMBOnly':
-                    print("... taking noise power for filter from model CMB power spectrum ...")
-                    highPassMap=mapTools.subtractBackground(maskedData, self.wcs, 0.25/60.0)
-                    whiteNoiseLevel=np.std(highPassMap)
-                    NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
-                elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
-                    print("... taking noise power from max(map noise power, model CMB power spectrum) ...")
-                    NP=fftTools.powerFromFFT(fMaskedMap)
-                    NPCMB=self.makeForegroundsPower(mapDict['obsFreqGHz'], 0.0)
-                    #---
-                    # Rescaling of theoretical CMB power to match map power (l = 300 is ~35')
-                    lowLPowerNP, blah, blah=NP.meanPowerInAnnulus(100, 300)
-                    lowLPowerNPCMB, blah, blah=NPCMB.meanPowerInAnnulus(100, 300)
-                    NPCMB.powerMap=NPCMB.powerMap*(lowLPowerNP/lowLPowerNPCMB)
-                    #---
-                    NP.powerMap=np.maximum.reduce([NP.powerMap, NPCMB.powerMap])
-                else:
-                    raise Exception("noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'")
-                
-                # Save plot of 2d noise power (to easily compare different methods / frequencies)
-                plotSettings.update_rcParams()
-                plt.figure(figsize=(9.5,9.5))
-                ax=plt.axes([0.05, 0.05, 0.9, 0.9])
-                plotData=np.log10(fft.fftshift(NP.powerMap/NP.powerMap.sum()))
-                #cutImage=astImages.intensityCutImage(plotData, ['relative', 99.5])
-                cutImage=astImages.intensityCutImage(plotData, [plotData.min(), plotData.max()])
-                plt.imshow(cutImage['image'], cmap = 'gray', norm = cutImage['norm'], origin = 'lower')
-                plt.xticks([], [])
-                plt.yticks([], [])
-                plt.savefig(self.diagnosticsDir+os.path.sep+self.label.replace("realSpaceKernel", "noisePower%.1f" % (mapDict['obsFreqGHz']))+".png")
-                plt.close()
-                
-                # FFT of signal
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
-                signalMap=signalMapDict['signalMap']
-                fftSignal=fftTools.fftFromLiteMap(signalMap)
-                
-                # Toby style -note smoothing noise is essential!
-                filt=1.0/NP.powerMap  
-                med=np.median(filt)
-                filt[np.where(filt>10*med)]=med
-                kernelSize=(5,5)
-                filt=ndimage.gaussian_filter(filt, kernelSize)
-                filt=filt*abs(fftSignal.kMap)
-                cov=filt*np.abs(fftSignal.kMap)**2
-                integral=cov.sum()/signalMap.Nx/signalMap.Ny
-                filt=filt/integral
-                self.G=filt
-                
-                # NOTE: Do not disable this weighting
-                weightedMap=mapDict['data']*np.sqrt(mapDict['weights']/mapDict['weights'].max())
-                apodlm=lm.createGaussianApodization(pad=10, kern=5)
-                weightedMap=weightedMap*apodlm.data
-                fMap=fftTools.fftFromLiteMap(liteMap.liteMapFromDataAndWCS(weightedMap, self.wcs))
-                
-                # Check and correct for bias - apply filter to the signal template - do we recover the same flux?
-                # Rescale the filtered map so that this is taken care of (better way than this, but this
-                # should be pretty good)
-                peakCoords=np.where(abs(signalMap.data) == abs(signalMap.data).max())
-                yPeak=peakCoords[0][0]
-                xPeak=peakCoords[1][0]
-                fSignalMap=fftTools.fftFromLiteMap(signalMap)
-                filteredSignalMap=np.real(fft.ifft2(fSignalMap.kMap*self.G))                          
-                
-                #---
-                # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
-                # 1. The high pass filter (bck sub step)
-                # 2. The matched filter itself (includes beam)
-                signalProperties=signalMapDict['inputSignalProperties']
-                if self.params['outputUnits'] == 'yc':
-                    # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-                    filteredSignalMap=mapTools.convertToY(filteredSignalMap, obsFrequencyGHz = signalProperties['obsFreqGHz'])
-                    signalNorm=signalProperties['y0']/filteredSignalMap.max()
-                elif self.params['outputUnits'] == 'Y500':
-                    # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
-                    # We can get this from yc and the info in signalProperties, so we don't really need this
-                    print("implement signal norm for %s" % (self.params['outputUnits']))
-                    IPython.embed()
-                    sys.exit()
-                elif self.params['outputUnits'] == 'uK':
-                    # Normalise such that peak value in filtered map == peak value of source in uK
-                    signalNorm=1.0/filteredSignalMap.max()
-                elif self.params['outputUnits'] == 'Jy/beam':
-                    # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
-                    print("implement signal norm for %s" % (self.params['outputUnits']))
-                    IPython.embed()
-                    sys.exit()
-                else:
-                    raise Exception("didn't understand 'outputUnits' given in the .par file")
+            # Save plot of 2d noise power (to easily compare different methods / frequencies)
+            # NOTE: output path here will break if we're not using RealSpaceMatchedFilter?
+            plotSettings.update_rcParams()
+            plt.figure(figsize=(9.5,9.5))
+            ax=plt.axes([0.05, 0.05, 0.9, 0.9])
+            plotData=np.log10(fft.fftshift(NP))
+            #cutImage=astImages.intensityCutImage(plotData, ['relative', 99.5])
+            cutImage=astImages.intensityCutImage(plotData, [plotData.min(), plotData.max()])
+            plt.imshow(cutImage['image'], cmap = 'gray', norm = cutImage['norm'], origin = 'lower')
+            plt.xticks([], [])
+            plt.yticks([], [])
+            plt.savefig(self.diagnosticsDir+os.path.sep+self.label.replace("realSpaceKernel", "noisePower%.1f" % (mapDict['obsFreqGHz']))+".png")
+            plt.close()
+            
+            # FFT of signal
+            signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+            signalMap=signalMapDict['signalMap']
+            fftSignal=enmap.fft(signalMap)
+            
+            # Toby style -note smoothing noise is essential!
+            filt=1.0/NP
+            med=np.median(filt)
+            filt[np.where(filt>10*med)]=med
+            kernelSize=(5,5)
+            filt=ndimage.gaussian_filter(filt, kernelSize)
+            filt=filt*abs(fftSignal)
+            cov=filt*np.abs(fftSignal)**2
+            integral=cov.sum()/float(signalMap.shape[0])/float(signalMap.shape[1])
+            filt=filt/integral
+            self.G=filt
+            
+            # NOTE: Do not disable this weighting
+            # sotools
+            weightedMap=mapDict['data']*np.sqrt(mapDict['weights']/mapDict['weights'].max())
+            weightedMap=enmap.apod(weightedMap, self.apodPix)
+            fMap=enmap.fft(weightedMap)
+            
+            # Check and correct for bias - apply filter to the signal template - do we recover the same flux?
+            # Rescale the filtered map so that this is taken care of (better way than this, but this
+            # should be pretty good)
+            peakCoords=np.where(abs(signalMap) == abs(signalMap).max())
+            yPeak=peakCoords[0][0]
+            xPeak=peakCoords[1][0]
+            fSignalMap=enmap.fft(signalMap)
+            filteredSignalMap=np.real(enmap.ifft(fSignalMap*self.G))
 
-                #---
-                # Filter actual map
-                filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=np.real(fft.ifft2(self.G*fMap.kMap))*signalNorm
-                
-                # Apply the filter to the noiseless signal only sim - for checking y recovery later
-                # NOTE: This will want fixing up to work in multi-frequency mode...
-                #lmSim=liteMap.liteMapFromDataAndWCS(mapDict['simData'], self.wcs)                               
-                #lmSim.data=lmSim.data*apodlm.data
-                #fSimMap=fftTools.fftFromLiteMap(lmSim)
-                #filteredSimMap=np.real(fft.ifft2(self.G*fSimMap.kMap*filterNormFactor))
-                #filteredSimMap=mapTools.convertToY(filteredSimMap, self.params['mapCombination']['rootFreqGHz'])  
-                # Or... add the signal only sim to the real map
-                if 'simData' in list(mapDict.keys()):
-                    lmSim=liteMap.liteMapFromDataAndWCS(mapDict['simData']+mapDict['data'], self.wcs)                               
-                    lmSim.data=lmSim.data*apodlm.data
-                    fSimMap=fftTools.fftFromLiteMap(lmSim)
-                    filteredSimMap=np.real(fft.ifft2(self.G*fSimMap.kMap))*signalNorm
-                    filteredSimMap=mapTools.convertToY(filteredSimMap, self.params['mapCombination']['rootFreqGHz'])  
-                else:
-                    filteredSimMap=None
+            # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by the filter
+            # NOTE: this is being done the same way in RealSpaceMatchedFilter - add a function instead...
+            signalProperties=signalMapDict['inputSignalProperties']
+            if self.params['outputUnits'] == 'yc':
+                # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
+                filteredSignalMap=mapTools.convertToY(filteredSignalMap, obsFrequencyGHz = signalProperties['obsFreqGHz'])
+                signalNorm=signalProperties['y0']/filteredSignalMap.max()
+            elif self.params['outputUnits'] == 'Y500':
+                # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
+                # We can get this from yc and the info in signalProperties, so we don't really need this
+                print("implement signal norm for %s" % (self.params['outputUnits']))
+                IPython.embed()
+                sys.exit()
+            elif self.params['outputUnits'] == 'uK':
+                # Normalise such that peak value in filtered map == peak value of source in uK
+                signalNorm=1.0/filteredSignalMap.max()
+            elif self.params['outputUnits'] == 'Jy/beam':
+                # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
+                print("implement signal norm for %s" % (self.params['outputUnits']))
+                IPython.embed()
+                sys.exit()
+            else:
+                raise Exception("didn't understand 'outputUnits' given in the .par file")
 
-            # Linearly combine filtered maps and convert to yc if asked to do so
+            filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=np.real(enmap.ifft(fMap*self.G, normalize = False))*signalNorm
+                
+            # Linearly combine filtered maps (optional)
             if 'mapCombination' in list(self.params.keys()):
                 combinedMap=np.zeros(filteredMaps[list(filteredMaps.keys())[0]].shape)
                 for key in list(filteredMaps.keys()):
@@ -696,8 +521,9 @@ class MatchedFilter(MapFilter):
                     raise Exception('need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params')
                 
             # We'll be saving this shortly...
-            apodMask=np.zeros(apodlm.data.shape)
-            apodMask[np.greater(apodlm.data, 0.999999)]=1.0 # not sure why == 1 doesn't work
+            apodMap=enmap.apod(np.ones(maskedData.shape), self.apodPix)
+            apodMask=np.zeros(apodMap.shape)
+            apodMask[np.greater(apodMap, 0.999999)]=1.0
             
             # Now that we're applying the weights in here, we may as well write out the S/N map here too
             # So we measure the RMS of the whole filtered map
@@ -728,9 +554,9 @@ class MatchedFilter(MapFilter):
             # Save filter profile in real space
             self.saveRealSpaceFilterProfile()        
             
-        return {'data': combinedMap, 'simData': filteredSimMap, 'wcs': self.wcs, 
-                'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 'signalMap': signalMap.data, 
-                'mapUnits': mapUnits, 'inputSignalProperties': signalMapDict['inputSignalProperties']}
+        return {'data': combinedMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
+                'signalMap': signalMap, 'mapUnits': mapUnits, 
+                'inputSignalProperties': signalMapDict['inputSignalProperties']}
             
 #------------------------------------------------------------------------------------------------------------
 class RealSpaceMatchedFilter(MapFilter):
@@ -1296,8 +1122,8 @@ class BeamFilter(MapFilter):
         """
         
         signalMap, inputSignalProperties=simsTools.makeBeamModelSignalMap(mapObsFreqGHz, np.degrees(self.radiansMap),
-                                                                              self.wcs, 
-                                                                              beamFileName)
+                                                                          self.wcs, 
+                                                                          beamFileName)
 
         return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None, 
                 'powerScaleFactor': None, 'beamDecrementBias': 1.0, 'signalAreaSum': 1.0,
