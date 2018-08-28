@@ -47,7 +47,7 @@ earlier and later versions also probably work):
 * scipy (0.17.1)
 * matplotlib (2.1.0)
 * astLib (0.10.x + or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
-* sotools (currently [this fork](https://github.com/mattyowl/sotools))
+* [sotools](https://github.com/simonsobs/sotools)
 * Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)
 * astropy (2.0.4)
 * IPython (2.4.1)
@@ -98,6 +98,6 @@ See [examples/AdvACT/](examples/AdvACT/) for example .yml config files for the c
 cluster search. Refer to the comments in the .yml config files themselves for information on what
 each parameter does.
 
-## Comments, bug reports, help, suggestions etc..
+## Comments, bug reports, help, suggestions etc.
 
 Please contact Matt Hilton <matt.hilton@mykolab.com>.
