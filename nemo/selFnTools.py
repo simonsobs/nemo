@@ -101,22 +101,27 @@ def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
                 if type(hdu) == pyfits.ImageHDU:
                     break
             maskWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
+            maskData=hdu.data
             # For speed: assuming mask is aligned with dec in y direction and no rotation
             blah, yMin=maskWCS.wcs2pix(0.0, decMin)
             blah, yMax=maskWCS.wcs2pix(0.0, decMax)
             yMin=int(round(yMin))
             yMax=int(round(yMax))
-            maskData=hdu.data
+            if yMin < 0:
+                yMin=0
+            if yMax >= maskData.shape[0]:
+                yMax=maskData.shape[0]-1
             ys, xs=np.where(maskData[yMin:yMax] == 1)
-            RADec=maskWCS.pix2wcs(xs, ys+yMin)
-            RADec=np.array(RADec)
-            areaMapCoords=wcs.wcs2pix(RADec[:, 0], RADec[:, 1])
-            areaMapCoords=np.array(areaMapCoords)
-            areaMapCoords=np.array(np.round(areaMapCoords), dtype = int)
-            xMask=np.logical_and(np.greater_equal(areaMapCoords[:, 0], 0), np.less(areaMapCoords[:, 0], areaMap.shape[1]-1))
-            yMask=np.logical_and(np.greater_equal(areaMapCoords[:, 1], 0), np.less(areaMapCoords[:, 1], areaMap.shape[0]-1))
-            for coord in areaMapCoords[np.logical_and(xMask, yMask)]:
-                intersectMask[coord[1], coord[0]]=1
+            if len(ys) > 0:
+                RADec=maskWCS.pix2wcs(xs, ys+yMin)
+                RADec=np.array(RADec)
+                areaMapCoords=wcs.wcs2pix(RADec[:, 0], RADec[:, 1])
+                areaMapCoords=np.array(areaMapCoords)
+                areaMapCoords=np.array(np.round(areaMapCoords), dtype = int)
+                xMask=np.logical_and(np.greater_equal(areaMapCoords[:, 0], 0), np.less(areaMapCoords[:, 0], areaMap.shape[1]-1))
+                yMask=np.logical_and(np.greater_equal(areaMapCoords[:, 1], 0), np.less(areaMapCoords[:, 1], areaMap.shape[0]-1))
+                for coord in areaMapCoords[np.logical_and(xMask, yMask)]:
+                    intersectMask[coord[1], coord[0]]=1
         astImages.saveFITS(intersectFileName, intersectMask, wcs)
     
     return intersectMask

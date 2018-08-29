@@ -1541,8 +1541,8 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
     # NOTE: ref filter that sets scale we compare to must ALWAYS come first
     MRange=[ref['params']['M500MSun']]
     zRange=[ref['params']['z']]
-    MRange=MRange+np.logspace(13.5, 16.0, 10).tolist()
-    zRange=zRange+np.arange(0.1, 1.7, 0.2).tolist()
+    MRange=MRange+np.logspace(13.5, 16.8, 12).tolist()
+    zRange=zRange+np.arange(0.1, 2.2, 0.2).tolist()
     
     # Q calc - results for all tiles stored in one file
     outFileName=diagnosticsDir+os.path.sep+"QFit.pickle"

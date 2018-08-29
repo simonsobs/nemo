@@ -123,14 +123,14 @@ else:
         else:
             print("... gathering selection function results ...")
             all_selFnCollection={'full': []}
-            for footprintDict in selFnCollection:
-                if footprintDict['label'] not in all_selFnCollection:
-                    all_selFnCollection[footprintDict['label']]=[]
+            for key in selFnCollection.keys():
+                if key not in all_selFnCollection.keys():
+                    all_selFnCollection[key]=[]
             for selFnCollection in gathered_selFnCollections:
                 for key in all_selFnCollection.keys():
                     all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
             selFnCollection=all_selFnCollection
-
+                
     # Survey completeness stats now all lumped together in one routine
     # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
     selFnTools.completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir)
