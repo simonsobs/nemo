@@ -65,11 +65,32 @@ class MockSurvey(object):
         self.zBinEdges=zRange
         self.z=(zRange[:-1]+zRange[1:])/2.
 
+        self.enableDrawSample=enableDrawSample
         self.update(H0, Om0, Ob0, sigma_8)
         
-        # Stuff to enable us to draw mock samples (see drawSample):
-        if enableDrawSample == True:
-            self.enableDrawSample=True
+                    
+            
+    def update(self, H0, Om0, Ob0, sigma_8):
+        """Recalculate cluster counts if cosmological parameters updated.
+        
+        """
+        # We're using both astLib and astropy... 
+        # astLib is used for E(z) etc. in selFnTools where it's quicker
+        # We're also keeping track inside MockSurvey itself just for convenience
+        self.H0=H0
+        self.Om0=Om0
+        self.Ob0=Ob0
+        self.sigma_8=sigma_8
+        astCalc.H0=H0
+        astCalc.OMEGA_M0=Om0
+        astCalc.OMEGA_L0=1.0-Om0
+        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
+        self.mf.update(cosmo_model = cosmo_model, sigma_8 = sigma_8)
+        self._doClusterCount()
+        
+        # Stuff to enable us to draw mock samples (see drawSample)
+        # Interpolators here need to be updated each time we change cosmology
+        if self.enableDrawSample == True:
             # For drawing from overall z distribution
             zSum=self.clusterCount.sum(axis = 1)
             pz=np.cumsum(zSum)/self.numClusters
@@ -94,25 +115,6 @@ class MockSurvey(object):
                     print("nans in self.tck_log10MRoller[%d]" % (i))
                     IPython.embed()
                     sys.exit()
-                    
-            
-    def update(self, H0, Om0, Ob0, sigma_8):
-        """Recalculate cluster counts if cosmological parameters updated.
-        
-        """
-        # We're using both astLib and astropy... 
-        # astLib is used for E(z) etc. in selFnTools where it's quicker
-        # We're also keeping track inside MockSurvey itself just for convenience
-        self.H0=H0
-        self.Om0=Om0
-        self.Ob0=Ob0
-        self.sigma_8=sigma_8
-        astCalc.H0=H0
-        astCalc.OMEGA_M0=Om0
-        astCalc.OMEGA_L0=1.0-Om0
-        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
-        self.mf.update(cosmo_model = cosmo_model, sigma_8 = sigma_8)
-        self._doClusterCount()
         
 
     def _doClusterCount(self):

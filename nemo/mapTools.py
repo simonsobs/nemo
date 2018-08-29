@@ -680,6 +680,12 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     mapDict['psMask']=psMask
     mapDict['extName']=extName
     
+    # Sanity check - no point continuing if masks are different shape to map (easier to tell user here)
+    if mapDict['data'].shape != mapDict['psMask'].shape:
+        raise Exception("Map and point source mask dimensions are not the same (they should also have same WCS)")
+    if mapDict['data'].shape != mapDict['surveyMask'].shape:
+        raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
+    
     # Save trimmed weights
     if os.path.exists(diagnosticsDir+os.path.sep+"weights.fits") == False:
         astImages.saveFITS(diagnosticsDir+os.path.sep+"weights.fits", weights, wcs)
