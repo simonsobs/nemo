@@ -261,9 +261,9 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir):
         makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, diagnosticsDir+os.path.sep+"completeness90Percent_%s.pdf" % (footprintLabel))
         
         averageMassLimit_90Complete=massLimit_90Complete[np.logical_and(np.greater(zRange, 0.2), np.less(zRange, 1.0))].mean()
-        print(("... total survey area (after masking) = %.3f sq deg ..." % (np.sum(tileAreas))))
-        print(("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun ..." % (massLimit_90Complete[np.where(zRange == 0.5)][0])))
-        print(("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun ..." % (averageMassLimit_90Complete)))
+        print(("... total survey area (after masking) = %.3f sq deg" % (np.sum(tileAreas))))
+        print(("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun" % (massLimit_90Complete[np.where(zRange == 0.5)][0])))
+        print(("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete)))
 
 #------------------------------------------------------------------------------------------------------------
 def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
@@ -332,8 +332,8 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     # This is the minimum number to draw - gets multiplied up as needed to get good statistics...
     # ... and this is the minimum number of detected sim cluster we need to get a good completeness curve and model fit
     # This combination peaks at ~5 Gb of RAM used 
-    numMockClusters=10000
-    minAllowedDetections=4000
+    numMockClusters=40000
+    minAllowedDetections=3000   # was 4000
     maxMultiplier=8000
     #minDrawNoiseMultiplier=SNRCut-4.  # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
 
@@ -369,7 +369,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
 
     for iz in range(len(zRange)):
 
-        #t0=time.time()    
+        t0=time.time()    
         z=zRange[iz]
         #print("... z = %.2f ..." % (z))
         zIndex=np.where(abs(mockSurvey.z-z) == abs(mockSurvey.z-z).min())[0][0]
@@ -405,9 +405,10 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             old=minLog10MDraw
             minLog10MDraw=np.log10(Mpivot*np.power(y0Noise/(tenToA0*np.power(astCalc.Ez(z), 2)*Q_minLog10MDraw), 1/(1+B0)))
             diff=abs(minLog10MDraw-old)
-        testDraws=np.linspace(0, 1, 1000000)
+        testDraws=np.linspace(0, 1, 1000000)   # was 1000000
         testLog10M=interpolate.splev(testDraws, mockSurvey.tck_log10MRoller[zIndex])
         minDraw=testDraws[np.argmin(abs(testLog10M-minLog10MDraw))]
+        minDrawMass=testLog10M[np.argmin(abs(testLog10M-minLog10MDraw))]
         if minDraw == 1.0:
             raise Exception("minDraw == 1 - very noisy pixel, try increasing number of test draws?")
         
@@ -417,7 +418,8 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         exceededMultiplierCount=0
         numIterations=0
         while numDetected < minAllowedDetections:
-            t00=time.time()
+            #print("iteration %d" % (numIterations))
+            #t00=time.time()
             log10Ms=interpolate.splev(np.random.uniform(minDraw, 1, int(mockClusterMultiplier*numMockClusters)), mockSurvey.tck_log10MRoller[zIndex])
                         
             # Sort masses here, as we need in order biggest -> smallest for fast completeness calc
@@ -443,21 +445,33 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             if numDetected == 0:
                 mockClusterMultiplier=maxMultiplier
             elif numDetected < minAllowedDetections:
-                mockClusterMultiplier=1.2*(minAllowedDetections/(float(numDetected)/mockClusterMultiplier))
+                #--
+                # New - can adjust step size / max iterations for speed
+                minDetMass=log10Ms[np.argmin(abs(measured_y0s-y0Lim_selection))]
+                if minDetMass > minDrawMass:
+                    #print(minDrawMass, minDetMass, numDetected)
+                    newMinDrawMass=minDrawMass+0.02#np.average(minDetMass+minDrawMass)/2.
+                    minDraw=testDraws[np.argmin(abs(testLog10M-newMinDrawMass))]
+                    minDrawMass=testLog10M[np.argmin(abs(testLog10M-newMinDrawMass))]
+                    if numIterations > 100:
+                        raise Exception("too many iterations")
+                #--
+                # Old - high accuracy / more stable, but very slow for some parts of parameter space
+                #mockClusterMultiplier=1.2*(minAllowedDetections/(float(numDetected)/mockClusterMultiplier))
                 #print("... mockClusterMultiplier = %.1f ..." % (mockClusterMultiplier))
-                if mockClusterMultiplier > maxMultiplier:
-                    mockClusterMultiplier=maxMultiplier
-                    exceededMultiplierCount=exceededMultiplierCount+1
-                if exceededMultiplierCount > 2:
-                    raise Exception("exceeded maxMultiplier too many times")
+                #if mockClusterMultiplier > maxMultiplier:
+                    #mockClusterMultiplier=maxMultiplier
+                    #exceededMultiplierCount=exceededMultiplierCount+1
+                #if exceededMultiplierCount > 2:
+                    #raise Exception("exceeded maxMultiplier too many times")
             numIterations=numIterations+1
-        
-        #t1=time.time()
         
         # Calculate completeness
         detArr=np.cumsum(np.greater(measured_y0s, y0Lim_selection))
         allArr=np.arange(1, len(log10Ms)+1, 1, dtype = float)
         completeness=detArr/allArr
+
+        t1=time.time()
         #print("... calcCompleteness: z = %.2f took %.3f sec (N = %d) ..." % (z, t1-t0, len(log10Ms)))
             
         # Average/downsample: both for storage, and to deal with low numbers at high mass end (for fitting)
