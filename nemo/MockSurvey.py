@@ -84,8 +84,11 @@ class MockSurvey(object):
         astCalc.H0=H0
         astCalc.OMEGA_M0=Om0
         astCalc.OMEGA_L0=1.0-Om0
-        cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
-        self.mf.update(cosmo_model = cosmo_model, sigma_8 = sigma_8)
+        try:
+            cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
+            self.mf.update(cosmo_model = cosmo_model, sigma_8 = sigma_8)
+        except:
+            raise Exception("failed to update mf when H0 = %.3f Om0 = %.3f Ob0 = %.3f sigma_8 = %.3f" % (H0, Om0, Ob0, sigma_8))
         self._doClusterCount()
         
         # Stuff to enable us to draw mock samples (see drawSample)

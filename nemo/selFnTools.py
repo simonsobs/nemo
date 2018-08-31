@@ -215,6 +215,9 @@ def makeMzCompletenessGrid(fitTab, mockSurvey):
         comp_Mz[i]=rayleighFlipped(mockSurvey.log10M, mockSurvey_locs[i], mockSurvey_scales[i])
     #np.savez('M500Completeness_test_SNRCut%.1f.npz' % (SNRCut), z = mockSurvey.z, log10M500c = mockSurvey.log10M, M500Completeness = comp_Mz)
     
+    if np.isnan(comp_Mz).sum() > 0:
+        comp_Mz=np.nan_to_num(comp_Mz)
+        
     return comp_Mz
 
 #------------------------------------------------------------------------------------------------------------
@@ -333,9 +336,9 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     # ... and this is the minimum number of detected sim cluster we need to get a good completeness curve and model fit
     # This combination peaks at ~5 Gb of RAM used 
     numMockClusters=40000
-    minAllowedDetections=3000   # was 4000
-    maxMultiplier=8000
-    #minDrawNoiseMultiplier=SNRCut-4.  # This is only for an estimate, but can make a huge difference in speed if set higher (not always robust though)
+    targetAllowedDetections=2000    # was 4000, then 3000
+    minAllowedDetections=1000       # for when we give up (usually at z > 1.5)
+    maxMultiplier=500               # was 8000
 
     # Binning used for fitting
     binEdges=np.arange(mockSurvey.log10M.min(), mockSurvey.log10M.max(), 0.05)
@@ -397,7 +400,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         # Ajusting mass limit for draws according to RMS - trick to avoid drawing loads of clusters we'll never see
         # This is ok as just a rough estimate - turns out that Q estimate is crucial for this at high z
         # (we can ignore fRel as low mass end anyway)
-        minLog10MDraw=np.log10(Mpivot*np.power(y0Noise/(tenToA0*np.power(astCalc.Ez(z), 2)), 1/(1+B0)))
+        minLog10MDraw=np.log10(Mpivot*np.power((y0Noise*1.5)/(tenToA0*np.power(astCalc.Ez(z), 2)), 1/(1+B0)))
         diff=1e6
         tolerance=1e-3
         while diff > tolerance:
@@ -405,7 +408,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             old=minLog10MDraw
             minLog10MDraw=np.log10(Mpivot*np.power(y0Noise/(tenToA0*np.power(astCalc.Ez(z), 2)*Q_minLog10MDraw), 1/(1+B0)))
             diff=abs(minLog10MDraw-old)
-        testDraws=np.linspace(0, 1, 1000000)   # was 1000000
+        testDraws=np.linspace(0, 1, 2000000)   # was 1000000
         testLog10M=interpolate.splev(testDraws, mockSurvey.tck_log10MRoller[zIndex])
         minDraw=testDraws[np.argmin(abs(testLog10M-minLog10MDraw))]
         minDrawMass=testLog10M[np.argmin(abs(testLog10M-minLog10MDraw))]
@@ -436,25 +439,38 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
 
             # Check selection - did we manage to select enough objects?
             y0Lim_selection=SNRCut*y0Noise  # y0Noise = RMS
-            try:
-                numDetected=np.greater(measured_y0s, y0Lim_selection).sum()
-            except:
-                print("eh?")
-                IPython.embed()
-                sys.exit()
+            
+            numDetected=np.greater(measured_y0s, y0Lim_selection).sum()
+
             if numDetected == 0:
                 mockClusterMultiplier=maxMultiplier
-            elif numDetected < minAllowedDetections:
+            elif numDetected < targetAllowedDetections:
                 #--
                 # New - can adjust step size / max iterations for speed
                 minDetMass=log10Ms[np.argmin(abs(measured_y0s-y0Lim_selection))]
                 if minDetMass > minDrawMass:
-                    #print(minDrawMass, minDetMass, numDetected)
+                    #print(numIterations, minDrawMass, minDetMass, numDetected)
                     newMinDrawMass=minDrawMass+0.02#np.average(minDetMass+minDrawMass)/2.
-                    minDraw=testDraws[np.argmin(abs(testLog10M-newMinDrawMass))]
+                    newMinDraw=testDraws[np.argmin(abs(testLog10M-newMinDrawMass))]
+                    # Nudge if identical
+                    if newMinDraw == minDraw:
+                        newMinDraw=testDraws[np.argmin(abs(testLog10M-newMinDrawMass)+1)]
+                    minDraw=newMinDraw
                     minDrawMass=testLog10M[np.argmin(abs(testLog10M-newMinDrawMass))]
-                    if numIterations > 100:
-                        raise Exception("too many iterations")
+                    if numIterations > 2:
+                        #raise Exception("time taken %.1f - too many iterations" % (t1-t0))
+                        mockClusterMultiplier=1.05*(minAllowedDetections/(float(numDetected)/mockClusterMultiplier))
+                        #print("... mockClusterMultiplier = %.1f ..." % (mockClusterMultiplier))
+                        if mockClusterMultiplier > maxMultiplier:
+                            mockClusterMultiplier=maxMultiplier
+                            exceededMultiplierCount=exceededMultiplierCount+1
+                        if exceededMultiplierCount > 2:
+                            raise Exception("exceeded maxMultiplier too many times")
+                    if numIterations > 5 and numDetected > minAllowedDetections:
+                        #print("min allowed detections")
+                        break
+                        
+                    
                 #--
                 # Old - high accuracy / more stable, but very slow for some parts of parameter space
                 #mockClusterMultiplier=1.2*(minAllowedDetections/(float(numDetected)/mockClusterMultiplier))
