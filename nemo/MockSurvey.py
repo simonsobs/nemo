@@ -271,7 +271,7 @@ class MockSurvey(object):
                          'true_M500': M500/1e14,
                          'true_fixed_y_c': true_y0/1e-4,
                          'fixed_y_c': measured_y0/1e-4,
-                         'err_fixed_y_c': y0Noise/1e-4,
+                         'fixed_err_y_c': y0Noise/1e-4,
                          'fixed_SNR': measured_y0/y0Noise,
                          'redshift': z,
                          'redshiftErr': 0}
