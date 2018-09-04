@@ -1922,13 +1922,16 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B
 
 #------------------------------------------------------------------------------------------------------------
 def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
-             applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0}):
+             applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False):
     """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
     et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
     cosmological parameters.
     
-    This routine is used by calcM500Fromy0
+    This routine is used by calcM500Fromy0.
+    
+    If return2D == True, returns a grid of same dimensions / binning as mockSurvey.z, mockSurvey.log10M,
+    normalised such that the sum of the values is 1.
     
     """
     
@@ -1936,9 +1939,11 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
     if zErr > 0:
         zMin=z-zErr*5
         zMax=z+zErr*5
-        if zMin <= 0:
-            zMin=1e-3
-        zRange=np.arange(zMin, zMax, 0.005)
+        zMask=np.logical_and(np.greater_equal(mockSurvey.z, zMin), np.less(mockSurvey.z, zMax))
+        zRange=mockSurvey.z[zMask]
+        #if zMin <= 0:
+            #zMin=1e-3
+        #zRange=np.arange(zMin, zMax, 0.005)
         Pz=np.exp(-np.power(z-zRange, 2)/(2*(np.power(zErr, 2))))
         Pz=Pz/np.trapz(Pz, zRange)
     else:
@@ -1990,18 +1995,25 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
             PLog10M=1.0
         
         P=Py0GivenM*PLog10M*Pz[k]
-        #print(k, zk, Pz[k])
         plt.plot(log10Ms, Py0GivenM*PLog10M*Pz[k])
         PArr.append(P)
         
     # 2D PArr is what we would want to project onto (M, z) grid
     PArr=np.array(PArr)
-    #astImages.saveFITS("test.fits", PArr.transpose(), None)
-    
+        
     # Marginalised over z uncertainty
     P=np.sum(PArr, axis = 0)
     P=P/np.trapz(P, log10Ms)
     
+    if return2D == True:
+        P2D=np.zeros(mockSurvey.clusterCount.shape)
+        if zErr == 0:
+            P2D[np.argmin(abs(mockSurvey.z-z))]=PArr
+        else:
+            P2D[zMask]=PArr
+        P=P2D/P2D.sum()
+        #astImages.saveFITS("test.fits", P.transpose(), None)
+        
     return P
 
 #------------------------------------------------------------------------------------------------------------
