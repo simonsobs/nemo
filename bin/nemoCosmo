@@ -189,6 +189,7 @@ else:
     cosmoOutDir=os.path.split(selFn.diagnosticsDir)[0]+os.path.sep+"cosmo"+os.path.sep+os.path.split(tabFileName)[-1].replace(".fits", "")
     
     # Just to stop multiple MPI processes trying to make the output dir at the same time (MPI still hangs on first run with this)
+    # NOTE: we still have this bug, this didn't fix it
     if 'MPI' in MPIOption:
         from mpi4py import MPI
         comm=MPI.COMM_WORLD

@@ -22,19 +22,34 @@ from nemo import startUp
 
 class SelFn(object):
         
-    def __init__(self, parDictFileName, SNRCut):
+    def __init__(self, parDictFileName, SNRCut, footprintLabel = None):
         """Initialise a SelFn object.
         
         This is a class that uses the output from nemoSelFn to re-calculate the selection function
         (completeness fraction on (M, z) grid) with different cosmological / scaling relation parameters
         (see SelFn.update).
-                
+        
+        Use footprintLabel to specify a footprint (e.g., 'DES', 'HSC', 'KiDS' etc.) defined in 
+        selFnFootprints in the .yml config file. The default None uses the whole survey.
+        
         """
         
         self.SNRCut=SNRCut
-        
+        self.footprintLabel=footprintLabel
+                
         # ignoreMPI gives us the complete list of extNames, regardless of how this parameter is set in the config file
         parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName, ignoreMPI = True)
+        
+        # Sanity check that any given footprint is defined - if not, give a useful error message
+        if footprintLabel != None:
+            if 'selFnFootprints' not in parDict.keys():
+                raise Exception("No footprints defined in .yml config file")
+            else:
+                labelsList=[]
+                for footprintDict in parDict['selFnFootprints']:
+                    labelsList.append(footprintDict['label'])
+                if footprintLabel not in labelsList:
+                    raise Exception("Footprint '%s' not found in selFnFootprints - check .yml config file" % (footprintLabel))
         
         self.diagnosticsDir=diagnosticsDir
         self.extNames=extNames
@@ -49,8 +64,9 @@ class SelFn(object):
         self.selFnDictList=[]
         self.totalAreaDeg2=0.0
         for extName in self.extNames:
-            tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, self.diagnosticsDir)
-            y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, self.photFilterLabel, self.diagnosticsDir)
+            tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, self.diagnosticsDir, footprintLabel = self.footprintLabel)
+            y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, self.photFilterLabel, self.diagnosticsDir, 
+                                                            footprintLabel = self.footprintLabel)
             selFnDict={'extName': extName,
                        'y0Noise': y0Noise,
                        'tileAreaDeg2': tileAreaDeg2}
@@ -67,10 +83,7 @@ class SelFn(object):
         sigma_8=0.8
         self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
         
-        #t1=time.time()
-        #print("SelFn set-up time: %.3f sec" % (t1-t0))
-        
-        # An inital run...
+        # An initial run...
         self.update(H0, Om0, Ob0, sigma_8)
 
 
@@ -92,7 +105,6 @@ class SelFn(object):
         if scalingRelationDict != None:
             self.scalingRelationDict=scalingRelationDict
         
-        #t0=time.time()
         self.mockSurvey.update(H0, Om0, Ob0, sigma_8)
         tileAreas=[]
         compMzCube=[]
@@ -105,11 +117,4 @@ class SelFn(object):
         fracArea=tileAreas/self.totalAreaDeg2
         compMzCube=np.array(compMzCube)
         self.compMz=np.average(compMzCube, axis = 0, weights = fracArea)
-        #t1=time.time()
 
-        # If testing
-        #selFnTools.makeMzCompletenessPlot(self.compMz, self.mockSurvey.log10M, self.mockSurvey.z, "test", "testMz.pdf")
-        #print("time taken = %.3f sec" % (t1-t0))
-        #print("update")
-        #IPython.embed()
-        #sys.exit()

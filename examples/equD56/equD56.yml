@@ -53,7 +53,7 @@ massOptions: {tenToA0: 4.95e-5,
               sigma_int: 0.2,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "ACTPol_redshifts.fits", 
+              redshiftCatalog: "ACTPol_clusters_20180816.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
@@ -64,10 +64,17 @@ massOptions: {tenToA0: 4.95e-5,
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
+# Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
 selFnOptions: {fixedSNRCut: 5.0, 
                fullCompleteness: True,
                massLimitMaps: [{z: 0.5}]}
-               
+
+#selFnFootprints: 
+    #- {label: "HSC",
+       #maskList: ["HSCSelFn/S16A_02h_Hironao.fits.gz"]}
+    #- {label: "DES",
+       #maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+
 # Filter definitions:
 # allFilters is a dictionary of parameters that will be copied into all mapFilters
 # (these can be overridden by keys with the same name in mapFilters)

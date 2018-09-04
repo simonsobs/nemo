@@ -34,16 +34,20 @@ def printNumClusters(H0, Om0, Ob0, sigma_8, scalingRelationDict = None):
     
 #------------------------------------------------------------------------------------------------------------
 # Main
-if len(sys.argv) < 2:
-    print("Run: % selFnExample.py <.yml config file>")
+if len(sys.argv) < 4:
+    print("Run: % selFnExample.py <.yml config file> <SNRCut> <footprint [e.g., full|DES|HSC]>")
+    print("NOTE: footprints (except 'full') must be defined in selFnFootprints in the .yml file")
 else:
     
     parDictFileName=sys.argv[1]
+    SNRCut=float(sys.argv[2])
+    footprintLabel=sys.argv[3]
     
-    SNRCut=5.0
+    if footprintLabel == 'full':
+        footprintLabel=None
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
-    selFn=SelFn.SelFn(parDictFileName, SNRCut)
+    selFn=SelFn.SelFn(parDictFileName, SNRCut, footprintLabel = footprintLabel)
     
     # If we want to play with scaling relation also
     scalingRelationDict=selFn.scalingRelationDict

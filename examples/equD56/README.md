@@ -106,10 +106,15 @@ A script that shows an example of how to use the selection function
 can be found in this directory. You can run it with:
 
 ```
-python selFnExample.py equD56.yml
+python selFnExample.py equD56.yml 5.0 full
 ```
 
-You can also generate mock cluster catalogs using the output from nemo
+Here, the second argument is the cut in fixed_SNR, and the final 
+argument specifies the footprint to use (see the 
+`selFnFootprints` dictionary in the .yml config file - this is 
+commented out by default).
+
+You can generate mock cluster catalogs using the output from nemo
 by using the `nemoMock` script:
 
 ```
@@ -124,3 +129,8 @@ this example, 10 mock catalogs would be made, stored under
 relation parameters given in the `massOptions` dictionary - so for the
 Arnaud et al. (2010) based scaling relation, the number of clusters in
 the mocks will be larger than what is observed.
+
+You can also take a look at the `nemoCosmo` script for more examples of
+how to use the selection function routines. This is experimental,
+and currently does not recover the same parameters as used for the mock
+catalogs.
