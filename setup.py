@@ -20,7 +20,7 @@ setup(name='nemo',
       long_description="""Map filtering and SZ cluster detection and characterization pipeline.""",
       packages=['nemo'],
       package_data={'nemo': ['data/*']},
-      scripts=['bin/nemo', 'bin/nemoMass', 'bin/nemoSelFn', 'bin/nemoMock'],
+      scripts=['bin/nemo', 'bin/nemoMass', 'bin/nemoSelFn', 'bin/nemoMock', 'bin/nemoCosmo'],
       cmdclass={'build_ext': build_ext},
       ext_modules=[Extension("nemoCython", ["nemo/nemoCython.pyx"], include_dirs=[numpy.get_include()])]
 )

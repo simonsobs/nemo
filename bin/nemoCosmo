@@ -1,0 +1,233 @@
+#!/usr/bin/env python
+
+"""
+
+Example of using nemo selection function stuff for cosmology
+
+"""
+
+import os
+import sys
+os.environ["OMP_NUM_THREADS"] = "1"                 # Needed for multiprocessing / MPI to be reliable
+print("Running under python: %s" % (sys.version))
+import numpy as np
+import pylab as plt
+import astropy.table as atpy
+from astLib import *
+from scipy import stats
+from scipy import interpolate
+from scipy.special import factorial
+from nemo import SelFn
+from nemo import selFnTools
+from nemo import simsTools
+import emcee
+import corner
+import multiprocessing, logging
+import time
+import IPython
+
+# Extreme debugging (better for multiprocessing stuff to crash where we can see it)
+import warnings
+warnings.filterwarnings("error")
+mpl=multiprocessing.log_to_stderr()
+mpl.setLevel(logging.INFO)
+
+#-------------------------------------------------------------------------------------------------------------
+def lnprob(parameters):
+    """Log likelihood function for use with emcee.
+    
+    parameters = H0, Om0, sigma_8
+    
+    """
+
+    t0=time.time()
+    Ob0=0.05
+    H0, Om0, sigma_8 = parameters
+        
+    lp=lnprior(parameters)
+    if not np.isfinite(lp):
+        return -np.inf
+
+    processName=multiprocessing.current_process().name
+    print(processName, "start step: ", H0, Om0, sigma_8, lp)
+    
+    selFn.update(H0, Om0, Ob0, sigma_8)
+    
+    # Apply completeness (only to predicted counts - we observe what we observe)
+    predMz=selFn.compMz*selFn.mockSurvey.clusterCount
+    
+    # Projecting catalog to (M, z) grid - takes ~4 sec currently
+    # We could instead project predMz to y0 and compare those?
+    #selFn.update(H0, Om0, Ob0, sigma_8)#, scalingRelationDict = scalingRelationDict)
+    t0=time.time()
+    catProjectedMz=np.zeros(selFn.compMz.shape)
+    tenToA0, B0, Mpivot, sigma_int=selFn.scalingRelationDict['tenToA0'], selFn.scalingRelationDict['B0'], \
+                                   selFn.scalingRelationDict['Mpivot'], selFn.scalingRelationDict['sigma_int']
+    for row in tab:
+        extName=row['template'].split("#")[-1]
+        z=row['redshift']
+        zErr=row['redshiftErr']
+        y0=row['fixed_y_c']*1e-4
+        y0Err=row['fixed_err_y_c']*1e-4
+        P=simsTools.calcPM500(y0, y0Err, z, zErr, selFn.tckQFitDict[extName], selFn.mockSurvey, 
+                              tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
+                              applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0},
+                              return2D = True)
+        # Paste into (M, z) grid
+        catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
+    obsMz=catProjectedMz
+    t1=time.time()
+    
+    # Poisson probability in (M, z) grid
+    # (this is the similar to what Planck does, e.g., Planck 2015 XXIV eqn. 15)
+    # NOTE: Planck only has 10 x 5 bins, and bins by z, S/N (q in Planck paper)
+    mask=np.greater(predMz, 0)
+    lnlike=np.sum(obsMz[mask]*np.log(predMz[mask])-predMz[mask]-np.log(factorial(obsMz[mask])))
+        
+    return lp+lnlike
+
+#-------------------------------------------------------------------------------------------------------------
+def lnprior(parameters):
+    """Priors for using with emcee.
+            
+    """
+    
+    H0, Om0, sigma_8 = parameters
+    if Om0 < 0.12 or Om0 > 0.7:
+        return -np.inf
+    if sigma_8 < 0.5 or sigma_8 > 1.0:
+        return -np.inf
+    
+    # Gaussian prior on H0 (H13 adopted 73.9 +/- 3.6 km/s/Mpc for comparison)
+    priorH0=70.0
+    priorH0Sigma=4.0
+    return np.log(1.0/(np.sqrt(2*np.pi)*priorH0Sigma))-0.5*(H0-priorH0)**2/priorH0Sigma**2
+
+#-------------------------------------------------------------------------------------------------------------
+def runMCMC(outDir, nsteps = 10, nwalkers = 10, MPIOption = "multiprocessing"):
+    """Runs emcee... returns samples
+    
+    """
+
+    if MPIOption == 'MPI':
+        from schwimmbad import MPIPool
+        PoolToUse=MPIPool
+    elif MPIOption == 'emceeMPI':
+        # This is to be removed by emcee 3+
+        from emcee.utils import MPIPool
+        PoolToUse=MPIPool
+    elif MPIOption == 'multiprocessing':
+        from schwimmbad import MultiPool
+        PoolToUse=MultiPool
+    elif MPIOption == 'serial':
+        from schwimmbad import SerialPool
+        PoolToUse=SerialPool
+    
+    outFileName=outDir+os.path.sep+"chain.npz"
+    
+    if os.path.exists(outFileName) == True:
+        print("... loading previously saved chain %s ..." % (outFileName))
+        arrDict=np.load(outFileName)
+        chain=arrDict['chain']        
+    else:
+
+        with PoolToUse() as pool:        
+            
+            try:
+                # Only for MPI
+                if not pool.is_master():
+                    pool.wait()
+                    sys.exit(0)
+            except:
+                pass
+                
+            # Parameters we'll fit for: H0, Om0, sigma_8 (fix Omb = 0.05 for now)
+            # NOTE: initial values must be within prior ranges, or will get errors (in multiprocessing / MPI only?)
+            p0=[]
+            for i in range(nwalkers):
+                p0.append([np.random.uniform(60.0, 85.0),   # H0
+                           np.random.uniform(0.12, 0.7),     # Om0
+                           np.random.uniform(0.5, 1.0),     # sigma_8
+                          ])
+                    
+            sampler=emcee.EnsembleSampler(nwalkers, 3, lnprob, pool = pool)     
+            sampler.run_mcmc(p0, nsteps)
+            np.savez(outFileName, chain = sampler.chain)
+            chain=sampler.chain
+        
+    samples=chain[:, 50:, :].reshape((-1, 3))
+    #samples=chain[:, :, :].reshape((-1, 3))
+    
+    return samples
+
+#-------------------------------------------------------------------------------------------------------------
+# Main
+if len(sys.argv) < 6:
+    print("Run: % nemoCosmo <.yml config file> <nemo catalog.fits> <n steps per walker> <n walkers> <MPI|emceeMPI|multiprocessing|serial>")
+else:
+    
+    parDictFileName=sys.argv[1]
+    tabFileName=sys.argv[2]
+    nsteps=int(sys.argv[3])
+    nwalkers=int(sys.argv[4])
+    MPIOption=sys.argv[5].replace("\n", "")
+    
+    if MPIOption not in ['MPI', 'emceeMPI', 'multiprocessing', 'serial']:
+        raise Exception("MPIOption must be 'MPI', 'emceeMPI', 'serial', or 'multiprocessing'")
+    
+    tab=atpy.Table().read(tabFileName)
+    if 'redshift' not in tab.keys():
+        raise Exception("no 'redshift' column in catalog")
+    
+    SNRCut=5.0
+    
+    print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
+    selFn=SelFn.SelFn(parDictFileName, SNRCut)
+    tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
+
+    # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
+    cosmoOutDir=os.path.split(selFn.diagnosticsDir)[0]+os.path.sep+"cosmo"+os.path.sep+os.path.split(tabFileName)[-1].replace(".fits", "")
+    
+    # Just to stop multiple MPI processes trying to make the output dir at the same time (MPI still hangs on first run with this)
+    if 'MPI' in MPIOption != -1:
+        from mpi4py import MPI
+        comm=MPI.COMM_WORLD
+        rank=comm.Get_rank()
+    else:
+        rank=0
+    if rank == 0 and os.path.exists(cosmoOutDir) == False:
+        os.makedirs(cosmoOutDir)
+    
+    #---
+    # Uncomment this to test speed, priors, likelihood etc.
+    #lnprior([70.0, 0.3, 0.8])
+    #print("speed test")
+    #IPython.embed()
+    #sys.exit()
+    ##lnprob([77.54000133, 0.41198708, 0.50401552])
+    ##lnprob([70.0, 0.3, 0.8])
+    ##lnprob([70.0, 0.1, 0.9])
+    
+    #---
+    # Below here we run
+    print(">>> Running MCMC [%d steps per walker, %d walkers] ..." % (nsteps, nwalkers))
+    t0=time.time()
+    samples=runMCMC(cosmoOutDir, nsteps = nsteps, nwalkers = nwalkers, MPIOption = MPIOption)
+    t1=time.time()
+    print("... took %.3f sec ..." % (t1-t0))
+    
+    print(">>> Results:")
+    print("... H0        = %.3f +/- %.3f km/s/Mpc" % (np.mean(samples[:, 0]), np.percentile(abs(samples[:, 0]-np.mean(samples[:, 0])), 68.3)))
+    print("... Om0       =  %.3f +/- %.3f" % (np.mean(samples[:, 1]), np.percentile(abs(samples[:, 1]-np.mean(samples[:, 1])), 68.3)))
+    print("... sigma_8   =  %.3f +/- %.3f" % (np.mean(samples[:, 2]), np.percentile(abs(samples[:, 2]-np.mean(samples[:, 2])), 68.3)))
+    
+    fig=corner.corner(samples, labels = ["H0", "Om0", "sigma_8"])
+    fig.savefig(cosmoOutDir+os.path.sep+"cornerplot.png")
+    fig.savefig(cosmoOutDir+os.path.sep+"cornerplot.pdf")
+    plt.close()
+    
+    #IPython.embed()
+    #sys.exit()
+    
+
+        
