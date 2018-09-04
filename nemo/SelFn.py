@@ -65,13 +65,14 @@ class SelFn(object):
         self.totalAreaDeg2=0.0
         for extName in self.extNames:
             tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, self.diagnosticsDir, footprintLabel = self.footprintLabel)
-            y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, self.photFilterLabel, self.diagnosticsDir, 
-                                                            footprintLabel = self.footprintLabel)
-            selFnDict={'extName': extName,
-                       'y0Noise': y0Noise,
-                       'tileAreaDeg2': tileAreaDeg2}
-            self.selFnDictList.append(selFnDict)
-            self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
+            if tileAreaDeg2 > 0:
+                y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, self.photFilterLabel, self.diagnosticsDir, 
+                                                                footprintLabel = self.footprintLabel)
+                selFnDict={'extName': extName,
+                           'y0Noise': y0Noise,
+                           'tileAreaDeg2': tileAreaDeg2}
+                self.selFnDictList.append(selFnDict)
+                self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
 
         # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
         minMass=5e13
