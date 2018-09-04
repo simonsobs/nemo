@@ -1710,6 +1710,21 @@ def getQCoeffsH13():
     return coeffs
 
 #------------------------------------------------------------------------------------------------------------
+def calcWeightedFRel(z, M500, fRelWeightsDict):
+    """Return fRel for the given (z, M500), weighted by frequency according to fRelWeightsDict
+    
+    """
+    
+    fRels=[]
+    freqWeights=[]
+    for obsFreqGHz in fRelWeightsDict.keys():
+        fRels.append(calcFRel(z, M500, obsFreqGHz = obsFreqGHz))
+        freqWeights.append(fRelWeightsDict[obsFreqGHz])
+    fRel=np.average(fRels, weights = freqWeights)
+    
+    return fRel
+    
+#------------------------------------------------------------------------------------------------------------
 def calcFRel(z, M500, obsFreqGHz = 148.0):
     """Calculates relativistic correction to SZ effect at specified frequency, given z, M500 in MSun.
        
@@ -1776,7 +1791,7 @@ def getM500FromP(P, log10M, calcErrors = True):
 
     # Find max likelihood and integrate to get error bars
     tckP=interpolate.splrep(log10M, P)
-    fineLog10M=np.linspace(log10M.min(), log10M.max(), 1e5)
+    fineLog10M=np.linspace(log10M.min(), log10M.max(), 10000)
     fineP=interpolate.splev(fineLog10M, tckP)
     fineP=fineP/np.trapz(fineP, fineLog10M)
     index=np.where(fineP == fineP.max())[0][0]
@@ -1868,15 +1883,16 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     return y0pred, theta500Arcmin, Q
             
 #------------------------------------------------------------------------------------------------------------
-def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
-                   tckQFit = None, mockSurvey = None, applyMFDebiasCorrection = True, calcErrors = True,
-                   H0 = None, OmegaM0 = None, OmegaL0 = None, fRelWeightsDict = {148.0: 1.0}):
+def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
+                   sigma_int = 0.2, applyMFDebiasCorrection = True, calcErrors = True,
+                   fRelWeightsDict = {148.0: 1.0}):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
     
     Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
-    (in turn using the hmf module).
+    (in turn using the hmf module). Supplying mockSurvey is no longer optional (and handles setting the 
+    cosmology anyway when initialised or updated).
     
     tckQFit is a set of spline knots, as returned by fitQ.
     
@@ -1886,114 +1902,107 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e
     
     fRelWeightsDict is used to account for the relativistic correction when y0~ has been constructed
     from multi-frequency maps. Weights should sum to 1.0; keys are observed frequency in GHz.
-    
-    Use H0, OmegaM0, OmegaL0 to specify different cosmological parameters to the default stored under
-    astCalc.H0, astCalc.OMEGA_M0, astCalc.OMEGA_L0 (used for E(z) and angular size calculation). If these
-    are set to None, the defaults will be used.
-    
-    Adjustments for other parameters used for mass function shape de-bias correction (OmegaB0, sigma8) 
-    should be passed through the mockSurvey object.
+        
+    Returns dictionary with keys M500, M500_errPlus, M500_errMinus
     
     """
-
-    # Change cosmology for this call, if required... then put it back afterwards (just in case)
-    if H0 != None:
-        oldH0=astCalc.H0
-        astCalc.H0=H0
-    if OmegaM0 != None:
-        oldOmegaM0=astCalc.OMEGA_M0
-        astCalc.OMEGA_M0=OmegaM0
-    if OmegaL0 != None:
-        oldOmegaL0=astCalc.OMEGA_L0
-        astCalc.OMEGA_L0=OmegaL0
-        
+    
     if y0 < 0:
         raise Exception('y0 cannot be negative')
+    if y0 > 1e-2:
+        raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
+            
+    P=calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
+                sigma_int = sigma_int, applyMFDebiasCorrection = applyMFDebiasCorrection,
+                fRelWeightsDict = fRelWeightsDict)
     
-    if mockSurvey == None and applyMFDebiasCorrection == True:
-        raise Exception('MockSurvey object must be supplied for the mass function shape de-bias correction to work')
+    M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     
-    try:
-        log10M=mockSurvey.log10M
-    except:
-        log10M=np.linspace(13., 16., 300)
-        
-    # For marginalising over photo-z errors
+    return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus}
+
+#------------------------------------------------------------------------------------------------------------
+def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
+             applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0}):
+    """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
+    et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
+    in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
+    cosmological parameters.
+    
+    This routine is used by calcM500Fromy0
+    
+    """
+    
+    # For marginalising over photo-z errors (we assume +/-5 sigma is accurate enough)
     if zErr > 0:
-        zRange=np.linspace(0, 2.0, 401)
+        zMin=z-zErr*5
+        zMax=z+zErr*5
+        if zMin <= 0:
+            zMin=1e-3
+        zRange=np.arange(zMin, zMax, 0.005)
         Pz=np.exp(-np.power(z-zRange, 2)/(2*(np.power(zErr, 2))))
         Pz=Pz/np.trapz(Pz, zRange)
     else:
         zRange=[z]
         Pz=np.ones(len(zRange))
 
-    # M500
-    Py0GivenM=[]
-    QArr=[]
-    theta500ArcminArr=[]
-    for log10M500 in log10M:
-        lnPy0=np.zeros(len(zRange))
-        for i in range(len(zRange)):
-            zi=zRange[i]
-            # UPP relation according to H13
-            # NOTE: m in H13 is M/Mpivot
-            y0pred, theta500Arcmin, Q=y0FromLogM500(log10M500, zi, tckQFit, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int,
-                                                    H0 = H0, OmegaM0 = OmegaM0, OmegaL0 = OmegaL0, fRelWeightsDict = fRelWeightsDict)
-            theta500ArcminArr.append(theta500Arcmin)
-            QArr.append(Q)
-            if y0pred > 0:
-                log_y0=np.log(y0)
-                log_y0Err=np.log(y0+y0Err)-log_y0
-                log_y0pred=np.log(y0pred)
-                lnprob=-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2)))
-            else:
-                lnprob=-np.inf
-            lnPy0[i]=lnprob
-        Py0GivenM.append(np.sum(np.exp(lnPy0)*Pz))
-    Py0GivenM=np.array(Py0GivenM)
-    if np.any(np.isnan(Py0GivenM)) == True:
-        print("nan")
-        IPython.embed()
-        sys.exit()
-    
-    # Normalise
-    Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10M)
-    if applyMFDebiasCorrection == True and mockSurvey != None:
-        PLog10M=mockSurvey.getPLog10M(z)
-        PLog10M=PLog10M/np.trapz(PLog10M, log10M)
-        try:
-            M500, errM500Minus, errM500Plus=getM500FromP(Py0GivenM*PLog10M, log10M, calcErrors = calcErrors)
-        except:
-            print("M500 fail 1")
-            IPython.embed()
-            sys.exit()
-    else:
-        M500, errM500Minus, errM500Plus=0.0, 0.0, 0.0
-
-    # M500 without de-biasing for mass function shape (this gives the ~15% offset compared to Planck)
-    try:
-        M500Uncorr, errM500UncorrMinus, errM500UncorrPlus=getM500FromP(Py0GivenM, log10M, calcErrors = calcErrors)
-    except:
-        print("M500 fail 2")
-        IPython.embed()
-        sys.exit()
+    PArr=[]
+    for k in range(len(zRange)):
+        zk=zRange[k]
+        # For quick Q, fRel calc (this bit takes ~0.01 sec)
+        Ez=astCalc.Ez(zk)
+        Hz=astCalc.Ez(zk)*astCalc.H0  
+        G=4.301e-9  # in MSun-1 km2 s-2 Mpc
+        criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+        interpLim_minLog10M=mockSurvey.log10M.min()
+        interpLim_maxLog10M=mockSurvey.log10M.max()
+        interpPoints=100
+        fitM500s=np.power(10, np.linspace(interpLim_minLog10M, interpLim_maxLog10M, interpPoints))
+        fitTheta500s=np.zeros(len(fitM500s))
+        fitFRels=np.zeros(len(fitM500s))
+        for i in range(len(fitM500s)):
+            M500=fitM500s[i]
+            R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
+            theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+            fitTheta500s[i]=theta500Arcmin
+            fitFRels[i]=calcWeightedFRel(z, M500, fRelWeightsDict)
+        tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
+        tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
         
-    if M500Uncorr == 0:
-        print("M500 fail 3")
-        IPython.embed()
-        sys.exit()
+        log10Ms=mockSurvey.log10M
+        theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500)
+        Qs=interpolate.splev(theta500s, tckQFit)
+        fRels=interpolate.splev(log10Ms, tckLog10MToFRel)   
+        y0pred=tenToA0*np.power(Ez, 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
+        if np.less(y0pred, 0).sum() > 0:
+            # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
+            raise Exception("some predicted y0 values -ve")
+        log_y0=np.log(y0)
+        log_y0Err=np.log(y0+y0Err)-log_y0
+        log_y0pred=np.log(y0pred)
+        Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
+        Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
+
+        # Mass function de-bias
+        if applyMFDebiasCorrection == True:
+            PLog10M=mockSurvey.getPLog10M(zk)
+            PLog10M=PLog10M/np.trapz(PLog10M, log10Ms)
+        else:
+            PLog10M=1.0
+        
+        P=Py0GivenM*PLog10M*Pz[k]
+        #print(k, zk, Pz[k])
+        plt.plot(log10Ms, Py0GivenM*PLog10M*Pz[k])
+        PArr.append(P)
+        
+    # 2D PArr is what we would want to project onto (M, z) grid
+    PArr=np.array(PArr)
+    #astImages.saveFITS("test.fits", PArr.transpose(), None)
     
-    # Restore cosmology if we changed it for this call
-    if H0 != None:
-        astCalc.H0=oldH0
-    if OmegaM0 != None:
-        astCalc.OMEGA_M0=oldOmegaM0
-    if OmegaL0 != None:
-        astCalc.OMEGA_L0=oldOmegaL0
+    # Marginalised over z uncertainty
+    P=np.sum(PArr, axis = 0)
+    P=P/np.trapz(P, log10Ms)
     
-    return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus,
-            'M500Uncorr': M500Uncorr, 'M500Uncorr_errPlus': errM500UncorrPlus, 
-            'M500Uncorr_errMinus': errM500UncorrMinus}
+    return P
 
 #------------------------------------------------------------------------------------------------------------
 # Mass conversion routines

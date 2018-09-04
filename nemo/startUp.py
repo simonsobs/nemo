@@ -67,7 +67,7 @@ def startUp(parDictFileName, ignoreMPI = False):
     """Does start-up tasks that are common to the nemo scripts (nemo, nemoMass, nemoSelFn etc.).
     
     Set ignoreMPI = True to disregard useMPI given in config file - this will return a complete set of 
-    extNames raher than just those for a given node)
+    extNames (raher than just those for a given node)
     
     Returns: 
         * parDict (dictionary containing the contents of the config file)

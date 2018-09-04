@@ -43,6 +43,7 @@ def loadAreaMask(extName, diagnosticsDir):
     areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
     areaMap=areaImg[0].data
     wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+    areaImg.close()
     
     return areaMap, wcs
 
@@ -90,6 +91,7 @@ def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
     if os.path.exists(intersectFileName) == True:
         intersectImg=pyfits.open(intersectFileName)
         intersectMask=intersectImg[0].data
+        intersectImg.close()
     else:
         if masksList == []:
             raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
