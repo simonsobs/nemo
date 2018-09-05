@@ -1539,10 +1539,36 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
 
     # M, z ranges for Q calc
     # NOTE: ref filter that sets scale we compare to must ALWAYS come first
+    # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
     MRange=[ref['params']['M500MSun']]
     zRange=[ref['params']['z']]
-    MRange=MRange+np.logspace(13.5, 16.8, 12).tolist()
-    zRange=zRange+np.arange(0.1, 2.2, 0.2).tolist()
+    #MRange=MRange+np.logspace(13.5, 16.8, 4).tolist()
+    #zRange=zRange+[0.01, 0.1, 0.2, 0.3, 0.6, 0.9, 1.5, 2.0]
+    # This should cover theta500Arcmin range fairly evenly without using too crazy masses
+    theta500Arcmin_wanted=np.logspace(np.log10(1e-1), np.log10(500), 50)
+    zRange_wanted=np.zeros(50)
+    zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
+    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
+    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
+    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
+    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
+    zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
+    MRange_wanted=[]
+    for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
+        Ez=astCalc.Ez(z)
+        Hz=astCalc.Ez(z)*astCalc.H0  
+        G=4.301e-9  # in MSun-1 km2 s-2 Mpc
+        criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+        R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*astCalc.da(z)
+        M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
+        MRange_wanted.append(M500)
+    MRange=MRange+MRange_wanted
+    zRange=zRange+zRange_wanted.tolist()
+    # Just for checking coverage
+    #theta500Arcmin=[]
+    #for M in MRange:
+        #for z in zRange:
+            #theta500Arcmin.append(np.degrees(np.arctan(calcR500Mpc(z, M)/astCalc.da(z)))*60.0)
     
     # Q calc - results for all tiles stored in one file
     outFileName=diagnosticsDir+os.path.sep+"QFit.pickle"
@@ -1561,7 +1587,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
             wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
             RADeg, decDeg=wcs.getCentreWCSCoords()
-            clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 1.0)
+            clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 15.0)
             wcs=clipDict['wcs']
             
             # Input signal maps to which we will apply filter(s)
@@ -1570,18 +1596,17 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             theta500Arcmin=[]
             signalMapDict={}
             signalMap=np.zeros(clipDict['data'].shape)
-            degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 1.0)
-            for z in zRange:
-                for M500MSun in MRange:
-                    key='%.2f_%.2f' % (z, np.log10(M500MSun))
-                    modelDict=makeArnaudModelProfile(z, M500MSun, 148.0, GNFWParams = GNFWParams)   
-                    rDeg=modelDict['rDeg']
-                    profile1d=interpolate.splev(rDeg, modelDict['tckP'])
-                    r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-                    signalMap=r2p(degreesMap)
-                    # NOTE: missing a beam convolution here?
-                    signalMapDict[key]=signalMap
-                    theta500Arcmin.append(modelDict['theta500Arcmin'])
+            degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 15.0)
+            for z, M500MSun in zip(zRange, MRange):
+                key='%.2f_%.2f' % (z, np.log10(M500MSun))
+                modelDict=makeArnaudModelProfile(z, M500MSun, 148.0, GNFWParams = GNFWParams)   
+                rDeg=modelDict['rDeg']
+                profile1d=interpolate.splev(rDeg, modelDict['tckP'])
+                r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+                signalMap=r2p(degreesMap)
+                # NOTE: missing a beam convolution here?
+                signalMapDict[key]=signalMap
+                theta500Arcmin.append(modelDict['theta500Arcmin'])
             theta500Arcmin=np.array(theta500Arcmin)
 
             # Set-up the beams and kernels
@@ -1600,20 +1625,19 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             Q=[]
             QTheta500Arcmin=[]
             count=0
-            for z in zRange:
-                for M500MSun in MRange:
-                    key='%.2f_%.2f' % (z, np.log10(M500MSun))
-                    peakFilteredSignals=[]  # effectively, already in yc
-                    for obsFreqGHz in list(kernsDict.keys()):
-                        signalMap=np.zeros(signalMapDict[key].shape)+signalMapDict[key]
-                        signalMap=mapTools.subtractBackground(signalMap, wcs, 
-                                                              smoothScaleDeg = kernsDict[obsFreqGHz]['header']['BCKSCALE']/60.)
-                        filteredSignal=ndimage.convolve(signalMap, kernsDict[obsFreqGHz]['kern2d'])
-                        peakFilteredSignals.append(filteredSignal.max()*kernsDict[obsFreqGHz]['header']['SIGNORM'])
-                    if np.mean(peakFilteredSignals) not in Q:
-                        Q.append(np.mean(peakFilteredSignals))  # no noise, so straight average            
-                        QTheta500Arcmin.append(theta500Arcmin[count])
-                    count=count+1
+            for z, M500MSun in zip(zRange, MRange):
+                key='%.2f_%.2f' % (z, np.log10(M500MSun))
+                peakFilteredSignals=[]  # effectively, already in yc
+                for obsFreqGHz in list(kernsDict.keys()):
+                    signalMap=np.zeros(signalMapDict[key].shape)+signalMapDict[key]
+                    signalMap=mapTools.subtractBackground(signalMap, wcs, 
+                                                            smoothScaleDeg = kernsDict[obsFreqGHz]['header']['BCKSCALE']/60.)
+                    filteredSignal=ndimage.convolve(signalMap, kernsDict[obsFreqGHz]['kern2d'])
+                    peakFilteredSignals.append(filteredSignal.max()*kernsDict[obsFreqGHz]['header']['SIGNORM'])
+                if np.mean(peakFilteredSignals) not in Q:
+                    Q.append(np.mean(peakFilteredSignals))  # no noise, so straight average            
+                    QTheta500Arcmin.append(theta500Arcmin[count])
+                count=count+1
             Q=np.array(Q)
             Q=Q/Q[0]
             
@@ -1635,14 +1659,16 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             ax=plt.axes([0.10, 0.11, 0.88, 0.88])
             #plt.tick_params(axis='both', which='major', labelsize=15)
             #plt.tick_params(axis='both', which='minor', labelsize=15)       
-            thetaArr=np.linspace(0, 30, 300)
+            thetaArr=np.linspace(0, 500, 100000)
             #plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
             plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
             plt.plot(QTheta500Arcmin, Q, 'D', ms = 8)
             #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
             #plt.xlim(0, 9)
             plt.ylim(0, Q.max()*1.05)
-            plt.xlim(0, thetaArr.max())
+            #plt.xlim(0, thetaArr.max())
+            plt.xlim(0.1, 500)
+            plt.semilogx()
             plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
             plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
             plt.savefig(diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
@@ -1967,16 +1993,16 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
         for i in range(len(fitM500s)):
             M500=fitM500s[i]
             R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
-            theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+            theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(zk)))*60.0
             fitTheta500s[i]=theta500Arcmin
-            fitFRels[i]=calcWeightedFRel(z, M500, fRelWeightsDict)
+            fitFRels[i]=calcWeightedFRel(zk, M500, fRelWeightsDict)
         tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
         tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
         
         log10Ms=mockSurvey.log10M
-        theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500)
-        Qs=interpolate.splev(theta500s, tckQFit)
-        fRels=interpolate.splev(log10Ms, tckLog10MToFRel)   
+        theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500, ext = 1)
+        Qs=interpolate.splev(theta500s, tckQFit, ext = 1)
+        fRels=interpolate.splev(log10Ms, tckLog10MToFRel, ext = 1)   
         y0pred=tenToA0*np.power(Ez, 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
         if np.less(y0pred, 0).sum() > 0:
             # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)

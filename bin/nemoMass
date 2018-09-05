@@ -157,35 +157,27 @@ else:
     areaDeg2=700.
     zMin=0.0
     zMax=2.0
-    # H0, OmegaM0, OmegaL0 used for E(z), theta500 calcs in Q
+    # H0, Om0, Ol0 used for E(z), theta500 calcs in Q - these are updated when we call create mockSurvey
     if 'H0' in list(massOptions.keys()):
-        astCalc.H0=massOptions['H0']
-        H0=70.
+        H0=massOptions['H0']
     else:
         H0=70.
-    if 'OmegaM0' in list(massOptions.keys()):
-        astCalc.OMEGA_M0=massOptions['OmegaM0']
-        OmegaM0=massOptions['OmegaM0']
+    if 'Om0' in list(massOptions.keys()):
+        Om0=massOptions['Om0']
     else:
-        OmegaM0=0.3
-    if 'OmegaL0' in list(massOptions.keys()):
-        astCalc.OMEGA_L0=massOptions['OmegaL0']
-        OmegaL0=massOptions['OmegaL0']
-    else:
-        OmegaL0=0.7
+        Om0=0.3
     # OmegaB0, sigma8 only used for mass function Eddington bias correction
-    if 'OmegaB0' in list(massOptions.keys()):
-        OmegaB0=massOptions['OmegaB0']
+    if 'Ob0' in list(massOptions.keys()):
+        Ob0=massOptions['Ob0']
     else:
-        OmegaB0=0.05
-    if 'sigma8' in list(massOptions.keys()):
-        sigma8=massOptions['sigma8']
+        Ob0=0.05
+    if 'sigma_8' in list(massOptions.keys()):
+        sigma_8=massOptions['sigma_8']
     else:
-        sigma8=0.8
-    if OmegaL0 + OmegaM0 != 1:
-        raise Exception("only flat cosmologies are currently supported")
-    # NOTE: should add sanity check that mockSurvey parameters match astCalc ones
-    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, OmegaM0, OmegaB0, sigma8)
+        sigma_8=0.8
+    #if OmegaL0 + OmegaM0 != 1:
+        #raise Exception("only flat cosmologies are currently supported")
+    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8)
     
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M500"))
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M500_errPlus"))

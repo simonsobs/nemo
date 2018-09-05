@@ -161,7 +161,6 @@ def makeTileDeck(parDict):
                 else:
                     wht=pyfits.open(mapDict['weightsFileName'])
                     print(">>> Using weight map to determine tiling ...")
-                    print("... WARNING: same tiling not guaranteed across multiple frequencies ...")
                 wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
                 tileOverlapDeg=parDict['tileOverlapDeg']
    

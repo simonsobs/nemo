@@ -106,7 +106,7 @@ def startUp(parDictFileName, ignoreMPI = False):
         rootOutDir=parDict['outDir']
     else:
         if parDictFileName.find(".yml") == -1:
-            raise Exception("File must have .par extension")
+            raise Exception("File must have .yml extension")
         rootOutDir=parDictFileName.replace(".yml", "")
     filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
     diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
