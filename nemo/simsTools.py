@@ -2003,9 +2003,11 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
         theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500, ext = 1)
         Qs=interpolate.splev(theta500s, tckQFit, ext = 1)
         fRels=interpolate.splev(log10Ms, tckLog10MToFRel, ext = 1)   
+        fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
         y0pred=tenToA0*np.power(Ez, 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
         if np.less(y0pred, 0).sum() > 0:
             # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
+            # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)
             raise Exception("some predicted y0 values -ve")
         log_y0=np.log(y0)
         log_y0Err=np.log(y0+y0Err)-log_y0

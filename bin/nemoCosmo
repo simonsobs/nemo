@@ -202,6 +202,7 @@ else:
     #---
     # Uncomment this to test speed, priors, likelihood etc.
     #lnprior([70.0, 0.3, 0.8])
+    #lnprob([75.69164277, 0.69937024, 0.65720868])
     #print("speed test")
     #IPython.embed()
     #sys.exit()
