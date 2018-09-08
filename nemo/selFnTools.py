@@ -318,9 +318,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     Returns 2d array of (log10 M500, z) completeness
     
     """
-    
-    t0=time.time()
-    
+        
     if z != None:
         zIndex=np.argmin(abs(mockSurvey.z-z))
         zRange=mockSurvey.z[zIndex:zIndex+1]
@@ -348,9 +346,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         compMz[:, i][mockSurvey.log10M < minLog10Ms[i]]=0.0
     
     compMz=compMz.transpose()
-    
-    t1=time.time()
-        
+            
     if plotFileName != None:
         # Calculate 90% completeness as function of z
         zBinEdges=np.arange(0.05, 2.1, 0.1)
@@ -362,39 +358,69 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
                                    title = "%s: $M_{\\rm 500c}$ / $10^{14}$ M$_{\odot}$ > %.2f (0.2 < $z$ < 1)" % (extName, averageMassLimit_90Complete)) 
             
     return compMz
-                
+      
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRelationDict, tckQFitDict, 
                      diagnosticsDir):
     """Makes a map of 90% mass completeness (for now, this fraction is fixed).
+    
+    NOTE: The map here is "downsampled" (i.e., binned) in terms of noise resolution - okay for display 
+    purposes, may not be for analysis using the map (if anyone should decide to). Much quicker and saves
+    on memory issues (the y0 noise estimates have uncertainties themselves anyway).
     
     """
     
     # Get the stuff we need...
     RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
     RMSMap=RMSImg[0].data
-    areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
-    areaMap=areaImg[0].data
-    wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+    wcs=astWCS.WCS(RMSImg[0].header, mode = 'pyfits')
     RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir)
-
-    # Fill in blocks in map for each RMS value, and store giant fit table for this z also
-    # Quite possibly we can speed this up loads by doing a subset and interpolating
+    
+    # Downsampling in noise resolution
+    stepSize=0.001*1e-4
+    binEdges=np.arange(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max()+stepSize, stepSize)
+    y0Binned=[]
+    fracAreaBinned=[]
+    binMins=[]
+    binMaxs=[]
+    for i in range(len(binEdges)-1):
+        mask=np.logical_and(RMSTab['y0RMS'] > binEdges[i], RMSTab['y0RMS'] <= binEdges[i+1])
+        if mask.sum() > 0:
+            y0Binned.append(np.average(RMSTab['y0RMS'][mask]))
+            fracAreaBinned.append(np.sum(RMSTab['y0RMS'][mask]))
+            binMins.append(binEdges[i])
+            binMaxs.append(binEdges[i+1])
+            
+    # Fill in blocks in map for each RMS value
     outFileName=diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName)
     if os.path.exists(outFileName) == False:
         massLimMap=np.zeros(RMSMap.shape)
-        mapFitTab=None
         count=0
         t0=time.time()
-        for y0Noise in RMSTab['y0RMS']:
+        # New
+        for y0Noise, binMin, binMax in zip(y0Binned, binMins, binMaxs):
             count=count+1
-            print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
+            print(("... %d/%d (%.3e) ..." % (count, len(y0Binned), y0Noise)))
             compMz=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict,
                                     z = z)
-            massLimMap[np.where(RMSMap == y0Noise)]=mockSurvey.log10M[np.argmin(abs(compMz-0.9))]
+            mapMask=np.logical_and(RMSMap > binMin, RMSMap <= binMax)
+            massLimMap[mapMask]=mockSurvey.log10M[np.argmin(abs(compMz-0.9))]
+            # Does this stop memory leak?
+            #massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, z = z)-0.9))]
         t1=time.time()        
         massLimMap=np.power(10, massLimMap)/1e14
         astImages.saveFITS(outFileName, massLimMap, wcs)
+        # Old 
+        #for y0Noise in RMSTab['y0RMS']:
+            #count=count+1
+            #print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
+            ##compMz=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict,
+                                    ##z = z)
+            ## Does this stop memory leak?
+            #massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, z = z)-0.9))]
+        #t1=time.time()        
+        #massLimMap=np.power(10, massLimMap)/1e14
+        #astImages.saveFITS(outFileName, massLimMap, wcs)
     
     # This is sanity checking survey average completeness... 
     # Summary: agrees within 0.2% on average, but some tiles out by up to 3%
