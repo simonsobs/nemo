@@ -84,12 +84,13 @@ else:
         
         tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir)
         y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
-        fitTab=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
-                                           fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s.fits" % (extName))
+        compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, 
+                                           numDraws = parDict['selFnOptions']['numDraws'],
+                                           plotFileName = diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (extName))
         selFnDict={'extName': extName,
                    'y0Noise': y0Noise,
                    'tileAreaDeg2': tileAreaDeg2,
-                   'fitTab': fitTab}
+                   'compMz': compMz}
         selFnCollection['full'].append(selFnDict)
         
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
@@ -99,12 +100,12 @@ else:
             tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
                 y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
-                fitTab=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, diagnosticsDir,
-                                                fitTabFileName = diagnosticsDir+os.path.sep+"selFn_fitTab#%s_%s.fits" % (extName, footprintDict['label']))
+                compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict,
+                                                   numDraws = parDict['selFnOptions']['numDraws'])
                 selFnDict={'extName': extName,
-                        'y0Noise': y0Noise,
-                        'tileAreaDeg2': tileAreaDeg2,
-                        'fitTab': fitTab}
+                           'y0Noise': y0Noise,
+                           'tileAreaDeg2': tileAreaDeg2,
+                           'compMz': compMz}
                 selFnCollection[footprintDict['label']].append(selFnDict)
         
         # Optional mass-limit maps

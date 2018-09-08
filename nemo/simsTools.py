@@ -2023,7 +2023,7 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
             PLog10M=1.0
         
         P=Py0GivenM*PLog10M*Pz[k]
-        plt.plot(log10Ms, Py0GivenM*PLog10M*Pz[k])
+        #plt.plot(log10Ms, Py0GivenM*PLog10M*Pz[k])
         PArr.append(P)
         
     # 2D PArr is what we would want to project onto (M, z) grid

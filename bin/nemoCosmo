@@ -4,6 +4,12 @@
 
 Example of using nemo selection function stuff for cosmology
 
+NOTE: relies on global variables:
+- selFn
+- tab
+
+This avoid emcee pickling/passing them around processes
+
 """
 
 import os
@@ -31,7 +37,7 @@ import warnings
 warnings.filterwarnings("error")
 mpl=multiprocessing.log_to_stderr()
 mpl.setLevel(logging.INFO)
-
+    
 #-------------------------------------------------------------------------------------------------------------
 def lnprob(parameters):
     """Log likelihood function for use with emcee.
@@ -52,32 +58,11 @@ def lnprob(parameters):
     print(processName, "start step: ", H0, Om0, sigma_8, lp)
     
     selFn.update(H0, Om0, Ob0, sigma_8)
-    
-    # Apply completeness (only to predicted counts - we observe what we observe)
-    predMz=selFn.compMz*selFn.mockSurvey.clusterCount
-    
-    # Projecting catalog to (M, z) grid - takes ~4 sec currently
-    # We could instead project predMz to y0 and compare those?
-    #selFn.update(H0, Om0, Ob0, sigma_8)#, scalingRelationDict = scalingRelationDict)
-    t0=time.time()
-    catProjectedMz=np.zeros(selFn.compMz.shape)
-    tenToA0, B0, Mpivot, sigma_int=selFn.scalingRelationDict['tenToA0'], selFn.scalingRelationDict['B0'], \
-                                   selFn.scalingRelationDict['Mpivot'], selFn.scalingRelationDict['sigma_int']
-    for row in tab:
-        extName=row['template'].split("#")[-1]
-        z=row['redshift']
-        zErr=row['redshiftErr']
-        y0=row['fixed_y_c']*1e-4
-        y0Err=row['fixed_err_y_c']*1e-4
-        P=simsTools.calcPM500(y0, y0Err, z, zErr, selFn.tckQFitDict[extName], selFn.mockSurvey, 
-                              tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
-                              applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0},
-                              return2D = True)
-        # Paste into (M, z) grid
-        catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
-    obsMz=catProjectedMz
-    t1=time.time()
-    
+
+    # Apply completeness only to predicted counts - we observe what we observe
+    predMz=selFn.compMz*selFn.mockSurvey.clusterCount    
+    obsMz=selFn.projectCatalogToMz(tab)
+        
     # Poisson probability in (M, z) grid
     # (this is the similar to what Planck does, e.g., Planck 2015 XXIV eqn. 15)
     # NOTE: Planck only has 10 x 5 bins, and bins by z, S/N (q in Planck paper)
@@ -203,15 +188,32 @@ else:
     # Uncomment this to test speed, priors, likelihood etc.
     #lnprior([70.0, 0.3, 0.8])
     #lnprob([75.69164277, 0.69937024, 0.65720868])
-    #print("speed test")
+    #lnprob([70.0, 0.3, 0.80])
+    #print("likelihood test")   
     #IPython.embed()
     #sys.exit()
-    ##lnprob([77.54000133, 0.41198708, 0.50401552])
-    ##lnprob([70.0, 0.3, 0.8])
-    ##lnprob([70.0, 0.1, 0.9])
+    # sigma_8
+    #lnlikes=[]
+    #testParameters=np.arange(0.7, 0.85, 0.01)
+    #for sigma_8 in testParameters:
+        #lnlike=lnprob([70.0, 0.3, sigma_8])
+        #print(lnlike)
+        #lnlikes.append(lnlike)
+    ## Om0
+    #lnlikes=[]
+    #testParameters=np.arange(0.20, 0.35, 0.01)
+    #for Om0 in testParameters:
+        #lnlikes.append(lnprob([70.0, Om0, 0.8]))
+    ## Output
+    #print(testParameters[np.argmax(lnlikes)])
+    #plt.plot(testParameters, lnlikes, 'r.')
+    ###lnprob([77.54000133, 0.41198708, 0.50401552])
+    ###lnprob([70.0, 0.3, 0.8])
+    ###lnprob([70.0, 0.1, 0.9])
     
     #---
-    # Below here we run
+    
+    # Below here we actually run everything...
     print(">>> Running MCMC [%d steps per walker, %d walkers] ..." % (nsteps, nwalkers))
     t0=time.time()
     samples=runMCMC(cosmoOutDir, nsteps = nsteps, nwalkers = nwalkers, MPIOption = MPIOption)
