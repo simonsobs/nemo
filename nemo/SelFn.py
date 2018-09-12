@@ -22,7 +22,7 @@ from nemo import startUp
 
 class SelFn(object):
         
-    def __init__(self, parDictFileName, SNRCut, footprintLabel = None):
+    def __init__(self, parDictFileName, SNRCut, footprintLabel = None, zStep = 0.01, enableDrawSample = False):
         """Initialise a SelFn object.
         
         This is a class that uses the output from nemoSelFn to re-calculate the selection function
@@ -82,7 +82,7 @@ class SelFn(object):
         Om0=0.30
         Ob0=0.05
         sigma_8=0.8
-        self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
+        self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = zStep, enableDrawSample = enableDrawSample)
         
         # An initial run...
         self.update(H0, Om0, Ob0, sigma_8)
@@ -131,6 +131,7 @@ class SelFn(object):
         catProjectedMz=np.zeros(self.compMz.shape)
         tenToA0, B0, Mpivot, sigma_int=self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'], \
                                        self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']
+
         for row in tab:
             extName=row['template'].split("#")[-1]
             z=row['redshift']

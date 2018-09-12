@@ -25,7 +25,7 @@ import time
 
 class MockSurvey(object):
     
-    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = False):
+    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = 0.01, enableDrawSample = False):
         """Initialise a MockSurvey object. This first calculates the probability of drawing a cluster of 
         given M500, z, assuming the Tinker mass function, and the given (generous) selection limits. 
         An additional selection function can be dialled in later when using drawSample.
@@ -36,7 +36,7 @@ class MockSurvey(object):
                 
         """
 
-        zRange=np.linspace(zMin, zMax, 201)
+        zRange=np.arange(zMin, zMax+zStep, zStep)
         areaSr=np.radians(np.sqrt(areaDeg2))**2
                 
         # Globally change hmf's cosmology - at least, according to the docs...
@@ -53,7 +53,7 @@ class MockSurvey(object):
         astCalc.OMEGA_L0=1.0-Om0
         
         self.minMass=minMass
-        
+
         # It's much faster to generate one mass function and then update its parameters (e.g., z)
         # NOTE: Mmin etc. are log10 MSun h^-1; dndm is h^4 MSun^-1 Mpc^-3
         # Internally, it's better to stick with how hmf does this, i.e., use these units
@@ -86,12 +86,45 @@ class MockSurvey(object):
         astCalc.OMEGA_M0=Om0
         astCalc.OMEGA_L0=1.0-Om0
         try:
-            cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
-            self.mf.update(cosmo_model = cosmo_model, sigma_8 = sigma_8)
+            self.cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
+            #cosmo.Cosmology(cosmo_model = self.cosmo_model) # Makes no difference...
+            self.mf.update(cosmo_model = self.cosmo_model, sigma_8 = sigma_8)
         except:
             raise Exception("failed to update mf when H0 = %.3f Om0 = %.3f Ob0 = %.3f sigma_8 = %.3f" % (H0, Om0, Ob0, sigma_8))
         self._doClusterCount()
-        
+
+        # For quick Q, fRel calc (these are in MockSurvey rather than SelFn as used by drawSample)
+        self.theta500Splines=[]
+        self.fRelSplines=[]
+        self.Ez=[]
+        self.DAz=[]
+        for i in range(len(self.z)):
+            zk=self.z[i]
+            Ez=astCalc.Ez(zk)
+            Hz=astCalc.Ez(zk)*astCalc.H0  
+            G=4.301e-9  # in MSun-1 km2 s-2 Mpc
+            criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+            interpLim_minLog10M=self.log10M.min()
+            interpLim_maxLog10M=self.log10M.max()
+            interpPoints=100
+            fitM500s=np.power(10, np.linspace(interpLim_minLog10M, interpLim_maxLog10M, interpPoints))
+            fitTheta500s=np.zeros(len(fitM500s))
+            fitFRels=np.zeros(len(fitM500s))
+            DA=astCalc.da(zk)
+            Ez=astCalc.Ez(zk)
+            for i in range(len(fitM500s)):
+                M500=fitM500s[i]
+                R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
+                theta500Arcmin=np.degrees(np.arctan(R500Mpc/DA))*60.0
+                fitTheta500s[i]=theta500Arcmin
+                fitFRels[i]=simsTools.calcFRel(zk, M500)
+            tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
+            tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
+            self.Ez.append(Ez)
+            self.DAz.append(DA)
+            self.theta500Splines.append(tckLog10MToTheta500)
+            self.fRelSplines.append(tckLog10MToFRel)
+            
         # Stuff to enable us to draw mock samples (see drawSample)
         # Interpolators here need to be updated each time we change cosmology
         if self.enableDrawSample == True:
@@ -103,6 +136,8 @@ class MockSurvey(object):
             self.zRoller=_spline(pz, self.z, k = 3)
             
             # For drawing from each log10M distribution at each point on z grid
+            # And quick fRel, Q calc using interpolation
+            # And we may as well have E(z), DA on the z grid also
             self.log10MRollers=[]
             for i in range(len(self.z)):
                 #print("updating z = %.2f" % (self.z[i]))
@@ -110,7 +145,7 @@ class MockSurvey(object):
                 mask=self.mf.ngtm > 0
                 # NOTE: / h here to match what we do in cluster count (also ensures we don't need to worry about little h in draw sample)
                 self.log10MRollers.append(_spline((self.mf.ngtm[mask] / self.mf.ngtm[0])[::-1], np.log10(self.mf.m[mask][::-1]/self.mf.cosmo.h), k=3))
-                
+                            
 
     def _doClusterCount(self):
         """Updates cluster count etc. after mass function object is updated.
@@ -205,11 +240,9 @@ class MockSurvey(object):
         the range given by self.z
         
         If numDraws = None, the number of draws is set by self.numClustersByRedshift. If numDraws is
-        given, the number of draws will be divided equally between each z. If this option is used,
-        an approximation for the lower mass limit will be calculated (given the noise) to better
-        sample the parameter space above the SNRLimit.
+        given, the number of draws will be divided equally between each z.
         
-        if areaDeg2 is given, the cluster counts will be scaled accordingly (otherwise, they 
+        If areaDeg2 is given, the cluster counts will be scaled accordingly (otherwise, they 
         correspond to self.areaDeg2). This will be ignored if numDraws is also set.
         
         This routine is used in the nemoMock script.
@@ -293,61 +326,25 @@ class MockSurvey(object):
             numClusters_zk=len(mask)
             y0Noise_zk=y0Noise[mask]
             currentIndex=nextIndex
-            
-            # For quick Q, fRel calc (this bit takes ~0.01 sec)
-            Ez=astCalc.Ez(zk)
-            Hz=astCalc.Ez(zk)*astCalc.H0  
-            G=4.301e-9  # in MSun-1 km2 s-2 Mpc
-            criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
-            interpLim_minLog10M=self.log10M.min()
-            interpLim_maxLog10M=self.log10M.max()
-            interpPoints=100
-            fitM500s=np.power(10, np.linspace(interpLim_minLog10M, interpLim_maxLog10M, interpPoints))
-            fitTheta500s=np.zeros(len(fitM500s))
-            fitFRels=np.zeros(len(fitM500s))
-            DA=astCalc.da(zk)
-            Ez=astCalc.Ez(zk)
-            for i in range(len(fitM500s)):
-                M500=fitM500s[i]
-                R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
-                theta500Arcmin=np.degrees(np.arctan(R500Mpc/DA))*60.0
-                fitTheta500s[i]=theta500Arcmin
-                fitFRels[i]=simsTools.calcFRel(zk, M500)
-            tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
-            tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
-        
-            # Calc max draw (turns out we need bounds checking on spline here also)
-            if numDraws != None:
-                test_draws=np.linspace(0, 1, 10000)
-                test_log10Ms=self.log10MRollers[k](test_draws)
-                test_log10Ms[test_log10Ms < self.log10M.min()]=self.log10M.min()
-                test_log10Ms[test_log10Ms > self.log10M.max()]=self.log10M.max()
-                test_theta500s=interpolate.splev(test_log10Ms, tckLog10MToTheta500)
-                test_Qs=interpolate.splev(test_theta500s, tckQFitDict[extName])
-                test_fRels=interpolate.splev(test_log10Ms, tckLog10MToFRel)  
-                test_y0s=tenToA0*np.power(Ez, 2)*np.power(np.power(10, test_log10Ms)/Mpivot, 1+B0)*test_Qs*test_fRels
-                #maxDraw=test_draws[np.argmin(abs(test_y0s-((SNRLimit-3)*y0Noise.min())))]
-                maxDraw=test_draws[np.argmin(abs(test_y0s-((SNRLimit-2.5)*y0Noise.min())))]
-                minTrueMass[k]=self.log10MRollers[k](maxDraw)
-            else:
-                maxDraw=1.0
-            
+                                
             # For some cosmo parameters, splined masses can end up outside of valid range, so catch this
-            log10Ms_zk=self.log10MRollers[k](np.random.uniform(0, maxDraw, numClusters_zk))
+            #log10Ms_zk=self.log10MRollers[k](np.random.uniform(0, maxDraw, numClusters_zk))
+            log10Ms_zk=self.log10MRollers[k](np.random.random_sample(numClusters_zk))
             log10Ms_zk[log10Ms_zk < self.log10M.min()]=self.log10M.min()
             log10Ms_zk[log10Ms_zk > self.log10M.max()]=self.log10M.max()
             
-            theta500s_zk=interpolate.splev(log10Ms_zk, tckLog10MToTheta500)
-            Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName])
+            theta500s_zk=interpolate.splev(log10Ms_zk, self.theta500Splines[k], ext = 3)
+            Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName], ext = 3)
 
             # For some cosmo parameters, fRel can wander outside its range for crazy masses
             # So we just cap it at 0.1 here just to avoid -ve in log
-            fRels_zk=interpolate.splev(log10Ms_zk, tckLog10MToFRel)
+            fRels_zk=interpolate.splev(log10Ms_zk, self.fRelSplines[k], ext = 3)
             fRels_zk[fRels_zk <= 0]=0.1
             fRels_zk[fRels_zk > 1]=1.0
             
             try:
-                true_y0s_zk=tenToA0*np.power(Ez, 2)*np.power(np.power(10, log10Ms_zk)/Mpivot, 1+B0)*Qs_zk*fRels_zk
+                true_y0s_zk=tenToA0*np.power(self.Ez[k], 2)*np.power(np.power(10, log10Ms_zk)/Mpivot, 1+B0)*Qs_zk*fRels_zk
+                true_y0s_zk=true_y0s_zk*fRels_zk
                 scattered_y0s_zk=np.exp(np.random.normal(np.log(true_y0s_zk), sigma_int, len(true_y0s_zk)))        
                 measured_y0s_zk=np.random.normal(scattered_y0s_zk, y0Noise_zk)
             except:
@@ -378,8 +375,5 @@ class MockSurvey(object):
             selMask=measured_y0s > y0Noise*SNRLimit
             tab=tab[selMask]
 
-        if numDraws != None:
-            return tab, minTrueMass
-        else:
-            return tab
+        return tab
         

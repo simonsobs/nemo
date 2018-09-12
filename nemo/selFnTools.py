@@ -192,7 +192,7 @@ def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footp
     return tileRMSValue
 
 #------------------------------------------------------------------------------------------------------------
-def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir):
+def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additionalLabel = ""):
     """Write out average (M, z) grid for all tiles (extNames) given in selFnCollection (a dictionary with 
     keys corresponding to footprints: 'full' is the entire survey), weighted by fraction of total survey area
     within the footprint. We also produce a bunch of other stats and plots to do with completeness versus 
@@ -200,6 +200,9 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir):
     
     Output is written to files named e.g. diagnosticsDir/MzCompleteness_label.npz, where label is the 
     footprint (key in selFnCollection); 'full' is the default (survey-wide average).
+    
+    additionalLabel is optional and will be added to the output filenames (use for e.g., tagging with the
+    calcCompleteness method used).
     
     """
     
@@ -226,16 +229,16 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir):
         compMzCube=np.array(compMzCube)
         compMz_surveyAverage=np.average(compMzCube, axis = 0, weights = fracArea)
 
-        outFileName=diagnosticsDir+os.path.sep+"MzCompleteness_%s.npz" % (footprintLabel)
+        outFileName=diagnosticsDir+os.path.sep+"MzCompleteness_%s%s.npz" % (footprintLabel, additionalLabel)
         np.savez(outFileName, z = mockSurvey.z, log10M500c = mockSurvey.log10M, 
                  M500Completeness = compMz_surveyAverage)
         
         makeMzCompletenessPlot(compMz_surveyAverage, mockSurvey.log10M, mockSurvey.z, footprintLabel, 
-                               diagnosticsDir+os.path.sep+"MzCompleteness_%s.pdf" % (footprintLabel))
+                               diagnosticsDir+os.path.sep+"MzCompleteness_%s%s.pdf" % (footprintLabel, additionalLabel))
 
         # 90% mass completeness limit and plots
         massLimit_90Complete=np.average(completeness, axis = 0, weights = fracArea)  # agrees with full mass limit map
-        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, diagnosticsDir+os.path.sep+"completeness90Percent_%s.pdf" % (footprintLabel))
+        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, diagnosticsDir+os.path.sep+"completeness90Percent_%s%s.pdf" % (footprintLabel, additionalLabel))
         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
         print("... total survey area (after masking) = %.3f sq deg" % (np.sum(tileAreas)))
@@ -301,19 +304,21 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
     
 #------------------------------------------------------------------------------------------------------------
 def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict,
-                     numDraws = 1000000, plotFileName = None, z = None):
+                     plotFileName = None, z = None, method = "fast", numDraws = 2000000, numIterations = 100):
     """Calculate completeness as a function of (log10 M500, z) on the mockSurvey grid for assumed fiducial
     cosmology and scaling relation, at the given SNRCut and noise level. Intrinsic scatter in the scaling
     relation is taken into account.
     
     If plotFileName is given, writes 90% completeness plot.
-        
-    Adjust numDraws to set noise level of estimate. A couple of rough benchmarks:
-    - numDraws = 1000000 takes ~3 sec
-    - numDraws = 10000000 takes ~12 sec
-    - numDraws = 50000000 takes ~50 sec (and uses ~5 Gb of RAM)
     
-    The calculation can be done at a single fixed z if given
+    Two methods for doing the calculation are available:
+    - "fast"        : using calcPM500 to fill-out the (log10 M, z) grid
+    - "Monte Carlo" : using samples drawn from mockSurvey to fill out the (log10 M, z) grid
+    
+    Adjust numDraws (per iteration) and numIterations to set the noise level of estimate when using the
+    "Monte Carlo" method. For the "fast" method, numDraws and numIterations are ignored.
+    
+    The calculation can be done at a single fixed z, if given.
 
     Returns 2d array of (log10 M500, z) completeness
     
@@ -324,28 +329,47 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         zRange=mockSurvey.z[zIndex:zIndex+1]
     else:
         zRange=mockSurvey.z
-    
-    # Need to fix for bin edges here
-    halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
-    binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
-    halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
-    binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
+        
+    if method == "Monte Carlo":
+        # Monte-carlo sims approach: slow - but can use to verify the other approach below
+        halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
+        binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
+        halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
+        binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
+        allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
+        detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
+        for i in range(numIterations):
+            tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, extName = extName, 
+                                    SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
+            allMz=allMz+np.histogram2d(np.log10(tab['true_M500']*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
+            detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
+            detMz=detMz+np.histogram2d(np.log10(tab['true_M500'][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
+        mask=np.not_equal(allMz, 0)
+        compMz=np.ones(detMz.shape)
+        compMz[mask]=detMz[mask]/allMz[mask]
+        compMz=compMz.transpose()
+        #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
 
-    tab, minLog10Ms=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, extName = extName, numDraws = numDraws, 
-                                          SNRLimit = SNRCut, applySNRCut = False, z = z)
-
-    allMz=np.histogram2d(np.log10(tab['true_M500']*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
+    elif method == "fast":
+        # This is like the old approach... 50% completeness is by definition where P(M500) is centred
+        tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
+                                        scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
+        compMz=np.zeros([mockSurvey.log10M.shape[0], mockSurvey.z.shape[0]])
+        for k in range(len(mockSurvey.z)):
+            zk=mockSurvey.z[k]
+            P=simsTools.calcPM500(y0Noise*SNRCut, y0Noise, zk, 0.0, tckQFitDict[extName], mockSurvey, 
+                                tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
+                                applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0}, 
+                                return2D=False)
+            cumP=np.zeros(mockSurvey.log10M.shape)
+            for i in range(len(mockSurvey.log10M)):
+                cumP[i]=np.trapz(P[:i], mockSurvey.log10M[:i])
+            compMz[:, k]=cumP
+        compMz=compMz.transpose()
+        #astImages.saveFITS("test_compMz_fastApproach_withoutMFDebiasCorr_fixedy0ErrInPM500_convScatterInPM500.fits", compMz.transpose(), None)
     
-    detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
-    detMz=np.histogram2d(np.log10(tab['true_M500'][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
-
-    mask=np.not_equal(allMz, 0)
-    compMz=np.ones(detMz.shape)
-    compMz[mask]=detMz[mask]/allMz[mask]
-    for i in range(len(minLog10Ms)):
-        compMz[:, i][mockSurvey.log10M < minLog10Ms[i]]=0.0
-    
-    compMz=compMz.transpose()
+    else:
+        raise Exception("calcCompleteness only has 'fast' and 'Monte Carlo' methods available")
             
     if plotFileName != None:
         # Calculate 90% completeness as function of z

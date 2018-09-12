@@ -1744,8 +1744,9 @@ def calcWeightedFRel(z, M500, fRelWeightsDict):
     fRels=[]
     freqWeights=[]
     for obsFreqGHz in fRelWeightsDict.keys():
-        fRels.append(calcFRel(z, M500, obsFreqGHz = obsFreqGHz))
-        freqWeights.append(fRelWeightsDict[obsFreqGHz])
+        if fRelWeightsDict[obsFreqGHz] > 0:
+            fRels.append(calcFRel(z, M500, obsFreqGHz = obsFreqGHz))
+            freqWeights.append(fRelWeightsDict[obsFreqGHz])
     fRel=np.average(fRels, weights = freqWeights)
     
     return fRel
@@ -1820,7 +1821,7 @@ def getM500FromP(P, log10M, calcErrors = True):
     fineLog10M=np.linspace(log10M.min(), log10M.max(), 10000)
     fineP=interpolate.splev(fineLog10M, tckP)
     fineP=fineP/np.trapz(fineP, fineLog10M)
-    index=np.where(fineP == fineP.max())[0][0]
+    index=np.argmax(fineP)
     
     clusterLogM500=fineLog10M[index]
     clusterM500=np.power(10, clusterLogM500)/1e14
@@ -1831,9 +1832,7 @@ def getM500FromP(P, log10M, calcErrors = True):
             maxIndex=index+n
             if minIndex < 0 or maxIndex > fineP.shape[0]:
                 # This shouldn't happen; if it does, probably y0 is in the wrong units
-                print("WARNING: outside M500 range")
-                clusterLogM500=None
-                break            
+                raise Exception("outside M500 range - check y0 units or for problem at cluster location in map (e.g., fixed_SNR very low compared to SNR)")          
             p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
             if p >= 0.6827:
                 clusterLogM500Min=fineLog10M[minIndex]
@@ -1978,6 +1977,95 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
 
     PArr=[]
     for k in range(len(zRange)):
+        
+        zk=zRange[k]        
+        log10Ms=mockSurvey.log10M
+        mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-zk))
+
+        theta500s=interpolate.splev(log10Ms, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
+        Qs=interpolate.splev(theta500s, tckQFit, ext = 3)
+        fRels=interpolate.splev(log10Ms, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)   
+        fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
+        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
+        if np.less(y0pred, 0).sum() > 0:
+            # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
+            # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)
+            raise Exception("some predicted y0 values -ve")
+        log_y0=np.log(y0)
+        log_y0Err=y0Err/y0
+        log_y0pred=np.log(y0pred)
+
+        # Original
+        Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
+        Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
+
+        # Revised: applying intrinsic scatter as a convolution along log10M gives slightly broader wings (more like MC sim?)
+        #Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2))))
+        #smoothPix=((1/np.log(10))*sigma_int)/(log10Ms[1]-log10Ms[0])
+        #Py0GivenM=ndimage.gaussian_filter1d(Py0GivenM, smoothPix)
+        #Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
+                
+        # Mass function de-bias
+        if applyMFDebiasCorrection == True:
+            PLog10M=mockSurvey.getPLog10M(zk)
+            PLog10M=PLog10M/np.trapz(PLog10M, log10Ms)
+        else:
+            PLog10M=1.0
+        
+        P=Py0GivenM*PLog10M*Pz[k]
+        #plt.plot(log10Ms, Py0GivenM*PLog10M*Pz[k])
+        PArr.append(P)
+        
+    # 2D PArr is what we would want to project onto (M, z) grid
+    PArr=np.array(PArr)
+        
+    # Marginalised over z uncertainty
+    P=np.sum(PArr, axis = 0)
+    P=P/np.trapz(P, log10Ms)
+    
+    if return2D == True:
+        P2D=np.zeros(mockSurvey.clusterCount.shape)
+        if zErr == 0:
+            P2D[np.argmin(abs(mockSurvey.z-z))]=PArr
+        else:
+            P2D[zMask]=PArr
+        P=P2D/P2D.sum()
+        #astImages.saveFITS("test.fits", P.transpose(), None)
+        
+    return P
+
+#------------------------------------------------------------------------------------------------------------
+def calcPM500_old(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
+             applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False):
+    """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
+    et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
+    in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
+    cosmological parameters.
+    
+    This routine is used by calcM500Fromy0.
+    
+    If return2D == True, returns a grid of same dimensions / binning as mockSurvey.z, mockSurvey.log10M,
+    normalised such that the sum of the values is 1.
+    
+    """
+    
+    # For marginalising over photo-z errors (we assume +/-5 sigma is accurate enough)
+    if zErr > 0:
+        zMin=z-zErr*5
+        zMax=z+zErr*5
+        zMask=np.logical_and(np.greater_equal(mockSurvey.z, zMin), np.less(mockSurvey.z, zMax))
+        zRange=mockSurvey.z[zMask]
+        #if zMin <= 0:
+            #zMin=1e-3
+        #zRange=np.arange(zMin, zMax, 0.005)
+        Pz=np.exp(-np.power(z-zRange, 2)/(2*(np.power(zErr, 2))))
+        Pz=Pz/np.trapz(Pz, zRange)
+    else:
+        zRange=[z]
+        Pz=np.ones(len(zRange))
+
+    PArr=[]
+    for k in range(len(zRange)):
         zk=zRange[k]
         # For quick Q, fRel calc (this bit takes ~0.01 sec)
         Ez=astCalc.Ez(zk)
@@ -2000,9 +2088,9 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
         tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
         
         log10Ms=mockSurvey.log10M
-        theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500, ext = 1)
-        Qs=interpolate.splev(theta500s, tckQFit, ext = 1)
-        fRels=interpolate.splev(log10Ms, tckLog10MToFRel, ext = 1)   
+        theta500s=interpolate.splev(log10Ms, tckLog10MToTheta500, ext = 3)
+        Qs=interpolate.splev(theta500s, tckQFit, ext = 3)
+        fRels=interpolate.splev(log10Ms, tckLog10MToFRel, ext = 3)   
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
         y0pred=tenToA0*np.power(Ez, 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
         if np.less(y0pred, 0).sum() > 0:

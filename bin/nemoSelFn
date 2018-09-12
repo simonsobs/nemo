@@ -50,7 +50,7 @@ else:
     tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
 
     # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
-    minMass=5e13
+    minMass=8e13
     areaDeg2=400.0  # Don't care what value this has, as we'll sim up an arbitrary number of clusters anyway
     zMin=0.0
     zMax=2.0
@@ -69,6 +69,12 @@ else:
     # We'll only calculate completeness for this given selection
     SNRCut=parDict['selFnOptions']['fixedSNRCut']
 
+    # Handle any missing options for calcCompleteness
+    if 'numDraws' not in parDict['selFnOptions'].keys():
+        parDict['selFnOptions']['numDraws']=2000000
+    if 'numIterations' not in parDict['selFnOptions'].keys():
+        parDict['selFnOptions']['numIterations']=100
+    
     # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
     footprintsList=[]
     if 'selFnFootprints' in parDict.keys():
@@ -86,6 +92,8 @@ else:
         y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
         compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, 
                                            numDraws = parDict['selFnOptions']['numDraws'],
+                                           numIterations = parDict['selFnOptions']['numIterations'],
+                                           method = parDict['selFnOptions']['method'],
                                            plotFileName = diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (extName))
         selFnDict={'extName': extName,
                    'y0Noise': y0Noise,
@@ -101,7 +109,9 @@ else:
             if tileAreaDeg2 > 0:
                 y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
                 compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict,
-                                                   numDraws = parDict['selFnOptions']['numDraws'])
+                                                   numDraws = parDict['selFnOptions']['numDraws'],
+                                                   numIterations = parDict['selFnOptions']['numIterations'],
+                                                   method = parDict['selFnOptions']['method'])
                 selFnDict={'extName': extName,
                            'y0Noise': y0Noise,
                            'tileAreaDeg2': tileAreaDeg2,
@@ -134,7 +144,8 @@ else:
                 
     # Survey completeness stats now all lumped together in one routine
     # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
-    selFnTools.completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir)
+    selFnTools.completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, 
+                                       additionalLabel = "_"+parDict['selFnOptions']['method'].replace(" ", "_"))
     
     # If we made mass limit maps...
     # ... make cumulative area versus mass limit plot(s)

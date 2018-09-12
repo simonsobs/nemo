@@ -8,7 +8,7 @@ NOTE: relies on global variables:
 - selFn
 - tab
 
-This avoid emcee pickling/passing them around processes
+This avoid emcee pickling/passing them around processes more than once
 
 """
 
@@ -46,29 +46,35 @@ def lnprob(parameters):
     
     """
 
-    t0=time.time()
     Ob0=0.05
     H0, Om0, sigma_8 = parameters
-        
+    
     lp=lnprior(parameters)
     if not np.isfinite(lp):
         return -np.inf
 
     processName=multiprocessing.current_process().name
-    print(processName, "start step: ", H0, Om0, sigma_8, lp)
+    #print(processName, "start step: ", H0, Om0, sigma_8, lp)
     
+    t0=time.time()
     selFn.update(H0, Om0, Ob0, sigma_8)
-
+    t1=time.time()
+    
     # Apply completeness only to predicted counts - we observe what we observe
     predMz=selFn.compMz*selFn.mockSurvey.clusterCount    
+    
+    t2=time.time()
     obsMz=selFn.projectCatalogToMz(tab)
-        
+    t3=time.time()
+    
     # Poisson probability in (M, z) grid
     # (this is the similar to what Planck does, e.g., Planck 2015 XXIV eqn. 15)
     # NOTE: Planck only has 10 x 5 bins, and bins by z, S/N (q in Planck paper)
     mask=np.greater(predMz, 0)
     lnlike=np.sum(obsMz[mask]*np.log(predMz[mask])-predMz[mask]-np.log(factorial(obsMz[mask])))
-        
+
+    print(processName, "end step: ", H0, Om0, sigma_8, lp, "timings (sec):", t1-t0, t3-t2)
+    
     return lp+lnlike
 
 #-------------------------------------------------------------------------------------------------------------
@@ -167,7 +173,7 @@ else:
     SNRCut=5.0
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
-    selFn=SelFn.SelFn(parDictFileName, SNRCut)
+    selFn=SelFn.SelFn(parDictFileName, SNRCut, zStep = 0.1)
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
 
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
