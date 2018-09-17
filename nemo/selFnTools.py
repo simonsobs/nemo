@@ -354,17 +354,18 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         
         tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
                                         scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
-        y0Grid=np.zeros(mockSurvey.clusterCount.shape)
-        for k in range(len(mockSurvey.z)):
-            zk=mockSurvey.z[k]
+        y0Grid=np.zeros([zRange.shape[0], mockSurvey.clusterCount.shape[1]])
+        for i in range(len(zRange)):
+            zk=zRange[i]
+            k=np.argmin(abs(mockSurvey.z-zk))
             theta500s_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.theta500Splines[k])
             Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName])
             fRels_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.fRelSplines[k])
             true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
-            y0Grid[k]=true_y0s_zk
+            y0Grid[i]=true_y0s_zk
             
         # For some cosmological parameters, we can still get the odd -ve y0
-        y0Grid[y0Grid < 0] = 1e-9
+        y0Grid[y0Grid <= 0] = 1e-9
         
         # For some reason, using constant log_y0Err/log_y0 = 1/3 matches obsMz from huge mock closest
         # Using log_y0Err/log_y0 itself blows up at low y0 / mass / signal-to-noise
