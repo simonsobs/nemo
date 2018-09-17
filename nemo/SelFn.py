@@ -74,7 +74,7 @@ class SelFn(object):
                 self.selFnDictList.append(selFnDict)
                 self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
 
-        # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
+        # Set initial fiducial cosmology - can be overridden using update function     
         minMass=5e13
         zMin=0.0
         zMax=2.0
@@ -107,6 +107,7 @@ class SelFn(object):
             self.scalingRelationDict=scalingRelationDict
         
         self.mockSurvey.update(H0, Om0, Ob0, sigma_8)
+        
         tileAreas=[]
         compMzCube=[]
         for selFnDict in self.selFnDictList:
@@ -118,17 +119,20 @@ class SelFn(object):
         fracArea=tileAreas/self.totalAreaDeg2
         compMzCube=np.array(compMzCube)
         self.compMz=np.average(compMzCube, axis = 0, weights = fracArea)
+                    
 
-
-    def projectCatalogToMz(self, tab):
+    def projectCatalogToMz(self, tab, applyMFDebiasCorrection = True):
         """Project a catalog (as astropy Table) into the (log10 M500, z) grid. Takes into account the uncertainties
         on y0, redshift - but if redshift error is non-zero, is a lot slower.
+        
+        NOTE: Although applying the mass function debias correction is optional here, you almost certainly don't
+        want to disable it.
         
         Returns (log10 M500, z) grid
         
         """
         
-        catProjectedMz=np.zeros(self.compMz.shape)
+        catProjectedMz=np.zeros(self.mockSurvey.clusterCount.shape)
         tenToA0, B0, Mpivot, sigma_int=self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'], \
                                        self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']
 
@@ -140,7 +144,7 @@ class SelFn(object):
             y0Err=row['fixed_err_y_c']*1e-4
             P=simsTools.calcPM500(y0, y0Err, z, zErr, self.tckQFitDict[extName], self.mockSurvey, 
                                   tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
-                                  applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0},
+                                  applyMFDebiasCorrection = applyMFDebiasCorrection, fRelWeightsDict = {148.0: 1.0},
                                   return2D = True)
             # Paste into (M, z) grid
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1

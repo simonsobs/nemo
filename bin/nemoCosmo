@@ -60,7 +60,7 @@ def lnprob(parameters):
     selFn.update(H0, Om0, Ob0, sigma_8)
     t1=time.time()
     
-    # Apply completeness only to predicted counts - we observe what we observe
+    # Apply completeness only to predicted counts (selection is already applied to observed)
     predMz=selFn.compMz*selFn.mockSurvey.clusterCount    
     
     t2=time.time()
@@ -70,7 +70,8 @@ def lnprob(parameters):
     # Poisson probability in (M, z) grid
     # (this is the similar to what Planck does, e.g., Planck 2015 XXIV eqn. 15)
     # NOTE: Planck only has 10 x 5 bins, and bins by z, S/N (q in Planck paper)
-    mask=np.greater(predMz, 0)
+    #mask=np.greater(predMz, 0)
+    mask=np.logical_and(np.greater(obsMz, 0), np.greater(predMz, 0))
     lnlike=np.sum(obsMz[mask]*np.log(predMz[mask])-predMz[mask]-np.log(factorial(obsMz[mask])))
 
     print(processName, "end step: ", H0, Om0, sigma_8, lp, "timings (sec):", t1-t0, t3-t2)
@@ -190,35 +191,6 @@ else:
     if rank == 0 and os.path.exists(cosmoOutDir) == False:
         os.makedirs(cosmoOutDir)
     
-    #---
-    # Uncomment this to test speed, priors, likelihood etc.
-    #lnprior([70.0, 0.3, 0.8])
-    #lnprob([75.69164277, 0.69937024, 0.65720868])
-    #lnprob([70.0, 0.3, 0.80])
-    #print("likelihood test")   
-    #IPython.embed()
-    #sys.exit()
-    # sigma_8
-    #lnlikes=[]
-    #testParameters=np.arange(0.7, 0.85, 0.01)
-    #for sigma_8 in testParameters:
-        #lnlike=lnprob([70.0, 0.3, sigma_8])
-        #print(lnlike)
-        #lnlikes.append(lnlike)
-    ## Om0
-    #lnlikes=[]
-    #testParameters=np.arange(0.20, 0.35, 0.01)
-    #for Om0 in testParameters:
-        #lnlikes.append(lnprob([70.0, Om0, 0.8]))
-    ## Output
-    #print(testParameters[np.argmax(lnlikes)])
-    #plt.plot(testParameters, lnlikes, 'r.')
-    ###lnprob([77.54000133, 0.41198708, 0.50401552])
-    ###lnprob([70.0, 0.3, 0.8])
-    ###lnprob([70.0, 0.1, 0.9])
-    
-    #---
-    
     # Below here we actually run everything...
     print(">>> Running MCMC [%d steps per walker, %d walkers] ..." % (nsteps, nwalkers))
     t0=time.time()
@@ -235,9 +207,6 @@ else:
     fig.savefig(cosmoOutDir+os.path.sep+"cornerplot.png")
     fig.savefig(cosmoOutDir+os.path.sep+"cornerplot.pdf")
     plt.close()
-    
-    #IPython.embed()
-    #sys.exit()
-    
+
 
         
