@@ -1975,11 +1975,18 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
         zRange=[z]
         Pz=np.ones(len(zRange))
 
+    log_y0=np.log(y0)
+    log_y0Err=y0Err/y0
+        
+    # NOTE: Swap below if want to use bigger log10M range...
+    log10Ms=mockSurvey.log10M
+    #log10MStep=mockSurvey.log10M[1]-mockSurvey.log10M[0]
+    #log10Ms=np.arange(-100.0, 100.0, log10MStep)
+        
     PArr=[]
     for k in range(len(zRange)):
         
         zk=zRange[k]        
-        log10Ms=mockSurvey.log10M
         mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-zk))
 
         theta500s=interpolate.splev(log10Ms, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
@@ -1991,20 +1998,11 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
             # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
             # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)
             raise Exception("some predicted y0 values -ve")
-        log_y0=np.log(y0)
-        log_y0Err=y0Err/y0
         log_y0pred=np.log(y0pred)
 
-        # Original
         Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
         Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
 
-        # Revised: applying intrinsic scatter as a convolution along log10M gives slightly broader wings (more like MC sim?)
-        #Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2))))
-        #smoothPix=((1/np.log(10))*sigma_int)/(log10Ms[1]-log10Ms[0])
-        #Py0GivenM=ndimage.gaussian_filter1d(Py0GivenM, smoothPix)
-        #Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
-                
         # Mass function de-bias
         if applyMFDebiasCorrection == True:
             PLog10M=mockSurvey.getPLog10M(zk)
@@ -2013,7 +2011,6 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
             PLog10M=1.0
         
         P=Py0GivenM*PLog10M*Pz[k]
-        #plt.plot(log10Ms, Py0GivenM*PLog10M*Pz[k])
         PArr.append(P)
         
     # 2D PArr is what we would want to project onto (M, z) grid
@@ -2023,6 +2020,10 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
     P=np.sum(PArr, axis = 0)
     P=P/np.trapz(P, log10Ms)
     
+    # Reshape to (M, z) grid - use this if use different log10M range to mockSurvey
+    #tck=interpolate.splrep(log10Ms, P)
+    #P=interpolate.splev(mockSurvey.log10M, tck, ext = 1)
+        
     if return2D == True:
         P2D=np.zeros(mockSurvey.clusterCount.shape)
         if zErr == 0:

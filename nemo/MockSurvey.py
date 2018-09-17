@@ -73,7 +73,7 @@ class MockSurvey(object):
             
     def update(self, H0, Om0, Ob0, sigma_8):
         """Recalculate cluster counts if cosmological parameters updated.
-        
+                
         """
         # We're using both astLib and astropy... 
         # astLib is used for E(z) etc. in selFnTools where it's quicker
@@ -145,7 +145,7 @@ class MockSurvey(object):
                 mask=self.mf.ngtm > 0
                 # NOTE: / h here to match what we do in cluster count (also ensures we don't need to worry about little h in draw sample)
                 self.log10MRollers.append(_spline((self.mf.ngtm[mask] / self.mf.ngtm[0])[::-1], np.log10(self.mf.m[mask][::-1]/self.mf.cosmo.h), k=3))
-                            
+        
 
     def _doClusterCount(self):
         """Updates cluster count etc. after mass function object is updated.

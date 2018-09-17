@@ -312,7 +312,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     If plotFileName is given, writes 90% completeness plot.
     
     Two methods for doing the calculation are available:
-    - "fast"        : using calcPM500 to fill-out the (log10 M, z) grid
+    - "fast"        : applying measurement error and scatter to 'true' y0 on a grid to get (log10 M, z) completeness 
     - "Monte Carlo" : using samples drawn from mockSurvey to fill out the (log10 M, z) grid
     
     Adjust numDraws (per iteration) and numIterations to set the noise level of estimate when using the
@@ -329,7 +329,7 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         zRange=mockSurvey.z[zIndex:zIndex+1]
     else:
         zRange=mockSurvey.z
-        
+    
     if method == "Monte Carlo":
         # Monte-carlo sims approach: slow - but can use to verify the other approach below
         halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
@@ -351,25 +351,39 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
         #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
 
     elif method == "fast":
-        # This is like the old approach... 50% completeness is by definition where P(M500) is centred
+        
         tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
                                         scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
-        compMz=np.zeros([mockSurvey.log10M.shape[0], mockSurvey.z.shape[0]])
+        y0Grid=np.zeros(mockSurvey.clusterCount.shape)
         for k in range(len(mockSurvey.z)):
             zk=mockSurvey.z[k]
-            P=simsTools.calcPM500(y0Noise*SNRCut, y0Noise, zk, 0.0, tckQFitDict[extName], mockSurvey, 
-                                tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
-                                applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0}, 
-                                return2D=False)
-            cumP=np.zeros(mockSurvey.log10M.shape)
-            for i in range(len(mockSurvey.log10M)):
-                cumP[i]=np.trapz(P[:i], mockSurvey.log10M[:i])
-            compMz[:, k]=cumP
-        compMz=compMz.transpose()
-        #astImages.saveFITS("test_compMz_fastApproach_withoutMFDebiasCorr_fixedy0ErrInPM500_convScatterInPM500.fits", compMz.transpose(), None)
+            theta500s_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.theta500Splines[k])
+            Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName])
+            fRels_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.fRelSplines[k])
+            true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            y0Grid[k]=true_y0s_zk
+            
+        # For some cosmological parameters, we can still get the odd -ve y0
+        y0Grid[y0Grid < 0] = 1e-9
+        
+        # For some reason, using constant log_y0Err/log_y0 = 1/3 matches obsMz from huge mock closest
+        # Using log_y0Err/log_y0 itself blows up at low y0 / mass / signal-to-noise
+        y0Lim=y0Noise*SNRCut
+        log_y0=np.log(y0Grid)
+        log_y0Err=y0Noise/y0Grid
+        log_totalErr=np.sqrt((1/3)**2 + sigma_int**2)
+        log_y0Lim=np.log(y0Lim)
+        compMz=stats.norm.sf(log_y0Lim, loc = log_y0, scale = log_totalErr)
+        # MC check
+        #MCCube=[]
+        #for i in range(10000):
+            #a=np.random.normal(log_y0, log_totalErr)
+            #MCCube.append(np.array(np.greater(a, log_y0Lim), dtype = float))
+        #compMz=np.sum(MCCube, axis = 0)/10000
+        #astImages.saveFITS("predMz.fits", (compMz*mockSurvey.clusterCount).transpose(), None)
     
     else:
-        raise Exception("calcCompleteness only has 'fast' and 'Monte Carlo' methods available")
+        raise Exception("calcCompleteness only has 'fast', and 'Monte Carlo' methods available")
             
     if plotFileName != None:
         # Calculate 90% completeness as function of z
