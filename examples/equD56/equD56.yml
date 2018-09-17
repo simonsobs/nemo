@@ -66,7 +66,9 @@ massOptions: {tenToA0: 4.95e-5,
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
 selFnOptions: {fixedSNRCut: 5.0, 
-               fullCompleteness: True,
+               method: "fast",
+               numDraws: 2000000,
+               numIterations: 1000,
                massLimitMaps: [{z: 0.5}]}
 
 #selFnFootprints: 
