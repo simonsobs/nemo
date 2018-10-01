@@ -22,7 +22,8 @@ from nemo import startUp
 
 class SelFn(object):
         
-    def __init__(self, parDictFileName, SNRCut, footprintLabel = None, zStep = 0.01, enableDrawSample = False):
+    def __init__(self, parDictFileName, SNRCut, footprintLabel = None, zStep = 0.01, enableDrawSample = False,
+                 downsampleRMS = True):
         """Initialise a SelFn object.
         
         This is a class that uses the output from nemoSelFn to re-calculate the selection function
@@ -32,10 +33,14 @@ class SelFn(object):
         Use footprintLabel to specify a footprint (e.g., 'DES', 'HSC', 'KiDS' etc.) defined in 
         selFnFootprints in the .yml config file. The default None uses the whole survey.
         
+        Set downsampleRMS = True to speed up the completeness calculation (called each time update is called)
+        considerably.
+        
         """
         
         self.SNRCut=SNRCut
         self.footprintLabel=footprintLabel
+        self.downsampleRMS=downsampleRMS
                 
         # ignoreMPI gives us the complete list of extNames, regardless of how this parameter is set in the config file
         parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName, ignoreMPI = True)
@@ -66,10 +71,13 @@ class SelFn(object):
         for extName in self.extNames:
             tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, self.diagnosticsDir, footprintLabel = self.footprintLabel)
             if tileAreaDeg2 > 0:
-                y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, self.photFilterLabel, self.diagnosticsDir, 
-                                                                footprintLabel = self.footprintLabel)
+                #y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, self.photFilterLabel, self.diagnosticsDir, 
+                                                                #footprintLabel = self.footprintLabel)
+                RMSTab=selFnTools.getRMSTab(extName, self.photFilterLabel, self.diagnosticsDir, footprintLabel = self.footprintLabel)
+                if downsampleRMS == True:
+                    RMSTab=selFnTools.downsampleRMSTab(RMSTab)
                 selFnDict={'extName': extName,
-                           'y0Noise': y0Noise,
+                           'RMSTab': RMSTab,
                            'tileAreaDeg2': tileAreaDeg2}
                 self.selFnDictList.append(selFnDict)
                 self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
@@ -112,7 +120,7 @@ class SelFn(object):
         compMzCube=[]
         for selFnDict in self.selFnDictList:
             tileAreas.append(selFnDict['tileAreaDeg2'])
-            selFnDict['compMz']=selFnTools.calcCompleteness(selFnDict['y0Noise'], self.SNRCut, selFnDict['extName'], self.mockSurvey, 
+            selFnDict['compMz']=selFnTools.calcCompleteness(selFnDict['RMSTab'], self.SNRCut, selFnDict['extName'], self.mockSurvey, 
                                                             self.scalingRelationDict, self.tckQFitDict)
             compMzCube.append(selFnDict['compMz'])
         tileAreas=np.array(tileAreas)

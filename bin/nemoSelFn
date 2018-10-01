@@ -89,14 +89,15 @@ else:
     for extName in extNames:
         
         tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir)
-        y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
-        compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, 
+        #y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
+        RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, diagnosticsDir)
+        compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, 
                                            numDraws = parDict['selFnOptions']['numDraws'],
                                            numIterations = parDict['selFnOptions']['numIterations'],
                                            method = parDict['selFnOptions']['method'],
                                            plotFileName = diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (extName))
         selFnDict={'extName': extName,
-                   'y0Noise': y0Noise,
+                   'RMSTab': RMSTab,
                    'tileAreaDeg2': tileAreaDeg2,
                    'compMz': compMz}
         selFnCollection['full'].append(selFnDict)
@@ -107,13 +108,14 @@ else:
             selFnTools.makeIntersectionMask(extName, diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
             tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
-                y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
-                compMz=selFnTools.calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict,
+                #y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
+                RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
+                compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict,
                                                    numDraws = parDict['selFnOptions']['numDraws'],
                                                    numIterations = parDict['selFnOptions']['numIterations'],
                                                    method = parDict['selFnOptions']['method'])
                 selFnDict={'extName': extName,
-                           'y0Noise': y0Noise,
+                           'RMSTab': RMSTab,
                            'tileAreaDeg2': tileAreaDeg2,
                            'compMz': compMz}
                 selFnCollection[footprintDict['label']].append(selFnDict)

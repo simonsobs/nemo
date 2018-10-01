@@ -132,9 +132,9 @@ def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
 
 #------------------------------------------------------------------------------------------------------------
 def getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = None):
-    """Makes a table containing fraction of map area in tile pointed to by extName against RMS values
-    (so this compresses the information in the RMS maps). The first time this is run takes ~200 sec (for a
-    1000 sq deg tile), but the result is cached.
+    """Makes a table containing map area in tile pointed to by extName against RMS values (so this compresses
+    the information in the RMS maps). The first time this is run takes ~200 sec (for a 1000 sq deg tile), 
+    but the result is cached.
     
     Can optionally take extra masks for specifying e.g. HSC footprint. Here, we assume these have already
     been made by makeIntersectionMask, and we can load them from the cache, identifying them through
@@ -165,17 +165,45 @@ def getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = None):
 
         totalAreaDeg2=areaMapSqDeg.sum()
         
-        fracArea=np.zeros(len(RMSValues))
+        tileArea=np.zeros(len(RMSValues))
         for i in range(len(RMSValues)):
-            fracArea[i]=areaMapSqDeg[np.equal(RMSMap, RMSValues[i])].sum()
+            tileArea[i]=areaMapSqDeg[np.equal(RMSMap, RMSValues[i])].sum()
         RMSTab=atpy.Table()
-        RMSTab.add_column(atpy.Column(fracArea, 'fracArea'))
+        RMSTab.add_column(atpy.Column(tileArea, 'areaDeg2'))
         RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
         RMSTab.write(RMSTabFileName)
     else:
         #print("... reading %s ..." % (RMSTabFileName))
         RMSTab=atpy.Table().read(RMSTabFileName)
     
+    return RMSTab
+
+#------------------------------------------------------------------------------------------------------------
+def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
+    """Downsamples the RMSTab in terms of noise resolution, binning by stepSize.
+        
+    Returns RMSTab
+    
+    """
+    
+    stepSize=0.001*1e-4
+    binEdges=np.arange(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max()+stepSize, stepSize)
+    y0Binned=[]
+    tileAreaBinned=[]
+    binMins=[]
+    binMaxs=[]
+    for i in range(len(binEdges)-1):
+        mask=np.logical_and(RMSTab['y0RMS'] > binEdges[i], RMSTab['y0RMS'] <= binEdges[i+1])
+        if mask.sum() > 0:
+            y0Binned.append(np.average(RMSTab['y0RMS'][mask], weights = RMSTab['areaDeg2'][mask]))
+            tileAreaBinned.append(np.sum(RMSTab['areaDeg2'][mask]))
+            binMins.append(binEdges[i])
+            binMaxs.append(binEdges[i+1])
+    newRMSTab=atpy.Table()
+    newRMSTab.add_column(atpy.Column(y0Binned, 'y0RMS'))
+    newRMSTab.add_column(atpy.Column(tileAreaBinned, 'areaDeg2'))
+    RMSTab=newRMSTab
+        
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
@@ -186,8 +214,8 @@ def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footp
 
     RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintLabel)
     RMSValues=np.array(RMSTab['y0RMS'])
-    fracArea=np.array(RMSTab['fracArea'])
-    tileRMSValue=np.average(RMSValues, weights = fracArea)
+    tileArea=np.array(RMSTab['areaDeg2'])
+    tileRMSValue=np.average(RMSValues, weights = tileArea)
 
     return tileRMSValue
 
@@ -303,7 +331,7 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
     return massLimit
     
 #------------------------------------------------------------------------------------------------------------
-def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict,
+def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict,
                      plotFileName = None, z = None, method = "fast", numDraws = 2000000, numIterations = 100):
     """Calculate completeness as a function of (log10 M500, z) on the mockSurvey grid for assumed fiducial
     cosmology and scaling relation, at the given SNRCut and noise level. Intrinsic scatter in the scaling
@@ -312,7 +340,8 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
     If plotFileName is given, writes 90% completeness plot.
     
     Two methods for doing the calculation are available:
-    - "fast"        : applying measurement error and scatter to 'true' y0 on a grid to get (log10 M, z) completeness 
+    - "fast"        : applying measurement error and scatter to 'true' y0 on a grid to get (log10 M, z) 
+                      completeness 
     - "Monte Carlo" : using samples drawn from mockSurvey to fill out the (log10 M, z) grid
     
     Adjust numDraws (per iteration) and numIterations to set the noise level of estimate when using the
@@ -352,15 +381,42 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
 
     elif method == "fast":
         
+        # OLD ---
         # NOTE: put in a small mass bias by hand here (testing effect of overestimating recovered mass compared to true)
         # This shifts y0 grid a little to compensate
         # We also solved for div needed to minimise our figure-of-merit (closest match predicted to projected)
         # These values are for fixed_SNR > 5
         # Once we figure out where these come from, we can remove these
         # See commented testing block immediately below...
-        recMassBias=1.09
-        div=3.481481
+        #recMassBias=1.09
+        #div=3.481481
                 
+        #tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
+                                        #scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
+        #y0Grid=np.zeros([zRange.shape[0], mockSurvey.clusterCount.shape[1]])
+        #for i in range(len(zRange)):
+            #zk=zRange[i]
+            #k=np.argmin(abs(mockSurvey.z-zk))
+            #theta500s_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.theta500Splines[k])
+            #Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName])
+            #fRels_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.fRelSplines[k])
+            ##true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            #y0Grid[i]=true_y0s_zk
+            
+        ## For some cosmological parameters, we can still get the odd -ve y0
+        #y0Grid[y0Grid <= 0] = 1e-9
+        #y0Lim=y0Noise*SNRCut
+        #log_y0=np.log(y0Grid)
+        #log_y0Err=y0Noise/y0Grid
+        #log_totalErr=np.sqrt((1/div)**2 + sigma_int**2) # was 1/3; 1/e is optimal for some reason...
+        #log_y0Lim=np.log(y0Lim)
+        #compMz=stats.norm.sf(log_y0Lim, loc = log_y0, scale = log_totalErr)
+
+        # NEW ---
+        # Using full noise distribution, weighted by fraction of area
+        recMassBias=1.0     # Left this in so can easily test effect later on if required            
+        #t0=time.time()
         tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
                                         scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
         y0Grid=np.zeros([zRange.shape[0], mockSurvey.clusterCount.shape[1]])
@@ -376,14 +432,29 @@ def calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, 
             
         # For some cosmological parameters, we can still get the odd -ve y0
         y0Grid[y0Grid <= 0] = 1e-9
-        y0Lim=y0Noise*SNRCut
+        
+        # Calculate completeness using area-weighted average
+        # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
+        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+        log_y0Lim=np.log(SNRCut*RMSTab['y0RMS'])
         log_y0=np.log(y0Grid)
-        log_y0Err=y0Noise/y0Grid
-        log_totalErr=np.sqrt((1/div)**2 + sigma_int**2) # was 1/3; 1/e is optimal for some reason...
-        log_y0Lim=np.log(y0Lim)
-        compMz=stats.norm.sf(log_y0Lim, loc = log_y0, scale = log_totalErr)
-
-        #---
+        log_totalErr=np.sqrt((1/SNRCut)**2 + sigma_int**2)
+        compMz=np.zeros(log_y0.shape)
+        for i in range(len(RMSTab)):
+            compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
+        #t1=time.time()
+        
+        # For sanity checking figure-of-merit (small is better)
+        #predMz=compMz*mockSurvey.clusterCount
+        #predMz=predMz/predMz.sum()
+        #astImages.saveFITS("predMz.fits", predMz.transpose(), None)        
+        #projImg=pyfits.open("projMz_SNR%.2f.fits" % (SNRCut))        
+        #projMz=projImg[0].data.transpose()
+        #projImg.close()
+        #merit=np.sum(np.sqrt(np.power(projMz-predMz, 2)))
+        #print(recMassBias, merit)
+        
+        # OLD ---
         # Testing: solve for both div and recMassBias
         # Recovered mass has bias at few % level (from testing nemoMass on mocks - need to find where this comes from)
         # Once we have div and recMassBias from this, test effect on recovered cosmology from mocks
@@ -483,52 +554,24 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
     wcs=astWCS.WCS(RMSImg[0].header, mode = 'pyfits')
     RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir)
     
-    # Downsampling in noise resolution
-    #stepSize=0.001*1e-4
-    #binEdges=np.arange(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max()+stepSize, stepSize)
-    #y0Binned=[]
-    #fracAreaBinned=[]
-    #binMins=[]
-    #binMaxs=[]
-    #for i in range(len(binEdges)-1):
-        #mask=np.logical_and(RMSTab['y0RMS'] > binEdges[i], RMSTab['y0RMS'] <= binEdges[i+1])
-        #if mask.sum() > 0:
-            #y0Binned.append(np.average(RMSTab['y0RMS'][mask]))
-            #fracAreaBinned.append(np.sum(RMSTab['y0RMS'][mask]))
-            #binMins.append(binEdges[i])
-            #binMaxs.append(binEdges[i+1])
-            
+    # Downsampling for speed?
+    RMSTab=downsampleRMSTab(RMSTab)
+    
     # Fill in blocks in map for each RMS value
     outFileName=diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName)
     if os.path.exists(outFileName) == False:
         massLimMap=np.zeros(RMSMap.shape)
         count=0
         t0=time.time()
-        #--
-        # New
-        #for y0Noise, binMin, binMax in zip(y0Binned, binMins, binMaxs):
-            #count=count+1
-            #print(("... %d/%d (%.3e) ..." % (count, len(y0Binned), y0Noise)))
-            #compMz=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict,
-                                    #z = z)
-            #mapMask=np.logical_and(RMSMap > binMin, RMSMap <= binMax)
-            #massLimMap[mapMask]=mockSurvey.log10M[np.argmin(abs(compMz-0.9))]
-            ## Does this stop memory leak?
-            ##massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, z = z)-0.9))]
-        #t1=time.time()        
-        #massLimMap=np.power(10, massLimMap)/1e14
-        #astImages.saveFITS(outFileName, massLimMap, wcs)
-        #--
-        # Old 
         for y0Noise in RMSTab['y0RMS']:
             count=count+1
             print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
-            compMz=calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, z = z)
-            massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(calcCompleteness(y0Noise, SNRCut, extName, mockSurvey, scalingRelationDict, tckQFitDict, z = z)-0.9))]
+            compMz=calcCompleteness(RMSTab[np.where(RMSTab['y0RMS'] == y0Noise)], SNRCut, extName, mockSurvey, 
+                                    scalingRelationDict, tckQFitDict, z = z)
+            massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(compMz-0.9))]
         t1=time.time()        
         massLimMap=np.power(10, massLimMap)/1e14
         astImages.saveFITS(outFileName, massLimMap, wcs)
-        #--
         
     # This is sanity checking survey average completeness... 
     # Summary: agrees within 0.2% on average, but some tiles out by up to 3%
