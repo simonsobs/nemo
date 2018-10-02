@@ -14,6 +14,7 @@ import subprocess
 import hmf
 from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
+import astropy.constants
 from . import simsTools
 from . import catalogTools
 import pickle
@@ -23,6 +24,12 @@ from scipy import stats
 from astLib import *
 import time
 
+#------------------------------------------------------------------------------------------------------------
+# Conversion constants
+Mpc_in_cm=astropy.constants.pc.value*100*1e6
+MSun_in_g=astropy.constants.M_sun.value*1000
+
+#------------------------------------------------------------------------------------------------------------
 class MockSurvey(object):
     
     def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = 0.01, enableDrawSample = False):
@@ -78,6 +85,7 @@ class MockSurvey(object):
         # We're using both astLib and astropy... 
         # astLib is used for E(z) etc. in selFnTools where it's quicker
         # We're also keeping track inside MockSurvey itself just for convenience
+        # NOTE: Working on switching all cosmology over to astropy for consistency with hmf - remove when done
         self.H0=H0
         self.Om0=Om0
         self.Ob0=Ob0
@@ -96,32 +104,26 @@ class MockSurvey(object):
         # For quick Q, fRel calc (these are in MockSurvey rather than SelFn as used by drawSample)
         self.theta500Splines=[]
         self.fRelSplines=[]
-        self.Ez=[]
-        self.DAz=[]
-        for i in range(len(self.z)):
-            zk=self.z[i]
-            Ez=astCalc.Ez(zk)
-            Hz=astCalc.Ez(zk)*astCalc.H0  
-            G=4.301e-9  # in MSun-1 km2 s-2 Mpc
-            criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+        self.Ez=self.cosmo_model.efunc(self.z)
+        self.DAz=self.cosmo_model.angular_diameter_distance(self.z).value
+        self.criticalDensity=self.cosmo_model.critical_density(self.z).value
+        self.criticalDensity=(self.criticalDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
+        for k in range(len(self.z)):
+            zk=self.z[k]
             interpLim_minLog10M=self.log10M.min()
             interpLim_maxLog10M=self.log10M.max()
             interpPoints=100
             fitM500s=np.power(10, np.linspace(interpLim_minLog10M, interpLim_maxLog10M, interpPoints))
             fitTheta500s=np.zeros(len(fitM500s))
             fitFRels=np.zeros(len(fitM500s))
-            DA=astCalc.da(zk)
-            Ez=astCalc.Ez(zk)
-            for i in range(len(fitM500s)):
-                M500=fitM500s[i]
-                R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
-                theta500Arcmin=np.degrees(np.arctan(R500Mpc/DA))*60.0
-                fitTheta500s[i]=theta500Arcmin
-                fitFRels[i]=simsTools.calcFRel(zk, M500)
+            criticalDensity=self.criticalDensity[k]
+            DA=self.DAz[k]
+            Ez=self.Ez[k]
+            R500Mpc=np.power((3*fitM500s)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
+            fitTheta500s=np.degrees(np.arctan(R500Mpc/DA))*60.0
+            fitFRels=simsTools.calcFRel(zk, fitM500s)
             tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
             tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
-            self.Ez.append(Ez)
-            self.DAz.append(DA)
             self.theta500Splines.append(tckLog10MToTheta500)
             self.fRelSplines.append(tckLog10MToFRel)
             
@@ -251,7 +253,7 @@ class MockSurvey(object):
         if numDraws is used).
                 
         """
-        
+                
         if z == None:
             zRange=self.z
             numClusters=int(round(self.numClustersByRedshift.sum()))
@@ -263,6 +265,9 @@ class MockSurvey(object):
         
         if areaDeg2 != None:
             numClusters=int(round(numClusters*(areaDeg2/self.areaDeg2)))
+            
+        # Add Poisson noise
+        numClusters=np.random.poisson(numClusters)
 
         if numDraws != None:
             numClusters=numDraws            
@@ -354,6 +359,7 @@ class MockSurvey(object):
             measured_y0s[mask]=measured_y0s_zk
             log10Ms[mask]=log10Ms_zk
             zs[mask]=zk
+                
         
         # Make table
         tab=atpy.Table()
