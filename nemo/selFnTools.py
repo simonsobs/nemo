@@ -435,7 +435,7 @@ def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, t
         #sys.exit()
         #tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
                                         #scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
-        #recMassBiasArr=np.arange(1.04, 1.05, 0.002)
+        #recMassBiasArr=np.arange(1.04, 1.07, 0.002)
         #divider=np.linspace(5.5, 6.5, 50)
         #projImg=pyfits.open("projMz_SNR%.2f.fits" % (SNRCut))        
         #projMz=projImg[0].data.transpose()
