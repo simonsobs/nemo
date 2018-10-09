@@ -299,6 +299,9 @@ class MockSurvey(object):
             RAs=np.zeros(numClusters)
             decs=np.zeros(numClusters)
         
+        ## WARNING: For testing only!
+        #y0Noise[:]=1e-6
+        
         # Fancy names or not?
         if makeNames == True:
             names=[]
@@ -358,12 +361,11 @@ class MockSurvey(object):
                 measured_y0s_zk=np.random.normal(scattered_y0s_zk, y0Noise_zk)
             except:
                 raise Exception("Negative y0 values (probably spline related) for H0 = %.6f Om0 = %.6f sigma_8 = %.6f at z = %.3f" % (self.H0, self.Om0, self.sigma_8, zk))
-                
+                    
             true_y0s[mask]=true_y0s_zk
             measured_y0s[mask]=measured_y0s_zk
             log10Ms[mask]=log10Ms_zk
             zs[mask]=zk
-                
         
         # Make table
         tab=atpy.Table()
@@ -379,7 +381,7 @@ class MockSurvey(object):
         tab.add_column(atpy.Column(zErrs, 'redshiftErr'))
         if photFilterLabel != None and extName != None:
             tab.add_column(atpy.Column([photFilterLabel+"#"+extName]*len(tab), 'template'))
-
+                
         # Apply selection?
         if applySNRCut == True:
             selMask=measured_y0s > y0Noise*SNRLimit

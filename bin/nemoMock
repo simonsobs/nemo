@@ -123,8 +123,7 @@ else:
             if tab == None:
                 tab=stackTab
             else:
-                for row in stackTab:
-                    tab.add_row(row)
+                tab=atpy.vstack([tab, stackTab])
         outFileName=mocksDir+os.path.sep+"mockCatalog_combined.fits"
         if os.path.exists(outFileName) == True:
             os.remove(outFileName)

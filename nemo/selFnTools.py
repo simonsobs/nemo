@@ -383,13 +383,7 @@ def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, t
         
         # NEW ---
         # Using full noise distribution, weighted by fraction of area
-        # Ideal values...
-        #recMassBias=1.0
-        #div=SNRCut
-        # Tuned values (see commented out block below)...
-        recMassBias=1.048  
-        div=6.0714285
-        
+        # NOTE: removed recMassBias and div parameters
         #t0=time.time()
         tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
                                         scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
@@ -400,8 +394,8 @@ def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, t
             theta500s_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.theta500Splines[k])
             Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName])
             fRels_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.fRelSplines[k])
-            #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
-            true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
             y0Grid[i]=true_y0s_zk
             
         # For some cosmological parameters, we can still get the odd -ve y0
@@ -412,9 +406,13 @@ def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, t
         areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
         log_y0Lim=np.log(SNRCut*RMSTab['y0RMS'])
         log_y0=np.log(y0Grid)
-        log_totalErr=np.sqrt((1/div)**2 + sigma_int**2)
         compMz=np.zeros(log_y0.shape)
         for i in range(len(RMSTab)):
+            SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+            SNRGrid=SNRGrid
+            log_y0Err=1/SNRGrid
+            log_y0Err[SNRGrid < SNRCut]=1/SNRCut
+            log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
             compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
         #t1=time.time()
         
@@ -426,7 +424,55 @@ def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, t
         #projMz=projImg[0].data.transpose()
         #projImg.close()
         #merit=np.sum(np.sqrt(np.power(projMz-predMz, 2)))
-        #print(recMassBias, merit)
+        #print(merit)
+        #IPython.embed()
+        #sys.exit()
+        
+        #---
+        # Need to beat: 
+        # merit = 0.0348 [normal]
+        # merit = 0.0593 [1e-6 noise, sigma_int = 0]
+        #print("testing: new stuff")
+        #IPython.embed()
+        #sys.exit()
+        ##RMSTab['y0RMS'][:]=1e-6
+        #recMassBias=1.0
+        #div=SNRCut
+        ##t0=time.time()
+        #tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
+                                        #scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
+        #y0Grid=np.zeros([zRange.shape[0], mockSurvey.clusterCount.shape[1]])
+        #for i in range(len(zRange)):
+            #zk=zRange[i]
+            #k=np.argmin(abs(mockSurvey.z-zk))
+            #theta500s_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.theta500Splines[k])
+            #Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName])
+            #fRels_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.fRelSplines[k])
+            ##true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            #y0Grid[i]=true_y0s_zk
+        ## For some cosmological parameters, we can still get the odd -ve y0
+        #y0Grid[y0Grid <= 0] = 1e-9
+        ## Blah
+        #areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+        #log_y0Lim=np.log(SNRCut*RMSTab['y0RMS'])
+        #log_y0=np.log(y0Grid)
+        #compMz=np.zeros(log_y0.shape)
+        #for i in range(len(RMSTab)):
+            #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+            #log_y0Err=1/SNRGrid
+            #log_y0Err[SNRGrid < SNRCut]=1/SNRCut
+            #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+            ## These two are entirely equivalent
+            #compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
+            ##compMz=compMz+((1-stats.norm.sf(log_y0, loc = log_y0Lim[i], scale = log_totalErr))*areaWeights[i])
+        #predMz=compMz*mockSurvey.clusterCount
+        #predMz=predMz/predMz.sum()
+        #astImages.saveFITS("predMz.fits", predMz.transpose(), None)   
+        #projImg=pyfits.open("projMz_SNR%.2f.fits" % (SNRCut))        
+        #projMz=projImg[0].data.transpose()
+        #projImg.close()
+        #merit=np.sum(np.sqrt(np.power(projMz-predMz, 2)))
         
         #---
         # Testing: solve for both div and recMassBias
@@ -435,8 +481,8 @@ def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, t
         #sys.exit()
         #tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
                                         #scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
-        #recMassBiasArr=np.arange(1.04, 1.07, 0.002)
-        #divider=np.linspace(5.5, 6.5, 50)
+        #recMassBiasArr=np.arange(0.97, 1.07, 0.01)
+        #divider=np.linspace(5.0, 6.0, 10)
         #projImg=pyfits.open("projMz_SNR%.2f.fits" % (SNRCut))        
         #projMz=projImg[0].data.transpose()
         #projImg.close()
