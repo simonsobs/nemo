@@ -71,8 +71,13 @@ def lnprob(parameters):
     # (this is the similar to what Planck does, e.g., Planck 2015 XXIV eqn. 15)
     # NOTE: Planck only has 10 x 5 bins, and bins by z, S/N (q in Planck paper)
     #mask=np.greater(predMz, 0)
+    #mask=np.logical_and(np.greater(obsMz, 0), np.greater(predMz, 0))
+    #lnlike=np.sum(obsMz[mask]*np.log(predMz[mask])-predMz[mask]-np.log(factorial(obsMz[mask])))
+    
+    # Chi-sq (again)
     mask=np.logical_and(np.greater(obsMz, 0), np.greater(predMz, 0))
-    lnlike=np.sum(obsMz[mask]*np.log(predMz[mask])-predMz[mask]-np.log(factorial(obsMz[mask])))
+    chiSq=np.sum(np.power(obsMz[mask]-predMz[mask], 2)/predMz[mask])
+    lnlike=-chiSq
 
     print(processName, "end step: ", H0, Om0, sigma_8, lp, "timings (sec):", t1-t0, t3-t2)
     
