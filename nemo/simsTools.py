@@ -1832,14 +1832,18 @@ def getM500FromP(P, log10M, calcErrors = True):
             maxIndex=index+n
             if minIndex < 0 or maxIndex > fineP.shape[0]:
                 # This shouldn't happen; if it does, probably y0 is in the wrong units
-                raise Exception("outside M500 range - check y0 units or for problem at cluster location in map (e.g., fixed_SNR very low compared to SNR)")          
+                # Previously we threw an exception here, but we can't if using this for forced photometry
+                print("WARNING: outside M500 range - check y0 units or for problem at cluster location in map (if not in forced photometry mode)")
+                clusterM500MinusErr=0.
+                clusterM500PlusErr=0.
+                break
             p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
             if p >= 0.6827:
                 clusterLogM500Min=fineLog10M[minIndex]
                 clusterLogM500Max=fineLog10M[maxIndex]
+                clusterM500MinusErr=(np.power(10, clusterLogM500)-np.power(10, clusterLogM500Min))/1e14
+                clusterM500PlusErr=(np.power(10, clusterLogM500Max)-np.power(10, clusterLogM500))/1e14
                 break        
-        clusterM500MinusErr=(np.power(10, clusterLogM500)-np.power(10, clusterLogM500Min))/1e14
-        clusterM500PlusErr=(np.power(10, clusterLogM500Max)-np.power(10, clusterLogM500))/1e14
     else:
         clusterM500MinusErr=0.
         clusterM500PlusErr=0.

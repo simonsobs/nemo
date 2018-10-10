@@ -21,8 +21,10 @@ import astropy.table as atpy
 from astLib import *
 from scipy import stats
 from scipy import interpolate
+from nemo import catalogTools
 from nemo import simsTools
 from nemo import mapTools
+from nemo import mapFilters
 from nemo import MockSurvey
 from nemo import photometry
 from nemo import startUp
@@ -31,6 +33,82 @@ import time
 import yaml
 import IPython
 plt.matplotlib.interactive(False)
+
+#------------------------------------------------------------------------------------------------------------
+def addForcedPhotometry(forcedTab, parDict, unfilteredMapsDict, extNames, diagnosticsDir):
+    """Given a tab with (minimum) name, RADeg, decDeg, redshift columns, add forced photometry columns so we
+    can estimate SZ masses.
+    
+    """
+    
+    print(">>> Doing forced photometry ...")
+    
+    # Filter maps - but should already have been done, this is just for easy set up
+    photFilterLabel=parDict['photometryOptions']['photFilter']
+    photFilterList=[]
+    for filterDict in parDict['mapFilters']:
+        if filterDict['label'] == photFilterLabel:
+            photFilterList.append(filterDict)
+    imageDict=mapFilters.filterMaps(parDict['unfilteredMaps'], photFilterList, extNames = extNames, rootOutDir = rootOutDir)
+    
+    # Re-jig the catalog into the appropriate format before feeding through photometry routine
+    catalog=[]
+    for extName in extNames:
+        # We need this to check if objects in the catalog are actually in the footprint
+        areaMaskImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaMask=areaMaskImg[0].data
+        wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
+        for row in forcedTab:
+            objDict={}
+            for key in list(forcedTab.keys()):
+                objDict[key]=row[key]
+            objDict['template']=photFilterLabel+"#"+extName
+            objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
+            objDict['redshift']=row['redshift']
+            if 'redshiftErr' in forcedTab.keys():
+                objDict['redshiftErr']=row['redshiftErr']
+            else:
+                objDict['redshiftErr']=0.0
+            x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
+            if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
+                if areaMask[int(round(y)), int(round(x))] == 1:
+                    objDict['x']=x
+                    objDict['y']=y
+                    catalog.append(objDict)
+    imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
+    photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
+    catalogTools.mergeCatalogs(imageDict)
+    
+    # No cuts here, because if we're using this mode, the objects almost certainly weren't detected...
+    catalogTools.makeOptimalCatalog(imageDict, [])  
+    photometry.addFreqWeightsToCatalog(imageDict, parDict['photometryOptions'], diagnosticsDir)
+
+    # Make into an atpy Table
+    # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
+    wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
+    for key in imageDict['optimalCatalog'][0].keys():
+        if key.find("fixed_y_c_weight") != -1:
+            wantedKeys.append(key)
+    tab=atpy.Table()
+    for extName in extNames:
+        catalog=imageDict['optimalCatalog']
+        for key in wantedKeys:
+            arr=[]
+            for objDict in catalog:
+                if key in list(objDict.keys()):
+                    arr.append(objDict[key])
+                else:
+                    arr.append(0)
+            tab.add_column(atpy.Column(np.array(arr), key))
+    tab=tab[np.where(tab['redshift'] != 0)]
+
+    # Flag things with -ve y0~, which we can't do anything with (unless we add stacking / averaging mode)
+    for row in tab:
+        if row['fixed_y_c'] < 0:
+            print("... %s has fixed_y_c < 0 (and is removed) ..." % (row['name']))
+    tab=tab[np.where(tab['fixed_y_c'] > 0)]
+
+    return tab
 
 #------------------------------------------------------------------------------------------------------------
 # Main
@@ -44,6 +122,8 @@ else:
     parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
     
     massOptions=parDict['massOptions']
+    
+    forcedPhotometry=False
     
     # Load the nemo catalog and match against the z catalog
     if catFileName == 'default':
@@ -74,70 +154,8 @@ else:
             outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
     
         elif massOptions['forcedPhotometry'] == True:
-                        
-            # This is for "easy set-up" below - we just need a list of extNames
-            if 'extNameList' in list(parDict.keys()):
-                extNames=parDict['extNameList']
-            else:
-                raise Exception("need to add code to scan for extNames in forced photometry mode")
-            
-            # Filter maps - but should already have been done, this is just for easy set up
-            photFilterLabel=parDict['photometryOptions']['photFilter']
-            photFilterList=[]
-            for filterDict in parDict['mapFilters']:
-                if filterDict['label'] == photFilterLabel:
-                    photFilterList.append(filterDict)
-            imageDict=mapTools.filterMaps(parDict['unfilteredMaps'], photFilterList, extNames = extNames, rootOutDir = rootOutDir)
-            
-            # Re-jig the catalog into the appropriate format before feeding through photometry routine
-            catalog=[]
-            for extName in extNames:
-                # We need this to check if objects in the catalog are actually in the footprint
-                areaMaskImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
-                areaMask=areaMaskImg[0].data
-                wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
-                for row in zTab:
-                    objDict={}
-                    for key in list(zTab.keys()):
-                        objDict[key]=row[key]
-                    objDict['template']=photFilterLabel+"#"+extName
-                    objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
-                    x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
-                    if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
-                        if areaMask[int(round(y)), int(round(x))] == 1:
-                            objDict['x']=x
-                            objDict['y']=y
-                            catalog.append(objDict)
-            imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
-            photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
-            
-            # Just so that we remember we need to fix this...
-            raise Exception("need to add code to handle multi-freq relative weights to forced photometry mode")
-            # This operates on imageDict['optimalCatalog'], which we don't currently have in here
-            photometry.addFreqWeightsToCatalog(imageDict, parDict['photometryOptions'], diagnosticsDir)
-
-            # Make into an atpy table
-            # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
-            wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
-            tab=atpy.Table()
-            for extName in extNames:
-                catalog=imageDict[photFilterLabel+"#"+extName]['catalog']
-                for key in wantedKeys:
-                    arr=[]
-                    for objDict in catalog:
-                        if key in list(objDict.keys()):
-                            arr.append(objDict[key])
-                        else:
-                            arr.append(0)
-                    tab.add_column(atpy.Column(np.array(arr), key))
-            tab=tab[np.where(tab['redshift'] != 0)]
-            
-            # Flag things with -ve y0~, which we can't do anything with (unless we add stacking / averaging mode)
-            for row in tab:
-                if row['fixed_y_c'] < 0:
-                    print("... %s has fixed_y_c < 0 (and is removed) ..." % (row['name']))
-            tab=tab[np.where(tab['fixed_y_c'] > 0)]
-            outFileName=rootOutDir+os.path.sep+os.path.split(massOptions['redshiftCatalog'])[-1].replace(".fits", "_M500.fits")
+            # Supplying this option in massOptions is no longer strictly necessary (see below)
+            forcedPhotometry=True
 
     else:
         
@@ -145,11 +163,14 @@ else:
         optimalCatalogFileName=catFileName
         tab=atpy.Table().read(optimalCatalogFileName)
         outFileName=catFileName.replace(".fits", "_M500.fits")
+        
+        # Enter forced photometry mode if we can't find the columns we need
+        keysNeeded=['fixed_y_c', 'fixed_err_y_c']
+        forcedPhotometry=False
+        for key in keysNeeded:
+            if key not in tab.keys():
+                forcedPhotometry=True
 
-    # Optional fixed SNR cut
-    if 'fixedSNRCut' in list(massOptions.keys()):
-        tab=tab[np.where(tab['fixed_SNR'] > massOptions['fixedSNRCut'])]
-    
     # Q function (filter mismatch) options
     # NOTE: this should be calculated for the fixed, fiducial cosmology used for object detection
     # NOTE: Q calculation is the only bit of this code that uses MPI - rank != 0 MPI jobs killed after fitQ
@@ -161,7 +182,16 @@ else:
                                     MPIEnabled = parDict['useMPI'], rank = rank, comm = comm)
     else:
         raise Exception("didn't understand choice of Q function in massOptions")
-                
+    
+    # Forced photometry (if enabled) - modifying table in place
+    # NOTE: Move this up if/when we make it run under MPI
+    if forcedPhotometry == True:
+        tab=addForcedPhotometry(tab, parDict, unfilteredMapsDictList, extNames, diagnosticsDir)
+
+    # Optional fixed SNR cut
+    if 'fixedSNRCut' in list(massOptions.keys()):
+        tab=tab[np.where(tab['fixed_SNR'] > massOptions['fixedSNRCut'])]
+    
     # Set cosmological parameters for e.g. E(z) calc if these are set in .par file
     # We set them after the Q calc, because the Q calc needs to be for the fiducial cosmology
     # (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) used in object detection/filtering stage

@@ -39,7 +39,9 @@ COLUMN_NAMES    = ['name',
                    'Y500_sr',
                    'err_Y500_sr',
                    'fluxJy',
-                   'err_fluxJy']
+                   'err_fluxJy',
+                   'redshift',
+                   'redshiftErr']
 COLUMN_FORMATS  = ['%s',
                    '%.6f',
                    '%.6f',
@@ -54,6 +56,8 @@ COLUMN_FORMATS  = ['%s',
                    '%.3e',
                    '%.3e',
                    '%.3e',
+                   '%.3f',
+                   '%.3f',
                    '%.3f',
                    '%.3f']
 
