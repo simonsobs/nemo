@@ -21,9 +21,9 @@ etc.
 """
 
 import math
-from sotools import enmap
-from sotools import fft as enfft
-from sotools import powspec
+from pixell import enmap
+from pixell import fft as enfft
+from pixell import powspec
 import astropy.wcs as enwcs
 from astLib import *
 import numpy as np
@@ -162,7 +162,7 @@ class MapFilter(object):
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
         
-        # For sotools / enmap
+        # For pixell / enmap
         # NOTE: enki maps can have an additional axis, which we don't want
         enheader=mapDict['wcs'].header
         if 'NAXIS3' in enheader.keys():
@@ -170,7 +170,7 @@ class MapFilter(object):
         enheader['NAXIS']=2
         self.enwcs=enwcs.WCS(enheader)
 
-        # We could make this adjustable... added after switch to sotools
+        # We could make this adjustable... added after switch to pixell
         self.apodPix=20
         
         # Sanity check that all maps are the same dimensions
@@ -401,7 +401,7 @@ class MatchedFilter(MapFilter):
                         
             maskedData=mapDict['data']
             
-            # Replaced flipper with sotools
+            # Replaced flipper with pixell
             # NOTE: modLMap, modThetaMap are not exactly the same as flipper gives... doesn't seem to be python3 thing
             # Normalisation is different to flipper, but doesn't matter if we are consistent throughout
             fMaskedData=enmap.fft(enmap.apod(maskedData, self.apodPix))
@@ -461,7 +461,7 @@ class MatchedFilter(MapFilter):
             self.G=filt
             
             # NOTE: Do not disable this weighting
-            # sotools
+            # pixell
             weightedMap=mapDict['data']*np.sqrt(mapDict['weights']/mapDict['weights'].max())
             weightedMap=enmap.apod(weightedMap, self.apodPix)
             fMap=enmap.fft(weightedMap)

@@ -47,7 +47,7 @@ earlier and later versions also probably work):
 * scipy (0.17.1)
 * matplotlib (2.1.0)
 * astLib (0.10.x + or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
-* [sotools](https://github.com/simonsobs/sotools)
+* [pixell](https://github.com/simonsobs/pixell/) (0.1.1 or git version)
 * Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)
 * astropy (2.0.4)
 * IPython (2.4.1)
@@ -57,7 +57,7 @@ earlier and later versions also probably work):
 * mpi4py (3.0.0)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 
-All of the dependencies (except sotools, at the moment) can be installed using `pip`.
+All of the dependencies can be installed using `pip`.
 
 ## Installation
 

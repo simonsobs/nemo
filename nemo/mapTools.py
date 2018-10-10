@@ -595,8 +595,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         from . import simsTools
         
         # The old flipper-based routine that did this took 190 sec versus 0.7 sec for enlib
-        # NOTE: enlib/sotools imports here for now, to save having to install if we're not using it
-        from sotools import enmap, utils, powspec
+        # NOTE: enlib/pixell imports here for now, to save having to install if we're not using it
+        from pixell import enmap, utils, powspec
         import astropy.wcs as apywcs
         enlibWCS=apywcs.WCS(wcs.header)
         ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", scale = True)

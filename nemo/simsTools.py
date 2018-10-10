@@ -4,7 +4,7 @@ This module contains routines for comparing measured fluxes to input sims.
 
 """
 
-from sotools import enmap
+from pixell import enmap
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
 from astLib import *
