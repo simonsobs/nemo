@@ -156,6 +156,11 @@ class SelFn(object):
                                   return2D = True)
             # Paste into (M, z) grid
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
+            
+        # Testing true_M500 recovery (if we've turned off all scatter)
+        #a=P.sum(axis = 0) 
+        #recMass, recMass_errMinus, recMass_errPlus=simsTools.getM500FromP(a, self.mockSurvey.log10M)
+        #recMassBias=recMass/row['true_M500']        
         
         return catProjectedMz
 

@@ -60,12 +60,13 @@ class MockSurvey(object):
         astCalc.OMEGA_L0=1.0-Om0
         
         self.minMass=minMass
-
+        
         # It's much faster to generate one mass function and then update its parameters (e.g., z)
         # NOTE: Mmin etc. are log10 MSun h^-1; dndm is h^4 MSun^-1 Mpc^-3
         # Internally, it's better to stick with how hmf does this, i.e., use these units
         # Externally, we still give  inputs without h^-1
-        self.mf=hmf.MassFunction(z = zRange[0], Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
+        # NOTE: default was dlog10m = 0.01; cranking resolution to 0.001 makes a difference, but beyond that converges
+        self.mf=hmf.MassFunction(z = zRange[0], dlog10m=0.001, Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
                                  sigma_8 = sigma_8, cosmo_model = self.cosmo_model)#, force_flat = True, cut_fit = False)
             
         self.log10M=np.log10(self.mf.m/self.mf.cosmo.h)
@@ -253,6 +254,10 @@ class MockSurvey(object):
         if numDraws is used).
                 
         """
+        
+        # WARNING: testing only!
+        #print("WARNING: np.random.seed set to fixed value in drawSample - you don't want this if not testing!")
+        #np.random.seed(100)
                 
         if z == None:
             zRange=self.z
@@ -301,7 +306,7 @@ class MockSurvey(object):
         
         ## WARNING: For testing only!
         #y0Noise[:]=1e-6
-        
+
         # Fancy names or not?
         if makeNames == True:
             names=[]
@@ -356,9 +361,10 @@ class MockSurvey(object):
             
             try:
                 true_y0s_zk=tenToA0*np.power(self.Ez[k], 2)*np.power(np.power(10, log10Ms_zk)/Mpivot, 1+B0)*Qs_zk*fRels_zk
-                true_y0s_zk=true_y0s_zk*fRels_zk
                 scattered_y0s_zk=np.exp(np.random.normal(np.log(true_y0s_zk), sigma_int, len(true_y0s_zk)))        
                 measured_y0s_zk=np.random.normal(scattered_y0s_zk, y0Noise_zk)
+                # NOTE: Testing only - test of catalog projection
+                #measured_y0s_zk=true_y0s_zk
             except:
                 raise Exception("Negative y0 values (probably spline related) for H0 = %.6f Om0 = %.6f sigma_8 = %.6f at z = %.3f" % (self.H0, self.Om0, self.sigma_8, zk))
                     
