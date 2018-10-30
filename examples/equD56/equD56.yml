@@ -53,7 +53,7 @@ massOptions: {tenToA0: 4.95e-5,
               sigma_int: 0.2,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "ACTPol_redshifts.fits", 
+              redshiftCatalog: "ACTPol_clusters_20180816.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
@@ -159,5 +159,10 @@ estimateContaminationFromInvertedMaps: False
 
 # Used by nemoMock only: generate mock catalogs? If so, how many?
 # If combineMocks is True, concatenate all of the mock catalogs made into one giant catalog (for convenience)
-makeMockCatalogs: 10
+# Use applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter to control how noise sources are applied 
+# to mocks - if all are set to False, mocks with have fixed_y_c equal to the true value
+makeMockCatalogs: 100
+applyPoissonScatter: True
+applyIntrinsicScatter: True
+applyNoiseScatter: True
 combineMocks: True

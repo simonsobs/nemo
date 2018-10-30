@@ -23,7 +23,7 @@ from nemo import startUp
 class SelFn(object):
         
     def __init__(self, parDictFileName, SNRCut, footprintLabel = None, zStep = 0.01, enableDrawSample = False,
-                 downsampleRMS = True):
+                 downsampleRMS = True, applyMFDebiasCorrection = True):
         """Initialise a SelFn object.
         
         This is a class that uses the output from nemoSelFn to re-calculate the selection function
@@ -41,6 +41,7 @@ class SelFn(object):
         self.SNRCut=SNRCut
         self.footprintLabel=footprintLabel
         self.downsampleRMS=downsampleRMS
+        self.applyMFDebiasCorrection=applyMFDebiasCorrection
                 
         # ignoreMPI gives us the complete list of extNames, regardless of how this parameter is set in the config file
         parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName, ignoreMPI = True)
@@ -129,13 +130,10 @@ class SelFn(object):
         self.compMz=np.average(compMzCube, axis = 0, weights = fracArea)
                     
 
-    def projectCatalogToMz(self, tab, applyMFDebiasCorrection = True):
+    def projectCatalogToMz(self, tab):
         """Project a catalog (as astropy Table) into the (log10 M500, z) grid. Takes into account the uncertainties
         on y0, redshift - but if redshift error is non-zero, is a lot slower.
-        
-        NOTE: Although applying the mass function debias correction is optional here, you almost certainly don't
-        want to disable it.
-        
+                
         Returns (log10 M500, z) grid
         
         """
@@ -152,15 +150,10 @@ class SelFn(object):
             y0Err=row['fixed_err_y_c']*1e-4
             P=simsTools.calcPM500(y0, y0Err, z, zErr, self.tckQFitDict[extName], self.mockSurvey, 
                                   tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
-                                  applyMFDebiasCorrection = applyMFDebiasCorrection, fRelWeightsDict = {148.0: 1.0},
+                                  applyMFDebiasCorrection = self.applyMFDebiasCorrection, fRelWeightsDict = {148.0: 1.0},
                                   return2D = True)
             # Paste into (M, z) grid
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
-            
-        # Testing true_M500 recovery (if we've turned off all scatter)
-        #a=P.sum(axis = 0) 
-        #recMass, recMass_errMinus, recMass_errPlus=simsTools.getM500FromP(a, self.mockSurvey.log10M)
-        #recMassBias=recMass/row['true_M500']        
         
         return catProjectedMz
 

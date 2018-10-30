@@ -66,7 +66,7 @@ class MockSurvey(object):
         # Internally, it's better to stick with how hmf does this, i.e., use these units
         # Externally, we still give  inputs without h^-1
         # NOTE: default was dlog10m = 0.01; cranking resolution to 0.001 makes a difference, but beyond that converges
-        self.mf=hmf.MassFunction(z = zRange[0], dlog10m=0.001, Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
+        self.mf=hmf.MassFunction(z = zRange[0], dlog10m=0.01, Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
                                  sigma_8 = sigma_8, cosmo_model = self.cosmo_model)#, force_flat = True, cut_fit = False)
             
         self.log10M=np.log10(self.mf.m/self.mf.cosmo.h)
@@ -222,7 +222,8 @@ class MockSurvey(object):
 
     def drawSample(self, y0Noise, scalingRelationDict, tckQFitDict, wcs = None, photFilterLabel = None, 
                    extName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
-                   areaDeg2 = None, applySNRCut = False):
+                   areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
+                   applyIntrinsicScatter = True, applyNoiseScatter = True):
         """Draw a cluster sample from the mass function, generate mock y0~ values by applying the given 
         scaling relation parameters, and then (optionally, if both SNRLimit is given and applySNRCut 
         is True) apply the survey selection function.
@@ -248,6 +249,12 @@ class MockSurvey(object):
         If areaDeg2 is given, the cluster counts will be scaled accordingly (otherwise, they 
         correspond to self.areaDeg2). This will be ignored if numDraws is also set.
         
+        Use applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter to control whether Poisson 
+        noise (in the expected counts / number of draws from the mass function), intrinsic scatter, 
+        and/or measurement noise scatter will be applied (i.e., if all three options are set to False,
+        fixed_y_c values will be the same as true_y_c, although each object will still have an error 
+        bar in the output catalog, corresponding to where it is found in the RMS map).
+        
         This routine is used in the nemoMock script.
 
         Returns catalog as an astropy Table (and an array of length self.z corresponding to low mass limit
@@ -271,7 +278,10 @@ class MockSurvey(object):
         for k in range(len(zRange)):
             zk=zRange[k]
             zIndex=np.argmin(abs(zk-self.z))  
-            numClustersByRedshift[k]=np.random.poisson(int(round(self.numClustersByRedshift[zIndex])))
+            if applyPoissonScatter == False:
+                numClustersByRedshift[k]=int(round(self.numClustersByRedshift[zIndex]))
+            else:
+                numClustersByRedshift[k]=np.random.poisson(int(round(self.numClustersByRedshift[zIndex])))
 
         if areaDeg2 != None:
             numClustersByRedshift=int(round(numClustersByRedshift*(areaDeg2/self.areaDeg2)))
@@ -361,19 +371,22 @@ class MockSurvey(object):
             
             try:
                 true_y0s_zk=tenToA0*np.power(self.Ez[k], 2)*np.power(np.power(10, log10Ms_zk)/Mpivot, 1+B0)*Qs_zk*fRels_zk
-                scattered_y0s_zk=np.exp(np.random.normal(np.log(true_y0s_zk), sigma_int, len(true_y0s_zk)))        
-                measured_y0s_zk=np.random.normal(scattered_y0s_zk, y0Noise_zk)
-                # NOTE: Testing only - test of catalog projection
-                #measured_y0s_zk=true_y0s_zk
+                if applyIntrinsicScatter == True:
+                    scattered_y0s_zk=np.exp(np.random.normal(np.log(true_y0s_zk), sigma_int, len(true_y0s_zk)))
+                else:
+                    scattered_y0s_zk=true_y0s_zk
+                if applyNoiseScatter == True:
+                    measured_y0s_zk=np.random.normal(scattered_y0s_zk, y0Noise_zk)
+                else:
+                    measured_y0s_zk=scattered_y0s_zk
             except:
                 raise Exception("Negative y0 values (probably spline related) for H0 = %.6f Om0 = %.6f sigma_8 = %.6f at z = %.3f" % (self.H0, self.Om0, self.sigma_8, zk))
-                    
+                
             true_y0s[mask]=true_y0s_zk
             measured_y0s[mask]=measured_y0s_zk
             log10Ms[mask]=log10Ms_zk
             zs[mask]=zk
-        
-        # Make table
+                
         tab=atpy.Table()
         tab.add_column(atpy.Column(names, 'name'))
         tab.add_column(atpy.Column(RAs, 'RADeg'))

@@ -221,8 +221,6 @@ else:
         sigma_8=massOptions['sigma_8']
     else:
         sigma_8=0.8
-    #if OmegaL0 + OmegaM0 != 1:
-        #raise Exception("only flat cosmologies are currently supported")
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8)
     
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M500"))
@@ -255,13 +253,15 @@ else:
         tab.add_column(atpy.Column(np.ones(len(tab)), 'fixed_y_c_weight_148p0GHz'))
         fRelKeysDict={'fixed_y_c_weight_148p0GHz': 148.0}
     
+    count=0
     for row in tab:
+        count=count+1
         extName=row['template'].split("#")[-1]
         fRelWeightsDict={}
         for key in fRelKeysDict:
             fRelWeightsDict[fRelKeysDict[key]]=row[key]
             
-        print("... %s (%.3f +/- %.3f) [fRelWeightsDict = %s] ..." % (row['name'], row['redshift'], row['redshiftErr'], fRelWeightsDict))
+        print("... %d/%d %s (%.3f +/- %.3f) [fRelWeightsDict = %s] ..." % (count, len(tab), row['name'], row['redshift'], row['redshiftErr'], fRelWeightsDict))
 
         # Corrected for mass function steepness
         massDict=simsTools.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
@@ -309,5 +309,43 @@ else:
     if os.path.exists(outFileName) == True:
         os.remove(outFileName)
     tab.write(outFileName)
+    
+    # Detect if testing a mock catalog, and write some stats on recovered masses
+    if 'true_M500' in tab.keys():
+        # Noise sources in mocks
+        if 'applyPoissonScatter' in parDict.keys():
+            applyPoissonScatter=parDict['applyPoissonScatter']
+        else:
+            applyPoissonScatter=True
+        if 'applyIntrinsicScatter' in parDict.keys():
+            applyIntrinsicScatter=parDict['applyIntrinsicScatter']
+        else:
+            applyIntrinsicScatter=True
+        if 'applyNoiseScatter' in parDict.keys():
+            applyNoiseScatter=parDict['applyNoiseScatter']
+        else:
+            applyNoiseScatter=True
+        print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
+        if applyNoiseScatter == True and applyIntrinsicScatter == True:
+            print("... for these options, median M500 / true_M500 = 1.000 if mass recovery is unbiased ...")
+        elif applyNoiseScatter == False and applyIntrinsicScatter == False:
+            print("... for these options, median M500Unc / true_M500 = 1.000 if mass recovery is unbiased ...")
+        else:
+            print("... for these options, both median M500 / true_M500 and median M500Unc / true_M500 will be biased ...")
+        ratio=tab['M500']/tab['true_M500']
+        ratioUnc=tab['M500Uncorr']/tab['true_M500']
+        print(">>> Mock catalog mass recovery stats:")
+        SNRCuts=[4, 5, 7, 10]
+        for s in SNRCuts:
+            mask=np.greater(tab['fixed_SNR'], s)
+            print("--> SNR > %.1f (N = %d):" % (s, np.sum(mask))) 
+            print("... mean M500 / true_M500 = %.3f +/- %.3f (stdev) +/- %.3f (sterr)" % (np.mean(ratio[mask]), 
+                                                                                          np.std(ratio[mask]), 
+                                                                                          np.std(ratio[mask])/np.sqrt(np.sum(mask))))
+            print("... median M500 / true_M500 = %.3f" % (np.median(ratio[mask])))
+            print("... mean M500Unc / true_M500 = %.3f +/- %.3f (stdev) +/- %.3f (sterr)" % (np.mean(ratioUnc[mask]), 
+                                                                                          np.std(ratioUnc[mask]), 
+                                                                                          np.std(ratioUnc[mask])/np.sqrt(np.sum(mask))))
+            print("... median M500Unc / true_M500 = %.3f" % (np.median(ratioUnc[mask])))
 
 

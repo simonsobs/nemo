@@ -43,10 +43,26 @@ else:
     parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
 
     mocksDir=rootOutDir+os.path.sep+"mocks"
+
     if 'makeMockCatalogs' in parDict.keys():
         numMocksToMake=parDict['makeMockCatalogs']
     else:
         numMocksToMake=1
+
+    # Noise sources in mocks
+    if 'applyPoissonScatter' in parDict.keys():
+        applyPoissonScatter=parDict['applyPoissonScatter']
+    else:
+        applyPoissonScatter=True
+    if 'applyIntrinsicScatter' in parDict.keys():
+        applyIntrinsicScatter=parDict['applyIntrinsicScatter']
+    else:
+        applyIntrinsicScatter=True
+    if 'applyNoiseScatter' in parDict.keys():
+        applyNoiseScatter=parDict['applyNoiseScatter']
+    else:
+        applyNoiseScatter=True
+    print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
 
     # Remove this once we re-jig for MPI
     if parDict['useMPI'] == True and numMocksToMake > 1:
@@ -69,7 +85,7 @@ else:
     
     # Set-up MockSurvey objects to be used to generate multiple mocks here
     # The reason for doing this is that enableDrawSample = True makes this very slow for 3000 mass bins...
-    print(">>> Setting up MockSurveys dictionary ...")
+    print(">>> Setting up mock surveys dictionary ...")
     t0=time.time()
     mockSurveyDict={}
     wcsDict={}
@@ -109,7 +125,10 @@ else:
             t0=time.time()
             mockTab=mockSurveyDict[extName].drawSample(RMSMapDict[extName], scalingRelationDict, tckQFitDict, wcs = wcsDict[extName], 
                                                        photFilterLabel = photFilterLabel, extName = extName, makeNames = True,
-                                                       SNRLimit = thresholdSigma, applySNRCut = True)
+                                                       SNRLimit = thresholdSigma, applySNRCut = True, 
+                                                       applyPoissonScatter = applyPoissonScatter, 
+                                                       applyIntrinsicScatter = applyIntrinsicScatter,
+                                                       applyNoiseScatter = applyNoiseScatter)
             t1=time.time()
             mockTabsList.append(mockTab)
             print("... making mock catalog %d for extName = %s took %.3f sec ..." % (i+1, extName, t1-t0))
@@ -141,4 +160,9 @@ else:
         if os.path.exists(outFileName) == True:
             os.remove(outFileName)
         tab.write(outFileName)
-            
+    
+    # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)
+    mockKeys=['massOptions', 'makeMockCatalogs', 'applyPoissonScatter', 'applyIntrinsicScatter', 'applyNoiseScatter']
+    with open(mocksDir+os.path.sep+"mockParameters.txt", "w") as outFile:
+        for m in mockKeys:
+            outFile.write("%s: %s\n" % (m, parDict[m]))
