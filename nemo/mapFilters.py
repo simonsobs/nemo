@@ -109,7 +109,32 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
                 # Keywords we need for photometry later
                 filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
                 filteredMapDict['wcs'].updateFromHeader()
-                                                
+                                           
+                # Undo pixel window function using Sigurd's FFT method (takes into account variable pixel scale etc.)
+                # We only need to do this for maps of signal (cancels in S/N map)
+                # We do this once because it does take some time... and then we can forget about if e.g. stacking or doing forced photometry later
+                print("... undoing pixel window function ...")
+                #print("check if artefacts")
+                #IPython.embed()
+                #sys.exit()
+                #backup=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']
+                mask=np.equal(filteredMapDict['data'], 0)
+                filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+                filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
+                # Testing...
+                #ratio=backup/filteredMapDict['data']
+                #ratio=np.nan_to_num(ratio)   
+                #astImages.saveFITS("test_ratio.fits", ratio, filteredMapDict['wcs'])
+                #astImages.saveFITS("test_postpixwincorr.fits", filteredMapDict['data'], filteredMapDict['wcs'])
+                #astImages.saveFITS("test_prepixwincorr.fits", backup, filteredMapDict['wcs'])
+                #yRange=np.arange(0, ratio.shape[0])
+                #for y in yRange:
+                    #meds.append(np.median(ratio[y]))
+                #plt.close()
+                #plt.plot(yRange, meds)
+                #plt.ylim(0.9, 1.0)
+
+                # Write maps
                 astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
                 astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
 
@@ -461,7 +486,6 @@ class MatchedFilter(MapFilter):
             self.G=filt
             
             # NOTE: Do not disable this weighting
-            # pixell
             weightedMap=mapDict['data']*np.sqrt(mapDict['weights']/mapDict['weights'].max())
             weightedMap=enmap.apod(weightedMap, self.apodPix)
             fMap=enmap.fft(weightedMap)
@@ -717,7 +741,9 @@ class RealSpaceMatchedFilter(MapFilter):
             # Normalise such that peak value in filtered map == peak value of source in uK
             # We take out the effect of the pixel window function here - this assumes we're working with sources
             # NOTE: for amplitude, the mappers want the amplitude of the delta function, not the beam
-            signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
+            # NOTE: we're now undoing the pixel window function in filterMaps (at the top)
+            #signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
+            signalNorm=1.0/filteredSignal.max()
         elif self.params['outputUnits'] == 'Jy/beam':
             # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
             print("implement signal norm for %s" % (self.params['outputUnits']))

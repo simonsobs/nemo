@@ -1370,10 +1370,9 @@ def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
     #signalMap=liteMap.liteMapFromDataAndWCS(profile2d, wcs)
     signalMap=profile2d
             
-    # The ratio by which beam smoothing biases the intrinsic deltaT0
-    beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
-
     # Pixel window function
+    # NOTE: we've switched to using enmap to undo the pixel window - left this here for posterity
+    # We're now undoing the pixel window function in photometry.measureFluxes using Sigurd's FFT method
     inputSignalProperties={}
     fineWCS=wcs.copy()
     fineWCS.header['CDELT1']=fineWCS.header['CDELT1']*0.01
@@ -1389,6 +1388,13 @@ def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
                         np.less(abs(degYMap), wcs.getYPixelSizeDeg()/2.))
     inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[mask].mean()
     
+    #print("pixel window function check")    
+    #from pixell import enmap
+    #import astropy.wcs as apywcs
+    #pixellWCS=apywcs.WCS(wcs.header)
+    #ndmap_signalMap=enmap.ndmap(signalMap, pixellWCS)
+    #nopixwin=enmap.apply_window(ndmap_signalMap, pow=-1.0)   # undos the pixel window function
+                
     return signalMap, inputSignalProperties
     
 #------------------------------------------------------------------------------------------------------------
