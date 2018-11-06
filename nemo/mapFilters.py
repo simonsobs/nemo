@@ -114,25 +114,9 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
                 # We only need to do this for maps of signal (cancels in S/N map)
                 # We do this once because it does take some time... and then we can forget about if e.g. stacking or doing forced photometry later
                 print("... undoing pixel window function ...")
-                #print("check if artefacts")
-                #IPython.embed()
-                #sys.exit()
-                #backup=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']
                 mask=np.equal(filteredMapDict['data'], 0)
                 filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
                 filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
-                # Testing...
-                #ratio=backup/filteredMapDict['data']
-                #ratio=np.nan_to_num(ratio)   
-                #astImages.saveFITS("test_ratio.fits", ratio, filteredMapDict['wcs'])
-                #astImages.saveFITS("test_postpixwincorr.fits", filteredMapDict['data'], filteredMapDict['wcs'])
-                #astImages.saveFITS("test_prepixwincorr.fits", backup, filteredMapDict['wcs'])
-                #yRange=np.arange(0, ratio.shape[0])
-                #for y in yRange:
-                    #meds.append(np.median(ratio[y]))
-                #plt.close()
-                #plt.plot(yRange, meds)
-                #plt.ylim(0.9, 1.0)
 
                 # Write maps
                 astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])

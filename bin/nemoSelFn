@@ -69,7 +69,7 @@ else:
     # We'll only calculate completeness for this given selection
     SNRCut=parDict['selFnOptions']['fixedSNRCut']
 
-    # Handle any missing options for calcCompleteness
+    # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
     if 'numDraws' not in parDict['selFnOptions'].keys():
         parDict['selFnOptions']['numDraws']=2000000
     if 'numIterations' not in parDict['selFnOptions'].keys():
@@ -80,7 +80,7 @@ else:
     if 'selFnFootprints' in parDict.keys():
         footprintsList=footprintsList+parDict['selFnFootprints']
         
-    # Run the selection function calculation on each tile in turn (by default, we only calculate tile/survey averages)
+    # Run the selection function calculation on each tile in turn
     selFnCollection={'full': []}
     for footprintDict in footprintsList:
         if footprintDict['label'] not in selFnCollection.keys():
