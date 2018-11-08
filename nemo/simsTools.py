@@ -1372,28 +1372,21 @@ def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
             
     # Pixel window function
     # NOTE: we've switched to using enmap to undo the pixel window - left this here for posterity
-    # We're now undoing the pixel window function in photometry.measureFluxes using Sigurd's FFT method
+    # We're now undoing the pixel window function in mapFilters.filterMaps
     inputSignalProperties={}
-    fineWCS=wcs.copy()
-    fineWCS.header['CDELT1']=fineWCS.header['CDELT1']*0.01
-    fineWCS.header['CDELT2']=fineWCS.header['CDELT2']*0.01
-    fineWCS.updateFromHeader()
-    cRA, cDec=fineWCS.getCentreWCSCoords()
-    degXMap, degYMap=nemoCython.makeXYDegreesDistanceMaps(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
-                                                            fineWCS, cRA, cDec, 1.0)
-    degRMap=nemoCython.makeDegreesDistanceMap(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
-                                                fineWCS, cRA, cDec, 1.0)
-    fineScaleProfile2d=r2p(np.radians(degRMap))
-    mask=np.logical_and(np.less(abs(degXMap), wcs.getXPixelSizeDeg()/2.), 
-                        np.less(abs(degYMap), wcs.getYPixelSizeDeg()/2.))
-    inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[mask].mean()
-    
-    #print("pixel window function check")    
-    #from pixell import enmap
-    #import astropy.wcs as apywcs
-    #pixellWCS=apywcs.WCS(wcs.header)
-    #ndmap_signalMap=enmap.ndmap(signalMap, pixellWCS)
-    #nopixwin=enmap.apply_window(ndmap_signalMap, pow=-1.0)   # undos the pixel window function
+    #fineWCS=wcs.copy()
+    #fineWCS.header['CDELT1']=fineWCS.header['CDELT1']*0.01
+    #fineWCS.header['CDELT2']=fineWCS.header['CDELT2']*0.01
+    #fineWCS.updateFromHeader()
+    #cRA, cDec=fineWCS.getCentreWCSCoords()
+    #degXMap, degYMap=nemoCython.makeXYDegreesDistanceMaps(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                            #fineWCS, cRA, cDec, 1.0)
+    #degRMap=nemoCython.makeDegreesDistanceMap(np.zeros([fineWCS.header['NAXIS2'], fineWCS.header['NAXIS1']]), 
+                                                #fineWCS, cRA, cDec, 1.0)
+    #fineScaleProfile2d=r2p(np.radians(degRMap))
+    #mask=np.logical_and(np.less(abs(degXMap), wcs.getXPixelSizeDeg()/2.), 
+                        #np.less(abs(degYMap), wcs.getYPixelSizeDeg()/2.))
+    #inputSignalProperties['pixWindowFactor']=fineScaleProfile2d[mask].mean()
                 
     return signalMap, inputSignalProperties
     
