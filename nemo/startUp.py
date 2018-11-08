@@ -59,6 +59,9 @@ def parseConfigFile(parDictFileName):
                     if filtDict['label'] == photFilter:
                         filtDict['params']['saveRMSMap']=True
                         filtDict['params']['saveFreqWeightMap']=True
+        # Don't measure object shapes by default
+        if 'measureShapes' not in parDict.keys():
+            parDict['measureShapes']=False
     
     return parDict
                         

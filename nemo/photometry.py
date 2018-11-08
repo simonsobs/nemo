@@ -23,7 +23,7 @@ np.random.seed()
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
                 findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
                 diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
-                verbose = True, useInterpolator = True):
+                verbose = True, useInterpolator = True, measureShapes = False):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
     
@@ -34,6 +34,9 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
     Throw out objects within rejectBorder pixels of edge of frame if rejectBorder != None
     
     Set invertMap == True to do a test of estimating fraction of spurious sources
+    
+    Set measureShapes == True to fit ellipses in a similar style to how SExtractor does it (may be useful for
+    automating finding of extended sources).
     
     """
     
@@ -146,6 +149,61 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                     objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
                 else:
                     objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+                # Optional SExtractor style shape measurements                
+                if measureShapes == True:
+                    if objDict['numSigPix'] > 9:
+                        mask=np.equal(segmentationMap, objIDs[i])
+                        ys, xs=np.where(segmentationMap == objIDs[i])
+                        yMin=ys.min()
+                        xMin=xs.min()
+                        yMax=ys.max()
+                        xMax=xs.max()
+                        # Centres (1st order moments) - cx2, cy2 here to avoid overwriting whatever catalog cx, cy is (see above)
+                        xs=xs-xMin
+                        ys=ys-yMin
+                        cx2=(xs*data[mask]).sum()/data[mask].sum()
+                        cy2=(ys*data[mask]).sum()/data[mask].sum()
+                        # Spread (2nd order moments)
+                        x2=(((xs**2)*data[mask]).sum()/data[mask].sum())-cx2**2
+                        y2=(((ys**2)*data[mask]).sum()/data[mask].sum())-cy2**2
+                        xy=(((xs*ys)*data[mask]).sum()/data[mask].sum())-cx2*cy2
+                        # A, B, theta from above - correct theta has same sign as xy (see SExtractor manual) 
+                        theta=np.degrees(np.arctan(2*(xy/(x2-y2)))/2.0)
+                        if xy > 0 and theta < 0:
+                            theta=theta+90
+                        elif xy < 0 and theta > 0:
+                            theta=theta-90
+                        doubleCheck=False
+                        if theta > 0 and xy > 0:
+                            doubleCheck=True
+                        if theta < 0 and xy < 0:
+                            doubleCheck=True
+                        if doubleCheck == False:
+                            raise Exception("name = %s: theta, xy not same sign, argh!" % (objDict['name']))
+                        A=np.sqrt((x2+y2)/2.0 + np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                        B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                        # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
+                        # Shape measurement is okay though - so just scale A, B to match segMap area
+                        segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
+                        curArea=A*B*np.pi
+                        scaleFactor=np.sqrt(segArea/curArea)
+                        A=A*scaleFactor
+                        B=B*scaleFactor  
+                        ecc=np.sqrt(1-B**2/A**2)
+                        objDict['ellipse_PA']=theta
+                        objDict['ellipse_A']=A
+                        objDict['ellipse_B']=B
+                        objDict['ellipse_x0']=cx2+xMin
+                        objDict['ellipse_y0']=cy2+yMin
+                        objDict['ellipse_e']=ecc
+                    else:
+                        objDict['ellipse_PA']=-99
+                        objDict['ellipse_A']=-99
+                        objDict['ellipse_B']=-99
+                        objDict['ellipse_x0']=-99
+                        objDict['ellipse_y0']=-99
+                        objDict['ellipse_e']=-99
+                # Check against mask
                 if objDict['x'] > minX and objDict['x'] < maxX and \
                     objDict['y'] > minY and objDict['y'] < maxY:
                     masked=False

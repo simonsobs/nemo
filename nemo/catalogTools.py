@@ -41,7 +41,14 @@ COLUMN_NAMES    = ['name',
                    'fluxJy',
                    'err_fluxJy',
                    'redshift',
-                   'redshiftErr']
+                   'redshiftErr',
+                   'ellipse_PA',
+                   'ellipse_A',
+                   'ellipse_B',
+                   'ellipse_x0',
+                   'ellipse_y0',
+                   'ellipse_e'
+                   ]
 COLUMN_FORMATS  = ['%s',
                    '%.6f',
                    '%.6f',
@@ -59,7 +66,14 @@ COLUMN_FORMATS  = ['%s',
                    '%.3f',
                    '%.3f',
                    '%.3f',
-                   '%.3f']
+                   '%.3f',
+                   '%.3f',
+                   '%.3f',
+                   '%.3f',
+                   '%.3f',
+                   '%.3f',
+                   '%.3f'
+                   ]
 
 columnsToAdd=[]
 formatsToAdd=[]

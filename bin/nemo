@@ -37,7 +37,7 @@ else:
     photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'], 
                            findCenterOfMass = parDict['findCenterOfMass'], rejectBorder = parDict['rejectBorder'], 
                            diagnosticsDir = diagnosticsDir, objIdent = parDict['objIdent'], longNames = parDict['longNames'],
-                           useInterpolator = parDict['useInterpolator'])
+                           useInterpolator = parDict['useInterpolator'], measureShapes = parDict['measureShapes'])
     
     # Measure fluxes
     photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'],
@@ -145,6 +145,3 @@ else:
                                 constraintsList = ["SNR > 0.0"], \
                                 addInfo = addInfo, color = "cyan") 
 
-
-    
-    
