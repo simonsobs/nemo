@@ -561,12 +561,18 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     else:
         weights=np.ones(data.shape)
 
+    # We rely on pixels with zero weight having zero value in actual maps later (automated edge trimming)
+    # This might not be the case if the map has been filtered slightly before being fed into nemo
+    data[weights == 0]=0
+    
     # Load survey and point source masks, if given
     if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] !=  None:
         smImg=pyfits.open(mapDict['surveyMask'])
         surveyMask=smImg[extName].data
     else:
         surveyMask=np.ones(data.shape)
+        surveyMask[weights == 0]=0
+
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] != None:
         psImg=pyfits.open(mapDict['pointSourceMask'])
         psMask=psImg[extName].data

@@ -276,9 +276,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
 #------------------------------------------------------------------------------------------------------------
 def matchCatalogs(catalog1, catalog2, matchKey = 'catalog2Match', xMatchRadiusDeg = 1.0/3600.0):
     """Generic catalog cross matching based on position. Objects in catalog2 that are associated with catalog1
-    are added as a dictionary to the corresponding catalog1 object at key matchKey. Doesn't check for things
-    which may be spuriously associated at angular distances > 90 deg (this is a flaw in the calcAngSepDeg
-    routine in astLib), should add that.
+    are added as a dictionary to the corresponding catalog1 object at key matchKey.
     
     """
     
