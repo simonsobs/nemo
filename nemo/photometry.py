@@ -321,6 +321,11 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
 
         mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
         
+        # These keywords would only be written if output units 'uK' (point source finding)
+        if 'BEAMNSR' in wcs.header.keys():
+            beamSolidAngle_nsr=wcs.header['BEAMNSR']
+            obsFreqGHz=wcs.header['FREQGHZ']
+        
         # In the past this had problems - Simone using happily in his fork though, so now optional
         if useInterpolator == True:
             mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
@@ -375,12 +380,9 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
                         # For this, we want deltaTc to be source amplitude
                         deltaTc=mapValue
                         obj[prefix+'deltaT_c']=deltaTc
-                        obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']
-                    elif mapUnits == 'Jy/beam':
-                        # For this, we want mapValue to be source amplitude == flux density
-                        print("add photometry.measureFluxes() Jy/beam photometry")
-                        IPython.embed()
-                        sys.exit()
+                        obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']                        
+                        obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                        obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
 
 #------------------------------------------------------------------------------------------------------------
 def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
@@ -420,6 +422,24 @@ def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
                     for i in range(len(obsFreqGHzDict.keys())):
                         freqStr=("%.1f" % (obsFreqGHzDict[i])).replace(".", "p")    # MongoDB doesn't like '.' in key names
                         objDict['fixed_y_c_weight_%sGHz' % (freqStr)]=freqWeights[i]
+
+#------------------------------------------------------------------------------------------------------------
+def deltaTToJySr(temp, obsFreqGHz):
+    """Convert delta T (uK) to Jy/sr at the given frequency in GHz
+    
+    """
+    
+    # We should enforce consistency of constants used in various places at some point...
+    kB=1.380658e-16
+    h=6.6260755e-27
+    c=29979245800.
+    nu=obsFreqGHz*1.e9
+    T0=2.726
+    x=h*nu/(kB*T0)
+    cNu=2*(kB*T0)**3/(h**2*c**2)*x**4/(4*(np.sinh(x/2.))**2)
+    cNu*=1e23
+    
+    return temp*cNu*1e-6/T0
 
 #------------------------------------------------------------------------------------------------------------
 def getRadialDistanceMap(objDict, data, wcs):

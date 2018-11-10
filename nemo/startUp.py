@@ -62,6 +62,10 @@ def parseConfigFile(parDictFileName):
         # Don't measure object shapes by default
         if 'measureShapes' not in parDict.keys():
             parDict['measureShapes']=False
+        # This is to allow source finding folks to skip this option in .yml
+        # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
+        if 'photometryOptions' not in parDict.keys():
+            parDict['photometryOptions']={}
     
     return parDict
                         

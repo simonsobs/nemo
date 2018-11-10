@@ -54,8 +54,9 @@ import IPython
 
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], rootOutDir = ".", verbose = True):
-    """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc. All filter
-    operations are done in the filter objects, even if multifrequency (a change from previous behaviour).
+    """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
+    can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
+    even if multifrequency (a change from previous behaviour).
    
     Filtered maps are written to rootOutDir/filteredMaps
     Filters, if stored, are written to rootOutDir/filters
@@ -108,6 +109,9 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
                     
                 # Keywords we need for photometry later
                 filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
+                if 'beamSolidAngle_nsr' in filteredMapDict.keys() and filteredMapDict['beamSolidAngle_nsr'] > 0:
+                    filteredMapDict['wcs'].header['BEAMNSR']=filteredMapDict['beamSolidAngle_nsr']
+                    filteredMapDict['wcs'].header['FREQGHZ']=filteredMapDict['obsFreqGHz']
                 filteredMapDict['wcs'].updateFromHeader()
                                            
                 # Undo pixel window function using Sigurd's FFT method (takes into account variable pixel scale etc.)
@@ -171,9 +175,27 @@ class MapFilter(object):
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
         
+        # Get beam solid angle info (units: nanosteradians)... we'll need for fluxes in Jy later
+        self.beamSolidAnglesDict={}
+        for mapDict in self.unfilteredMapsDictList:    
+            beamFileName=mapDict['beamFileName']
+            with open(beamFileName, "r") as inFile:
+                lines=inFile.readlines()
+                foundLine=False
+                for line in lines:
+                    if line.find("solid angle") != -1:
+                        foundLine=True
+                        break
+                if foundLine == True:
+                    bits=line.split("=")
+                    solidAngle_nsr=float(bits[1].split("nsr")[0])
+                else:
+                    solidAngle_nsr=0.0
+            self.beamSolidAnglesDict[mapDict['obsFreqGHz']]=solidAngle_nsr
+        
         # For pixell / enmap
         # NOTE: enki maps can have an additional axis, which we don't want
-        enheader=mapDict['wcs'].header
+        enheader=self.wcs.header
         if 'NAXIS3' in enheader.keys():
             del enheader['NAXIS3']
         enheader['NAXIS']=2
@@ -825,8 +847,9 @@ class RealSpaceMatchedFilter(MapFilter):
                         for c in range(10):
                             mask=np.less(abs(chunkValues), abs(chunkMean+sigmaClip*chunkRMS))
                             mask=np.logical_and(goodAreaMask, mask)
-                            chunkMean=np.mean(chunkValues[mask])
-                            chunkRMS=np.std(chunkValues[mask])
+                            if mask.sum() > 0:
+                                chunkMean=np.mean(chunkValues[mask])
+                                chunkRMS=np.std(chunkValues[mask])
                     else:
                         chunkRMS=0.
                 
@@ -908,7 +931,7 @@ class RealSpaceMatchedFilter(MapFilter):
         # We don't want to get rid of this option for the regular matched filter...
         # BUT we don't want it here... because of the way we're implementing the multi-frequency filter for SZ searches
         if 'mapCombination' in list(self.params.keys()):
-            raise Exception("mapCombination key should not be given in .par file for RealSpaceMatchedFilter")
+            raise Exception("mapCombination key should not be given in .yml file for RealSpaceMatchedFilter")
 
         filteredMaps={}
         for mapDict in self.unfilteredMapsDictList:   
@@ -1040,6 +1063,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 combinedMap, RMSMap, SNMap=self.makeSZMap(filteredMaps)
                 combinedObsFreqGHz='yc'
                 mapUnits='yc'
+                beamSolidAngle_nsr=0.0   # not used...
             elif self.params['outputUnits'] == 'uK':
                 if len(list(filteredMaps.keys())) > 1:
                     raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
@@ -1047,17 +1071,14 @@ class RealSpaceMatchedFilter(MapFilter):
                 combinedMap=filteredMaps[keyFreq]
                 combinedObsFreqGHz=float(keyFreq)
                 RMSMap=self.makeNoiseMap(combinedMap)
-                SNMap=combinedMap/RMSMap
-                SNMap[np.isinf(SNMap)]=0.
+                validMask=np.greater(RMSMap, 0)
+                SNMap=np.zeros(combinedMap.shape)+combinedMap
+                SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
+                #SNMap[np.isinf(SNMap)]=0.
                 mapUnits='uK'
-            elif self.params['outputUnits'] == 'Jy/beam':
-                print("Jy/beam here")
-                combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
-                mapUnits='Jy/beam'
-                IPython.embed()
-                sys.exit()
+                beamSolidAngle_nsr=self.beamSolidAnglesDict[combinedObsFreqGHz]
             else:
-                raise Exception('need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params')
+                raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # Fold point source mask into survey mask here
@@ -1087,57 +1108,17 @@ class RealSpaceMatchedFilter(MapFilter):
             RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
             astImages.saveFITS(RMSFileName, RMSMap, mapDict['wcs'])
 
-        return {'data': combinedMap, 'simData': None, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
-                'SNMap': SNMap, 'mapUnits': mapUnits}
-            
-#------------------------------------------------------------------------------------------------------------
-class GaussianFilter(MapFilter):
-    """Base class for filters using user specified Gaussian profile.
-    
-    """
-    
-    def makeSignalTemplateMap(self, beamFWHMArcmin, mapObsFreqGHz):
-        """Makes a Gaussian model signal template map.
-        
-        Returns dictionary of {'signalMap', 'normInnerDeg':, 'normOuterDeg'}. The latter two keys are
-        used to define an annulus in which the signal power is scaled to match the noise power.
-        
-        """
-        
-        # Setup Gaussian filter profile
-        sigmaArcmin=beamFWHMArcmin/np.sqrt(8.0*np.log(2.0))            
-        rArcmin=np.linspace(0.0, 30.0, 5000)
-        profile1d=np.exp(-((rArcmin**2)/(2*sigmaArcmin**2)))
-                    
-        # Turn 1d profile into 2d
-        rRadians=np.radians(rArcmin/60.0)
-        r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
-        profile2d=r2p(self.radiansMap)
-        signalMap=liteMap.liteMapFromDataAndWCS(profile2d, self.wcs)
-        
-        # Angular scales within which we will scale signal to match the noise
-        rInnerDeg=(sigmaArcmin/60.0)*5.0
-        rOuterDeg=(sigmaArcmin/60.0)*10.0
-        
-        # The ratio by which beam smoothing biases the intrinsic deltaT0
-        beamDecrementBias=1.0#deltaT0/profile1d[0]  # assuming rDeg[0] is at 0 # 
-        
-        return {'signalMap': signalMap, 'normInnerDeg': rInnerDeg, 'normOuterDeg': rOuterDeg, 
-                'powerScaleFactor': None, 'beamDecrementBias': beamDecrementBias}
-
+        return {'data': combinedMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
+                'SNMap': SNMap, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}
+                
 #------------------------------------------------------------------------------------------------------------
 class BeamFilter(MapFilter):
     """Base class for filters using beam profile files in Matthew + Kavi's format.
-    
-    NOTE: We haven't actually implemented beamDecrementBias and signalAreaSum in here.
-    
+        
     """
     
     def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz):
-        """Makes a Gaussian model signal template map.
-        
-        Returns dictionary of {'signalMap', 'normInnerDeg':, 'normOuterDeg'}. The latter two keys are
-        used to define an annulus in which the signal power is scaled to match the noise power.
+        """Makes a beam model signal template map.
         
         """
         
@@ -1145,53 +1126,8 @@ class BeamFilter(MapFilter):
                                                                           self.wcs, 
                                                                           beamFileName)
 
-        return {'signalMap': signalMap, 'normInnerDeg': None, 'normOuterDeg': None, 
-                'powerScaleFactor': None, 'beamDecrementBias': 1.0, 'signalAreaSum': 1.0,
-                'inputSignalProperties': inputSignalProperties}
+        return {'signalMap': signalMap, 'inputSignalProperties': inputSignalProperties}
     
-#------------------------------------------------------------------------------------------------------------
-class BetaModelFilter(MapFilter):
-    """Base class for filters using beta model profile.
-    
-    """
-    
-    def makeSignalTemplateMap(self, beamFWHMArcmin, mapObsFreqGHz):
-        """Makes a beta model signal template map.
-        
-        Returns dictionary of {'signalMap', 'normInnerDeg':, 'normOuterDeg'}. The latter two keys are
-        used to define an annulus in which the signal power is scaled to match the noise power.
-        
-        """
-        
-        # Setup Beta model profile
-        rArcmin=np.linspace(0.0, 60.0, 5000)
-        smoothArcmin=self.params['coreRadiusArcmin']
-        profile1d=(1.0+(rArcmin/self.params['coreRadiusArcmin'])**2)**((1.0-3.0*self.params['beta'])/2)
-        mask=np.greater(rArcmin, 5.0*self.params['coreRadiusArcmin'])
-        profile1d[mask]*=np.exp(-(rArcmin[mask]-5.0*self.params['coreRadiusArcmin'])/5.0) # same as Matthew
-        
-        # Apply beam as Gaussian filter to profile
-        beamSigma=beamFWHMArcmin/np.sqrt(8.0*np.log(2.0))            
-        beamSigmaPix=beamSigma/(rArcmin[1]-rArcmin[0])
-        profile1d=ndimage.gaussian_filter1d(profile1d, beamSigmaPix)
-
-        # Truncate beyond 5 times core radius
-        mask=np.greater(rArcmin, 5.0*self.params['coreRadiusArcmin'])
-        profile1d[mask]=0.0
-        
-        # Turn 1d profile into 2d
-        rRadians=np.radians(rArcmin/60.0)
-        r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
-        profile2d=r2p(self.radiansMap)
-        signalMap=liteMap.liteMapFromDataAndWCS(profile2d, self.wcs)        
-        
-        # Angular scales within which we will scale signal to match the noise
-        rInnerDeg=(5.0*self.params['coreRadiusArcmin']/60.0)
-        rOuterDeg=(rInnerDeg+5.0/60.0)
-                
-        return {'signalMap': signalMap, 'normInnerDeg': rInnerDeg, 'normOuterDeg': rOuterDeg,
-                'powerScaleFactor': None}
-
 #------------------------------------------------------------------------------------------------------------
 class ArnaudModelFilter(MapFilter):
     """Base class for filters using the GNFW profile as described in Arnaud et al. (2010).
@@ -1211,103 +1147,9 @@ class ArnaudModelFilter(MapFilter):
                                                                 GNFWParams = self.params['GNFWParams'])
         
         return {'signalMap': signalMap, 'inputSignalProperties': modelDict}
-        
-#------------------------------------------------------------------------------------------------------------
-class ProfileFilter(MapFilter):
-    """Base class for filters using arbitrary signal profiles stored in text files as per Ryan's code for
-    generating templates based on Bode et al. models.
-    
-    """
-    
-    def makeSignalTemplateMap(self, beamFWHMArcmin, mapObsFreqGHz):
-        """Makes a signal map from file containing given temperature profile with columns arcmin, profile.
-        Note the units of profile are Kelvin
-        In this case (unlike beta model or Gaussian cases), we use the model y_c to set the normalization
-        of the filter.
-        
-        Returns dictionary of {'signalMap', 'normInnerDeg':, 'normOuterDeg'}. The latter two keys are
-        used to define an annulus in which the signal power is scaled to match the noise power.
-        
-        """
-        
-        # Load in temperature profile template in format r (arcmin), delta T CMB (Kelvin)
-        inFile=file(self.params['profileFile'], "r")
-        lines=inFile.readlines()
-        inFile.close()
-        rArcmin=[]
-        profile=[]
-        for line in lines:
-            if line[0] != "#" and len(line) > 3:
-                bits=line.split()
-                rArcmin.append(np.float64(bits[0]))
-                profile.append(np.float64(bits[1]))
-        rRadians=np.radians(np.array(rArcmin, dtype=np.float64)/60.0)
-        profile=np.array(profile, dtype=np.float64)*1e6   # to micro K
                 
-        # The profile might not be given with a constant linear bin size, so interpolate here as well
-        r2prof=interpolate.interp1d(rRadians, profile, bounds_error=False, fill_value=0.0)
-        rRadiansLinear=np.linspace(rRadians[0], rRadians[-1], 10000)
-        profileLinear=r2prof(rRadiansLinear)
-        
-        # Apply beam as Gaussian filter to profile
-        # this is probably not the best way to handle the beam params
-        beamFWHMRad=np.radians(beamFWHMArcmin/60.0)
-        beamSigmaRad=beamFWHMRad/np.sqrt(8.0*np.log(2.0))            
-        beamSigmaPix=beamSigmaRad/(rRadiansLinear[1]-rRadiansLinear[0])
-        profileLinear=ndimage.gaussian_filter1d(profileLinear, beamSigmaPix)
-        
-        # Convert from dT the profile template is made in to dT at the map frequency
-        ycProfile=mapTools.convertToY(profileLinear, obsFrequencyGHz = self.params['profileObsFreqGHz'])
-        profileLinear=mapTools.convertToDeltaT(ycProfile, obsFrequencyGHz = mapObsFreqGHz)
-        
-        # Log FWHM of profile as plot
-        arcmin2prof=interpolate.interp1d(np.degrees(rRadiansLinear)*60.0, abs(profileLinear), bounds_error=False, fill_value=0.0)
-        plotRangeArcmin=np.linspace(0, 10, 10000)
-        plotProfile=arcmin2prof(plotRangeArcmin)/abs(profileLinear).max()
-        plotProfile[0]=1.0
-        diff=abs(plotProfile-0.5)
-        FWHMIndex=diff.tolist().index(diff.min())
-        FWHMArcmin=plotRangeArcmin[FWHMIndex]*2
-        fig=plt.figure(num=2, figsize=(8,8))
-        fig.canvas.set_window_title('Signal Profile in Real Space')
-        plt.clf()
-        plt.title("Signal Profile - %s - FWHM = %.3f arcmin" % (self.label, FWHMArcmin))
-        plt.ylabel("Amplitude")
-        plt.xlabel("$\\theta$ (arcmin)")
-        plt.plot(plotRangeArcmin, plotProfile)
-        plt.xlim(0, 10)
-        plt.ylim(0, 1.05)
-        plt.savefig(self.diagnosticsDir+os.path.sep+"SignalProfile1d_"+self.label+".png")
-        plt.close()
-
-        # Turn 1d profile into 2d
-        r2prof=interpolate.interp1d(rRadiansLinear, profileLinear, bounds_error=False, fill_value=0.0)
-        profile2d=r2prof(self.radiansMap)
-        profile2d[np.where((abs(self.radiansMap) == 0.0))]=profileLinear[0]
-        signalMap=liteMap.liteMapFromDataAndWCS(profile2d, self.wcs)
-
-        # Scale the signal map according to map area, so that when we later take the signal power spectrum,
-        # it is normalized.
-        height=signalMap.data.nonzero()[0].max()-signalMap.data.nonzero()[0].min()
-        width=signalMap.data.nonzero()[1].max()-signalMap.data.nonzero()[1].min()
-        signalArea=float(signalMap.data[np.where(signalMap.data != 0)].shape[0])
-        mapArea=float(signalMap.Nx*signalMap.Ny)
-        scaleFactor=mapArea/signalArea
-        
-        rInnerDeg=None
-        rOuterDeg=None
-                        
-        return {'signalMap': signalMap, 'normInnerDeg': rInnerDeg, 'normOuterDeg': rOuterDeg, 
-                'powerScaleFactor': scaleFactor}
-        
 #------------------------------------------------------------------------------------------------------------
 # Definitions of actual filters that can be used
-class BetaModelMatchedFilter(MatchedFilter, BetaModelFilter):
-    pass
-class ProfileMatchedFilter(MatchedFilter, ProfileFilter):
-    pass
-class GaussianMatchedFilter(MatchedFilter, GaussianFilter):
-    pass
 class ArnaudModelMatchedFilter(MatchedFilter, ArnaudModelFilter):
     pass
 class BeamMatchedFilter(MatchedFilter, BeamFilter):
@@ -1317,29 +1159,3 @@ class ArnaudModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, ArnaudModelFilte
     pass
 class BeamRealSpaceMatchedFilter(RealSpaceMatchedFilter, BeamFilter):
     pass
-
-#------------------------------------------------------------------------------------------------------------
-def combinations(iterable, r):
-    """This is in itertools in python 2.6.
-    
-    """
-    
-    # combinations('ABCD', 2) --> AB AC AD BC BD CD
-    # combinations(range(4), 3) --> 012 013 023 123
-    pool = tuple(iterable)
-    n = len(pool)
-    if r > n:
-        return
-    indices = list(range(r))
-    yield tuple(pool[i] for i in indices)
-    while True:
-        for i in reversed(list(range(r))):
-            if indices[i] != i + n - r:
-                break
-        else:
-            return
-        indices[i] += 1
-        for j in range(i+1, r):
-            indices[j] = indices[j-1] + 1
-        yield tuple(pool[i] for i in indices)
-        

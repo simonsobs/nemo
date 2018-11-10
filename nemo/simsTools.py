@@ -1362,14 +1362,13 @@ def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
     beamData=np.loadtxt(beamFileName).transpose()
     profile1d=beamData[1]
     rArcmin=beamData[0]*60.0
-                
+    
     # Turn 1d profile into 2d
     rRadians=np.radians(rArcmin/60.0)
     r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
     profile2d=r2p(np.radians(degreesMap))
-    #signalMap=liteMap.liteMapFromDataAndWCS(profile2d, wcs)
     signalMap=profile2d
-            
+
     # Pixel window function
     # NOTE: we've switched to using enmap to undo the pixel window - left this here for posterity
     # We're now undoing the pixel window function in mapFilters.filterMaps
