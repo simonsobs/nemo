@@ -1,5 +1,9 @@
 Nemo is a map filtering and source detection and characterization pipeline, designed to find
-galaxy clusters using the Sunyaev-Zel'dovich effect. It can also be used to find sources.
+galaxy clusters using the Sunyaev-Zel'dovich effect. It can also be used to find sources. 
+
+* Documentation: https://acru.ukzn.ac.za/~mjh/nemo/
+* License: TBD (currently this is a private repository; for now nemo cannot be used for non-ACT projects)
+
 Nemo is *not* the pipeline used for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), 
 but implements many of the ideas presented there, and should give similar results, given 
 the same map (or at least it did in the past). *It is* the pipeline, that has been used for the
@@ -14,7 +18,7 @@ see example config files currently being used for the AdvACT cluster search; and
 [examples/pointSources/](examples/pointSources) for config files that can be used for detecting
 point sources.
 
-# Current status and previous releases
+# Current status and previous internal releases
 
 **Note**: Versions in the git respository after the last tagged release (v18.06) use a new config 
 file format (.yml) - see the [examples/](examples/) directory. Nemo is currently compatible with 
@@ -31,7 +35,7 @@ Listed below are tagged, internal releases of nemo:
 # Software needed
 
 Nemo itself is written in Python (compatible with 2.7.x and 3.x), and requires the following 
-additional modules to be installed (current versions used by the author are given in brackets, 
+additional modules to be installed (currently used versions are given in brackets, 
 earlier and later versions also probably work):
 
 * numpy (1.11.1)
