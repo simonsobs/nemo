@@ -15,7 +15,7 @@ directory instead. This also makes use of some features not used here
 (e.g., multi-frequency filtering, non-azimuthally symmetric kernels 
 etc.).
 
-## Step 1: Downloading ACT maps
+# Downloading ACT maps
 
 This directory already contains some of the things needed - e.g, the
 survey and point source masks (`surveyMask.fits.gz` and 
@@ -37,7 +37,7 @@ wget http://www.acru.ukzn.ac.za/~mjh/equD56Maps.tar.gz
 Extract this in the current directory (i.e., the same place as the 
 equD56.yml file). 
 
-## Step 2: Making a cluster catalog
+# Making a cluster catalog
 
 Run `nemo` using:
 
@@ -58,7 +58,7 @@ catalogs (.fits tables, e.g., `equD56_optimalCatalog.fits`), DS9 region
 (.reg files), images (both in terms of y0 and signal-to-noise; under
 `filteredMaps/`), and a bunch of other stuff under `diagnostics/`.
 
-## Step 3: Estimating cluster masses
+# Estimating cluster masses
 
 If you want to measure masses, a .fits table that includes the columns
 `redshift` and `redshiftErr` is needed. The `ACTPol_redshifts.fits` file
@@ -95,7 +95,7 @@ If you're interested in measuring photo-zs for clusters detected with
 
 This can take the `equD56/equD56_optimalCatalog.fits` file as input.
 
-## Step 4: Calculating completeness
+# Calculating completeness
 
 Steps 1-3 are all that are needed to recreate the two-season ACTPol
 cluster catalog (though see the note at the top of this page). 
@@ -143,7 +143,7 @@ how to use the selection function routines. Note that `nemoCosmo` is
 experimental, and to date has been used for testing nemo rather than
 for cosmological analyses.
 
-## Step 5 (optional): Generating mock catalogs
+# Generating mock catalogs
 
 You can generate mock cluster catalogs using the output from nemo
 by using the `nemoMock` script:

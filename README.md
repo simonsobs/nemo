@@ -1,25 +1,25 @@
-# nemo
-
-Map filtering and SZ cluster detection and characterization pipeline. *Not* the pipeline used
-for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), but should 
-give similar results for signal-to-noise, given the same map (or at least it did in the past).
-*It is* the pipeline, that has been used for the [two-season ACTPol cluster catalog 
-paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
+Nemo is a map filtering and source detection and characterization pipeline, designed to find
+galaxy clusters using the Sunyaev-Zel'dovich effect. It can also be used to find sources.
+Nemo is *not* the pipeline used for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), 
+but implements many of the ideas presented there, and should give similar results, given 
+the same map (or at least it did in the past). *It is* the pipeline, that has been used for the
+[two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
 
 A slightly modified version of Matthew Hasselfield's `gnfw.py` code (used for modeling cluster
 pressure profiles) is included in nemo.
 
-See [examples/equD56/README.md](examples/equD56/README.md) if you would like to re-create the 
+See [examples/equD56/](examples/equD56/) if you would like to re-create the 
 cluster catalog produced for the E-D56 field; [examples/AdvACT/](examples/AdvACT/) if you want to
 see example config files currently being used for the AdvACT cluster search; and 
 [examples/pointSources/](examples/pointSources) for config files that can be used for detecting
 point sources.
 
-## Current status and previous releases
+# Current status and previous releases
 
 **Note**: Versions in the git respository after the last tagged release (v18.06) use a new config 
-file format (.yml) - see the [examples/](examples/) directory. Nemo is now also compatible with 
-both Python 3.x and Python 2.x. In future, we may support only Python 3.x.
+file format (.yml) - see the [examples/](examples/) directory. Nemo is currently compatible with 
+both Python 3.x and Python 2.7. However, for future releases, we only guarantee compatibility
+with Python 3.x - 
 
 Listed below are tagged, internal releases of nemo:
 
@@ -28,16 +28,7 @@ Listed below are tagged, internal releases of nemo:
   and preliminary AdvACT cluster catalogs.
 * **v17.10:** Version of the code at the time of submission of the ACTPol cluster catalog paper.
 
-## Related codes
-
-Catalogs produced by nemo can be fed into:
-
-* [Sourcery](https://github.com/mattyowl/sourcery) - a package that creates and serves a live, 
-  editable web database with multi-wavelength imaging.
-* [zCluster](https://github.com/ACTCollaboration/zCluster) - a code for estimating cluster 
-  photometric redshifts.
-
-## Software needed
+# Software needed
 
 Nemo itself is written in Python (compatible with 2.7.x and 3.x), and requires the following 
 additional modules to be installed (current versions used by the author are given in brackets, 
@@ -59,7 +50,7 @@ earlier and later versions also probably work):
 
 All of the dependencies can be installed using `pip`.
 
-## Installation
+# Installation
 
 As root:
     
@@ -89,8 +80,7 @@ python setup.py install --user
 
 will install `nemo` under `$HOME/.local` (on Ubuntu), and in some other default location on Mac.
 
-
-## Running nemo
+# Running nemo
 
 See [examples/equD56/README.md](examples/equD56/README.md) for a tutorial on how to re-create 
 the ACTPol two-season cluster catalog (including mass estimates). 
@@ -98,6 +88,15 @@ See [examples/AdvACT/](examples/AdvACT/) for example .yml config files for the c
 cluster search. Refer to the comments in the .yml config files themselves for information on what
 each parameter does.
 
-## Comments, bug reports, help, suggestions etc.
+# Related codes
+
+Catalogs produced by nemo can be fed into:
+
+* [Sourcery](https://github.com/mattyowl/sourcery) - a package that creates and serves a live,
+  editable web database with multi-wavelength imaging.
+* [zCluster](https://github.com/ACTCollaboration/zCluster) - a code for estimating cluster
+  photometric redshifts.
+
+# Comments, bug reports, help, suggestions etc.
 
 Please contact Matt Hilton <matt.hilton@mykolab.com>.
