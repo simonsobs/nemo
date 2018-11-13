@@ -1,6 +1,6 @@
 """
 
-This module contains tools for manipulating maps (e.g. filtering, conversion of units etc.).
+This module contains tools for manipulating maps (e.g., conversion of units etc.).
 
 """
 

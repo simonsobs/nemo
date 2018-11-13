@@ -93,6 +93,12 @@ def mergeCatalogs(imageDict):
     """Identifies common objects between catalogs in the imageDict and creates a master catalog with
     one entry per object, but multiple flux measurements where available.
     
+    Args:
+        imageDict: dictionary containing filtered maps and associated object catalogs
+    
+    Returns:
+        Nothing - a 'mergedCatalog' key is added to imageDict
+    
     """
     
     # Properties (apart from position, name info) that we keep for each object, if they are present
@@ -231,12 +237,27 @@ def makeOptimalCatalog(imageDict, constraintsList):
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
                 RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", writeNemoInfo = True, coordSys = 'fk5'):
-    """Converts a catalog containing object dictionaries into a ds9 region file. Objects will be labelled
-    in the .reg file according to the idKeyToUse.
+    """Converts a catalog containing object dictionaries into a DS9 region file. 
     
-    If color == 'key', then use 'color' key in object dictionary to set color.
-    
-    constraintsList works the same way as selectFromCatalog function
+    Args:
+        catalog: A list of dictionaries, where each represents an object in the catalog.
+        outFileName: A file name for the output DS9 region file.
+        constraintsList: A list of constraints in the same format as used by `selectFromCatalog`.
+        addInfo: A list of dictionaries with keys named `key` and `fmt` (e.g., ``{'key': "SNR", 'fmt': "%.3f"}``).
+            These will be added to the object label shown in DS9.
+        idKeyToUse: The name of the key in each object dictionary that defines the object's name. Used to 
+            label objects in the DS9 region file.
+        RAKeyToUse: The name of the key in each object dictionary that contains the RA (decimal degrees) of the
+            object.
+        decKeyToUse: The name of the key in each object dictionary that contains the declination (decimal 
+            degrees) of the object.
+        color: The color of the plot symbol used by DS9.
+        writeNemoInfo: If True, writes a line with the nemo version and date generated at the top of the 
+            DS9 .reg file.
+        coordSys: A string defining the coordinate system used for RA, dec, as understood by DS9.
+        
+    Returns:
+        None
     
     """
 

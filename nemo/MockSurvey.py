@@ -1,6 +1,7 @@
 """
 
-Playing with the halo mass function... updated for the latest hmf which uses astropy
+This module defines the MockSurvey class, used for obtaining de-biased cluster mass estimates and
+selection function calculations.
 
 """
 

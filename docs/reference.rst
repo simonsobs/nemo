@@ -4,21 +4,79 @@
 API Reference
 =============
 
-See :ref:`UsagePage` for how to use these functions for common map manipulation tasks.
+You can find automatically generated documentation for each module in the nemo package below. Note that 
+some functions listed here may not be used by any of the nemo scripts found in the ``bin/`` directory 
+(at some point this will be cleaned up).
 
-We'll want a section on general map stuff (2d arrays etc., when window function is undone etc.)
+catalogTools
+------------
 
-Also look at the scripts in bin...
+.. automodule:: nemo.catalogTools
+   :members:
+   
+gnfw
+----
 
-mapFilters - filtering maps
----------------------------
+.. automodule:: nemo.gnfw
+   :members:
+   
+mapFilters
+----------
 
 .. automodule:: nemo.mapFilters
    :members:
 
-mapTools - tools (duh) for maps
--------------------------------
+mapTools
+--------
 
 .. automodule:: nemo.mapTools
-   :members:    
+   :members:
+
+MockSurvey
+----------
+
+.. automodule:: nemo.MockSurvey
+   :members:
+
+nemoCython
+----------
+
+.. automodule:: nemoCython
+   :members:
+
+photometry
+----------
+
+.. automodule:: nemo.photometry
+   :members:
+
+plotSettings
+------------
+
+.. automodule:: nemo.plotSettings
+   :members:
+   
+SelFn
+-----
+
+.. automodule:: nemo.SelFn
+   :members:
+
+selFnTools
+----------
+
+.. automodule:: nemo.selFnTools
+   :members:
+
+simsTools
+---------
+
+.. automodule:: nemo.simsTools
+   :members:
+
+startUp
+-------
+
+.. automodule:: nemo.startUp
+   :members:
 

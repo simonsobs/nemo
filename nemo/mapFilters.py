@@ -1,21 +1,22 @@
 """
 
-Filter classes are defined in this module, together with the filterMaps function that uses them.
+Filter classes are defined in this module, together with the `filterMaps` function that uses them.
 
-There are two main classes of filter: MatchedFilter and RealSpaceMatchedFilter (previously, there was a 
-WienerFilter class, but it has been removed). RealSpaceMatcherFilter is the preferred one to use.
+There are two main classes of filter: `MatchedFilter` and `RealSpaceMatchedFilter`. 
+`RealSpaceMatcherFilter` is the preferred one to use.
 
-New base classes can be derived from the overall base class: MapFilter.
+New base classes can be derived from the overall base class: `MapFilter`.
 
 There are also base classes corresponding to filters with different signal templates: 
-e.g., BeamFilter, ArnaudModelFilter
+e.g., `BeamFilter`, `ArnaudModelFilter`.
 
 The actual filters that can be used are derived from these, e.g.:
 
-BeamMatchedFilter
-ArnaudModelMatchedFilter
-BeamRealSpaceMatchedFilter
-ArnaudModelRealSpaceMatchedFilter
+* `BeamMatchedFilter`
+* `ArnaudModelMatchedFilter`
+* `BeamRealSpaceMatchedFilter`
+* `ArnaudModelRealSpaceMatchedFilter`
+
 etc.
 
 """
@@ -863,7 +864,16 @@ class RealSpaceMatchedFilter(MapFilter):
         """Combines maps at multiple frequencies (or just one) to make a yc map, using inverse
         variance weighting of the single frequency maps.
         
-        Returns combined filteredMap, RMSMap, SNMap
+        Note:
+            This routine will write a FITS datacube containing the weights used to the `diagnostics/`
+            directory, if `saveFreqWeightMap` is set to True in `self.params`.
+            
+        Args:
+            filteredMaps: A dictionary containing maps. Each key gives the corresponding map frequency 
+                in GHz.
+        
+        Returns:
+            yc map, noise map, signal-to-noise map
         
         """
         dataCube=[]
@@ -874,8 +884,6 @@ class RealSpaceMatchedFilter(MapFilter):
             mapData=filteredMaps[key]
             mapData=mapTools.convertToY(mapData, float(key))
             RMSMap=self.makeNoiseMap(mapData)
-            #outFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s_%s.fits" % (key, self.label)
-            #astImages.saveFITS(outFileName, RMSMap, self.wcs)
             dataCube.append(mapData)
             noiseCube.append(RMSMap)
         dataCube=np.array(dataCube)
