@@ -15,7 +15,7 @@ This avoid emcee pickling/passing them around processes more than once
 import os
 import sys
 os.environ["OMP_NUM_THREADS"] = "1"                 # Needed for multiprocessing / MPI to be reliable
-print("Running under python: %s" % (sys.version))
+#print("Running under python: %s" % (sys.version))
 import numpy as np
 import pylab as plt
 import astropy.table as atpy
@@ -26,6 +26,7 @@ from scipy.special import factorial
 from nemo import SelFn
 from nemo import selFnTools
 from nemo import simsTools
+import argparse
 import emcee
 import corner
 import multiprocessing, logging
@@ -152,26 +153,35 @@ def runMCMC(outDir, nsteps = 10, nwalkers = 10, MPIOption = "multiprocessing"):
     
     return samples
 
-#-------------------------------------------------------------------------------------------------------------
-# Main
-if len(sys.argv) < 6:
-    print("Run: % nemoCosmo <.yml config file> <nemo catalog.fits> <n steps per walker> <n walkers> <MPI|emceeMPI|multiprocessing|serial>")
-else:
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    parser=argparse.ArgumentParser("nemoCosmo")
+    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("catalogFileName", help="""Catalog file name, in .fits format, as produced by nemo
+                        or nemoMock.""")
+    parser.add_argument("numStepsPerWalker", help="""Number of steps per walker.""", type = int)
+    parser.add_argument("numWalkers", help="""Number of walkers.""", type = int)
+    parser.add_argument("-P", "--parallel-method", dest = "MPIOption", help="""Method to use for 
+                        parallelization. Choose from: 'MPI', 'emceeMPI', 'multiprocessing', 'serial'.""", 
+                        default = 'multiprocessing')
+    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="""Use only clusters with fixed_SNR > 
+                        this value.""", default = 5.0, type = float)
+    args = parser.parse_args()
     
-    parDictFileName=sys.argv[1]
-    tabFileName=sys.argv[2]
-    nsteps=int(sys.argv[3])
-    nwalkers=int(sys.argv[4])
-    MPIOption=sys.argv[5].replace("\n", "")
+    parDictFileName=args.configFileName
+    tabFileName=args.catalogFileName
+    nsteps=args.numStepsPerWalker
+    nwalkers=args.numWalkers
+    MPIOption=args.MPIOption
+    SNRCut=args.SNRCut
     
     if MPIOption not in ['MPI', 'emceeMPI', 'multiprocessing', 'serial']:
-        raise Exception("MPIOption must be 'MPI', 'emceeMPI', 'serial', or 'multiprocessing'")
+        raise Exception("--parallel-method must be 'MPI', 'emceeMPI', 'serial', or 'multiprocessing'")
     
     tab=atpy.Table().read(tabFileName)
     if 'redshift' not in tab.keys():
         raise Exception("no 'redshift' column in catalog")
-    
-    SNRCut=5.0
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
     selFn=SelFn.SelFn(parDictFileName, SNRCut, zStep = 0.1)
@@ -179,6 +189,7 @@ else:
 
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
     cosmoOutDir=os.path.split(selFn.diagnosticsDir)[0]+os.path.sep+"cosmo"+os.path.sep+os.path.split(tabFileName)[-1].replace(".fits", "")
+    cosmoOutDir=cosmoOutDir+"_SNRCut%s" % (("%.2f" % (SNRCut)).replace(".", "p"))
     
     # Just to stop multiple MPI processes trying to make the output dir at the same time (MPI still hangs on first run with this)
     # NOTE: we still have this bug, this didn't fix it

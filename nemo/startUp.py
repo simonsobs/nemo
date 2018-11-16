@@ -66,6 +66,9 @@ def parseConfigFile(parDictFileName):
         # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
         if 'photometryOptions' not in parDict.keys():
             parDict['photometryOptions']={}
+        # We need a better way of giving defaults than this...
+        if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
+            parDict['selFnOptions']['method']='fast'
     
     return parDict
                         

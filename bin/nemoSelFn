@@ -24,6 +24,7 @@ from nemo import MockSurvey
 from nemo import selFnTools
 from nemo import plotSettings
 from nemo import startUp
+import argparse
 import types
 import pickle
 import astropy.io.fits as pyfits
@@ -37,15 +38,19 @@ plt.matplotlib.interactive(False)
 #warnings.filterwarnings('error')
     
 #------------------------------------------------------------------------------------------------------------
-# Main
-if len(sys.argv) < 2:
-    print("Run: % nemoSelFn <.yml config file>")
-else:
+if __name__ == '__main__':
+
+    parser=argparse.ArgumentParser("nemoSelFn")
+    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
+                        want to use this, run using something like: mpiexec --np 4 nemoSelFn ...""", 
+                        default = False)
+    args = parser.parse_args()
     
-    parDictFileName=sys.argv[1]
+    parDictFileName=args.configFileName
     parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
-    
-    # Now we get into selection function stuff...
+    parDict['MPIEnabled']=args.MPIEnabled
+
     # Q varies across tiles
     tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
 

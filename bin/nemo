@@ -7,11 +7,12 @@ nemo driver script: for filtering maps and finding clusters
 """
 
 import sys
-print("Running under python: %s" % (sys.version))
+#print("Running under python: %s" % (sys.version))
 import os
 import datetime
 from nemo import *
 import nemo
+import argparse
 import astropy.table as atpy
 import numpy as np
 import pylab
@@ -22,15 +23,19 @@ import IPython
 pylab.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
-# Main
-if len(sys.argv) < 2:
-    print("Run: % nemo <.yml config file>")
-else:
+if __name__ == '__main__':
 
-    parDictFileName=sys.argv[1]
-    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
+    parser=argparse.ArgumentParser("nemo")
+    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
+                        want to use this, run using something like: mpiexec --np 4 nemo ...""", 
+                        default = False)
+    args = parser.parse_args()
     
-    # Filter maps
+    parDictFileName=args.configFileName
+    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
+    parDict['MPIEnabled']=args.MPIEnabled
+
     imageDict=mapFilters.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
     
     # Find objects in filtered maps

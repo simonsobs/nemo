@@ -25,6 +25,7 @@ from nemo import MockSurvey
 from nemo import selFnTools
 from nemo import plotSettings
 from nemo import startUp
+import argparse
 import types
 import pickle
 import astropy.io.fits as pyfits
@@ -34,13 +35,18 @@ import IPython
 plt.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
-# Main
-if len(sys.argv) < 2:
-    print("Run: % nemoMock <.yml config file>")
-else:
+if __name__ == '__main__':
+
+    parser=argparse.ArgumentParser("nemoMock")
+    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
+                        #want to use this, run using something like: mpiexec --np 4 nemoMock ...""", 
+                        #default = False)
+    args = parser.parse_args()
     
-    parDictFileName=sys.argv[1]
+    parDictFileName=args.configFileName
     parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
+    #parDict['MPIEnabled']=args.MPIEnabled
 
     mocksDir=rootOutDir+os.path.sep+"mocks"
 
@@ -165,4 +171,5 @@ else:
     mockKeys=['massOptions', 'makeMockCatalogs', 'applyPoissonScatter', 'applyIntrinsicScatter', 'applyNoiseScatter']
     with open(mocksDir+os.path.sep+"mockParameters.txt", "w") as outFile:
         for m in mockKeys:
-            outFile.write("%s: %s\n" % (m, parDict[m]))
+            if m in parDict.keys():
+                outFile.write("%s: %s\n" % (m, parDict[m]))
