@@ -116,9 +116,12 @@ if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoMass")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    parser.add_argument("-c", "--catalog", dest="catFileName", help = """Enables "forced photometry" mode, if
-                        a .fits catalog filename is given. The catalog must contain columns name, RADeg, 
-                        decDeg, redshift, redshiftErr (other columns will be ignored).""", default = None)
+    parser.add_argument("-c", "--catalog", dest="catFileName", help = """Catalog file name (.fits format).
+                        The catalog must contain at least the following columns: name, RADeg, decDeg, 
+                        redshift, redshiftErr. If the catalog contains fixed_y_c, fixed_err_y_c columns, 
+                        then these will be used to infer mass estimates. If not, "forced photometry" mode 
+                        will be enabled, and the fixed_y_c, fixed_err_y_c values will be extracted from the
+                        filtered maps.""", default = None)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
                         want to use this, run using something like: mpiexec --np 4 nemoMass ...""", 
                         default = False)
