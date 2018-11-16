@@ -860,8 +860,48 @@ class RealSpaceMatchedFilter(MapFilter):
         return RMSMap
     
     
+    def _makeCorrMap(self, dataCube, outFileName):
+        """This is a test: not generalized, just for 90 + 150 GHz for now. Records off-diagonal correlation coeff
+        measured in the same cells as makeNoiseMap uses. Saves as a map in diagnosticsDir.
+        
+        """
+                
+        #print "... making SN map ..."
+        gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+        #gridSize=rIndex*3
+        overlapPix=int(gridSize/2)
+        numXChunks=dataCube[0].shape[1]/gridSize
+        numYChunks=dataCube[0].shape[0]/gridSize
+        yChunks=np.linspace(0, dataCube[0].shape[0], numYChunks+1, dtype = int)
+        xChunks=np.linspace(0, dataCube[0].shape[1], numXChunks+1, dtype = int)
+        #SNMap=np.zeros(mapData.shape)
+        apodMask=np.logical_and(np.not_equal(dataCube[0], 0), np.not_equal(dataCube[1], 0))
+        # We could make below behaviour default if match photFilter? Would need to see photFilter though...
+        #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+        covMap=np.zeros(dataCube[0].shape)  # We're assuming 90, 150 GHz only, so we only need to collect one of the off diagonal terms
+        for i in range(len(yChunks)-1):
+            for k in range(len(xChunks)-1):
+                y0=yChunks[i]-overlapPix
+                y1=yChunks[i+1]+overlapPix
+                x0=xChunks[k]-overlapPix
+                x1=xChunks[k+1]+overlapPix
+                if y0 < 0:
+                    y0=0
+                if y1 > dataCube[0].shape[0]:
+                    y1=dataCube[0].shape[0]
+                if x0 < 0:
+                    x0=0
+                if x1 > dataCube[0].shape[1]:
+                    x1=dataCube[0].shape[1]
+                chunkValues=dataCube[:, y0:y1, x0:x1]
+                goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                cov=np.corrcoef(chunkValues[0][goodAreaMask], chunkValues[1][goodAreaMask])
+                covMap[y0:y1, x0:x1]=cov[0, 1]
+        astImages.saveFITS(outFileName, covMap, self.wcs)
+    
+    
     def makeSZMap(self, filteredMaps):
-        """Combines maps at multiple frequencies (or just one) to make a yc map, using inverse
+        """Combines maps at multiple frequencies (or just one) to make a Compton yc map, using inverse
         variance weighting of the single frequency maps.
         
         Note:
@@ -876,6 +916,7 @@ class RealSpaceMatchedFilter(MapFilter):
             yc map, noise map, signal-to-noise map
         
         """
+        
         dataCube=[]
         noiseCube=[]
         obsFreqs=[]
@@ -889,6 +930,11 @@ class RealSpaceMatchedFilter(MapFilter):
         dataCube=np.array(dataCube)
         noiseCube=np.array(noiseCube)
         
+        # Test: how correlated are the filtered maps? This is currently hardcoded for two frequencies...
+        if dataCube.ndim == 3 and 'saveCorrMap' in self.params.keys() and self.params['saveCorrMap'] == True:
+            self._makeCorrMap(dataCube, self.diagnosticsDir+os.path.sep+"corrMap_signal.fits")
+            self._makeCorrMap(noiseCube, self.diagnosticsDir+os.path.sep+"corrMap_noiseLevel.fits")
+
         # Zap very low values as rounding errors (so have zero weight in combination)
         noiseCube[np.less(noiseCube, 1e-7)]=0.
                 
@@ -1055,6 +1101,9 @@ class RealSpaceMatchedFilter(MapFilter):
                 print("... took %.3f sec ..." % (t1-t0))
                 # Apply the normalisation
                 mapData[yMin:yMax, :]=mapData[yMin:yMax, :]*RADecSectionDict['signalNorm']
+            
+            # Apply the point source mask here (before noise estimates etc.)
+            mapData=mapData*psMask
                         
             #filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
             filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=mapData
@@ -1089,13 +1138,13 @@ class RealSpaceMatchedFilter(MapFilter):
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
-        # Fold point source mask into survey mask here
+        # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
         if 'edgeTrimArcmin' in self.params.keys():
             trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
         else:
             gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
             trimSizePix=int(round(gridSize*3.0))
-        edgeCheck=ndimage.rank_filter(abs(mapData), 0, size = (trimSizePix, trimSizePix))
+        edgeCheck=ndimage.rank_filter(abs(combinedMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
         combinedMap=combinedMap*edgeCheck
         apodMask=np.not_equal(combinedMap, 0)
