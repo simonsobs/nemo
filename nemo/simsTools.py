@@ -1501,9 +1501,11 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     return signalMap, inputSignalProperties
     
 #------------------------------------------------------------------------------------------------------------
-def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = False, rank = 0, comm = None):
-    """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot and the (theta, Q) array
-    as a table in the diagnostics dir.
+def fitQ(config):
+    """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot in the diagnosticDir
+    and the (theta, Q) array under selFnDir.
+    
+    Needs a startUp.NemoConfig object.
         
     Use GNFWParams (in parDict) to specify a different shape.
     
@@ -1516,25 +1518,18 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
     
     """
 
-    if parDict['GNFWParams'] == 'default':
+    if config.parDict['GNFWParams'] == 'default':
         GNFWParams=gnfw._default_params
     else:
-        GNFWParams=parDict['GNFWParams']
+        GNFWParams=config.parDict['GNFWParams']
         
     # Spin through the filter kernels
-    photFilterLabel=parDict['photometryOptions']['photFilter']
-    filterList=parDict['mapFilters']
+    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    filterList=config.parDict['mapFilters']
     for f in filterList:
         if f['label'] == photFilterLabel:
             ref=f
-                
-    # NOTE: adjusted for tileDeck files - build list of available extension names (if extNames not given)
-    if extNames == []:
-        fileList=glob.glob(filteredMapsDir+os.path.sep+photFilterLabel+"*_SNMap.fits")
-        for f in fileList:
-            extNames.append(f.split("#")[-1].split("_SNMap")[0])
-        extNames.sort()
-
+            
     # M, z ranges for Q calc
     # NOTE: ref filter that sets scale we compare to must ALWAYS come first
     # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
@@ -1569,7 +1564,7 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             #theta500Arcmin.append(np.degrees(np.arctan(calcR500Mpc(z, M)/astCalc.da(z)))*60.0)
     
     # Q calc - results for all tiles stored in one file
-    outFileName=diagnosticsDir+os.path.sep+"QFit.pickle"
+    outFileName=config.selFnDir+os.path.sep+"QFit.pickle"
     rank_QTabDict={}
     if os.path.exists(outFileName) == False:
         
@@ -1577,12 +1572,12 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
         
         # Do each tile in turn
         # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that at some point...
-        for extName in extNames:        
+        for extName in config.extNames:        
             
             print("... %s ..." % (extName))
             
             # Some faffing to get map pixel scale        
-            img=pyfits.open(filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
+            img=pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
             wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
             RADeg, decDeg=wcs.getCentreWCSCoords()
             clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 15.0)
@@ -1611,10 +1606,10 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             # NOTE: adjusted for tileDeck files, and we have the RA, dec footprint info to deal with too
             beamsDict={}
             kernsDict={}
-            for mapDict in parDict['unfilteredMaps']:
+            for mapDict in config.parDict['unfilteredMaps']:
                 obsFreqGHz=mapDict['obsFreqGHz']
                 beamsDict[obsFreqGHz]=mapDict['beamFileName']
-                kernImg=pyfits.open(diagnosticsDir+os.path.sep+"kern2d_%s#%s_%d.fits" % (photFilterLabel, extName, mapDict['obsFreqGHz']))
+                kernImg=pyfits.open(config.diagnosticsDir+os.path.sep+"kern2d_%s#%s_%d.fits" % (photFilterLabel, extName, mapDict['obsFreqGHz']))
                 kern2d=kernImg[0].data
                 kernsDict[obsFreqGHz]={'kern2d': kern2d, 'header': kernImg[0].header}
             
@@ -1669,15 +1664,15 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
             plt.semilogx()
             plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
             plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
-            plt.savefig(diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
+            plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
             plt.close()
         
         # Gather and save all the Q fits
-        if MPIEnabled == True:
+        if config.MPIEnabled == True:
             gathered_QTabDicts=comm.gather(rank_QTabDict, root = 0)
-            if rank != 0:
+            if config.rank != 0:
                 assert gathered_QTabDicts is None
-                print("... MPI rank %d finished ..." % (rank))
+                print("... MPI rank %d finished ..." % (config.rank))
                 sys.exit()
             else:
                 print("... gathering QTabDicts ...")
@@ -1688,21 +1683,34 @@ def fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = [], MPIEnabled = F
         else:
             QTabDict=rank_QTabDict
                     
-        pickleFile=open(outFileName, "wb")
-        pickler=pickle.Pickler(pickleFile)
-        pickler.dump(QTabDict)
-        pickleFile.close()
+        with open(outFileName, "wb") as pickleFile:
+            pickler=pickle.Pickler(pickleFile)
+            pickler.dump(QTabDict)
+            
     else:
         
-        if MPIEnabled == True and rank != 0:
+        if config.MPIEnabled == True and config.rank != 0:
             sys.exit()
         
         print(">>> Loading previously cached Q fit ...")
-        pickleFile=open(outFileName, "rb")
+        return loadQ(outFileName)
+        
+    tckDict={}
+    for key in QTabDict:
+        tckDict[key]=interpolate.splrep(QTabDict[key]['theta500Arcmin'], QTabDict[key]['Q'])
+    
+    return tckDict
+
+#------------------------------------------------------------------------------------------------------------
+def loadQ(pickledQFileName):
+    """Loads tckQFitDict from given path.
+    
+    """
+    
+    with open(pickledQFileName, "rb") as pickleFile:
         unpickler=pickle.Unpickler(pickleFile)
         QTabDict=unpickler.load()
-        pickleFile.close()
-        
+    
     tckDict={}
     for key in QTabDict:
         tckDict[key]=interpolate.splrep(QTabDict[key]['theta500Arcmin'], QTabDict[key]['Q'])

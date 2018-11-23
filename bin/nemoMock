@@ -39,55 +39,53 @@ if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoMock")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
-                        #want to use this, run using something like: mpiexec --np 4 nemoMock ...""", 
-                        #default = False)
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
+                        want to use this, run using something like: mpiexec --np 4 nemoMock ...""", 
+                        default = False)
     args = parser.parse_args()
     
     parDictFileName=args.configFileName
-    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
-    #parDict['MPIEnabled']=args.MPIEnabled
+    config=startUp.NemoConfig(parDictFileName)
+    config.MPIEnabled=args.MPIEnabled
 
-    mocksDir=rootOutDir+os.path.sep+"mocks"
-
-    if 'makeMockCatalogs' in parDict.keys():
-        numMocksToMake=parDict['makeMockCatalogs']
+    if 'makeMockCatalogs' in config.parDict.keys():
+        numMocksToMake=config.parDict['makeMockCatalogs']
     else:
         numMocksToMake=1
 
     # Noise sources in mocks
-    if 'applyPoissonScatter' in parDict.keys():
-        applyPoissonScatter=parDict['applyPoissonScatter']
+    if 'applyPoissonScatter' in config.parDict.keys():
+        applyPoissonScatter=config.parDict['applyPoissonScatter']
     else:
         applyPoissonScatter=True
-    if 'applyIntrinsicScatter' in parDict.keys():
-        applyIntrinsicScatter=parDict['applyIntrinsicScatter']
+    if 'applyIntrinsicScatter' in config.parDict.keys():
+        applyIntrinsicScatter=config.parDict['applyIntrinsicScatter']
     else:
         applyIntrinsicScatter=True
-    if 'applyNoiseScatter' in parDict.keys():
-        applyNoiseScatter=parDict['applyNoiseScatter']
+    if 'applyNoiseScatter' in config.parDict.keys():
+        applyNoiseScatter=config.parDict['applyNoiseScatter']
     else:
         applyNoiseScatter=True
     print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
 
     # Remove this once we re-jig for MPI
-    if parDict['useMPI'] == True and numMocksToMake > 1:
+    if config.parDict['useMPI'] == True and numMocksToMake > 1:
         raise Exception("nemoMock needs to be adapted for MPI if making multiple mocks - not done yet")
     
     # Q varies across tiles
-    tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+    tckQFitDict=simsTools.fitQ(config)
 
     # We only care about the filter used for fixed_ columns
-    photFilterLabel=parDict['photometryOptions']['photFilter']
-    for filterDict in parDict['mapFilters']:
+    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             break
 
     # The same as was used for detecting objects
-    thresholdSigma=parDict['thresholdSigma']
+    thresholdSigma=config.parDict['thresholdSigma']
 
     # We need an assumed scaling relation for mock observations
-    scalingRelationDict=parDict['massOptions']
+    scalingRelationDict=config.parDict['massOptions']
     
     # Set-up MockSurvey objects to be used to generate multiple mocks here
     # The reason for doing this is that enableDrawSample = True makes this very slow for 3000 mass bins...
@@ -96,15 +94,15 @@ if __name__ == '__main__':
     mockSurveyDict={}
     wcsDict={}
     RMSMapDict={}
-    for extName in extNames:
+    for extName in config.extNames:
         # Need area covered 
-        areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaImg=pyfits.open(config.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
         areaMask=areaImg[0].data
         wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
         areaDeg2=(areaMask*mapTools.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
 
         # Need RMS map to apply selection function
-        RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
+        RMSImg=pyfits.open(config.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
         RMSMap=RMSImg[0].data
     
         # For a mock, we could vary the input cosmology...
@@ -127,7 +125,7 @@ if __name__ == '__main__':
     print(">>> Making mock catalogs ...")
     for i in range(numMocksToMake):       
         mockTabsList=[]
-        for extName in extNames:
+        for extName in config.extNames:
             t0=time.time()
             mockTab=mockSurveyDict[extName].drawSample(RMSMapDict[extName], scalingRelationDict, tckQFitDict, wcs = wcsDict[extName], 
                                                        photFilterLabel = photFilterLabel, extName = extName, makeNames = True,
@@ -144,32 +142,31 @@ if __name__ == '__main__':
         # Write catalog and .reg file
         colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c']
         colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
-        mockCatalogFileName=mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
+        mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
         catalogTools.writeCatalogFromTab(tab, mockCatalogFileName, colNames, colFmts, 
-                                            constraintsList = [], headings = True)
+                                         constraintsList = [], headings = True)
 
         addInfo=[{'key': 'fixed_SNR', 'fmt': '%.1f'}]
         catalogTools.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 
                                 addInfo = addInfo, color = "cyan") 
         
-    # Lazy way to make merged catalog...
-    if 'combineMocks' in parDict.keys() and parDict['combineMocks'] == True:
+    if 'combineMocks' in config.parDict.keys() and config.parDict['combineMocks'] == True:
         tab=None
         for i in range(numMocksToMake):
-            mockCatalogFileName=mocksDir+os.path.sep+"mockCatalog_%d.fits" % (i+1)
+            mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.fits" % (i+1)
             stackTab=atpy.Table().read(mockCatalogFileName)
             if tab == None:
                 tab=stackTab
             else:
                 tab=atpy.vstack([tab, stackTab])
-        outFileName=mocksDir+os.path.sep+"mockCatalog_combined.fits"
+        outFileName=config.mocksDir+os.path.sep+"mockCatalog_combined.fits"
         if os.path.exists(outFileName) == True:
             os.remove(outFileName)
         tab.write(outFileName)
     
     # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)
     mockKeys=['massOptions', 'makeMockCatalogs', 'applyPoissonScatter', 'applyIntrinsicScatter', 'applyNoiseScatter']
-    with open(mocksDir+os.path.sep+"mockParameters.txt", "w") as outFile:
+    with open(config.mocksDir+os.path.sep+"mockParameters.txt", "w") as outFile:
         for m in mockKeys:
-            if m in parDict.keys():
-                outFile.write("%s: %s\n" % (m, parDict[m]))
+            if m in config.parDict.keys():
+                outFile.write("%s: %s\n" % (m, config.parDict[m]))

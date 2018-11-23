@@ -131,10 +131,12 @@ def makeIntersectionMask(extName, diagnosticsDir, label, masksList = []):
     return intersectMask
 
 #------------------------------------------------------------------------------------------------------------
-def getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = None):
+def getRMSTab(extName, photFilterLabel, selFnDir, diagnosticsDir = None, footprintLabel = None):
     """Makes a table containing map area in tile pointed to by extName against RMS values (so this compresses
     the information in the RMS maps). The first time this is run takes ~200 sec (for a 1000 sq deg tile), 
     but the result is cached.
+    
+    If making the RMSTab, diagnosticsDir must be given. If the RMSTab exists, it is not needed.
     
     Can optionally take extra masks for specifying e.g. HSC footprint. Here, we assume these have already
     been made by makeIntersectionMask, and we can load them from the cache, identifying them through
@@ -145,37 +147,42 @@ def getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = None):
     """
     
     # This can probably be sped up, but takes ~200 sec for a ~1000 sq deg tile, so we cache
-    RMSTabFileName=diagnosticsDir+os.path.sep+"RMSTab_%s.fits" % (extName)
+    RMSTabFileName=selFnDir+os.path.sep+"RMSTab_%s.fits" % (extName)
     if footprintLabel != None:
         RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
-    if os.path.exists(RMSTabFileName) == False:
-        print(("... making %s ..." % (RMSTabFileName)))
-        RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits" % (extName))
-        RMSMap=RMSImg[0].data
-
-        areaMap, wcs=loadAreaMask(extName, diagnosticsDir)
-        areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
         
-        if footprintLabel != None:  
-            intersectMask=makeIntersectionMask(extName, diagnosticsDir, footprintLabel)
-            areaMapSqDeg=areaMapSqDeg*intersectMask        
-            RMSMap=RMSMap*intersectMask
-
-        RMSValues=np.unique(RMSMap[np.nonzero(RMSMap)])
-
-        totalAreaDeg2=areaMapSqDeg.sum()
-        
-        tileArea=np.zeros(len(RMSValues))
-        for i in range(len(RMSValues)):
-            tileArea[i]=areaMapSqDeg[np.equal(RMSMap, RMSValues[i])].sum()
-        RMSTab=atpy.Table()
-        RMSTab.add_column(atpy.Column(tileArea, 'areaDeg2'))
-        RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
-        RMSTab.write(RMSTabFileName)
-    else:
-        #print("... reading %s ..." % (RMSTabFileName))
-        RMSTab=atpy.Table().read(RMSTabFileName)
+    if os.path.exists(RMSTabFileName) == True:
+        return atpy.Table().read(RMSTabFileName)
     
+    # We can't make the RMSTab without access to stuff in the diagnostics dir
+    # So this bit allows us to skip missing RMSTabs for footprints with no overlap (see SelFn)
+    if diagnosticsDir == None:
+        return None
+
+    print(("... making %s ..." % (RMSTabFileName)))
+    RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits" % (extName))
+    RMSMap=RMSImg[0].data
+
+    areaMap, wcs=loadAreaMask(extName, diagnosticsDir)
+    areaMapSqDeg=(mapTools.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+    
+    if footprintLabel != None:  
+        intersectMask=makeIntersectionMask(extName, diagnosticsDir, footprintLabel)
+        areaMapSqDeg=areaMapSqDeg*intersectMask        
+        RMSMap=RMSMap*intersectMask
+
+    RMSValues=np.unique(RMSMap[np.nonzero(RMSMap)])
+
+    totalAreaDeg2=areaMapSqDeg.sum()
+    
+    tileArea=np.zeros(len(RMSValues))
+    for i in range(len(RMSValues)):
+        tileArea[i]=areaMapSqDeg[np.equal(RMSMap, RMSValues[i])].sum()
+    RMSTab=atpy.Table()
+    RMSTab.add_column(atpy.Column(tileArea, 'areaDeg2'))
+    RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
+    RMSTab.write(RMSTabFileName)
+
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
@@ -207,12 +214,13 @@ def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
-def calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = None):
+def calcTileWeightedAverageNoise(extName, photFilterLabel, selFnDir, diagnosticsDir = None, footprintLabel = None):
     """Returns weighted average noise value in the tile.
     
     """
 
-    RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintLabel)
+    RMSTab=getRMSTab(extName, photFilterLabel, selFnDir, diagnosticsDir = diagnosticsDir, 
+                     footprintLabel = footprintLabel)
     RMSValues=np.array(RMSTab['y0RMS'])
     tileArea=np.array(RMSTab['areaDeg2'])
     tileRMSValue=np.average(RMSValues, weights = tileArea)
@@ -444,7 +452,7 @@ def calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, scalingRelationDict, t
       
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRelationDict, tckQFitDict, 
-                     diagnosticsDir):
+                     diagnosticsDir, selFnDir):
     """Makes a map of 90% mass completeness (for now, this fraction is fixed).
     
     NOTE: The map here is "downsampled" (i.e., binned) in terms of noise resolution - okay for display 
@@ -457,7 +465,7 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
     RMSImg=pyfits.open(diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
     RMSMap=RMSImg[0].data
     wcs=astWCS.WCS(RMSImg[0].header, mode = 'pyfits')
-    RMSTab=getRMSTab(extName, photFilterLabel, diagnosticsDir)
+    RMSTab=getRMSTab(extName, photFilterLabel, selFnDir)
     
     # Downsampling for speed? 
     # If this is done, also need the bin edges and then need to modify code below according;y

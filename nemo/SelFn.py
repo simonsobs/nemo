@@ -22,7 +22,7 @@ from nemo import startUp
 
 class SelFn(object):
         
-    def __init__(self, parDictFileName, SNRCut, footprintLabel = None, zStep = 0.01, enableDrawSample = False,
+    def __init__(self, parDictFileName, selFnDir, SNRCut, footprintLabel = None, zStep = 0.01, enableDrawSample = False,
                  downsampleRMS = True, applyMFDebiasCorrection = True):
         """Initialise a SelFn object.
         
@@ -42,9 +42,16 @@ class SelFn(object):
         self.footprintLabel=footprintLabel
         self.downsampleRMS=downsampleRMS
         self.applyMFDebiasCorrection=applyMFDebiasCorrection
-                
+        self.selFnDir=selFnDir
+
+        self.tckQFitDict=simsTools.loadQ(self.selFnDir+os.path.sep+"QFit.pickle")
+        parDict=startUp.parseConfigFile(parDictFileName)
+        self.extNames=self.tckQFitDict.keys()
+        
         # ignoreMPI gives us the complete list of extNames, regardless of how this parameter is set in the config file
-        parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName, ignoreMPI = True)
+        #config=startUp.NemoConfig(parDictFileName, makeOutputDirs = False, ignoreMPI = True)
+        #parDict=config.parDict
+        #self.extNames=config.extNames
         
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel != None:
@@ -57,9 +64,6 @@ class SelFn(object):
                 if footprintLabel not in labelsList:
                     raise Exception("Footprint '%s' not found in selFnFootprints - check .yml config file" % (footprintLabel))
         
-        self.diagnosticsDir=diagnosticsDir
-        self.extNames=extNames
-        self.tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
         
         # We only care about the filter used for fixed_ columns
         self.photFilterLabel=parDict['photometryOptions']['photFilter']
@@ -70,11 +74,9 @@ class SelFn(object):
         self.selFnDictList=[]
         self.totalAreaDeg2=0.0
         for extName in self.extNames:
-            tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, self.diagnosticsDir, footprintLabel = self.footprintLabel)
-            if tileAreaDeg2 > 0:
-                #y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, self.photFilterLabel, self.diagnosticsDir, 
-                                                                #footprintLabel = self.footprintLabel)
-                RMSTab=selFnTools.getRMSTab(extName, self.photFilterLabel, self.diagnosticsDir, footprintLabel = self.footprintLabel)
+            RMSTab=selFnTools.getRMSTab(extName, self.photFilterLabel, self.selFnDir, footprintLabel = self.footprintLabel)
+            if type(RMSTab) == atpy.Table:
+                tileAreaDeg2=RMSTab['areaDeg2'].sum()
                 if downsampleRMS == True:
                     RMSTab=selFnTools.downsampleRMSTab(RMSTab)
                 selFnDict={'extName': extName,

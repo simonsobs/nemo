@@ -45,12 +45,12 @@ def addForcedPhotometry(forcedTab, parDict, unfilteredMapsDict, extNames, diagno
     print(">>> Doing forced photometry ...")
     
     # Filter maps - but should already have been done, this is just for easy set up
-    photFilterLabel=parDict['photometryOptions']['photFilter']
+    photFilterLabel=config.parDict['photometryOptions']['photFilter']
     photFilterList=[]
-    for filterDict in parDict['mapFilters']:
+    for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             photFilterList.append(filterDict)
-    imageDict=mapFilters.filterMaps(parDict['unfilteredMaps'], photFilterList, extNames = extNames, rootOutDir = rootOutDir)
+    imageDict=mapFilters.filterMaps(config.parDict['unfilteredMaps'], photFilterList, extNames = extNames, rootOutDir = rootOutDir)
     
     # Re-jig the catalog into the appropriate format before feeding through photometry routine
     catalog=[]
@@ -77,12 +77,12 @@ def addForcedPhotometry(forcedTab, parDict, unfilteredMapsDict, extNames, diagno
                     objDict['y']=y
                     catalog.append(objDict)
     imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
-    photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'])
+    photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = config.parDict['unfilteredMaps'])
     catalogTools.mergeCatalogs(imageDict)
     
     # No cuts here, because if we're using this mode, the objects almost certainly weren't detected...
     catalogTools.makeOptimalCatalog(imageDict, [])  
-    photometry.addFreqWeightsToCatalog(imageDict, parDict['photometryOptions'], diagnosticsDir)
+    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photometryOptions'], diagnosticsDir)
 
     # Make into an atpy Table
     # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
@@ -129,44 +129,39 @@ if __name__ == '__main__':
     
     parDictFileName=args.configFileName
     catFileName=args.catFileName
-    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
-    parDict['MPIEnabled']=args.MPIEnabled
+    config=startUp.NemoConfig(parDictFileName)
+    config.MPIEnabled=args.MPIEnabled
         
-    massOptions=parDict['massOptions']
+    massOptions=config.parDict['massOptions']
     
     forcedPhotometry=False
     
     # Load the nemo catalog and match against the z catalog
     if catFileName == None:
-        optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(rootOutDir)[-1])           
+        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(massOptions['redshiftCatalog'])
-        if massOptions['forcedPhotometry'] == False:
-            # Remove any freq weight columns from redshift tab before we start
-            for key in zTab.keys():
-                if key.find("fixed_y_c_weight") != -1:
-                    zTab.remove_column(key)
-            tab=atpy.join(nemoTab, zTab, 'name')
-            colsToRemove=[]
-            for k in list(tab.keys()):
-                if k[-2:] == '_2':
-                    colsToRemove.append(k)
-            tab.remove_columns(colsToRemove)
-            # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
-            colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
-            for k in colsToKeep:
-                if k+"_1" in list(tab.keys()):
-                    tab.rename_column(k+"_1", k)
-            colsToRemove=[]
-            for k in list(tab.keys()):
-                if k not in colsToKeep and k.find('fixed_y_c_weight') == -1:
-                    colsToRemove.append(k)
-            tab.remove_columns(colsToRemove)
-            outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
-    
-        elif massOptions['forcedPhotometry'] == True:
-            # Supplying this option in massOptions is no longer strictly necessary (see below)
-            forcedPhotometry=True
+        # Remove any freq weight columns from redshift tab before we start
+        for key in zTab.keys():
+            if key.find("fixed_y_c_weight") != -1:
+                zTab.remove_column(key)
+        tab=atpy.join(nemoTab, zTab, 'name')
+        colsToRemove=[]
+        for k in list(tab.keys()):
+            if k[-2:] == '_2':
+                colsToRemove.append(k)
+        tab.remove_columns(colsToRemove)
+        # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
+        colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
+        for k in colsToKeep:
+            if k+"_1" in list(tab.keys()):
+                tab.rename_column(k+"_1", k)
+        colsToRemove=[]
+        for k in list(tab.keys()):
+            if k not in colsToKeep and k.find('fixed_y_c_weight') == -1:
+                colsToRemove.append(k)
+        tab.remove_columns(colsToRemove)
+        outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
 
     else:
         
@@ -185,19 +180,13 @@ if __name__ == '__main__':
     # Q function (filter mismatch) options
     # NOTE: this should be calculated for the fixed, fiducial cosmology used for object detection
     # NOTE: Q calculation is the only bit of this code that uses MPI - rank != 0 MPI jobs killed after fitQ
-    if massOptions['Q'] == 'H13':
-        raise Exception('H13 option depreciated - need to replace polynomial with spline fit')
-        tckQFit=simsTools.getQCoeffsH13()
-    elif massOptions['Q'] == 'fit':
-        tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir, extNames = extNames, 
-                                    MPIEnabled = parDict['useMPI'], rank = rank, comm = comm)
-    else:
-        raise Exception("didn't understand choice of Q function in massOptions")
+    tckQFitDict=simsTools.fitQ(config)
     
     # Forced photometry (if enabled) - modifying table in place
     # NOTE: Move this up if/when we make it run under MPI
     if forcedPhotometry == True:
-        tab=addForcedPhotometry(tab, parDict, unfilteredMapsDictList, extNames, diagnosticsDir)
+        tab=addForcedPhotometry(tab, config.parDict, config.unfilteredMapsDictList, config.extNames, 
+                                config.diagnosticsDir)
 
     # Optional fixed SNR cut
     if 'fixedSNRCut' in list(massOptions.keys()):
@@ -324,16 +313,16 @@ if __name__ == '__main__':
     # Detect if testing a mock catalog, and write some stats on recovered masses
     if 'true_M500' in tab.keys():
         # Noise sources in mocks
-        if 'applyPoissonScatter' in parDict.keys():
-            applyPoissonScatter=parDict['applyPoissonScatter']
+        if 'applyPoissonScatter' in config.parDict.keys():
+            applyPoissonScatter=config.parDict['applyPoissonScatter']
         else:
             applyPoissonScatter=True
-        if 'applyIntrinsicScatter' in parDict.keys():
-            applyIntrinsicScatter=parDict['applyIntrinsicScatter']
+        if 'applyIntrinsicScatter' in config.parDict.keys():
+            applyIntrinsicScatter=config.parDict['applyIntrinsicScatter']
         else:
             applyIntrinsicScatter=True
-        if 'applyNoiseScatter' in parDict.keys():
-            applyNoiseScatter=parDict['applyNoiseScatter']
+        if 'applyNoiseScatter' in config.parDict.keys():
+            applyNoiseScatter=config.parDict['applyNoiseScatter']
         else:
             applyNoiseScatter=True
         print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))

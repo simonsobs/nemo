@@ -48,11 +48,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     parDictFileName=args.configFileName
-    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
-    parDict['MPIEnabled']=args.MPIEnabled
+    config=startUp.NemoConfig(parDictFileName)
+    config.MPIEnabled=args.MPIEnabled
 
     # Q varies across tiles
-    tckQFitDict=simsTools.fitQ(parDict, diagnosticsDir, filteredMapsDir)
+    tckQFitDict=simsTools.fitQ(config)
 
     # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
     minMass=8e13
@@ -66,24 +66,24 @@ if __name__ == '__main__':
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
     
     # We only care about the filter used for fixed_ columns
-    photFilterLabel=parDict['photometryOptions']['photFilter']
-    for filterDict in parDict['mapFilters']:
+    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             break
 
     # We'll only calculate completeness for this given selection
-    SNRCut=parDict['selFnOptions']['fixedSNRCut']
+    SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
 
     # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
-    if 'numDraws' not in parDict['selFnOptions'].keys():
-        parDict['selFnOptions']['numDraws']=2000000
-    if 'numIterations' not in parDict['selFnOptions'].keys():
-        parDict['selFnOptions']['numIterations']=100
+    if 'numDraws' not in config.parDict['selFnOptions'].keys():
+        config.parDict['selFnOptions']['numDraws']=2000000
+    if 'numIterations' not in config.parDict['selFnOptions'].keys():
+        config.parDict['selFnOptions']['numIterations']=100
     
     # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
     footprintsList=[]
-    if 'selFnFootprints' in parDict.keys():
-        footprintsList=footprintsList+parDict['selFnFootprints']
+    if 'selFnFootprints' in config.parDict.keys():
+        footprintsList=footprintsList+config.parDict['selFnFootprints']
         
     # Run the selection function calculation on each tile in turn
     selFnCollection={'full': []}
@@ -91,52 +91,50 @@ if __name__ == '__main__':
         if footprintDict['label'] not in selFnCollection.keys():
             selFnCollection[footprintDict['label']]=[]
             
-    for extName in extNames:
-        
-        tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir)
-        #y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir)
-        RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, diagnosticsDir)
-        compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict, 
-                                           numDraws = parDict['selFnOptions']['numDraws'],
-                                           numIterations = parDict['selFnOptions']['numIterations'],
-                                           method = parDict['selFnOptions']['method'],
-                                           plotFileName = diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (extName))
+    for extName in config.extNames:
+        RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
+        compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
+                                           numDraws = config.parDict['selFnOptions']['numDraws'],
+                                           numIterations = config.parDict['selFnOptions']['numIterations'],
+                                           method = config.parDict['selFnOptions']['method'],
+                                           plotFileName = config.diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (extName))
         selFnDict={'extName': extName,
                    'RMSTab': RMSTab,
-                   'tileAreaDeg2': tileAreaDeg2,
+                   'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                    'compMz': compMz}
         selFnCollection['full'].append(selFnDict)
         
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
         for footprintDict in footprintsList:
-            selFnTools.makeIntersectionMask(extName, diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
-            tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, diagnosticsDir, footprintLabel = footprintDict['label'])
+            selFnTools.makeIntersectionMask(extName, config.diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
+            tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, config.diagnosticsDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
-                #y0Noise=selFnTools.calcTileWeightedAverageNoise(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
-                RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, diagnosticsDir, footprintLabel = footprintDict['label'])
-                compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, parDict['massOptions'], tckQFitDict,
-                                                   numDraws = parDict['selFnOptions']['numDraws'],
-                                                   numIterations = parDict['selFnOptions']['numIterations'],
-                                                   method = parDict['selFnOptions']['method'])
+                RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
+                                            footprintLabel = footprintDict['label'])
+                compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
+                                                   numDraws = config.parDict['selFnOptions']['numDraws'],
+                                                   numIterations = config.parDict['selFnOptions']['numIterations'],
+                                                   method = config.parDict['selFnOptions']['method'])
                 selFnDict={'extName': extName,
                            'RMSTab': RMSTab,
-                           'tileAreaDeg2': tileAreaDeg2,
+                           'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                            'compMz': compMz}
                 selFnCollection[footprintDict['label']].append(selFnDict)
         
         # Optional mass-limit maps
-        if 'massLimitMaps' in list(parDict['selFnOptions'].keys()):
-            for massLimitDict in parDict['selFnOptions']['massLimitMaps']:
+        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
+            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
                 selFnTools.makeMassLimitMap(SNRCut, massLimitDict['z'], extName, photFilterLabel, mockSurvey, 
-                                            parDict['massOptions'], tckQFitDict, diagnosticsDir)  
+                                            config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
+                                            config.selFnDir)  
         
     # MPI: gather together selection function results, so we can compute survey-wide average
-    if parDict['useMPI'] == True:
+    if config.parDict['useMPI'] == True:
         gathered_selFnCollections=comm.gather(selFnCollection, root = 0)
-        if rank != 0:
+        if config.rank != 0:
             assert gathered_selFnCollections is None
-            print("... MPI rank %d finished ..." % (rank))
+            print("... MPI rank %d finished ..." % (config.rank))
             sys.exit()
         else:
             print("... gathering selection function results ...")
@@ -151,16 +149,16 @@ if __name__ == '__main__':
                 
     # Survey completeness stats now all lumped together in one routine
     # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
-    selFnTools.completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, 
-                                       additionalLabel = "_"+parDict['selFnOptions']['method'].replace(" ", "_"))
+    selFnTools.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
+                                       additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
     
     # If we made mass limit maps...
     # ... make cumulative area versus mass limit plot(s)
     # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit
-    if 'massLimitMaps' in parDict['selFnOptions'].keys():
+    if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
         print(">>> Making cumulative area plots and full survey mass limit plots ...")
-        for massLimitDict in parDict['selFnOptions']['massLimitMaps']:
-            selFnTools.cumulativeAreaMassLimitPlot(massLimitDict['z'], diagnosticsDir) 
-            selFnTools.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], diagnosticsDir)
+        for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+            selFnTools.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir) 
+            selFnTools.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config.diagnosticsDir)
             
             

@@ -71,104 +71,108 @@ def parseConfigFile(parDictFileName):
             parDict['selFnOptions']['method']='fast'
     
     return parDict
-                        
+
 #------------------------------------------------------------------------------------------------------------
-def startUp(parDictFileName, ignoreMPI = False):
-    """Does start-up tasks that are common to the nemo scripts (nemo, nemoMass, nemoSelFn etc.).
+class NemoConfig(object):
     
-    Set ignoreMPI = True to disregard useMPI given in config file - this will return a complete set of 
-    extNames (raher than just those for a given node)
+    def __init__(self, parDictFileName, makeOutputDirs = True, ignoreMPI = False):
+        
+        """Creates an object that keeps track of nemo's configuration, maps, output directories etc.
+            
+        Set ignoreMPI = True to disregard useMPI given in the config file (or on the command line for 
+        scripts)  - this will return a complete set of extNames (raher than just those for a given node).
     
-    Returns: 
+        Members:
         * parDict (dictionary containing the contents of the config file)
         * rootOutDir (name of the directory where all output will be written)
         * filteredMapsDir (name of the directory where filtered maps will be written)
         * diagnosticsDir (name of the directory where e.g. filter kernels will be written)
         * unfilteredMapsDictList (list of dictionaries corresponding to maps needed)
         * extNames (list of map tiles to operate on)
+        * MPIEnabled (bool)
         * comm, rank, size (used by MPI)
         
-    """
+        """
 
-    print(">>> Running .yml config file: %s" % (parDictFileName))
+        print(">>> Running .yml config file: %s" % (parDictFileName))
 
-    parDict=parseConfigFile(parDictFileName)
-    
-    # Useful to throttle this way sometimes
-    if ignoreMPI == True:
-        parDict['useMPI']=False
+        self.parDict=parseConfigFile(parDictFileName)
         
-    MPIEnabled=parDict['useMPI']
-    if MPIEnabled == True:
-        from mpi4py import MPI
-        comm=MPI.COMM_WORLD
-        size=comm.Get_size()
-        rank=comm.Get_rank()
-        if size == 1:
-            raise Exception("if you want to use MPI, run with e.g., mpirun --np 4 nemo ...")
-    else:
-        rank=0
-        comm=None
-        size=1
-        
-    # Output dirs
-    if 'outputDir' in list(parDict.keys()):
-        rootOutDir=parDict['outDir']
-    else:
-        if parDictFileName.find(".yml") == -1:
-            raise Exception("File must have .yml extension")
-        rootOutDir=parDictFileName.replace(".yml", "")
-    filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
-    diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    mocksDir=rootOutDir+os.path.sep+"mocks"
-    dirList=[rootOutDir, filteredMapsDir, mocksDir]
-    if rank == 0:
-        for d in dirList:
-            if os.path.exists(d) == False:
-                os.makedirs(d)
-
-    # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-    if 'GNFWParams' not in list(parDict.keys()):
-        parDict['GNFWParams']='default'
-    for filtDict in parDict['mapFilters']:
-        filtDict['params']['GNFWParams']=parDict['GNFWParams']
-
-    # tileDeck file handling - either make one, or handle loading of one
-    # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
-    if rank == 0:
-        unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
-        madeTileDeck=True
-    else:
-        madeTileDeck=None
-    if MPIEnabled == True:
-        madeTileDeck=comm.bcast(madeTileDeck, root = 0)
-        if rank != 0 and madeTileDeck == True:
-            unfilteredMapsDictList, extNames=mapTools.makeTileDeck(parDict)
+        # Useful to throttle this way sometimes
+        if ignoreMPI == True:
+            self.parDict['useMPI']=False
             
-    # For when we want to test on only a subset of tiles
-    if 'extNameList' in list(parDict.keys()):
-        newList=[]
-        for name in extNames:
-            if name in parDict['extNameList']:
-                newList.append(name)
-        if newList == []:
-            raise Exception("extNameList given in .par file but no extensions in images match")
-        extNames=newList
-
-    # MPI: just divide up tiles pointed at by extNames among processes
-    if MPIEnabled == True:
-        numTilesPerNode=int(len(extNames)/size)
-        startIndex=numTilesPerNode*rank
-        if rank == size-1:
-            endIndex=len(extNames)
+        MPIEnabled=self.parDict['useMPI']
+        if MPIEnabled == True:
+            from mpi4py import MPI
+            self.comm=MPI.COMM_WORLD
+            self.size=comm.Get_size()
+            self.rank=comm.Get_rank()
+            if self.size == 1:
+                raise Exception("if you want to use MPI, run with e.g., mpiexec --np 4 nemo ...")
         else:
-            endIndex=numTilesPerNode*(rank+1)
-    else:
-        startIndex=0
-        endIndex=len(extNames)
-    extNames=extNames[startIndex:endIndex]
-    
-    # For debugging...
-    print(("... rank = %d: extNames = %s" % (rank, str(extNames))))
-    
-    return parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size
+            self.rank=0
+            self.comm=None
+            self.size=1
+            
+        # Output dirs
+        if 'outputDir' in list(self.parDict.keys()):
+            self.rootOutDir=parDict['outDir']
+        else:
+            if parDictFileName.find(".yml") == -1:
+                raise Exception("File must have .yml extension")
+            self.rootOutDir=parDictFileName.replace(".yml", "")
+        self.filteredMapsDir=self.rootOutDir+os.path.sep+"filteredMaps"
+        self.diagnosticsDir=self.rootOutDir+os.path.sep+"diagnostics"
+        self.mocksDir=self.rootOutDir+os.path.sep+"mocks"
+        self.selFnDir=self.rootOutDir+os.path.sep+"selFn"
+        dirList=[self.rootOutDir, self.filteredMapsDir, self.mocksDir, self.selFnDir]
+        if self.rank == 0 and makeOutputDirs == True:
+            for d in dirList:
+                if os.path.exists(d) == False:
+                    os.makedirs(d)
+
+        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+        if 'GNFWParams' not in list(self.parDict.keys()):
+            self.parDict['GNFWParams']='default'
+        for filtDict in self.parDict['mapFilters']:
+            filtDict['params']['GNFWParams']=self.parDict['GNFWParams']
+
+        # tileDeck file handling - either make one, or handle loading of one
+        # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+        if self.rank == 0:
+            self.unfilteredMapsDictList, self.extNames=mapTools.makeTileDeck(self.parDict)
+            madeTileDeck=True
+        else:
+            madeTileDeck=None
+        if MPIEnabled == True:
+            madeTileDeck=comm.bcast(madeTileDeck, root = 0)
+            if self.rank != 0 and madeTileDeck == True:
+                self.unfilteredMapsDictList, self.extNames=mapTools.makeTileDeck(self.parDict)
+                
+        # For when we want to test on only a subset of tiles
+        if 'extNameList' in list(self.parDict.keys()):
+            newList=[]
+            for name in extNames:
+                if name in parDict['extNameList']:
+                    newList.append(name)
+            if newList == []:
+                raise Exception("extNameList given in .par file but no extensions in images match")
+            self.extNames=newList
+
+        # MPI: just divide up tiles pointed at by extNames among processes
+        if MPIEnabled == True:
+            numTilesPerNode=int(len(self.extNames)/self.size)
+            startIndex=numTilesPerNode*self.rank
+            if rank == size-1:
+                endIndex=len(self.extNames)
+            else:
+                endIndex=numTilesPerNode*(self.rank+1)
+        else:
+            startIndex=0
+            endIndex=len(self.extNames)
+        self.extNames=self.extNames[startIndex:endIndex]
+        
+        # For debugging...
+        print(("... rank = %d: extNames = %s" % (self.rank, str(self.extNames))))
+  

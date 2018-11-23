@@ -30,59 +30,71 @@ if __name__ == '__main__':
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
                         want to use this, run using something like: mpiexec --np 4 nemo ...""", 
                         default = False)
-    args = parser.parse_args()
+    args=parser.parse_args()
     
     parDictFileName=args.configFileName
-    parDict, rootOutDir, filteredMapsDir, diagnosticsDir, unfilteredMapsDictList, extNames, comm, rank, size=startUp.startUp(parDictFileName)
-    parDict['MPIEnabled']=args.MPIEnabled
+    config=startUp.NemoConfig(parDictFileName)
+    config.MPIEnabled=args.MPIEnabled
 
-    imageDict=mapFilters.filterMaps(unfilteredMapsDictList, parDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
+    imageDict=mapFilters.filterMaps(config.unfilteredMapsDictList, config.parDict['mapFilters'], 
+                                    extNames = config.extNames, rootOutDir = config.rootOutDir)
     
     # Find objects in filtered maps
-    photometry.findObjects(imageDict, threshold = parDict['thresholdSigma'], minObjPix = parDict['minObjPix'], 
-                           findCenterOfMass = parDict['findCenterOfMass'], rejectBorder = parDict['rejectBorder'], 
-                           diagnosticsDir = diagnosticsDir, objIdent = parDict['objIdent'], longNames = parDict['longNames'],
-                           useInterpolator = parDict['useInterpolator'], measureShapes = parDict['measureShapes'])
+    photometry.findObjects(imageDict, threshold = config.parDict['thresholdSigma'], 
+                           minObjPix = config.parDict['minObjPix'], 
+                           findCenterOfMass = config.parDict['findCenterOfMass'], 
+                           rejectBorder = config.parDict['rejectBorder'], 
+                           diagnosticsDir = config.diagnosticsDir, objIdent = config.parDict['objIdent'], 
+                           longNames = config.parDict['longNames'],
+                           useInterpolator = config.parDict['useInterpolator'], 
+                           measureShapes = config.parDict['measureShapes'])
     
     # Measure fluxes
-    photometry.measureFluxes(imageDict, parDict['photometryOptions'], diagnosticsDir, unfilteredMapsDict = parDict['unfilteredMaps'],
-                             useInterpolator = parDict['useInterpolator'])
+    photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir, 
+                             unfilteredMapsDict = config.parDict['unfilteredMaps'],
+                             useInterpolator = config.parDict['useInterpolator'])
                     
     # Merged/optimal catalogs
     catalogTools.mergeCatalogs(imageDict)
-    catalogTools.makeOptimalCatalog(imageDict, parDict['catalogCuts'])
+    catalogTools.makeOptimalCatalog(imageDict, config.parDict['catalogCuts'])
     
     # This is useful for multi-freq, e.g., relativistic SZ corrections; tracking which objects are in 148 GHz only parts of the map
-    photometry.addFreqWeightsToCatalog(imageDict, parDict['photometryOptions'], diagnosticsDir)
+    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photometryOptions'], 
+                                       config.diagnosticsDir)
     
     # Estimate of contamination from running cluster finding over inverted map
-    if 'estimateContaminationFromInvertedMaps' in list(parDict.keys()) and parDict['estimateContaminationFromInvertedMaps'] == True:
-        contaminationTabDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, extNames, parDict['thresholdSigma'], 
-                                                                                parDict['minObjPix'], parDict['rejectBorder'], 
-                                                                                parDict['catalogCuts'], parDict['photometryOptions'],
-                                                                                diagnosticsDir, findCenterOfMass = parDict['findCenterOfMass'])
+    if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
+        conTabDict=simsTools.estimateContaminationFromInvertedMaps(imageDict, config.extNames, 
+                                                                   config.parDict['thresholdSigma'], 
+                                                                   config.parDict['minObjPix'], 
+                                                                   config.parDict['rejectBorder'], 
+                                                                   config.parDict['catalogCuts'], 
+                                                                   config.parDict['photometryOptions'],
+                                                                   config.diagnosticsDir, 
+                                                                   findCenterOfMass = config.parDict['findCenterOfMass'])
     else:
-        contaminationTabDict={}
+        conTabDict={}
         
     # Estimate of contamination by generating a fake sky with noise, and running detection algorithm over it
     # Ultimately we want this and the above ^^^ to appear on the same plot for comparison
-    if 'estimateContaminationFromSkySim' in list(parDict.keys()) and parDict['estimateContaminationFromSkySim'] == True:
-        skySimContaminationTabDict=simsTools.estimateContaminationFromSkySim(imageDict, extNames, parDictFileName,
-                                                                                parDict['numSkySims'],
-                                                                                diagnosticsDir)
+    if 'estimateContaminationFromSkySim' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromSkySim'] == True:
+        skySimConTabDict=simsTools.estimateContaminationFromSkySim(imageDict, config.extNames, 
+                                                                   parDictFileName,
+                                                                   config.parDict['numSkySims'],
+                                                                   config.diagnosticsDir)
     else:
-        skySimContaminationTabDict={}
+        skySimConTabDict={}
     
     # This just combines inverted maps contamination results and skySim (under different keys)
     # So we only feed one dictionary into the plotting routine (see below)
-    for k in list(skySimContaminationTabDict.keys()):
-        contaminationTabDict[k]=skySimContaminationTabDict[k]
+    for k in list(skySimConTabDict.keys()):
+        conTabDict[k]=skySimConTabDict[k]
         
     # MPI: gather together and merge all of the catalogs from each process, and contamination test results
-    if parDict['useMPI'] == True:
+    if config.parDict['useMPI'] == True:
         optimalCatalogList=comm.gather(imageDict['optimalCatalog'], root = 0)
-        contamKeysList=list(contaminationTabDict.keys())
-        contaminationTabDictList=comm.gather(contaminationTabDict, root = 0)
+        conKeysList=list(conTabDict.keys())
+        conTabDictList=comm.gather(conTabDict, root = 0)
         if rank != 0:
             assert optimalCatalogList is None
             print("... MPI rank %d finished ..." % (rank))
@@ -94,11 +106,11 @@ if __name__ == '__main__':
                 optimalCatalog=optimalCatalog+cat
             print("... gathering and averaging contamination estimates ...")
             avContaminationTabDict={}
-            for k in contamKeysList:
+            for k in conKeysList:
                 tabList=[]
                 avTab=None
                 tabCount=0
-                for tabDict in contaminationTabDictList:
+                for tabDict in conTabDictList:
                     tab=tabDict[k]
                     if type(avTab) == type(None):
                         avTab=atpy.Table()
@@ -112,22 +124,22 @@ if __name__ == '__main__':
                 mask=np.greater(avTab['cumSumSimCandidates'], 0)
                 avTab['cumContamination']=atpy.Column(np.zeros(len(avTab)), 'cumContamination')
                 avTab['cumContamination'][mask]=avTab['cumSumSimCandidates'][mask]/avTab['cumSumRealCandidates'][mask]
-                avContaminationTabDict[k]=avTab
-            contaminationTabDictList=avContaminationTabDict
+                avConTabDict[k]=avTab
+            conTabDictList=avConTabDict
             # And write average as .fits table(s)
             # (if we didn't run under MPI, already averaged)
-            for k in list(avContaminationTabDict.keys()):
-                fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, "_average")
+            for k in list(avConTabDict.keys()):
+                fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, "_average")
                 if os.path.exists(fitsOutFileName) == True:
                     os.remove(fitsOutFileName)
-                contaminTab=avContaminationTabDict[k]
-                contaminTab.write(fitsOutFileName) 
+                conTab=avConTabDict[k]
+                conTab.write(fitsOutFileName) 
     else:
         optimalCatalog=imageDict['optimalCatalog']
     
     # Plot contamination together
-    if contaminationTabDict != {}:
-        simsTools.plotContamination(contaminationTabDict, diagnosticsDir)           
+    if conTabDict != {}:
+        simsTools.plotContamination(conTabDict, config.diagnosticsDir)           
     
     # Basic merged/optimal catalog
     # NOTE: now converting everything to astropy.table files here, so we can quickly remove duplicates we get under MPI
@@ -136,13 +148,13 @@ if __name__ == '__main__':
     while numDuplicatesFound != 0:
         tab, numDuplicatesFound, names=catalogTools.removeDuplicatesFromTab(tab)
 
-    optimalCatalogFileName=rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(rootOutDir)[-1])           
+    optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])           
     #catalogTools.writeTab(tab, optimalCatalogFileName)
 
     # This is a bit wasteful - we convert everything back to a catalog in doing this - but preserves current file formats
     catalogTools.writeCatalogFromTab(tab, optimalCatalogFileName, \
-                                        catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
-                                        headings = True)
+                                     catalogTools.COLUMN_NAMES, catalogTools.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
+                                     headings = True)
             
     addInfo=[{'key': 'SNR', 'fmt': '%.1f'}]
     catalogTools.catalog2DS9(tab, \
