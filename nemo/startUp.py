@@ -153,8 +153,8 @@ class NemoConfig(object):
         # For when we want to test on only a subset of tiles
         if 'extNameList' in list(self.parDict.keys()):
             newList=[]
-            for name in extNames:
-                if name in parDict['extNameList']:
+            for name in self.extNames:
+                if name in self.parDict['extNameList']:
                     newList.append(name)
             if newList == []:
                 raise Exception("extNameList given in .par file but no extensions in images match")
