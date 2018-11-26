@@ -75,12 +75,9 @@ def parseConfigFile(parDictFileName):
 #------------------------------------------------------------------------------------------------------------
 class NemoConfig(object):
     
-    def __init__(self, parDictFileName, makeOutputDirs = True, ignoreMPI = False):
+    def __init__(self, parDictFileName, makeOutputDirs = True, MPIEnabled = False):
         
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc.
-            
-        Set ignoreMPI = True to disregard useMPI given in the config file (or on the command line for 
-        scripts)  - this will return a complete set of extNames (raher than just those for a given node).
     
         Members:
         * parDict (dictionary containing the contents of the config file)
@@ -97,17 +94,13 @@ class NemoConfig(object):
         print(">>> Running .yml config file: %s" % (parDictFileName))
 
         self.parDict=parseConfigFile(parDictFileName)
-        
-        # Useful to throttle this way sometimes
-        if ignoreMPI == True:
-            self.parDict['useMPI']=False
-            
-        MPIEnabled=self.parDict['useMPI']
-        if MPIEnabled == True:
+                    
+        self.MPIEnabled=MPIEnabled
+        if self.MPIEnabled == True:
             from mpi4py import MPI
             self.comm=MPI.COMM_WORLD
-            self.size=comm.Get_size()
-            self.rank=comm.Get_rank()
+            self.size=self.comm.Get_size()
+            self.rank=self.comm.Get_rank()
             if self.size == 1:
                 raise Exception("if you want to use MPI, run with e.g., mpiexec --np 4 nemo ...")
         else:
@@ -145,8 +138,8 @@ class NemoConfig(object):
             madeTileDeck=True
         else:
             madeTileDeck=None
-        if MPIEnabled == True:
-            madeTileDeck=comm.bcast(madeTileDeck, root = 0)
+        if self.MPIEnabled == True:
+            madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
             if self.rank != 0 and madeTileDeck == True:
                 self.unfilteredMapsDictList, self.extNames=mapTools.makeTileDeck(self.parDict)
                 
@@ -161,10 +154,10 @@ class NemoConfig(object):
             self.extNames=newList
 
         # MPI: just divide up tiles pointed at by extNames among processes
-        if MPIEnabled == True:
+        if self.MPIEnabled == True:
             numTilesPerNode=int(len(self.extNames)/self.size)
             startIndex=numTilesPerNode*self.rank
-            if rank == size-1:
+            if self.rank == self.size-1:
                 endIndex=len(self.extNames)
             else:
                 endIndex=numTilesPerNode*(self.rank+1)

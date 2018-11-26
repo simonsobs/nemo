@@ -129,8 +129,7 @@ if __name__ == '__main__':
     
     parDictFileName=args.configFileName
     catFileName=args.catFileName
-    config=startUp.NemoConfig(parDictFileName)
-    config.MPIEnabled=args.MPIEnabled
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
         
     massOptions=config.parDict['massOptions']
     

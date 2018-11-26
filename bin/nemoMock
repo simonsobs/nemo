@@ -45,8 +45,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     parDictFileName=args.configFileName
-    config=startUp.NemoConfig(parDictFileName)
-    config.MPIEnabled=args.MPIEnabled
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
 
     if 'makeMockCatalogs' in config.parDict.keys():
         numMocksToMake=config.parDict['makeMockCatalogs']
