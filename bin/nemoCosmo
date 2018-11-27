@@ -24,8 +24,8 @@ from scipy import stats
 from scipy import interpolate
 from scipy.special import factorial
 from nemo import SelFn
-from nemo import selFnTools
-from nemo import simsTools
+from nemo import completeness
+from nemo import signals
 import argparse
 import emcee
 import corner
@@ -193,7 +193,7 @@ if __name__ == '__main__':
         raise Exception("no 'redshift' column in catalog")
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
-    selFn=SelFn.SelFn(parDictFileName, selFnDir, SNRCut, zStep = 0.1)
+    selFn=completeness.SelFn(parDictFileName, selFnDir, SNRCut, zStep = 0.1)
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
 
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)

@@ -4,16 +4,16 @@ nemo - SZ cluster and source detection package
 
 """
 
-from . import catalogTools 
+from . import catalogs 
 from . import photometry
 from . import plotSettings
 from . import startUp
-from . import mapFilters
-from . import simsTools
-from . import selFnTools
-from . import mapTools
+from . import filters
+from . import signals
+from . import completeness
+from . import maps
 
-__all__ = ['startUp', 'catalogTools', 'mapTools', 'mapFilters', 'photometry', 
-           'simsTools', 'selFnTools', 'plotSettings']
+__all__ = ['startUp', 'catalogs', 'maps', 'filters', 'photometry', 
+           'signals', 'completeness', 'plotSettings']
 
 __version__ = "git"

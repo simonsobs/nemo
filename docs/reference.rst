@@ -8,10 +8,10 @@ You can find automatically generated documentation for each module in the nemo p
 some functions listed here may not be used by any of the nemo scripts found in the ``bin/`` directory 
 (at some point this will be cleaned up).
 
-catalogTools
-------------
+catalogs
+--------
 
-.. automodule:: nemo.catalogTools
+.. automodule:: nemo.catalogs
    :members:
    
 gnfw
@@ -20,16 +20,16 @@ gnfw
 .. automodule:: nemo.gnfw
    :members:
    
-mapFilters
-----------
+filters
+-------
 
-.. automodule:: nemo.mapFilters
+.. automodule:: nemo.filters
    :members:
 
-mapTools
---------
+maps
+----
 
-.. automodule:: nemo.mapTools
+.. automodule:: nemo.maps
    :members:
 
 MockSurvey
@@ -56,22 +56,16 @@ plotSettings
 .. automodule:: nemo.plotSettings
    :members:
    
-SelFn
------
+completeness
+------------
 
-.. automodule:: nemo.SelFn
+.. automodule:: nemo.completeness
    :members:
 
-selFnTools
-----------
+signals
+-------
 
-.. automodule:: nemo.selFnTools
-   :members:
-
-simsTools
----------
-
-.. automodule:: nemo.simsTools
+.. automodule:: nemo.signals
    :members:
 
 startUp

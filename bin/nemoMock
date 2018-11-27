@@ -18,9 +18,9 @@ from scipy import stats
 from scipy import interpolate
 from scipy import ndimage
 from scipy import optimize
-from nemo import simsTools
-from nemo import mapTools
-from nemo import catalogTools
+from nemo import signals
+from nemo import maps
+from nemo import catalogs
 from nemo import MockSurvey
 from nemo import selFnTools
 from nemo import plotSettings
@@ -68,11 +68,11 @@ if __name__ == '__main__':
     print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
 
     # Remove this once we re-jig for MPI
-    if config.parDict['useMPI'] == True and numMocksToMake > 1:
+    if config.MPIEnabled == True and numMocksToMake > 1:
         raise Exception("nemoMock needs to be adapted for MPI if making multiple mocks - not done yet")
     
     # Q varies across tiles
-    tckQFitDict=simsTools.fitQ(config)
+    tckQFitDict=signals.fitQ(config)
 
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photometryOptions']['photFilter']
@@ -98,7 +98,7 @@ if __name__ == '__main__':
         areaImg=pyfits.open(config.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
         areaMask=areaImg[0].data
         wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
-        areaDeg2=(areaMask*mapTools.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
+        areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
 
         # Need RMS map to apply selection function
         RMSImg=pyfits.open(config.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
@@ -142,11 +142,11 @@ if __name__ == '__main__':
         colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c']
         colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
         mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
-        catalogTools.writeCatalogFromTab(tab, mockCatalogFileName, colNames, colFmts, 
+        catalogs.writeCatalogFromTab(tab, mockCatalogFileName, colNames, colFmts, 
                                          constraintsList = [], headings = True)
 
         addInfo=[{'key': 'fixed_SNR', 'fmt': '%.1f'}]
-        catalogTools.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 
+        catalogs.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 
                                 addInfo = addInfo, color = "cyan") 
         
     if 'combineMocks' in config.parDict.keys() and config.parDict['combineMocks'] == True:

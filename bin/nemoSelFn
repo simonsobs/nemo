@@ -18,8 +18,8 @@ from scipy import stats
 from scipy import interpolate
 from scipy import ndimage
 from scipy import optimize
-from nemo import simsTools
-from nemo import mapTools
+from nemo import signals
+from nemo import maps
 from nemo import MockSurvey
 from nemo import selFnTools
 from nemo import plotSettings
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
 
     # Q varies across tiles
-    tckQFitDict=simsTools.fitQ(config)
+    tckQFitDict=signals.fitQ(config)
 
     # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
     minMass=8e13
@@ -129,7 +129,7 @@ if __name__ == '__main__':
                                             config.selFnDir)  
         
     # MPI: gather together selection function results, so we can compute survey-wide average
-    if config.parDict['useMPI'] == True:
+    if config.MPIEnabled == True:
         gathered_selFnCollections=comm.gather(selFnCollection, root = 0)
         if config.rank != 0:
             assert gathered_selFnCollections is None

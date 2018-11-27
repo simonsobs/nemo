@@ -16,8 +16,8 @@ import hmf
 from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
 import astropy.constants
-from . import simsTools
-from . import catalogTools
+from . import signals
+from . import catalogs
 import pickle
 from scipy import interpolate
 from scipy.interpolate import InterpolatedUnivariateSpline as _spline
@@ -85,7 +85,7 @@ class MockSurvey(object):
                 
         """
         # We're using both astLib and astropy... 
-        # astLib is used for E(z) etc. in selFnTools where it's quicker
+        # astLib is used for E(z) etc. in completeness where it's quicker
         # We're also keeping track inside MockSurvey itself just for convenience
         # NOTE: Working on switching all cosmology over to astropy for consistency with hmf - remove when done
         self.H0=H0
@@ -123,7 +123,7 @@ class MockSurvey(object):
             Ez=self.Ez[k]
             R500Mpc=np.power((3*fitM500s)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
             fitTheta500s=np.degrees(np.arctan(R500Mpc/DA))*60.0
-            fitFRels=simsTools.calcFRel(zk, fitM500s)
+            fitFRels=signals.calcFRel(zk, fitM500s)
             tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
             tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
             self.theta500Splines.append(tckLog10MToTheta500)
@@ -322,7 +322,7 @@ class MockSurvey(object):
         if makeNames == True:
             names=[]
             for RADeg, decDeg in zip(RAs, decs):
-                names.append(catalogTools.makeACTName(RADeg, decDeg, prefix = 'MOCK-CL'))
+                names.append(catalogs.makeACTName(RADeg, decDeg, prefix = 'MOCK-CL'))
         else:
             names=np.arange(numClusters)+1
         

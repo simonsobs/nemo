@@ -13,8 +13,8 @@ import pylab
 import math
 from scipy import ndimage
 from scipy import interpolate
-from . import catalogTools
-from . import mapTools
+from . import catalogs
+from . import maps
 import sys
 import IPython
 np.random.seed()
@@ -140,9 +140,9 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                 galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
                 objDict['galacticLatDeg']=galLat
                 if longNames == False:
-                    objDict['name']=catalogTools.makeACTName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)
+                    objDict['name']=catalogs.makeACTName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)
                 else:
-                    objDict['name']=catalogTools.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
+                    objDict['name']=catalogs.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
                 objDict['numSigPix']=objNumPix[i]
                 objDict['template']=key
                 if useInterpolator == True:
@@ -214,7 +214,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                         catalog.append(objDict)
                         idNumCount=idNumCount+1     
         if makeDS9Regions == True:
-            catalogTools.catalog2DS9(catalog, imageDict[key]['filteredMap'].replace(".fits", ".reg"))
+            catalogs.catalog2DS9(catalog, imageDict[key]['filteredMap'].replace(".fits", ".reg"))
         imageDict[key]['catalog']=catalog
 
 #------------------------------------------------------------------------------------------------------------
@@ -367,7 +367,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
                     # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
                     if mapUnits == 'yc':
                         yc=mapValue
-                        deltaTc=mapTools.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
+                        deltaTc=maps.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
                         obj[prefix+'y_c']=yc/1e-4                            # So that same units as H13 in output catalogs
                         obj[prefix+'err_y_c']=obj[prefix+'y_c']/obj[prefix+'SNR']
                         obj[prefix+'deltaT_c']=deltaTc

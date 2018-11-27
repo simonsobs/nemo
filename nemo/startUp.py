@@ -10,7 +10,7 @@ import sys
 import yaml
 import copy
 import IPython
-from . import mapTools
+from . import maps
 
 #------------------------------------------------------------------------------------------------------------
 def parseConfigFile(parDictFileName):
@@ -134,14 +134,14 @@ class NemoConfig(object):
         # tileDeck file handling - either make one, or handle loading of one
         # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
         if self.rank == 0:
-            self.unfilteredMapsDictList, self.extNames=mapTools.makeTileDeck(self.parDict)
+            self.unfilteredMapsDictList, self.extNames=maps.makeTileDeck(self.parDict)
             madeTileDeck=True
         else:
             madeTileDeck=None
         if self.MPIEnabled == True:
             madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
             if self.rank != 0 and madeTileDeck == True:
-                self.unfilteredMapsDictList, self.extNames=mapTools.makeTileDeck(self.parDict)
+                self.unfilteredMapsDictList, self.extNames=maps.makeTileDeck(self.parDict)
                 
         # For when we want to test on only a subset of tiles
         if 'extNameList' in list(self.parDict.keys()):

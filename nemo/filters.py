@@ -42,11 +42,10 @@ import itertools
 import pyximport; pyximport.install()
 import nemoCython
 import nemo
-from . import mapTools
-from . import simsTools
+from . import maps
+from . import signals
 from . import photometry
-from . import catalogTools
-from . import simsTools
+from . import catalogs
 from . import plotSettings
 from . import gnfw
 import astropy.table as atpy
@@ -172,7 +171,7 @@ class MapFilter(object):
         # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDeck files
         self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:           
-            mapDict=mapTools.preprocessMapDict(mapDict.copy(), extName = extName, diagnosticsDir = diagnosticsDir)
+            mapDict=maps.preprocessMapDict(mapDict.copy(), extName = extName, diagnosticsDir = diagnosticsDir)
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
         
@@ -450,7 +449,7 @@ class MatchedFilter(MapFilter):
                 NP=np.real(fMaskedData*fMaskedData.conj())
             elif self.params['noiseParams']['method'] == 'CMBOnly':
                 print("... taking noise power for filter from model CMB power spectrum ...")
-                highPassMap=mapTools.subtractBackground(maskedData, self.wcs, 0.25/60.0)
+                highPassMap=maps.subtractBackground(maskedData, self.wcs, 0.25/60.0)
                 whiteNoiseLevel=np.std(highPassMap)
                 NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
             elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
@@ -511,7 +510,7 @@ class MatchedFilter(MapFilter):
             signalProperties=signalMapDict['inputSignalProperties']
             if self.params['outputUnits'] == 'yc':
                 # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-                filteredSignalMap=mapTools.convertToY(filteredSignalMap, obsFrequencyGHz = signalProperties['obsFreqGHz'])
+                filteredSignalMap=maps.convertToY(filteredSignalMap, obsFrequencyGHz = signalProperties['obsFreqGHz'])
                 signalNorm=signalProperties['y0']/filteredSignalMap.max()
             elif self.params['outputUnits'] == 'Y500':
                 # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
@@ -548,7 +547,7 @@ class MatchedFilter(MapFilter):
             # yc for SZ clusters
             if 'outputUnits' in list(self.params.keys()):
                 if self.params['outputUnits'] == 'yc':
-                    combinedMap=mapTools.convertToY(combinedMap, combinedObsFreqGHz)
+                    combinedMap=maps.convertToY(combinedMap, combinedObsFreqGHz)
                     combinedObsFreqGHz='yc'
                     mapUnits='yc'
                 elif self.params['outputUnits'] == 'uK':
@@ -729,14 +728,14 @@ class RealSpaceMatchedFilter(MapFilter):
         signalProperties=filteredMapDict['inputSignalProperties']
         # Should add an applyKernel function to do all this
         if self.params['bckSub'] == True:
-            filteredSignal=mapTools.subtractBackground(signalMap, wcs, RADeg = RADeg, decDeg = decDeg,
+            filteredSignal=maps.subtractBackground(signalMap, wcs, RADeg = RADeg, decDeg = decDeg,
                                                        smoothScaleDeg = bckSubScaleArcmin/60.0)
         else:
             filteredSignal=np.zeros(signalMap.shape)+signalMap
         filteredSignal=ndimage.convolve(filteredSignal, kern2d) 
         if self.params['outputUnits'] == 'yc':
             # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-            filteredSignal=mapTools.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
+            filteredSignal=maps.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
             signalNorm=signalProperties['y0']/filteredSignal.max()
         elif self.params['outputUnits'] == 'Y500':
             # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
@@ -923,7 +922,7 @@ class RealSpaceMatchedFilter(MapFilter):
         for key in list(filteredMaps.keys()):
             obsFreqs.append(float(key))
             mapData=filteredMaps[key]
-            mapData=mapTools.convertToY(mapData, float(key))
+            mapData=maps.convertToY(mapData, float(key))
             RMSMap=self.makeNoiseMap(mapData)
             dataCube.append(mapData)
             noiseCube.append(RMSMap)
@@ -948,7 +947,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 invVar[z][zeroMask]=1.
             # Make relative weights cube from inv var (for convenience really)
             # Since we used inverse variance for making a combined y0~ estimate,
-            # we need these to weight fRel in mass estimates (see simsTools.calcM500Fromy0)
+            # we need these to weight fRel in mass estimates (see signals.calcM500Fromy0)
             relWeightsCube=np.zeros(dataCube.shape)
             for i in range(invVar.shape[0]):
                 relWeightsCube[i]=invVar[i]/np.sum(invVar, axis = 0)
@@ -1075,7 +1074,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 yOverlap=RADecSectionDict['yOverlap']
                 buff=np.zeros(mapData[yMax:yMax+yOverlap].shape)+mapData[yMax:yMax+yOverlap]
                 if self.params['bckSub'] == True:
-                    mapData[yMin:yMax+yOverlap, :]=mapTools.subtractBackground(mapData[yMin:yMax+yOverlap, :], wcs, 
+                    mapData[yMin:yMax+yOverlap, :]=maps.subtractBackground(mapData[yMin:yMax+yOverlap, :], wcs, 
                                                                       RADeg = RADecSectionDict['applyRACentre'], 
                                                                       decDeg = RADecSectionDict['applyDecCentre'],
                                                                       smoothScaleDeg = RADecSectionDict['bckSubScaleArcmin']/60.)
@@ -1179,7 +1178,7 @@ class BeamFilter(MapFilter):
         
         """
         
-        signalMap, inputSignalProperties=simsTools.makeBeamModelSignalMap(mapObsFreqGHz, np.degrees(self.radiansMap),
+        signalMap, inputSignalProperties=signals.makeBeamModelSignalMap(mapObsFreqGHz, np.degrees(self.radiansMap),
                                                                           self.wcs, 
                                                                           beamFileName)
 
@@ -1198,7 +1197,7 @@ class ArnaudModelFilter(MapFilter):
         
         """
         
-        signalMap, modelDict=simsTools.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
+        signalMap, modelDict=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
                                                                 mapObsFreqGHz, np.degrees(self.radiansMap),
                                                                 self.wcs, beamFileName, 
                                                                 GNFWParams = self.params['GNFWParams'])
