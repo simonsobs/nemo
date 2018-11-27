@@ -104,7 +104,7 @@ if __name__ == '__main__':
             for cat in optimalCatalogList:
                 optimalCatalog=optimalCatalog+cat
             print("... gathering and averaging contamination estimates ...")
-            avContaminationTabDict={}
+            avConTabDict={}
             for k in conKeysList:
                 tabList=[]
                 avTab=None

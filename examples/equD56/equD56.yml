@@ -16,9 +16,6 @@ unfilteredMaps:
        pointSourceMask: "pointSourceMask.fits.gz",
        surveyMask: "surveyMask.fits.gz"}
        
-# MPI? Used only for tileDeck files (see examples/AdvACT)
-useMPI: False
-
 # Detection/catalog options
 # Set useInterpolator: True for sub-pixel flux and SNR measurements
 thresholdSigma: 4.0
@@ -53,14 +50,7 @@ massOptions: {tenToA0: 4.95e-5,
               sigma_int: 0.2,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "ACTPol_clusters_20180816.fits", 
-              forcedPhotometry: False, 
-              Q: 'fit'}
-
-# Example of how to use the forced photometry mode: writes a catalog called NEDHigh-z_M500.fits in the equD56/ dir
-#massOptions: {redshiftCatalog: "NEDHigh-z.fits", 
-              #forcedPhotometry': True, 
-              #Q: 'fit'}
+              redshiftCatalog: "ACTPol_clusters_20180816.fits"}
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
