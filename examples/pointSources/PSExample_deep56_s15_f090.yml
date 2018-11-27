@@ -14,9 +14,6 @@ unfilteredMaps:
        pointSourceMask: null,
        surveyMask: null}
 
-# MPI? Used only for tileDeck files (see examples/AdvACT)
-useMPI: False
-
 # Detection/catalog options
 # Set useInterpolator: True for sub-pixel flux and SNR measurements
 thresholdSigma: 4.0
@@ -38,9 +35,6 @@ mapFilters:
                               RADecSection: [41.0, -11.0, -8.0, 4.0],
                               kernelMaxArcmin: 7.,
                               symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
+                              noiseGridArcmin: 20.},
                 bckSub: True, 
                 outputUnits: 'uK'}}
-

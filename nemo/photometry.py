@@ -322,9 +322,13 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
         mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
         
         # These keywords would only be written if output units 'uK' (point source finding)
+        # This also relies on the beam solid angle being in the header of the beam .txt file
         if 'BEAMNSR' in wcs.header.keys():
             beamSolidAngle_nsr=wcs.header['BEAMNSR']
             obsFreqGHz=wcs.header['FREQGHZ']
+            reportJyFluxes=True
+        else:
+            reportJyFluxes=False
         
         # In the past this had problems - Simone using happily in his fork though, so now optional
         if useInterpolator == True:
@@ -381,8 +385,9 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
                         deltaTc=mapValue
                         obj[prefix+'deltaT_c']=deltaTc
                         obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']                        
-                        obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
-                        obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                        if reportJyFluxes == True:
+                            obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                            obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
 
 #------------------------------------------------------------------------------------------------------------
 def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
