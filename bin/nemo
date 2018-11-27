@@ -91,12 +91,12 @@ if __name__ == '__main__':
         
     # MPI: gather together and merge all of the catalogs from each process, and contamination test results
     if config.MPIEnabled == True:
-        optimalCatalogList=comm.gather(imageDict['optimalCatalog'], root = 0)
+        optimalCatalogList=config.comm.gather(imageDict['optimalCatalog'], root = 0)
         conKeysList=list(conTabDict.keys())
-        conTabDictList=comm.gather(conTabDict, root = 0)
-        if rank != 0:
+        conTabDictList=config.comm.gather(conTabDict, root = 0)
+        if config.rank != 0:
             assert optimalCatalogList is None
-            print("... MPI rank %d finished ..." % (rank))
+            print("... MPI rank %d finished ..." % (config.rank))
             sys.exit()
         else:
             print("... gathering catalogs ...")

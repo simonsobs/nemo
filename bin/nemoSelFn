@@ -130,7 +130,7 @@ if __name__ == '__main__':
         
     # MPI: gather together selection function results, so we can compute survey-wide average
     if config.MPIEnabled == True:
-        gathered_selFnCollections=comm.gather(selFnCollection, root = 0)
+        gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank != 0:
             assert gathered_selFnCollections is None
             print("... MPI rank %d finished ..." % (config.rank))

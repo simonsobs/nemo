@@ -355,7 +355,7 @@ def fitQ(config):
         
         # Gather and save all the Q fits
         if config.MPIEnabled == True:
-            gathered_QTabDicts=comm.gather(rank_QTabDict, root = 0)
+            gathered_QTabDicts=config.comm.gather(rank_QTabDict, root = 0)
             if config.rank != 0:
                 assert gathered_QTabDicts is None
                 print("... MPI rank %d finished ..." % (config.rank))
