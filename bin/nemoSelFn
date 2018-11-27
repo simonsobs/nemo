@@ -21,7 +21,7 @@ from scipy import optimize
 from nemo import signals
 from nemo import maps
 from nemo import MockSurvey
-from nemo import selFnTools
+from nemo import completeness
 from nemo import plotSettings
 from nemo import startUp
 import argparse
@@ -91,8 +91,8 @@ if __name__ == '__main__':
             selFnCollection[footprintDict['label']]=[]
             
     for extName in config.extNames:
-        RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
-        compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
+        RMSTab=completeness.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
+        compMz=completeness.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
                                            numDraws = config.parDict['selFnOptions']['numDraws'],
                                            numIterations = config.parDict['selFnOptions']['numIterations'],
                                            method = config.parDict['selFnOptions']['method'],
@@ -106,12 +106,12 @@ if __name__ == '__main__':
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
         for footprintDict in footprintsList:
-            selFnTools.makeIntersectionMask(extName, config.diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
-            tileAreaDeg2=selFnTools.getTileTotalAreaDeg2(extName, config.diagnosticsDir, footprintLabel = footprintDict['label'])
+            completeness.makeIntersectionMask(extName, config.diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
+            tileAreaDeg2=completeness.getTileTotalAreaDeg2(extName, config.diagnosticsDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
-                RMSTab=selFnTools.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
+                RMSTab=completeness.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
                                             footprintLabel = footprintDict['label'])
-                compMz=selFnTools.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
+                compMz=completeness.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
                                                    numDraws = config.parDict['selFnOptions']['numDraws'],
                                                    numIterations = config.parDict['selFnOptions']['numIterations'],
                                                    method = config.parDict['selFnOptions']['method'])
@@ -124,7 +124,7 @@ if __name__ == '__main__':
         # Optional mass-limit maps
         if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
             for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                selFnTools.makeMassLimitMap(SNRCut, massLimitDict['z'], extName, photFilterLabel, mockSurvey, 
+                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], extName, photFilterLabel, mockSurvey, 
                                             config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
                                             config.selFnDir)  
         
@@ -148,7 +148,7 @@ if __name__ == '__main__':
                 
     # Survey completeness stats now all lumped together in one routine
     # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
-    selFnTools.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
+    completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
                                        additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
     
     # If we made mass limit maps...
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
         print(">>> Making cumulative area plots and full survey mass limit plots ...")
         for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-            selFnTools.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir) 
-            selFnTools.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config.diagnosticsDir)
+            completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir) 
+            completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config.diagnosticsDir)
             
             
