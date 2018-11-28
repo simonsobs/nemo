@@ -51,7 +51,11 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
 
     # Q varies across tiles
-    tckQFitDict=signals.fitQ(config)
+    QFitFileName=config.selFnDir+os.path.sep+"QFit.pickle"
+    if os.path.exists(QFitFileName) == True:
+        tckQFitDict=signals.loadQ(QFitFileName)
+    else:
+        raise Exception("could not find cached Q fit - run nemoMass first")
 
     # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
     minMass=8e13

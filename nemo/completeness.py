@@ -608,7 +608,7 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
     RMSTab=getRMSTab(extName, photFilterLabel, selFnDir)
     
     # Downsampling for speed? 
-    # If this is done, also need the bin edges and then need to modify code below according;y
+    # If this is done, also need the bin edges and then need to modify code below accordingly
     #RMSTab=downsampleRMSTab(RMSTab)
     
     # Fill in blocks in map for each RMS value
