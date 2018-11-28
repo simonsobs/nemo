@@ -128,15 +128,21 @@ A script that shows an example of how to use the selection function
 can be found in this directory. You can run it with:
 
 ```
-python selFnExample.py equD56.yml 5.0 full
+python selFnExample.py equD56.yml equD56/selFn
 ```
 
-Here, the second argument is the cut in `fixed_SNR`, and the final 
-argument specifies the footprint to use (see the 
-`selFnFootprints` dictionary in the .yml config file - this is 
-commented out by default). Footprints can be used to calculate the
+Here, the second argument gives the location of the `selFn` directory
+made by `nemoSelFn` - this may be copied to a different location,
+and should contain all of the information needed to estimate the 
+completeness for a given `nemo` run. By default, this example uses
+the full survey area, but you may optionally use the `-f` switch to
+specify a different footprint to use (see the `selFnFootprints` 
+dictionary in the .yml config file - this is commented out by 
+default). Footprints can be used to calculate the
 completeness within the intersection between the SZ survey and an
-optical survey (e.g., DES, HSC, KiDS, SDSS etc.).
+optical survey (e.g., DES, HSC, KiDS, SDSS etc.). The `-S` switch may
+be used to change the signal-to-noise cut used to select the cluster
+sample.
 
 You can also take a look at the `nemoCosmo` script for more examples of
 how to use the selection function routines. Note that `nemoCosmo` is 
