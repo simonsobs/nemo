@@ -110,7 +110,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
             print("... not using sub-pixel interpolation for SNRs ...")
                                                         
         # Border around edge where we might throw stuff out just to cut down contamination
-        if np.any(areaMask) != None and areaMask.sum() > 0:
+        if type(areaMask) == np.ndarray and areaMask.sum() > 0:
             minX=np.where(areaMask > 0)[1].min()
             maxX=np.where(areaMask > 0)[1].max()
             minY=np.where(areaMask > 0)[0].min()
