@@ -959,8 +959,9 @@ class RealSpaceMatchedFilter(MapFilter):
             weightedNoise=noiseCube[0]
             relWeightsCube=np.ones(dataCube.shape)
         
-        weightedSNMap=weightedMap/weightedNoise
-        weightedSNMap[np.isinf(weightedSNMap)]=0.
+        weightedSNMap=np.zeros(weightedMap.shape)
+        mask=np.greater(weightedNoise, 0)
+        weightedSNMap[mask]=weightedMap[mask]/weightedNoise[mask]
         
         # Write out relative weights cube as .fits - handy not just for fRel, but also for coverage checking
         # i.e., we can put this info into object catalogs - indicate where map was 148 GHz only, for example

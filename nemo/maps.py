@@ -468,6 +468,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     img=pyfits.open(mapDict['mapFileName'], memmap = True)
     wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
     data=img[extName].data
+    img.close()
+    
     # For Enki maps... take only I (temperature) for now, add options for this later
     if data.ndim == 3:
         data=data[0, :]
@@ -484,6 +486,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] != None:
         wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
         weights=wht[extName].data
+        wht.close()
         # For Enki maps... take only I (temperature) for now, add options for this later
         if weights.ndim == 3:       # I, Q, U
             weights=weights[0, :]
@@ -500,6 +503,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] !=  None:
         smImg=pyfits.open(mapDict['surveyMask'])
         surveyMask=smImg[extName].data
+        smImg.close()
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
@@ -507,6 +511,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] != None:
         psImg=pyfits.open(mapDict['pointSourceMask'])
         psMask=psImg[extName].data
+        psImg.close()
     else:
         psMask=np.ones(data.shape)
             

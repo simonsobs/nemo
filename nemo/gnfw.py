@@ -2,12 +2,14 @@
 Perform line-of-sight integral of GNFW model.
 
 Matthew Hasselfield's code, slightly updated to include P0, c500
-(makes life a bit easier for some applications of this)
+(makes life a bit easier for some applications of this).
 
 """
 
 import numpy as np
 from scipy.optimize import fmin
+#import warnings
+#warnings.filterwarnings("error")
 
 # Below, params is a dictionary that specifies the GNFW powers as well
 # as the integration control parameters.  The GNFW parameters should
@@ -36,7 +38,11 @@ def func(x, params):
     The GNFW radial profile - now with added P0, c500.
     """
     G, A, B, c500, P0 = params['gamma'], params['alpha'], params['beta'], params['c500'], params['P0']
-    return P0*((x*c500)**-G * (1+(x*c500)**A)**((G-B)/A))
+    prof=np.zeros(x.shape)
+    mask=np.greater(x, 0)
+    prof[mask]=P0*((x[mask]*c500)**-G * (1+(x[mask]*c500)**A)**((G-B)/A))
+    #prof[x == 0]=np.inf
+    return prof
 
 def xfunc(x, b, params):
     """
