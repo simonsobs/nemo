@@ -17,10 +17,11 @@ from scipy import interpolate
 from scipy.interpolate import InterpolatedUnivariateSpline as _spline
 from scipy import ndimage
 from scipy import optimize
-from nemo import signals
-from nemo import maps
-from nemo import MockSurvey
-from nemo import plotSettings
+from . import signals
+from . import maps
+from . import MockSurvey
+from . import plotSettings
+from . import startUp
 from collections import OrderedDict
 import colorcet
 import types
