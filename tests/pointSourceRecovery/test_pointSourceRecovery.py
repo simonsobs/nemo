@@ -59,9 +59,6 @@ def makeSimSourceCatalog(mapData, wcs, numSources = 1000):
 #------------------------------------------------------------------------------------------------------------
 # Main
 
-# Set threshold above which we'll trigger exceptions
-
-
 beamFileName="../../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
 
 # Download the E-D56 map if not found
