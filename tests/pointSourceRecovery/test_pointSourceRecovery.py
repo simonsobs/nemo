@@ -20,7 +20,7 @@ import IPython
 
 #------------------------------------------------------------------------------------------------------------
 # Test threholds
-FLUX_RATIO_THRESH=0.005         # Require median recovered source amplitude to be within 0.5% of input
+FLUX_RATIO_THRESH=0.01         # Require median recovered source amplitude to be within 1% of input
 
 #------------------------------------------------------------------------------------------------------------
 def makeSimSourceCatalog(mapData, wcs, numSources = 1000):
@@ -110,18 +110,20 @@ xIndices, rDeg, sep3d = match_coordinates_sky(cat1, cat2, nthneighbor = 1)
 mask=np.less(rDeg.value, xMatchRadiusDeg)
 
 # Source amplitude recovery check
+print(">>> Amplitude recovery test:")
 inT=inTab['I'][mask]
 diffT=inTab['I'][mask]-outTab[xIndices]['deltaT_c'][mask]
 ratioT=inTab['I'][mask]/outTab[xIndices]['deltaT_c'][mask]
 SNRs=outTab[xIndices]['SNR'][mask]
+print("... median amplitude in / amplitude out = %.6f" % (np.median(ratioT)))
 if abs(1.0-np.median(ratioT)) > FLUX_RATIO_THRESH:
     plt.plot(inT, ratioT, 'r.')
     plt.xlabel("input deltaT (uK)")
     plt.ylabel("input / output deltaT")
     plt.savefig("amplitudeRecovery.png")
-    raise Exception("Amplitude recovery test FAILED")
+    raise Exception("... FAILED")
 else:
-    print(">>> Amplitude recovery test PASSED")
+    print("... PASSED")
 
 # Position recovery check
 
