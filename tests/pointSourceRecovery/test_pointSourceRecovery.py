@@ -20,7 +20,8 @@ import IPython
 
 #------------------------------------------------------------------------------------------------------------
 # Test threholds
-FLUX_RATIO_THRESH=0.01         # Require median recovered source amplitude to be within 1% of input
+FLUX_RATIO_THRESH=0.01          # Require median recovered source amplitude to be within 1% of input
+POSREC_SNR10_THRESH=0.2         # Require median recovered source position within 0.2' of input for SNR < 10 
 
 #------------------------------------------------------------------------------------------------------------
 def makeSimSourceCatalog(mapData, wcs, numSources = 1000):
@@ -97,10 +98,10 @@ enmap.write_map(outMapFileName, omap)
 # Run nemo and match with input catalog
 os.system("nemo PSTest_E-D56.yml")
 
+radiusArcmin=2.5    # Prior for filtering out implausible matches
 inTab=atpy.Table().read(outCatalogFileName)
 outTab=atpy.Table().read("PSTest_E-D56"+os.path.sep+"PSTest_E-D56_optimalCatalog.fits")
 cat1=SkyCoord(ra = inTab['ra'].data, dec = inTab['dec'].data, unit = 'deg')
-radiusArcmin=2.5    # For filtering out implausible matches
 xMatchRadiusDeg=radiusArcmin/60.
 cat2=SkyCoord(ra = outTab['RADeg'].data, dec = outTab['decDeg'].data, unit = 'deg')
 xIndices, rDeg, sep3d = match_coordinates_sky(cat1, cat2, nthneighbor = 1)
@@ -113,16 +114,33 @@ diffT=inTab['I'][mask]-outTab[xIndices]['deltaT_c'][mask]
 ratioT=inTab['I'][mask]/outTab[xIndices]['deltaT_c'][mask]
 SNRs=outTab[xIndices]['SNR'][mask]
 print("... median amplitude in / amplitude out = %.6f" % (np.median(ratioT)))
+plt.plot(inT, ratioT, 'r.')
+plt.xlabel("input deltaT (uK)")
+plt.ylabel("input / output deltaT")
+plt.savefig("amplitudeRecovery.png")
+plt.close()
 if abs(1.0-np.median(ratioT)) > FLUX_RATIO_THRESH:
-    plt.plot(inT, ratioT, 'r.')
-    plt.xlabel("input deltaT (uK)")
-    plt.ylabel("input / output deltaT")
-    plt.savefig("amplitudeRecovery.png")
     raise Exception("... FAILED")
 else:
     print("... PASSED")
 
 # Position recovery check
+print(">>> Position recovery test:")
+medOffsetArcmin=np.median(rDeg[mask].data)*60
+SNRMask=np.less(SNRs, 10.0)
+medOffsetArcmin_SNR10=np.median(rDeg[mask][SNRMask].data)*60
+print("... median recovered position offset = %.6f arcmin (full sample)" % (medOffsetArcmin))
+print("... median recovered position offset = %.6f arcmin (SNR < 10)" % (medOffsetArcmin_SNR10))
+plt.plot(SNRs, rDeg[mask]*60., 'r.')
+plt.semilogx()
+plt.xlabel("SNR")
+plt.ylabel("Position offset (arcmin)")
+plt.savefig("positionRecovery.png")
+plt.close()
+if medOffsetArcmin_SNR10 > POSREC_SNR10_THRESH:
+    raise Exception("... FAILED")
+else:
+    print("... PASSED")
 
 # Map subtraction / residual check... make template of recovered sources and subtract from sourceInjectedMap.fits
 
