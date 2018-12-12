@@ -1,3 +1,6 @@
-This directory contains tests - with one test per directory.
+This directory contains tests, using Robot Framework.
 
-We may add a script to automatically run all tests here later.
+To run a test do, e.g.,
+
+robot point_sources.robot
+
