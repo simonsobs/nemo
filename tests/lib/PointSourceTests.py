@@ -37,6 +37,10 @@ class PointSourceTests(object):
         if os.path.exists(cacheDir) == False:
             os.makedirs(cacheDir)
         thisDir=os.getcwd()
+        
+        self.plotsDir="plots"
+        if os.path.exists(self.plotsDir) == False:
+            os.makedirs(self.plotsDir)
 
         # Download the E-D56 map if not found
         self.inMapFileName=cacheDir+os.path.sep+"weightedMap_4.fits"
@@ -54,6 +58,10 @@ class PointSourceTests(object):
 
     
     def inject_sources(self, numSources = 1000):
+        """Injects a bunch of point sources into a map, using a vaguely plausible amplitude distribution
+        based on the sources found in the deep56 map.
+        
+        """
         
         nsigma=5.0
         smul=1.0
@@ -96,10 +104,16 @@ class PointSourceTests(object):
         
         
     def run_nemo(self):
-        os.system("nemo %s" % (self.configFileName))
+        self._run_command("nemo", self.configFileName)
+        #os.system("nemo %s" % (self.configFileName))
 
     
     def cross_match_with_input(self):
+        """Cross matches the input and output source catalogs. Since astropy will find the nearest neighbour
+        regardless of distance, this can lead to spurious matches - so we throw out anything more than 2.5'
+        away (this seems to be generous prior).
+        
+        """
         radiusArcmin=2.5    # Prior for filtering out implausible matches
         inTab=atpy.Table().read(self.outCatalogFileName)
         outTab=atpy.Table().read("configs"+os.path.sep+"PSTest_E-D56"+os.path.sep+"PSTest_E-D56_optimalCatalog.fits")
@@ -112,18 +126,20 @@ class PointSourceTests(object):
         
         
     def check_recovered_amplitudes(self):
-        # Source amplitude recovery check
+        # Amplitude recovery check
         inTab, outTab, xIndices, mask, rDeg=self.cross_match_with_input()
         print(">>> Amplitude recovery test:")
         inT=inTab['I'][mask]
         diffT=inTab['I'][mask]-outTab[xIndices]['deltaT_c'][mask]
         ratioT=inTab['I'][mask]/outTab[xIndices]['deltaT_c'][mask]
         SNRs=outTab[xIndices]['SNR'][mask]
-        print("... median amplitude in / amplitude out = %.6f" % (np.median(ratioT)))
+        label="median amplitude in / amplitude out = %.4f" % (np.median(ratioT))
+        print("... %s" % (label))
         plt.plot(inT, ratioT, 'r.')
         plt.xlabel("input deltaT (uK)")
         plt.ylabel("input / output deltaT")
-        plt.savefig("amplitudeRecovery.png")
+        plt.title(label)
+        plt.savefig(self.plotsDir+os.path.sep+"amplitudeRecovery.png")
         plt.close()
         if abs(1.0-np.median(ratioT)) > FLUX_RATIO_THRESH:
             self._status="FAILED"
@@ -139,13 +155,15 @@ class PointSourceTests(object):
         medOffsetArcmin=np.median(rDeg[mask].data)*60
         SNRMask=np.less(SNRs, 10.0)
         medOffsetArcmin_SNR10=np.median(rDeg[mask][SNRMask].data)*60
-        print("... median recovered position offset = %.6f arcmin (full sample)" % (medOffsetArcmin))
-        print("... median recovered position offset = %.6f arcmin (SNR < 10)" % (medOffsetArcmin_SNR10))
-        plt.plot(SNRs, rDeg[mask]*60., 'r.')
+        print('... median recovered position offset = %.2f" (full sample)' % (medOffsetArcmin*60))
+        label='median recovered position offset = %.2f" (SNR < 10)' % (medOffsetArcmin_SNR10*60)
+        print("... %s" % (label))
+        plt.plot(SNRs, rDeg[mask]*3600., 'r.')
         plt.semilogx()
         plt.xlabel("SNR")
-        plt.ylabel("Position offset (arcmin)")
-        plt.savefig("positionRecovery.png")
+        plt.ylabel('Position offset (")')
+        plt.title(label)
+        plt.savefig(self.plotsDir+os.path.sep+"positionRecovery.png")
         plt.close()
         if medOffsetArcmin_SNR10 > POSREC_SNR10_THRESH:
             self._status="FAILED"
@@ -160,7 +178,7 @@ class PointSourceTests(object):
 
 
     def _run_command(self, command, *args):
-        command = [sys.executable, self._sut_path, command] + list(args)
+        command = [command] + list(args)
         process = subprocess.Popen(command, universal_newlines=True, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
         self._status = process.communicate()[0].strip()
