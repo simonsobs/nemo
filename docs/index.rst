@@ -18,6 +18,7 @@ nemo - a Sunyaev-Zel'dovich effect galaxy cluster and source finder
    outputs
    config
    development
+   testing
    reference
 
 Indices and tables

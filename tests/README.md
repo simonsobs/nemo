@@ -1,8 +1,4 @@
-# Testing nemo
-
-This directory contains tests, which use the Robot Framework:
-
-http://robotframework.org/
+Nemo uses the [Robot Framework](http://robotframework.org/) for tests.
 
 To run a single test do, e.g.,
 
