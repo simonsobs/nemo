@@ -7,6 +7,7 @@ This module contains tools for manipulating maps (e.g., conversion of units etc.
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
+from scipy.signal import convolve as scipy_convolve
 import astropy.io.fits as pyfits
 import numpy as np
 import glob
@@ -19,6 +20,7 @@ import time
 import IPython
 import nemo
 from . import catalogs
+from . import signals
 np.random.seed()
 
 #-------------------------------------------------------------------------------------------------------------
@@ -554,8 +556,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         clip=astImages.clipUsingRADecCoords(np.array(randMap), wcs, RADeg+radiusDeg, RADeg-radiusDeg, decDeg-radiusDeg, decDeg+radiusDeg)
         RADeg, decDeg=clip['wcs'].getCentreWCSCoords()
         degreesMap=nemoCython.makeDegreesDistanceMap(clip['data'], clip['wcs'], RADeg, decDeg, 0.5)
-        beamSignalMap, inputSignalProperties=signals.makeBeamModelSignalMap(mapDict['obsFreqGHz'], degreesMap, 
-                                                                    clip['wcs'], mapDict['beamFileName'])
+        beamSignalMap, inputSignalProperties=signals.makeBeamModelSignalMap(degreesMap, clip['wcs'], 
+                                                                            mapDict['beamFileName'])
         randMap=ndimage.convolve(np.array(randMap), beamSignalMap/beamSignalMap.sum()) 
         # Add white noise that varies according to inv var map...
         # Noise needed is the extra noise we need to add to match the real data, scaled by inv var map
@@ -649,6 +651,30 @@ def subtractBackground(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothSca
     data=data-smoothedData
     
     return data
+
+#------------------------------------------------------------------------------------------------------------
+def convolveMapWithBeam(data, wcs, beamFileName, maxDistDegrees = 1.0):
+    """Convolves map given by data, wcs with the beam.
+    
+    maxDistDegrees sets the size of the convolution kernel.
+    
+    Returns map (numpy array)
+    
+    """
+    
+    RADeg, decDeg=wcs.getCentreWCSCoords()
+    degreesMap=nemoCython.makeDegreesDistanceMap(data, wcs, RADeg, decDeg, maxDistDegrees)
+
+    beamMap, sigDict=signals.makeBeamModelSignalMap(degreesMap, wcs, beamFileName)
+    ys, xs=np.where(degreesMap < maxDistDegrees)
+    yMin=ys.min()
+    yMax=ys.max()+1
+    xMin=xs.min()
+    xMax=xs.max()+1
+    beamMap=beamMap[yMin:yMax, xMin:xMax]
+    beamMap=beamMap/beamMap.sum()
+    
+    return scipy_convolve(data, beamMap, mode = 'same')
 
 #-------------------------------------------------------------------------------------------------------------
 def smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 5.0/60.0):

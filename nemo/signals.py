@@ -83,12 +83,18 @@ def makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = 'default'):
 
     if GNFWParams == 'default':
         GNFWParams=gnfw._default_params
-        
+    
+    # Adjust tol for speed vs. range of b covered
     bRange=np.linspace(0, 30, 1000)
     cylPProfile=[]
-    for b in bRange:
+    tol=1e-6
+    for i in range(len(bRange)):
+        b=bRange[i]
         cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
+        if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
+            break
     cylPProfile=np.array(cylPProfile)
+    bRange=bRange[:i+1]
     
     # Normalise to 1 at centre
     cylPProfile=cylPProfile/cylPProfile.max()
@@ -100,13 +106,13 @@ def makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = 'default'):
     # NOTE: c500 now taken into account in gnfw.py
     thetaDegRange=bRange*(theta500Arcmin/60.)
     tckP=interpolate.splrep(thetaDegRange, cylPProfile)
-
+    
     return {'tckP': tckP, 'theta500Arcmin': theta500Arcmin, 'rDeg': thetaDegRange}
 
 #------------------------------------------------------------------------------------------------------------
-def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
+def makeBeamModelSignalMap(degreesMap, wcs, beamFileName):
     """Makes a 2d signal only map containing the given beam.
-    
+        
     Returns signalMap (2d array), inputSignalProperties
     
     """
@@ -129,7 +135,8 @@ def makeBeamModelSignalMap(obsFreqGHz, degreesMap, wcs, beamFileName):
     return signalMap, inputSignalProperties
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default'):
+def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default',
+                             deltaT0 = -1000, maxSizeDeg = 15.0, convolveWithBeam = True):
     """Makes a 2d signal only map containing an Arnaud model cluster. Units of M500 are MSun.
     
     degreesMap is a 2d array containing radial distance from the centre - the output map will have the same
@@ -143,43 +150,65 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
     GNFWParams in the filter params in the nemo .par file (see the example .par files).
     
+    deltaT0 specifies the amplitude of the input signal (in map units, e.g., uK) - this is only needed if this
+    routine is being used to inject sources (completely arbitrary for making filter kernels).
+    
+    maxSizeDeg is used to limit the region over which the beam convolution is done, for speed.
+    
+    If convolveWithBeam == False, no beam convolution is done (can be quicker to just do that over the whole
+    source injected map rather than per object).
+    
     Returns the map (2d array) and a dictionary containing the properties of the inserted cluster model.
     
     """
-        
+
+    # Making the 1d profile itself is the slowest part (~1 sec)
     signalDict=makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
     theta500Arcmin=signalDict['theta500Arcmin']
     
-    # This is arbitrary...
-    deltaT0=-1000.0
+    # This is arbitrary if being used to set up a filter kernel
     y0=maps.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
     
-    # Setup 1d profile
+    # Make cluster map
     rDeg=np.linspace(0.0, 1.0, 5000)
     profile1d=deltaT0*interpolate.splev(rDeg, tckP)
-
-    # Apply beam to profile
-    # NOTE: Do not disable this
-    # Load Matthew's beam profile and interpolate onto signal profile coords
-    beamData=np.loadtxt(beamFileName).transpose()
-    profile1d_beam=beamData[1]
-    rDeg_beam=beamData[0]
-    tck_beam=interpolate.splrep(rDeg_beam, profile1d_beam)
-    profile1d_beam=interpolate.splev(rDeg, tck_beam, ext = 1) # ext = 1 sets out-of-range values to 0 rather than extrapolating beam
-                        
-    # Turn 1d profiles into 2d and convolve signal with beam
     rRadians=np.radians(rDeg)
     radiansMap=np.radians(degreesMap)
     r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
     profile2d=r2p(radiansMap)
-    r2p_beam=interpolate.interp1d(rRadians, profile1d_beam, bounds_error=False, fill_value=0.0)
-    profile2d_beam=r2p_beam(radiansMap)
-    smoothedProfile2d=fft.fftshift(fft.ifft2(fft.fft2(profile2d)*fft.fft2(profile2d_beam))).real
-    normFactor=profile2d.sum()/smoothedProfile2d.sum()
-    smoothedProfile2d=smoothedProfile2d*normFactor
-    signalMap=smoothedProfile2d        
     
+    # Load beam profile and interpolate onto signal profile coords
+    if convolveWithBeam == True:
+        
+        # This is slow...
+        #signalMap=maps.convolveMapWithBeam(profile2d, wcs, beamFileName, maxDistDegrees = 1.0)        
+        
+        # This is fast...
+        beamData=np.loadtxt(beamFileName).transpose()
+        profile1d_beam=beamData[1]
+        rDeg_beam=beamData[0]
+        tck_beam=interpolate.splrep(rDeg_beam, profile1d_beam)
+        profile1d_beam=interpolate.splev(rDeg, tck_beam, ext = 1) # ext = 1 sets out-of-range values to 0 rather than extrapolating beam
+        
+        ys, xs=np.where(degreesMap < maxSizeDeg)
+        yMin=ys.min()
+        yMax=ys.max()+1
+        xMin=xs.min()
+        xMax=xs.max()+1
+
+        r2p_beam=interpolate.interp1d(rRadians, profile1d_beam, bounds_error=False, fill_value=0.0)
+        profile2d_beam=r2p_beam(radiansMap)
+        #smoothedProfile2d_1=fft.fftshift(fft.ifft2(fft.fft2(profile2d)*fft.fft2(profile2d_beam))).real
+        smoothedProfile2d=np.zeros(degreesMap.shape)
+        smoothedProfile2d[yMin:yMax, xMin:xMax]=fft.fftshift(fft.ifft2(fft.fft2(profile2d[yMin:yMax, xMin:xMax])*fft.fft2(profile2d_beam[yMin:yMax, xMin:xMax]))).real
+        normFactor=profile2d.sum()/smoothedProfile2d.sum()
+        smoothedProfile2d=smoothedProfile2d*normFactor
+        signalMap=smoothedProfile2d   
+        
+    else:
+        signalMap=profile2d
+                
     # For sanity checking later, let's dump the input properties of the model into a dictionary
     inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500Arcmin': theta500Arcmin, 
                            'obsFreqGHz': obsFreqGHz}

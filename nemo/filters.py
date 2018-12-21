@@ -233,7 +233,7 @@ class MapFilter(object):
         self.degPerPixX=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
         self.degPerPixY=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
         
-        # Real space map og angular distance from centre in radians, used in making filters and beam
+        # Real space map of angular distance from centre in radians, used in making filters and beam
         # NOTE: floor and int conversion added for python3
         xRadRange=np.array([np.arange(int(np.floor(-mapDict['data'].shape[1]/2)), int(mapDict['data'].shape[1]/2), \
                                     dtype=np.float64)*np.radians(self.degPerPixX)]*mapDict['data'].shape[0])
@@ -732,7 +732,7 @@ class RealSpaceMatchedFilter(MapFilter):
                                                        smoothScaleDeg = bckSubScaleArcmin/60.0)
         else:
             filteredSignal=np.zeros(signalMap.shape)+signalMap
-        filteredSignal=ndimage.convolve(filteredSignal, kern2d) 
+        filteredSignal=ndimage.convolve(filteredSignal, kern2d)
         if self.params['outputUnits'] == 'yc':
             # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
             filteredSignal=maps.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
@@ -1179,9 +1179,9 @@ class BeamFilter(MapFilter):
         
         """
         
-        signalMap, inputSignalProperties=signals.makeBeamModelSignalMap(mapObsFreqGHz, np.degrees(self.radiansMap),
-                                                                          self.wcs, 
-                                                                          beamFileName)
+        signalMap, inputSignalProperties=signals.makeBeamModelSignalMap(np.degrees(self.radiansMap),
+                                                                        self.wcs, 
+                                                                        beamFileName)
 
         return {'signalMap': signalMap, 'inputSignalProperties': inputSignalProperties}
     

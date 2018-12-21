@@ -17,6 +17,8 @@ def makeDegreesDistanceMap(np.ndarray[np.float64_t, ndim=2] data, wcs, RADeg, de
     """Returns an array of distance in degrees from given position. maxDistDegrees sets the limit around
     the given RADeg, decDeg position to which the distance is calculated.
     
+    Values outside of maxDistDegrees are set to 1e6
+    
     """
     
     # Pixel distance grid            
