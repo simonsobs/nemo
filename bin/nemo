@@ -138,7 +138,7 @@ if __name__ == '__main__':
     
     # Plot contamination together
     if conTabDict != {}:
-        signals.plotContamination(conTabDict, config.diagnosticsDir)           
+        maps.plotContamination(conTabDict, config.diagnosticsDir)           
     
     # Basic merged/optimal catalog
     # NOTE: now converting everything to astropy.table files here, so we can quickly remove duplicates we get under MPI

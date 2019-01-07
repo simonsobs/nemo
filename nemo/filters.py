@@ -178,19 +178,22 @@ class MapFilter(object):
         # Get beam solid angle info (units: nanosteradians)... we'll need for fluxes in Jy later
         self.beamSolidAnglesDict={}
         for mapDict in self.unfilteredMapsDictList:    
-            beamFileName=mapDict['beamFileName']
-            with open(beamFileName, "r") as inFile:
-                lines=inFile.readlines()
-                foundLine=False
-                for line in lines:
-                    if line.find("solid angle") != -1:
-                        foundLine=True
-                        break
-                if foundLine == True:
-                    bits=line.split("=")
-                    solidAngle_nsr=float(bits[1].split("nsr")[0])
-                else:
-                    solidAngle_nsr=0.0
+            if 'solidAngle_nsr' in mapDict.keys():
+                solidAngle_nsr=mapDict['solidAngle_nsr']
+            else:
+                beamFileName=mapDict['beamFileName']
+                with open(beamFileName, "r") as inFile:
+                    lines=inFile.readlines()
+                    foundLine=False
+                    for line in lines:
+                        if line.find("solid angle") != -1:
+                            foundLine=True
+                            break
+                    if foundLine == True:
+                        bits=line.split("=")
+                        solidAngle_nsr=float(bits[1].split("nsr")[0])
+                    else:
+                        solidAngle_nsr=0.0
             self.beamSolidAnglesDict[mapDict['obsFreqGHz']]=solidAngle_nsr
         
         # For pixell / enmap

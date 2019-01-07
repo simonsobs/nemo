@@ -17,6 +17,7 @@ Recover unbiased masses from mock catalog
 *** Keywords ***
 
 Run ACTPol clusters pipeline
+    Setup equD56
     Set config              configs/equD56_quick.yml
     Run nemo
     Run nemo mass

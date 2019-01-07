@@ -21,36 +21,77 @@ import pylab as plt
 class NemoTests(object):
 
     def __init__(self):
-        """Set-up for equD56 cluster tests. This downloads the needed maps if they are not found.
+        """Basic set-up for running tests. For those that need datasets to be downloaded, a setup_<name> 
+        routine should be added (see, e.g., setup_equD56).
         
         """
 
         self._status = ''
-        
-        # Needed for inject_sources
-        self.beamFileName="../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
 
-        cacheDir="testsCache"
-        if os.path.exists(cacheDir) == False:
-            os.makedirs(cacheDir)
-        thisDir=os.getcwd()
-        
+        self.cacheDir="testsCache"
+        if os.path.exists(self.cacheDir) == False:
+            os.makedirs(self.cacheDir)
+            
         self.plotsDir="plots"
         if os.path.exists(self.plotsDir) == False:
             os.makedirs(self.plotsDir)
-
+    
+    
+    def setup_equD56(self):
+        """Set-up for tests that use E-D56 maps - downloads them if not found.
+        
+        """
+    
+        # Needed for inject_sources
+        self.beamFileName="../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
+        
+        thisDir=os.getcwd()
+        
         # Download the E-D56 map if not found
-        self.inMapFileName=cacheDir+os.path.sep+"weightedMap_4.fits"
+        self.inMapFileName=self.cacheDir+os.path.sep+"weightedMap_4.fits"
         if os.path.exists(self.inMapFileName) == False:
             print(">>> Downloading E-D56 map ...")
-            os.chdir(cacheDir)
+            os.chdir(self.cacheDir)
             os.system("wget https://www.acru.ukzn.ac.za/~mjh/equD56Maps.tar.gz")
             os.system("tar -zxvf equD56Maps.tar.gz")
             os.remove("equD56Maps.tar.gz")
             os.chdir(thisDir)
 
 
+    def setup_south2008(self):
+        """Set-up for tests that use southern 2008 ACT data - downloads needed files from LAMBDA if not 
+        found.
+        
+        """
+        
+        thisDir=os.getcwd()
+        self.inMapFileName=self.cacheDir+os.path.sep+"ACT_148_south_season_2_1way_v3_summed.fits"
+        if os.path.exists(self.inMapFileName) == False:
+            print(">>> Downloading South 2008 data ...")
+            os.chdir(self.cacheDir)
+            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Maps/AR1/South/ACT_148_south_season_2_1way_v3_summed.fits")
+            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Weights/AR1/South/ACT_148_south_season_2_1way_hits_v3.fits")
+            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Beams/profiles/profile_AR1_2008_pixwin_130224.txt")
+            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/Cluster_src/Ptsrc_cat/act_source_catalog_AR1_2008.txt")
+            os.chdir(thisDir)
+            
+        # Need to convert published catalog such that comparison routines work
+        # NOTE: loading the table this way breaks the name column but we soldier on...
+        tabFileName=self.cacheDir+os.path.sep+"act_source_catalog_AR1_2008.fits"
+        if os.path.exists(tabFileName) == False:
+            tab=atpy.Table().read(self.cacheDir+os.path.sep+"act_source_catalog_AR1_2008.txt", format = 'ascii')
+            tab.rename_column("col2", "name")
+            tab.rename_column("col3", "RADeg")
+            tab.rename_column("col4", "decDeg")
+            tab.rename_column("col6", "fluxJy")
+            tab['fluxJy']=tab['fluxJy']/1000.0
+            tab.write(tabFileName)
+        
+
     def set_config(self, configFileName):
+        """Set the config file to be used by all nemo scripts executed by tests.
+        
+        """
         self.configFileName=configFileName
         
         
