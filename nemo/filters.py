@@ -342,25 +342,19 @@ class MapFilter(object):
         return [2*np.pi*besselTransformedArray, lArray]
                 
 
-    def makeForegroundsPower(self, obsFreqGHz, whiteNoiseLevel):
-        """Returns a Power2D object with foregrounds power from the CMB and white noise only.
-        
-        White noise level is per pixel.
+    def makeForegroundsPower(self):
+        """Returns a Power2D object with foregrounds power from the CMB (this could be extended to add other
+        foregrounds if necessary).
                        
         """
-                    
-        # CAMB power spec with Planck 2015 parameters (ish)        
-        ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", scale = True)
-        randMap=enmap.rand_map(self.unfilteredMapsDictList[0]['data'].shape, self.enwcs, ps)
-        fMaskedData=enmap.fft(randMap)#(enmap.apod(randMap, self.apodPix))
-        fgPower=np.real(fMaskedData*fMaskedData.conj())
-        
-        # Add some white noise to avoid ringing
-        #whiteNoise=np.random.normal(0, whiteNoiseLevel, fgPowerMap.shape)
-        #lm=liteMap.liteMapFromDataAndWCS(whiteNoise, self.wcs)
-        #whiteNoisePower=fftTools.powerFromLiteMap(lm)
-        #fgPower.powerMap=fgPower.powerMap+whiteNoisePower.powerMap
-                
+
+        # CAMB power spec with Planck 2015 parameters (ish)    
+        tab=atpy.Table().read(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", format = 'ascii')
+        tab['TT']=(tab['TT']*2*np.pi)/(tab['L']*(tab['L']+1))
+        lmap=enmap.modlmap(self.unfilteredMapsDictList[0]['data'].shape, self.enwcs)
+        l2p=interpolate.interp1d(tab['L'], tab['TT'], bounds_error=False, fill_value=0.0)
+        fgPower=l2p(lmap)*lmap.shape[0]*lmap.shape[1]
+                            
         return fgPower
         
         
@@ -450,15 +444,10 @@ class MatchedFilter(MapFilter):
             if self.params['noiseParams']['method'] == 'dataMap':
                 print("... taking noise power for filter from map ...")
                 NP=np.real(fMaskedData*fMaskedData.conj())
-            elif self.params['noiseParams']['method'] == 'CMBOnly':
-                print("... taking noise power for filter from model CMB power spectrum ...")
-                highPassMap=maps.subtractBackground(maskedData, self.wcs, 0.25/60.0)
-                whiteNoiseLevel=np.std(highPassMap)
-                NP=self.makeForegroundsPower(mapDict['obsFreqGHz'], whiteNoiseLevel)
             elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
                 print("... taking noise power from max(map noise power, model CMB power spectrum) ...")
                 NP=np.real(fMaskedData*fMaskedData.conj())
-                NPCMB=self.makeForegroundsPower(mapDict['obsFreqGHz'], 0.0)
+                NPCMB=self.makeForegroundsPower()
                 NP=np.maximum.reduce([NP, NPCMB])
             else:
                 raise Exception("noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'")
