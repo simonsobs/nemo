@@ -54,8 +54,7 @@ if __name__ == '__main__':
                              useInterpolator = config.parDict['useInterpolator'])
                     
     # Merged/optimal catalogs
-    catalogs.mergeCatalogs(imageDict)
-    catalogs.makeOptimalCatalog(imageDict, config.parDict['catalogCuts'])
+    catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])
     
     # This is useful for multi-freq, e.g., relativistic SZ corrections; tracking which objects are in 148 GHz only parts of the map
     photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photometryOptions'], 
@@ -100,9 +99,7 @@ if __name__ == '__main__':
             sys.exit()
         else:
             print("... gathering catalogs ...")
-            optimalCatalog=[]
-            for cat in optimalCatalogList:
-                optimalCatalog=optimalCatalog+cat
+            optimalCatalog=atpy.vstack(optimalCatalogList)
             print("... gathering and averaging contamination estimates ...")
             avConTabDict={}
             for k in conKeysList:
@@ -140,24 +137,18 @@ if __name__ == '__main__':
     if conTabDict != {}:
         maps.plotContamination(conTabDict, config.diagnosticsDir)           
     
-    # Basic merged/optimal catalog
-    # NOTE: now converting everything to astropy.table files here, so we can quickly remove duplicates we get under MPI
-    tab=catalogs.catalogToTab(optimalCatalog, catalogs.COLUMN_NAMES, ["SNR > 0.0"])
-    numDuplicatesFound=1e6
-    while numDuplicatesFound != 0:
-        tab, numDuplicatesFound, names=catalogs.removeDuplicatesFromTab(tab)
+    # Strip out duplicates (this is necessary when run in tileDeck mode under MPI)
+    optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+    # We can do this twice as a sanity check... not necessary if we add a proper test elsewhere
+    #optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+    #assert(numDuplicatesFound == 0)
 
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])           
-    #catalogs.writeTab(tab, optimalCatalogFileName)
-
-    # This is a bit wasteful - we convert everything back to a catalog in doing this - but preserves current file formats
-    catalogs.writeCatalogFromTab(tab, optimalCatalogFileName, \
-                                     catalogs.COLUMN_NAMES, catalogs.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
-                                     headings = True)
+    catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName, constraintsList = ["SNR > 0.0"])
+    catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
             
     addInfo=[{'key': 'SNR', 'fmt': '%.1f'}]
-    catalogs.catalog2DS9(tab, \
-                                optimalCatalogFileName.replace(".csv", ".reg"), \
-                                constraintsList = ["SNR > 0.0"], \
-                                addInfo = addInfo, color = "cyan") 
+    catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
+                         constraintsList = ["SNR > 0.0"], \
+                         addInfo = addInfo, color = "cyan") 
 

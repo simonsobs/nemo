@@ -5,6 +5,7 @@ This module contains source finding and photometry routines.
 """
 
 import astropy.io.fits as pyfits
+import astropy.table as atpy
 import numpy as np
 import numpy.fft as fft
 from astLib import *
@@ -125,7 +126,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         minY=minY+rejectBorder
         maxY=maxY-rejectBorder       
         
-        # Build catalog
+        # Build catalog - initially as a list of dictionaries, then converted to astropy Table
         catalog=[]
         idNumCount=1
         for i in range(len(objIDs)):
@@ -213,6 +214,9 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                     if masked == False:
                         catalog.append(objDict)
                         idNumCount=idNumCount+1     
+        
+        # From here on, catalogs should be astropy Table objects...
+        catalog=catalogs.catalogListToTab(catalog)
         if makeDS9Regions == True:
             catalogs.catalog2DS9(catalog, imageDict[key]['filteredMap'].replace(".fits", ".reg"))
         imageDict[key]['catalog']=catalog
@@ -270,18 +274,15 @@ def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = F
                                                             data, kx = 3, ky = 3)
         else:
             print("... not using sub-pixel interpolation for SNRs ...")
-                                            
+        
+        imageDict[key]['catalog'].add_column(atpy.Column(np.zeros(len(imageDict[key]['catalog'])), prefix+'SNR'))
         for obj in imageDict[key]['catalog']:
             x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
-            y=int(round(obj['y']))
-            x=int(round(obj['x']))
-            if x > 0 and x < data.shape[1] and y > 0 and y < data.shape[0]:
+            if int(x) > 0 and int(x) < data.shape[1] and int(y) > 0 and int(y) < data.shape[0]:
                 if useInterpolator == True:
-                    obj[prefix+'SNR']=mapInterpolator(obj['y'], obj['x'])[0][0]
+                    obj[prefix+'SNR']=mapInterpolator(y, x)[0][0]
                 else:
-                    obj[prefix+'SNR']=data[y, x] # read directly off of S/N map
-            else:
-                obj[prefix+'SNR']=0.
+                    obj[prefix+'SNR']=data[int(round(y)), int(round(x))] # read directly off of S/N map
        
 #------------------------------------------------------------------------------------------------------------
 def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator = True, unfilteredMapsDict = None):
@@ -356,18 +357,27 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
             else:
                 photMapInterpolator=None
             interpolatorList.append(photMapInterpolator)
-            
+
+        keysToAdd=['deltaT_c', 'err_deltaT_c']
+        if mapUnits == 'yc':
+            keysToAdd=keysToAdd+['y_c', 'err_y_c']
+        elif mapUnits == 'fluxJy':
+            keysToAdd=keysToAdd+['fluxJy', 'err_fluxJy']        
+        for prefix in prefixList:
+            for k in keysToAdd:
+                catalog.add_column(atpy.Column(np.zeros(len(catalog)), prefix+k))
+
         for obj in catalog:
                         
             if key == obj['template']:
-                
+                x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
                 for data, prefix, interpolator in zip(mapDataList, prefixList, interpolatorList):
                     # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
                     # 2018: Simone seems to now be using this happily, so now optional
                     if useInterpolator == True:
-                        mapValue=interpolator(obj['y'], obj['x'])[0][0]
+                        mapValue=interpolator(y, x)[0][0]
                     else:
-                        mapValue=data[int(round(obj['y'])), int(round(obj['x']))]
+                        mapValue=data[int(round(y)), int(round(x))]
                     # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
                     if mapUnits == 'yc':
                         yc=mapValue
@@ -418,15 +428,20 @@ def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
             for key in wcs.header.keys():
                 if key.find("FREQGHZ") != -1:
                     obsFreqGHzDict[int(key.split("FREQGHZ")[0])]=wcs.header[key]
-            for objDict in catalog:
-                if objDict['template'].split("#")[-1] == extName:
-                    x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
+            for i in range(len(obsFreqGHzDict.keys())):
+                freqStr=("%.1f" % (obsFreqGHzDict[i])).replace(".", "p")    # MongoDB doesn't like '.' in key names
+                keyToAdd='fixed_y_c_weight_%sGHz' % (freqStr)
+                if keyToAdd not in catalog.keys():
+                    catalog.add_column(atpy.Column(np.zeros(len(catalog)), keyToAdd))
+            for row in catalog:
+                if row['template'].split("#")[-1] == extName:
+                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                     x=int(round(x))
                     y=int(round(y))
                     freqWeights=freqCube[:, y, x]
                     for i in range(len(obsFreqGHzDict.keys())):
                         freqStr=("%.1f" % (obsFreqGHzDict[i])).replace(".", "p")    # MongoDB doesn't like '.' in key names
-                        objDict['fixed_y_c_weight_%sGHz' % (freqStr)]=freqWeights[i]
+                        row['fixed_y_c_weight_%sGHz' % (freqStr)]=freqWeights[i]
 
 #------------------------------------------------------------------------------------------------------------
 def deltaTToJySr(temp, obsFreqGHz):

@@ -22,7 +22,6 @@ from nemo import signals
 from nemo import maps
 from nemo import catalogs
 from nemo import MockSurvey
-from nemo import selFnTools
 from nemo import plotSettings
 from nemo import startUp
 import argparse
@@ -139,11 +138,11 @@ if __name__ == '__main__':
         tab=atpy.vstack(mockTabsList)
                 
         # Write catalog and .reg file
-        colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c']
-        colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
+        #colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c']
+        #colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
         mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
-        catalogs.writeCatalogFromTab(tab, mockCatalogFileName, colNames, colFmts, 
-                                         constraintsList = [], headings = True)
+        catalogs.writeCatalog(tab, mockCatalogFileName)
+        catalogs.writeCatalog(tab, mockCatalogFileName.replace(".csv", ".fits"))
 
         addInfo=[{'key': 'fixed_SNR', 'fmt': '%.1f'}]
         catalogs.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 

@@ -1,6 +1,6 @@
 """
 
-This module contains tools for handling catalogs, which for us are lists of dictionaries.
+This module contains tools for handling catalogs, which for us are (generally) astropy Table objects.
 
 """
 
@@ -87,152 +87,48 @@ COLUMN_FORMATS=COLUMN_FORMATS+formatsToAdd
         
 if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
     raise exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
-
-#------------------------------------------------------------------------------------------------------------
-def mergeCatalogs(imageDict):
-    """Identifies common objects between catalogs in the imageDict and creates a master catalog with
-    one entry per object, but multiple flux measurements where available.
-    
-    Args:
-        imageDict: dictionary containing filtered maps and associated object catalogs
-    
-    Returns:
-        Nothing - a 'mergedCatalog' key is added to imageDict
-    
-    """
-    
-    # Properties (apart from position, name info) that we keep for each object, if they are present
-    # Fix this properly later
-    #wantedKeys=['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
-                #'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
-                #'fluxJy', 'err_fluxJy']
-    #keysToAdd=[]
-    #for k in wantedKeys:
-        #keysToAdd.append("fixed_"+k)
-    #wantedKeys=wantedKeys+keysToAdd
-    
-    wantedKeys=[]
-    for k in COLUMN_NAMES:
-        if k not in ['name', 'RADeg', 'decDeg', 'galacticLatDeg']:
-            wantedKeys.append(k)
-    
-    # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
-    templates=[]
-    for key in imageDict['mapKeys']:
-        if key != "mergedCatalog" and key != "optimalCatalog":
-            templates.append(key)
-            
-    # Note we always take the name/position for merges from the first entry in the catalog, which may not 
-    # always be the best thing to do
-    mergedCatalog=[]
-    for temp in templates:
-        catalog=imageDict[temp]['catalog']        
-        for c in catalog:
-            cra=c['RADeg']
-            cdec=c['decDeg']
-            rMin=1e6
-            bestMatch=None
-            
-            # For faster cross matching
-            mRAs=[]
-            mDecs=[]
-            for m in mergedCatalog:
-                mRAs.append(m['RADeg'])
-                mDecs.append(m['decDeg'])
-            mRAs=np.array(mRAs)
-            mDecs=np.array(mDecs)
-            if mRAs.shape[0] > 0:
-                rs=astCoords.calcAngSepDeg(cra, cdec, mRAs, mDecs)
-                rMin=rs.min()
-                rMinIndex=np.equal(rs, rMin).nonzero()[0][0]
-                bestMatch=mergedCatalog[rMinIndex]
-            else:
-                bestMatch=None
-            
-            if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
-                for key in wantedKeys:
-                    if key in list(bestMatch.keys()) and key in list(c.keys()):
-                        bestMatch[key].append(c[key])   
-            else:
-                # Must be an object not already in list
-                nonListKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
-                newObj={}
-                for key in nonListKeys:
-                    if key in list(c.keys()):
-                        newObj[key]=c[key]
-                for key in wantedKeys:
-                    if key in list(c.keys()):
-                        newObj[key]=[c[key]]
-                mergedCatalog.append(newObj)
-                        
-    imageDict['mergedCatalog']=mergedCatalog
         
 #------------------------------------------------------------------------------------------------------------
-def makeOptimalCatalog(imageDict, constraintsList):
+def makeOptimalCatalog(imageDict, constraintsList = []):
     """Identifies common objects between catalogs in the imageDict and creates a master catalog with
     one entry per object, keeping only the highest S/N detection details.
     
+    Args:
+        imageDict: dictionary containing filtered maps and associated object catalogs
+        constraintsList: an optional list of constraints (for format, see selectFromCatalog)
+        
+    Returns:
+        Nothing - an 'optimalCatalog' key is added to imageDict
+    
     """
-    
-    # Properties (apart from position, name info) that we keep for each object, if they are present
-    # Fix this properly later - duplicated for mergeCatalogs also (urgh)
-    #wantedKeys=['name', 'RADeg', 'decDeg', 'galacticLatDeg']
-    #wantedKeys=wantedKeys+['numSigPix', 'flux_arcmin2', 'fluxErr_arcmin2', 'SNR', 'fluxRadius_arcmin', 
-                           #'template', 'fluxStatus', 'deltaT_c', 'err_deltaT_c', 'y_c', 'err_y_c', 'Y500_sr', 'err_Y500_sr',
-                           #'fluxJy', 'err_fluxJy']
-    #keysToAdd=[]
-    #for k in wantedKeys:
-        #if k not in ['name', 'RADeg', 'decDeg', 'galacticLatDeg']:
-            #keysToAdd.append("fixed_"+k)
-    #wantedKeys=wantedKeys+keysToAdd
-    
-    wantedKeys=COLUMN_NAMES
     
     # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
     templates=[]
     for key in imageDict['mapKeys']:
         if key != "mergedCatalog" and key != "optimalCatalog":
             templates.append(key)
-            
-    # Note we always take the name/position for merges from the first entry in the catalog, which may not 
-    # always be the best thing to do
-    mergedCatalog=[]
+
+    allCatalogs=[]
     for temp in templates:
-        catalog=imageDict[temp]['catalog']        
-        for c in catalog:
-            cra=c['RADeg']
-            cdec=c['decDeg']
-            rMin=1e6
-            bestMatch=None
-            for m in mergedCatalog:
-                mra=m['RADeg']
-                mdec=m['decDeg']
-                r=astCoords.calcAngSepDeg(mra, mdec, cra, cdec)
-                if r < rMin:
-                    rMin=r
-                    bestMatch=m
-            if bestMatch != None and rMin < XMATCH_RADIUS_DEG:
-                # Is this better than the current object?
-                if c['SNR'] > bestMatch['SNR']:
-                    for key in wantedKeys:
-                        if key in list(c.keys()):
-                            bestMatch[key]=c[key]
-            else:
-                # Must be an object not already in list
-                newObj={}
-                for key in wantedKeys:
-                    if key in list(c.keys()):
-                        newObj[key]=c[key]
-                mergedCatalog.append(newObj)
-                    
-    # Now cut...
-    mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList) 
-    
-    # Sort by dec, RA
-    decSorted=sorted(mergedCatalog, key=operator.itemgetter('decDeg'))
-    RASorted=sorted(decSorted, key=operator.itemgetter('RADeg'))
-    
-    imageDict['optimalCatalog']=RASorted
+        allCatalogs.append(imageDict[temp]['catalog'])
+    allCatalogs=atpy.vstack(allCatalogs)
+    mergedCatalog=allCatalogs.copy()
+    mergedCatalog['SNR']=-99.
+    mergeRow=0
+    usedIndices=[]
+    for row in allCatalogs:
+        rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'], allCatalogs['decDeg']) 
+        xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
+        xMatches=allCatalogs[xIndices]
+        xMatchIndex=np.argmax(xMatches['SNR'])
+        if xIndices[xMatchIndex] not in usedIndices:
+            mergedCatalog[mergeRow]=xMatches[xMatchIndex]
+            mergeRow=mergeRow+1
+            usedIndices=usedIndices+xIndices.tolist()
+    mergedCatalog=mergedCatalog[mergedCatalog['SNR'] > 0]
+    mergedCatalog.sort(['RADeg', 'decDeg'])
+    mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
+    imageDict['optimalCatalog']=mergedCatalog    
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
@@ -240,7 +136,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
     """Converts a catalog containing object dictionaries into a DS9 region file. 
     
     Args:
-        catalog: A list of dictionaries, where each represents an object in the catalog.
+        catalog: An astropy Table where each row represents an object.
         outFileName: A file name for the output DS9 region file.
         constraintsList: A list of constraints in the same format as used by `selectFromCatalog`.
         addInfo: A list of dictionaries with keys named `key` and `fmt` (e.g., ``{'key': "SNR", 'fmt': "%.3f"}``).
@@ -260,98 +156,37 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
         None
     
     """
-
-    # Cut catalog according to constraints
+    
     cutCatalog=selectFromCatalog(catalog, constraintsList) 
-    
-    outFile=open(outFileName, "w")
-    timeStamp=datetime.datetime.today().date().isoformat()
-    comment="# DS9 region file"
-    if writeNemoInfo == True:
-        comment=comment+" generated by nemo (version: %s on %s)\n" % (nemo.__version__, timeStamp)
-    else:
-        comment=comment+"\n"
-    outFile.write(comment)
-    outFile.write('global dashlist=8 3 width=1 font="helvetica 10 normal" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
-    for obj in cutCatalog:
-        if len(addInfo) > 0:
-            infoString=""
-            for d in addInfo:
-                if infoString != "":
-                    infoString=infoString+" "
-                if obj[d['key']] != None:
-                    infoString=infoString+d['fmt'] % (obj[d['key']])
-                else:
-                    infoString=infoString+"%s" % (str(obj[d['key']]))
-            infoString=" ["+infoString+"]"
-        else:
-            infoString=""
-        if color == 'key':
-            colorString=obj['color']
-        else:
-            colorString=color
-        outFile.write("%s;point(%.6f,%.6f) # point=boxcircle color={%s} text={%s%s}\n" \
-                    % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, obj[idKeyToUse], infoString))
-    outFile.close()
-
-#------------------------------------------------------------------------------------------------------------
-def matchCatalogs(catalog1, catalog2, matchKey = 'catalog2Match', xMatchRadiusDeg = 1.0/3600.0):
-    """Generic catalog cross matching based on position. Objects in catalog2 that are associated with catalog1
-    are added as a dictionary to the corresponding catalog1 object at key matchKey.
-    
-    """
-    
-    # Cross match
-    c2RAs=[]
-    c2Decs=[]
-    for c2 in catalog2:
-        c2RAs.append(c2['RADeg'])
-        c2Decs.append(c2['decDeg'])
-    c2RAs=np.array(c2RAs)
-    c2Decs=np.array(c2Decs)
-    for c1 in catalog1:
-        rMin=1e6
-        bestMatch=None        
-        if c2RAs.shape[0] > 0:
-            rs=astCoords.calcAngSepDeg(c1['RADeg'], c1['decDeg'], c2RAs, c2Decs)
-            rMin=rs.min()
-            rMinIndex=np.equal(rs, rMin).nonzero()[0][0]
-            if rMin < xMatchRadiusDeg:
-                deltaRA=abs(c1['RADeg']-catalog2[rMinIndex]['RADeg'])
-                deltaDec=abs(c2['decDeg']-catalog2[rMinIndex]['decDeg'])
-                if deltaRA < 10 and deltaDec < 10:
-                    bestMatch=catalog2[rMinIndex]        
-        c1[matchKey]=bestMatch
-
-#------------------------------------------------------------------------------------------------------------
-def flagCatalogMatches(catalog, flagCatalog, key, matchRadiusDeg = 2.0/60.0):
-    """Flags objects in catalog that have a match in flagCatalog, by adding a key with the given name to
-    all dictionaries in catalog. If the object is matched, the value is True.
         
-    """
-    
-    ras=[]
-    decs=[]
-    for sobj in flagCatalog:
-        ras.append(sobj['RADeg'])
-        decs.append(sobj['decDeg'])
-    ras=np.array(ras)
-    decs=np.array(decs)
-    matchRadiusDeg=2.0/60.0
-    for obj in catalog:
-        obj[key]=False
-        rDeg=astCoords.calcAngSepDeg(obj['RADeg'], obj['decDeg'], ras, decs)
-        rMin=rDeg.min()
-        if rMin < matchRadiusDeg:
-            rMinIndex=rDeg.tolist().index(rMin)
-            deltaRA=abs(obj['RADeg']-ras[rMinIndex])
-            deltaDec=abs(obj['decDeg']-decs[rMinIndex])
-            if deltaRA < 10.0 and deltaDec < 10.0:
-                obj[key]=True
-                if 'name' in list(flagCatalog[rMinIndex].keys()):
-                    obj[key+" name"]=flagCatalog[rMinIndex]['name']
-    
-    return catalog
+    with open(outFileName, "w") as outFile:
+        timeStamp=datetime.datetime.today().date().isoformat()
+        comment="# DS9 region file"
+        if writeNemoInfo == True:
+            comment=comment+" generated by nemo (version: %s on %s)\n" % (nemo.__version__, timeStamp)
+        else:
+            comment=comment+"\n"
+        outFile.write(comment)
+        outFile.write('global dashlist=8 3 width=1 font="helvetica 10 normal" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+        for obj in cutCatalog:
+            if len(addInfo) > 0:
+                infoString=""
+                for d in addInfo:
+                    if infoString != "":
+                        infoString=infoString+" "
+                    if obj[d['key']] != None:
+                        infoString=infoString+d['fmt'] % (obj[d['key']])
+                    else:
+                        infoString=infoString+"%s" % (str(obj[d['key']]))
+                infoString=" ["+infoString+"]"
+            else:
+                infoString=""
+            if color == 'key':
+                colorString=obj['color']
+            else:
+                colorString=color
+            outFile.write("%s;point(%.6f,%.6f) # point=boxcircle color={%s} text={%s%s}\n" \
+                        % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, obj[idKeyToUse], infoString))
 
 #------------------------------------------------------------------------------------------------------------
 def makeACTName(RADeg, decDeg, prefix = 'ACT-CL'):
@@ -499,7 +334,7 @@ def makeLongDec(myDecDeg):
         
 #-------------------------------------------------------------------------------------------------------------
 def selectFromCatalog(catalog, constraintsList):
-    """Given a catalog (list of dictionaries representing objects), return a list of objects matching the
+    """Given a catalog (an astropy Table), return a table of objects matching the
     given constraintsList. Each item in constraintsList is a string in the form:
     
     "key < value", "key > value", etc.
@@ -507,42 +342,34 @@ def selectFromCatalog(catalog, constraintsList):
     Note that the spaces between key, operator (e.g. '<') and value are essential!
     
     """
-    
+            
     passedConstraint=catalog
     for constraintString in constraintsList:
-        lastCatalog=passedConstraint
-        passedConstraint=[]
-        for obj in lastCatalog:         
-            key, op, value=constraintString.split()
-            if eval("obj['%s'] %s %s" % (key, op, value)) == True:
-                passedConstraint.append(obj)
-    
+        key, op, value=constraintString.split()
+        passedConstraint=passedConstraint[eval("passedConstraint['%s'] %s %s" % (key, op, value))]
+
     return passedConstraint
 
 #------------------------------------------------------------------------------------------------------------
-def catalogToTab(catalog, keysToWrite, constraintsList):
-    """Converts a nemo catalog (list of dictionaries) into astropy.table format.
+def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
+    """Converts catalog (as a list of dictionaries) into an astropy Table.
     
-    constraintsList works as in the selectFromCatalog function.
-
-    Returns astropy.table object
+    Returns astropy Table object
     
     """
     
-    cutCatalog=selectFromCatalog(catalog, constraintsList)                                           
-    availKeys=list(cutCatalog[0].keys())
+    availKeys=list(catalogList[0].keys())
     
     # A fudge: we don't know what names y_c_weight keys will have in advance, so they aren't already given
     for key in availKeys:
         if key.find("fixed_y_c_weight") != -1 and key not in keysToWrite:
             keysToWrite.append(key)
     
-    # Write a .fits version (easier for topcatting)
     tab=atpy.Table()
     for key in keysToWrite:
         if key in availKeys:
             arr=[]
-            for obj in cutCatalog:
+            for obj in catalogList:
                 if obj[key] != None:
                     arr.append(obj[key])
                 else:
@@ -552,10 +379,10 @@ def catalogToTab(catalog, keysToWrite, constraintsList):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def tabToCatalog(tab):
-    """Converts an astropy.table to a nemo catalog (list of dictionaries).
+def tabToCatalogList(tab):
+    """Converts an astropy Table into a list of dictionaries.
 
-    Returns catalog
+    Returns catalog list
     
     """
     
@@ -567,166 +394,28 @@ def tabToCatalog(tab):
         catalog.append(objDict)
     
     return catalog
-
-#------------------------------------------------------------------------------------------------------------
-def writeTab(tab, outFileName):
-    """Writes an astropy.table object to disk. The file format is determined by the extension of outFileName.
-    
-    """
-    
-    if os.path.exists(outFileName) == True:
-        os.remove(outFileName)
-    tab.write(outFileName)
-
-#------------------------------------------------------------------------------------------------------------
-def writeCatalogFromTab(tab, outFileName, keysToWrite, keyFormats, constraintsList, headings = True, 
-                        writeNemoInfo = True, extraHeaderText = None):
-    """Given an astropy.table (rather than a catalog, i.e., list of dictionaries), write a .csv (actually
-    tab-delimited), with meta data at the top, in the style of writeCatalog.
-    
-    This is provided so that the format of the output provided by nemo doesn't change, even though in places
-    we have switched to astropy.table for data storage. We may get rid of this eventually...
-    
-    """
-    
-    catalog=tabToCatalog(tab)
-    writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList, headings = headings,
-                 writeNemoInfo = writeNemoInfo, extraHeaderText = extraHeaderText)
     
 #------------------------------------------------------------------------------------------------------------
-def writeCatalog(catalog, outFileName, keysToWrite, keyFormats, constraintsList, headings = True, 
-                 writeNemoInfo = True, extraHeaderText = None):
-    """Dumps the merged catalog to a .csv.
+def writeCatalog(catalog, outFileName, constraintsList = []):
+    """Writes the catalog (astropy Table) to disk. The output format depends upon the extension given by 
+    outFileName - any format supported by the astropy Table object can be used.
+    
+    NOTE: For .csv format, tab is used as the delimiter. So, to read these using astropy you will need to 
+    use something like: tab=atpy.Table().read("test.csv", delimiter = '\t').
     
     constraintsList works as in the selectFromCatalog function.
     
-    NOTE: Now writing a .fits table too.
-    
     """
-        
-    # Cut catalog according to constraints
-    cutCatalog=selectFromCatalog(catalog, constraintsList)                                           
-    availKeys=list(cutCatalog[0].keys())
-    
-    outFile=open(outFileName, "w")
-    
-    # Add meta data
-    timeStamp=datetime.datetime.today().date().isoformat()
-    if writeNemoInfo == True:
-        outFile.write("# Output by nemo (version: %s)\n" % (nemo.__version__))
-    outFile.write("# Date generated: %s\n" % (timeStamp))
-    if extraHeaderText != None:
-        outFile.write(extraHeaderText)
-    if headings == True:
-        heading="# "
-        for k in keysToWrite:
-            if heading != "# ":
-                heading=heading+"\t"
-            if k in availKeys:
-                heading=heading+k
-        outFile.write(heading+"\tnotes\n")
-        
-    count=0
-    for obj in cutCatalog:
-        count=count+1
-        obj['id']=count
-        line=""
-        for k, f in zip(keysToWrite, keyFormats):
-            if k in availKeys:
-                if line != "":
-                    line=line+"\t"
-                if type(obj[k]) == list or type(obj[k]) == np.ndarray:
-                    if obj[k][0] != None:   # merged cat, just take first item for now
-                        line=line+f % (obj[k][0])   
-                    else:
-                        line=line+str(None)
-                else:
-                    if obj[k] != None:
-                        try:
-                            line=line+f % (obj[k]) 
-                        except:
-                            print("Argh!")
-                            ipshell()
-                            sys.exit()
-                    else:
-                        line=line+str(None)
-        # Add on a 'notes' column - any key which is just a bool gets added to a , delimited list if True
-        notes=""
-        for key in list(obj.keys()):
-            if type(obj[key]) == bool and obj[key] == True:
-                if notes != "":
-                    notes=notes+","
-                notes=notes+key
-        outFile.write(line+"\t"+notes+"\n")
-    outFile.close()   
-    
-    # Write a .fits version (easier for topcatting)
-    # NOTE: switched to astropy (v1.3) tables interface
-    tab=catalogToTab(catalog, keysToWrite, constraintsList)
-    writeTab(tab, outFileName.replace(".csv", ".fits"))
+
+    cutCatalog=selectFromCatalog(catalog, constraintsList)
+    if outFileName.split(".")[-1] == 'csv':
+        cutCatalog.write(outFileName, format = 'ascii.csv', delimiter = '\t', overwrite = True)
+    else:
+        cutCatalog.write(outFileName, overwrite = True)
 
 #------------------------------------------------------------------------------------------------------------
-def readCatalog(fileName):
-    """Reads a nemo .csv catalog, returns a list of dictionaries
-    
-    """
-    
-    # We'll grab stuff from the heading line, and we'll understand what to do with it if it appears in this
-    typesDict={'name': 'str', 
-               'RADeg': 'float', 
-               'decDeg': 'float', 
-               'SNR': 'float', 
-               'fractionMapsDetected': 'float',
-               'template': 'str',
-               'NED_name': 'str',
-               'NED_z': 'float',
-               'NED_distArcmin': 'float',
-               'NED_RADeg': 'float',
-               'NED_decDeg': 'float',
-               'deltaT': 'float',
-               'deltaT_c': 'float',
-               'y_c': 'float',
-               'scaleArcmin': 'float',
-               'YArcmin2': 'float',
-               'reference': 'str',
-               'notes': 'str',
-               'comment': 'str',
-               'id': 'int',
-               'logMStar': 'float',
-               'z': 'float'
-              }
-    
-    inFile=open(fileName, "r")
-    lines=inFile.readlines()
-    inFile.close()
-    
-    keysList=None
-    catalog=[]
-    for line in lines:
-        if line[0] == '#' and line.find("\t") != -1:
-            # Scan for column headings - really we should just put in a proper header or save as .fits tables 
-            # instead, this could easily break
-            keysList=line.lstrip("# ").rstrip("\n").split("\t")
-        if line[0] != '#' and len(line) > 3:
-            if keysList == None:
-                raise Exception("couldn't find column headings in catalog file %s" % (fileName))
-            objDict={}
-            bits=line.rstrip("\n").split("\t")
-            for key, bit in zip(keysList, bits):
-                if key in typesDict: # automatically skips what we don't understand (add to typesDict if needed)
-                    if bit == 'None':
-                        objDict[key]=None
-                    elif typesDict[key] == 'str':
-                        objDict[key]=eval(typesDict[key]+"('"+bit+"')")
-                    else:
-                        objDict[key]=eval(typesDict[key]+"("+bit+")")
-            catalog.append(objDict)
-            
-    return catalog
-
-#------------------------------------------------------------------------------------------------------------
-def removeDuplicatesFromTab(tab):
-    """Given an astropy.table object, remove duplicate objects - keeping the highest SNR detection for each
+def removeDuplicates(tab):
+    """Given an astropy Table object, remove duplicate objects - keeping the highest SNR detection for each
     duplicate. This routine is used to clean up output of MPI runs (where we have overlapping tiles). This
     method could be applied elsewhere, if we re-did how we handled catalogs everywhere in nemo.
     
@@ -746,22 +435,6 @@ def removeDuplicatesFromTab(tab):
     if mask.sum() == 0:
         return tab, 0, []
     
-    # Keep highest SNR of all pairs
-    # NOTE: This is correct, but very slow
-    #keepMask=np.zeros(len(dupTab), dtype = bool)
-    #for i in range(len(dupTab)):
-        #iCoord=SkyCoord(ra = dupTab['RADeg'][i], dec = dupTab['decDeg'][i], unit = 'deg')
-        #bestSNR=dupTab['SNR'][i]
-        #bestIndex=i
-        #for j in range(len(dupTab)):
-            #if i != j:
-                #jCoord=SkyCoord(ra = dupTab['RADeg'][j], dec = dupTab['decDeg'][j], unit = 'deg')
-                #if iCoord.separation(jCoord).value < XMATCH_RADIUS_DEG and dupTab['SNR'][j] > bestSNR:
-                    #bestSNR=dupTab['SNR'][j]
-                    #bestIndex=j
-        #keepMask[bestIndex]=True
-    #keepTab=dupTab[keepMask]
-
     # Much faster
     keepMask=np.zeros(len(dupTab), dtype = bool)
     for i in range(len(dupTab)):

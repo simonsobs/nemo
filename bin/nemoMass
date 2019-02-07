@@ -24,7 +24,7 @@ from scipy import interpolate
 from nemo import catalogs
 from nemo import signals
 from nemo import maps
-from nemo import mapFilters
+from nemo import filters
 from nemo import MockSurvey
 from nemo import photometry
 from nemo import startUp

@@ -845,7 +845,7 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
         # Write out sim map catalogs for debugging
         skySimDir=diagnosticsDir+os.path.sep+"skySim"
         if len(simImageDict['optimalCatalog']) > 0:
-            tab=catalogs.catalogToTab(simImageDict['optimalCatalog'], catalogs.COLUMN_NAMES, ["SNR > 0.0"])    
+            tab=catalogs.catalogListToTab(simImageDict['optimalCatalog'])    
             optimalCatalogFileName=skySimDir+os.path.sep+"skySim%d_optimalCatalog.csv" % (i)           
             catalogs.writeCatalogFromTab(tab, optimalCatalogFileName, \
                                             catalogs.COLUMN_NAMES, catalogs.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
