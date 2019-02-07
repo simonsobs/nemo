@@ -361,7 +361,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
         keysToAdd=['deltaT_c', 'err_deltaT_c']
         if mapUnits == 'yc':
             keysToAdd=keysToAdd+['y_c', 'err_y_c']
-        elif mapUnits == 'fluxJy':
+        elif mapUnits == 'uK':
             keysToAdd=keysToAdd+['fluxJy', 'err_fluxJy']        
         for prefix in prefixList:
             for k in keysToAdd:
