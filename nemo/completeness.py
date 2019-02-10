@@ -115,6 +115,22 @@ class SelFn(object):
         self.update(H0, Om0, Ob0, sigma_8)
 
 
+    def overrideRMS(self, RMS, obsFreqGHz = 148.0):
+        """Override the RMS noise of the SelFn object - replacing it with constant value RMS (given in uK/arcmin^2).
+        This is translated into a y0~ noise level at the given observing frequency.
+        
+        After doing this call update() to get an updated (M, z) completeness grid.
+        
+        """
+        
+        for selFnDict in self.selFnDictList:
+            print("RMS override")
+            IPython.embed()
+            sys.exit()            
+            #selFnDict['RMSTab']['y0RMS']=
+            #abs(maps.convertToY(RMS, obsFrequencyGHz = 148.))
+        
+
     def update(self, H0, Om0, Ob0, sigma_8, scalingRelationDict = None):
         """Re-calculates survey-average selection function given new set of cosmological / scaling relation parameters.
         

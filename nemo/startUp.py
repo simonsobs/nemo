@@ -167,5 +167,5 @@ class NemoConfig(object):
         self.extNames=self.extNames[startIndex:endIndex]
         
         # For debugging...
-        print(("... rank = %d: extNames = %s" % (self.rank, str(self.extNames))))
+        print(("... rank = %d [PID = %d]: extNames = %s" % (self.rank, os.getpid(), str(self.extNames))))
   
