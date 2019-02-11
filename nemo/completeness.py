@@ -124,11 +124,9 @@ class SelFn(object):
         """
         
         for selFnDict in self.selFnDictList:
-            print("RMS override")
+            print("Add RMS override code")
             IPython.embed()
             sys.exit()            
-            #selFnDict['RMSTab']['y0RMS']=
-            #abs(maps.convertToY(RMS, obsFrequencyGHz = 148.))
         
 
     def update(self, H0, Om0, Ob0, sigma_8, scalingRelationDict = None):

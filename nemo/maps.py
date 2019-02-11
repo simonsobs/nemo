@@ -472,10 +472,9 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     
     """
             
-    img=pyfits.open(mapDict['mapFileName'], memmap = True)
-    wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-    data=img[extName].data
-    img.close()
+    with pyfits.open(mapDict['mapFileName'], memmap = False) as img:
+        wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
+        data=img[extName].data
     
     # For Enki maps... take only I (temperature) for now, add options for this later
     if data.ndim == 3:
@@ -491,9 +490,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
 
     # Load weight map if given
     if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] != None:
-        wht=pyfits.open(mapDict['weightsFileName'], memmap = True)
-        weights=wht[extName].data
-        wht.close()
+        with pyfits.open(mapDict['weightsFileName'], memmap = False) as wht:
+            weights=wht[extName].data
         # For Enki maps... take only I (temperature) for now, add options for this later
         if weights.ndim == 3:       # I, Q, U
             weights=weights[0, :]
@@ -508,17 +506,15 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     
     # Load survey and point source masks, if given
     if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] !=  None:
-        smImg=pyfits.open(mapDict['surveyMask'])
-        surveyMask=smImg[extName].data
-        smImg.close()
+        with pyfits.open(mapDict['surveyMask'], memmap = False) as smImg:
+            surveyMask=smImg[extName].data
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
 
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] != None:
-        psImg=pyfits.open(mapDict['pointSourceMask'])
-        psMask=psImg[extName].data
-        psImg.close()
+        with pyfits.open(mapDict['pointSourceMask'], memmap = False) as psImg:
+            psMask=psImg[extName].data
     else:
         psMask=np.ones(data.shape)
             

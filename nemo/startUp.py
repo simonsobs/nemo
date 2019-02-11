@@ -150,7 +150,7 @@ class NemoConfig(object):
                 if name in self.parDict['extNameList']:
                     newList.append(name)
             if newList == []:
-                raise Exception("extNameList given in .par file but no extensions in images match")
+                raise Exception("extNameList given in nemo config file but no extensions in images match")
             self.extNames=newList
 
         # MPI: just divide up tiles pointed at by extNames among processes
