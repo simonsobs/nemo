@@ -922,9 +922,9 @@ class RealSpaceMatchedFilter(MapFilter):
         noiseCube=np.array(noiseCube)
         
         # Test: how correlated are the filtered maps? This is currently hardcoded for two frequencies...
-        if dataCube.ndim == 3 and 'saveCorrMap' in self.params.keys() and self.params['saveCorrMap'] == True:
-            self._makeCorrMap(dataCube, self.diagnosticsDir+os.path.sep+"corrMap_signal.fits")
-            self._makeCorrMap(noiseCube, self.diagnosticsDir+os.path.sep+"corrMap_noiseLevel.fits")
+        #if dataCube.ndim == 3 and 'saveCorrMap' in self.params.keys() and self.params['saveCorrMap'] == True:
+            #self._makeCorrMap(dataCube, self.diagnosticsDir+os.path.sep+"corrMap_signal.fits")
+            #self._makeCorrMap(noiseCube, self.diagnosticsDir+os.path.sep+"corrMap_noiseLevel.fits")
 
         # Zap very low values as rounding errors (so have zero weight in combination)
         noiseCube[np.less(noiseCube, 1e-7)]=0.
