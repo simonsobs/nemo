@@ -292,8 +292,22 @@ def makeTileDeck(parDict):
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
                             header=clip['wcs'].header.copy()
-                            if 'tileNoiseRegions' in list(parDict.keys()) and name in list(parDict['tileNoiseRegions'].keys()):
-                                noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=parDict['tileNoiseRegions'][name]
+                            if 'tileNoiseRegions' in list(parDict.keys()):
+                                if name in list(parDict['tileNoiseRegions'].keys()):
+                                    noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=parDict['tileNoiseRegions'][name]
+                                else:
+                                    if 'autoBorderDeg' in parDict['tileNoiseRegions']:
+                                        autoBorderDeg=parDict['tileNoiseRegions']['autoBorderDeg']
+                                        for tileDef in parDict['tileDefinitions']:
+                                            if tileDef['extName'] == name:
+                                                break
+                                        noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=tileDef['RADecSection']
+                                        noiseRAMin=noiseRAMin+autoBorderDeg
+                                        noiseRAMax=noiseRAMax-autoBorderDeg
+                                        noiseDecMin=noiseDecMin+autoBorderDeg
+                                        noiseDecMax=noiseDecMax-autoBorderDeg
+                                    else:
+                                        raise Exception("No entry in tileNoiseRegions in config file for extName '%s' - either add one, or add 'autoBorderDeg': 0.5 (or similar) to tileNoiseRegions" % (name))
                                 print("... adding noise region [%.3f, %.3f, %.3f, %.3f] to header %s ..." % (noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax, name))
                                 header['NRAMIN']=noiseRAMin
                                 header['NRAMAX']=noiseRAMax
