@@ -398,7 +398,7 @@ class MapFilter(object):
         FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
         
         fig=plt.figure(num=2, figsize=(8,8))
-        fig.canvas.set_window_title('Filter Profile in Real Space')
+        #fig.canvas.set_window_title('Filter Profile in Real Space')
         plt.clf()
         plt.title("Filter Profile %s" % (self.label))
         plt.ylabel("Amplitude")
