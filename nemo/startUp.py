@@ -17,7 +17,7 @@ def parseConfigFile(parDictFileName):
     """Parse a nemo .yml config file.
     
     Args:
-        parDictFileName (str): Path to a nemo .yml configuration file.
+        parDictFileName (:obj:`str`): Path to a nemo .yml configuration file.
     
     Returns:
         A dictionary of parameters.
@@ -81,17 +81,17 @@ class NemoConfig(object):
     """An object that keeps track of nemo's configuration, maps, and output directories etc..
     
     Attributes:
-        parDict (dict): Dictionary containing the contents of the config file.
-        rootOutDir (str): Name of the directory where all output will be written.
-        filteredMapsDir (str): Name of the directory where filtered maps will be written.
-        diagnosticsDir (str): Name of the directory where miscellaneous diagnostic data (e.g., filter 
+        parDict (:obj:`dict`): Dictionary containing the contents of the config file.
+        rootOutDir (:obj:`str`): Path to the directory where all output will be written.
+        filteredMapsDir (:obj:`str`): Name of the directory where filtered maps will be written.
+        diagnosticsDir (:obj:`str`): Path to the directory where miscellaneous diagnostic data (e.g., filter 
             kernel plots) will be written.
-        unfilteredMapsDictList (list): List of dictionaries corresponding to maps needed.
-        extNames (list): List of map tiles (extension names) to operate on.
-        MPIEnabled (bool): If True, use MPI to divide extNames list among processes.
-        comm (:obj: 'MPI.COMM_WORLD'): Used by MPI.
-        rank (int): Used by MPI.
-        size (int): Used by MPI.
+        unfilteredMapsDictList (:obj:`list`): List of dictionaries corresponding to maps needed.
+        extNames (:obj:`list`): List of map tiles (extension names) to operate on.
+        MPIEnabled (:obj:`bool`): If True, use MPI to divide `extNames` list among processes.
+        comm (:obj:`MPI.COMM_WORLD`): Used by MPI.
+        rank (:obj:`int`): Used by MPI.
+        size (:obj:`int`): Used by MPI.
     
     """
     
@@ -99,10 +99,10 @@ class NemoConfig(object):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
-            parDictFileName (str): Path to a nemo .yml configuration file.
-            makeOutputDirs (bool): If True, create output directories (where maps, catalogs are stored).
-            MPIEnabled (bool): If True, use MPI to divide the map into tiles, distributed among processes.
-                This requires tileDefinitions and tileNoiseRegions to be given in the .yml config file.
+            parDictFileName (:obj:`str`): Path to a nemo .yml configuration file.
+            makeOutputDirs (:obj:`bool`): If True, create output directories (where maps, catalogs are stored).
+            MPIEnabled (:obj:`bool`): If True, use MPI to divide the map into tiles, distributed among processes.
+                This requires `tileDefinitions` and `tileNoiseRegions` to be given in the .yml config file.
     
         """
 

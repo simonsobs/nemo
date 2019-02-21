@@ -483,8 +483,41 @@ def addWhiteNoise(mapData, noisePerPix):
     
 #-------------------------------------------------------------------------------------------------------------
 def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
-    """Does preprocessing steps according to parameters in mapDict, returns the mapDict with additional
-    keys added ['data', 'weights', 'wcs'].
+    """Applies a number of pre-processing steps to the map described by `mapDict`, prior to filtering.
+    
+    The first step is to load the map itself and the associated weights. Some other operations that may be 
+    applied are controlled by keys added to `mapDict`. Some of these may be specified in the .yml configuration
+    file, while others are applied by particular filter objects or by routines that generate simulated data. 
+    The following keys are understood:
+    
+    surveyMask (:obj:`str`)
+        Path to a mask (.fits image; 1 = valid, 0 = masked) that defines the valid object search area.
+    
+    pointSourceMask (:obj:`str`) 
+        Path to a mask (.fits image; 1 = valid, 0 = masked) that contains holes at the locations of point
+        sources, defining regions that are excluded from the object search area.
+        
+    RADecSection (:obj:`list`)
+        Defines a region to extract from the map. Use the format [RAMin, RAMax, decMin, decMax] (units: 
+        decimal degrees).
+        
+    CMBSimSeed (:obj:`int`)
+        If present, replace the map with a source-free simulated CMB realisation, generated using the given
+        seed number. Used by :meth:`estimateContaminationFromSkySim`.
+        
+    bckSubScaleArcmin (:obj:`float`)
+        If present, high-pass filter the map at the given scale, using :meth:`subtractBackground`.
+    
+    Args:
+        mapDict (:obj:`dict`): A dictionary with the same keys as given in the unfilteredMaps list in the 
+            .yml configuration file (i.e., it must contain at least the keys 'mapFileName', 'units', and
+            'weightsFileName', and may contain some of the optional keys listed above).
+        extName (:obj:`str`): Name of the map tile (extension name) to operate on.
+        diagnosticsDir (:obj:`str`): Path to a directory where miscellaneous diagnostic data are written.
+    
+    Returns:
+        A dictionary with keys that point to the map itself ('data'), weights ('weights'), masks 
+        ('surveyMask', 'pointSourceMask'), and WCS object ('wcs').
     
     """
             
@@ -582,14 +615,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         # Sanity check
         outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], extName) 
         astImages.saveFITS(outFileName, data, wcs)
-        
-    # Optional adding of white noise
-    if 'addNoise' in list(mapDict.keys()) and mapDict['addNoise'] != None:
-        data=addWhiteNoise(data, mapDict['addNoise'])
-        if diagnosticsDir != None:
-            astImages.saveFITS(diagnosticsDir+os.path.sep+"simMapPlusNoise_%d.fits" \
-                            % (mapDict['obsFreqGHz']), data, wcs)    
-            
+                    
     # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
     # or a wavelet decomposition scale image
     if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] != None:
@@ -634,18 +660,18 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
-        shape: A tuple describing the map (numpy array) shape in pixels (height, width).
-        wcs: An astWCS object.
-        noiseLevel: If a single number, this is taken as sigma (in map units, usually uK) for generating 
-            white noise that is added across the whole map. Alternatively, an array with the same 
-            dimensions as shape may be used, specifying sigma (in map units) per corresponding pixel. 
-            Noise will only be added where non-zero values appear in noiseLevel.
-        beamFileName: The file name of the text file that describes the beam with which the map will be
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
+        wcs (:obj:`astWCS.WCS`): An astWCS object.
+        noiseLevel (:obj:`numpy.ndarray` or float): If a single number, this is taken as sigma (in map units,
+            usually uK) for generating white noise that is added across the whole map. Alternatively, an array
+            with the same dimensions as shape may be used, specifying sigma (in map units) per corresponding 
+            pixel. Noise will only be added where non-zero values appear in noiseLevel.
+        beamFileName (:obj:`str`): The file name of the text file that describes the beam with which the map will be
             convolved. If None, no beam convolution is applied.
-        seed: The seed used for the random CMB realisation.
+        seed (:obj:`int`): The seed used for the random CMB realisation.
             
     Returns:
-        A map (2d numpy array)
+        A map (:obj:`numpy.ndarray`)
     
     """
     
@@ -775,10 +801,10 @@ def estimateContaminationFromSkySim(config, imageDict):
     sims can vary by a lot).
     
     Args:
-        config(:obj: 'startUp.NemoConfig'): Nemo configuration object.
-        imageDict: A dictionary containing the output filtered maps and catalogs from running on the real data
-            (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be modified, but is used
-            for estimating the contamination rate by comparison to the source-free sims.
+        config (:obj:`startUp.NemoConfig`): Nemo configuration object.
+        imageDict (:obj:`dict`): A dictionary containing the output filtered maps and catalogs from running on 
+            the real data (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be modified,
+            but is used for estimating the contamination rate by comparison to the source-free sims.
     
     Returns:
         A dictionary where each key points to an astropy Table object containing the average contamination 
@@ -1031,9 +1057,9 @@ def injectSources(data, wcs, catalog, GNFWParams = 'default'):
     by data, wcs.
     
     Args:
-        data (:obj: 'numpy.ndarray'): The (2d) pixel data of a map in units of uK (delta T CMB).
-        wcs (:obj: 'astWCS.WCS'): A WCS object that defines the coordinate system of the map. 
-        catalog (:obj: 'astropy.table.Table'): An astropy Table object containing the catalog. This must 
+        data (:obj:`numpy.ndarray`): The (2d) pixel data of a map in units of uK (delta T CMB).
+        wcs (:obj:`astWCS.WCS`): A WCS object that defines the coordinate system of the map. 
+        catalog (:obj:`astropy.table.Table`): An astropy Table object containing the catalog. This must 
             include columns named RADeg, decDeg that give object coordinates. For point sources, the 
             amplitude in uK must be given in a column named deltaT_c. For clusters, M500 (in units of
             10^14 MSun) and z must be given (GNFW profile assumed).
@@ -1047,7 +1073,6 @@ def injectSources(data, wcs, catalog, GNFWParams = 'default'):
     """
     
     # Inspect the catalog - are we dealing with point sources or clusters?
-    
-    print("inject sources")
-    IPython.embed()
-    sys.exit()
+    #print("inject sources")
+    #IPython.embed()
+    #sys.exit()
