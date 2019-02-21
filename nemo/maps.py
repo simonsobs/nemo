@@ -20,14 +20,16 @@ import pyximport; pyximport.install()
 import nemoCython
 import time
 import shutil
+import copy
 import IPython
 import nemo
 from . import catalogs
 from . import signals
 from . import photometry
 from . import plotSettings
+from . import pipelines
 np.random.seed()
-
+              
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
     """Converts mapData (in delta T) at given frequency to yc 
@@ -631,19 +633,19 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
 def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
-        Args:
-            shape: A tuple describing the map (numpy array) shape in pixels (height, width).
-            wcs: An astWCS object.
-            noiseLevel: If a single number, this is taken as sigma (in map units, usually uK) for generating 
-                white noise that is added across the whole map. Alternatively, an array with the same 
-                dimensions as shape may be used, specifying sigma (in map units) per corresponding pixel. 
-                Noise will only be added where non-zero values appear in noiseLevel.
-            beamFileName: The file name of the text file that describes the beam with which the map will be
-                convolved. If None, no beam convolution is applied.
-            seed: The seed used for the random CMB realisation.
+    Args:
+        shape: A tuple describing the map (numpy array) shape in pixels (height, width).
+        wcs: An astWCS object.
+        noiseLevel: If a single number, this is taken as sigma (in map units, usually uK) for generating 
+            white noise that is added across the whole map. Alternatively, an array with the same 
+            dimensions as shape may be used, specifying sigma (in map units) per corresponding pixel. 
+            Noise will only be added where non-zero values appear in noiseLevel.
+        beamFileName: The file name of the text file that describes the beam with which the map will be
+            convolved. If None, no beam convolution is applied.
+        seed: The seed used for the random CMB realisation.
             
-        Returns:
-            A map (2d numpy array)
+    Returns:
+        A map (2d numpy array)
     
     """
     
@@ -662,10 +664,11 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
         mask=np.nonzero(noiseLevel)
         generatedNoise=np.zeros(randMap.shape)
         generatedNoise[mask]=np.random.normal(0, noiseLevel[mask], noiseLevel[mask].shape)
+        randMap=randMap+generatedNoise
     else:
         if noiseLevel > 0:
             generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
-    randMap=randMap+generatedNoise
+            randMap=randMap+generatedNoise
 
     return randMap
         
@@ -762,114 +765,81 @@ def getPixelAreaArcmin2Map(mapData, wcs):
     return pixAreasArcmin2Map    
     
 #-------------------------------------------------------------------------------------------------------------
-def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSkySims, diagnosticsDir):
-    """Run the whole filtering set up again, on sky simulation, with noise, that we generate here.
+def estimateContaminationFromSkySim(config, imageDict):
+    """Estimate contamination by running on source-free sky simulations (CMB plus noise that we generate here
+    on the fly).
     
-    Turns out we need to run many realisations, as results can vary by a lot.
+    This uses the same kernels that were constructed and used on the real maps. The whole filtering and object
+    detection pipeline is run on the simulated maps repeatedly. The number of sky sims used (set by numSkySims
+    in the .yml config file) should be fairly large (~100) for the results to be robust (results on individual
+    sims can vary by a lot).
     
-    We may want to combine the output from this with the inverted maps test (which is quicker and easier,
-    but has different problems - e.g., how aggressive we are at masking point sources).
+    Args:
+        config(:obj: 'startUp.NemoConfig'): Nemo configuration object.
+        imageDict: A dictionary containing the output filtered maps and catalogs from running on the real data
+            (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be modified, but is used
+            for estimating the contamination rate by comparison to the source-free sims.
     
-    Writes a plot and a .fits table to the diagnostics dir.
-    
-    Runs over both SNR and fixed_SNR values.
-    
-    Returns a dictionaries containing the results
+    Returns:
+        A dictionary where each key points to an astropy Table object containing the average contamination 
+        estimate corresponding to SNR (maximal estimate) and fixed_SNR (for the chosen reference filter 
+        scale).
     
     """
-    
-    # These may break in python3, so only here to limit damage...
-    from . import filters
-    from . import startUp
-    
-    # To ensure we use the same kernel for filtering the sim maps as was used on the real data, copy kernels to sims dir
-    # The kernel will then be loaded automatically when filterMaps is called 
-    # Yes, this is a bit clunky...
-    rootOutDir=diagnosticsDir+os.path.sep+"skySim"
-    kernelCopyDestDir=rootOutDir+os.path.sep+"diagnostics"
-    dirList=[rootOutDir, kernelCopyDestDir]
-    for d in dirList:
-        if os.path.exists(d) == False:
-            os.makedirs(d)
-    for extName in extNames:
-        fileNames=glob.glob(diagnosticsDir+os.path.sep+"kern2d*#%s*.fits" % (extName))
-        for f in fileNames:
-            shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
-                
+
+    simRootOutDir=config.diagnosticsDir+os.path.sep+"skySim"
+    SNRKeys=['SNR', 'fixed_SNR']        
+    numSkySims=config.parDict['numSkySims']
     resultsList=[]
     for i in range(numSkySims):
         
         # NOTE: we throw the first sim away on figuring out noiseBoostFactors
         print(">>> sky sim %d/%d ..." % (i+1, numSkySims))
         t0=time.time()
+
+        simConfig=copy.deepcopy(config)
         
         # We use the seed here to keep the CMB sky the same across frequencies...
         CMBSimSeed=np.random.randint(16777216)
-        
-        simParDict=startUp.parseConfigFile(parDictFileName)
-            
+                    
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-        if 'GNFWParams' not in list(simParDict.keys()):
-            simParDict['GNFWParams']='default'
-        for filtDict in simParDict['mapFilters']:
-            filtDict['params']['GNFWParams']=simParDict['GNFWParams']
-        
-        # We're feeding in extNames to be MPI-friendly (each process takes its own set of extNames)
-        unfilteredMapsDictList, ignoreThis=makeTileDeck(simParDict)
-        
+        if 'GNFWParams' not in list(simConfig.parDict.keys()):
+            simConfig.parDict['GNFWParams']='default'
+        for filtDict in simConfig.parDict['mapFilters']:
+            filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
+            
         # Filling in with sim will be done when maps.preprocessMapDict is called by the filter object
-        for mapDict in unfilteredMapsDictList:
+        for mapDict in simConfig.unfilteredMapsDictList:
             mapDict['CMBSimSeed']=CMBSimSeed
                     
         # NOTE: we need to zap ONLY specific maps for when we are running in parallel
-        for extName in extNames:
-            mapFileNames=glob.glob(rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
+        for extName in simConfig.extNames:
+            mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
             for m in mapFileNames:
                 os.remove(m)
+                
+        simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
+                                                         rootOutDir = simRootOutDir,
+                                                         copyKernels = True)
         
-        simImageDict=filters.filterMaps(unfilteredMapsDictList, simParDict['mapFilters'], extNames = extNames, rootOutDir = rootOutDir)
+        ## Write out sim map catalogs for debugging - needs updating after API changes
+        #skySimDir=diagnosticsDir+os.path.sep+"skySim"
+        #if len(simImageDict['optimalCatalog']) > 0:
+            #tab=catalogs.catalogListToTab(simImageDict['optimalCatalog'])    
+            #optimalCatalogFileName=skySimDir+os.path.sep+"skySim%d_optimalCatalog.csv" % (i)           
+            #catalogs.writeCatalogFromTab(tab, optimalCatalogFileName, \
+                                            #catalogs.COLUMN_NAMES, catalogs.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
+                                            #headings = True)
+            #addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fixed_SNR', 'fmt': '%.1f'}]
+            #catalogs.catalog2DS9(tab, optimalCatalogFileName.replace(".csv", ".reg"), constraintsList = ["SNR > 0.0"], \
+                                    #addInfo = addInfo, color = "cyan") 
             
-        # Below here is same as inverted maps right now....
-        # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
-        photometry.findObjects(simImageDict, threshold = simParDict['thresholdSigma'], minObjPix = simParDict['minObjPix'],
-                               rejectBorder = simParDict['rejectBorder'], diagnosticsDir = diagnosticsDir,
-                               invertMap = False, makeDS9Regions = True, useInterpolator = simParDict['useInterpolator'])    
-
-        # For fixed filter scale
-        # Adds fixed_SNR values to catalogs for all maps
-        photometryOptions=simParDict['photometryOptions']
-        if 'photFilter' in list(photometryOptions.keys()):
-            photFilter=photometryOptions['photFilter']
-        else:
-            photFilter=None
-        if photFilter != None:
-            photometry.getSNValues(simImageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, invertMap = False)   
-            SNRKeys=['SNR', 'fixed_SNR']
-        else:
-            SNRKeys=['SNR']
-        
-        minSNToIncludeInOptimalCatalog=simParDict['catalogCuts']
-        catalogs.mergeCatalogs(simImageDict)
-        catalogs.makeOptimalCatalog(simImageDict, minSNToIncludeInOptimalCatalog)
-
-        # Write out sim map catalogs for debugging
-        skySimDir=diagnosticsDir+os.path.sep+"skySim"
-        if len(simImageDict['optimalCatalog']) > 0:
-            tab=catalogs.catalogListToTab(simImageDict['optimalCatalog'])    
-            optimalCatalogFileName=skySimDir+os.path.sep+"skySim%d_optimalCatalog.csv" % (i)           
-            catalogs.writeCatalogFromTab(tab, optimalCatalogFileName, \
-                                            catalogs.COLUMN_NAMES, catalogs.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
-                                            headings = True)
-            addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fixed_SNR', 'fmt': '%.1f'}]
-            catalogs.catalog2DS9(tab, optimalCatalogFileName.replace(".csv", ".reg"), constraintsList = ["SNR > 0.0"], \
-                                    addInfo = addInfo, color = "cyan") 
-
         # Contamination estimate...
-        contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', diagnosticsDir)
+        contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', config.diagnosticsDir)
         resultsList.append(contaminTabDict)
         t1=time.time()
         print("... time taken for sky sim run = %.3f sec" % (t1-t0))
-            
+
     # Average results
     avContaminTabDict={}
     for k in list(resultsList[0].keys()):
@@ -882,13 +852,11 @@ def estimateContaminationFromSkySim(imageDict, extNames, parDictFileName, numSky
     
     # For writing separate contamination .fits tables if running in parallel
     # (if we're running in serial, then we'll get a giant file name with full extNames list... fix later)
-    extNamesLabel="#"+str(extNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
+    extNamesLabel="#"+str(config.extNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
     for k in list(avContaminTabDict.keys()):
-        fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, extNamesLabel)
-        if os.path.exists(fitsOutFileName) == True:
-            os.remove(fitsOutFileName)
+        fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, extNamesLabel)
         contaminTab=avContaminTabDict[k]
-        contaminTab.write(fitsOutFileName)
+        contaminTab.write(fitsOutFileName, overwrite = True)
         
     return avContaminTabDict
 
@@ -1056,3 +1024,30 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
         contaminTabDict['%s_%s' % (label, SNRKey)]=contaminTab
         
     return contaminTabDict
+
+#------------------------------------------------------------------------------------------------------------
+def injectSources(data, wcs, catalog, GNFWParams = 'default'):
+    """Inject sources (clusters or point sources) with properties listed in the catalog into the map defined
+    by data, wcs.
+    
+    Args:
+        data (:obj: 'numpy.ndarray'): The (2d) pixel data of a map in units of uK (delta T CMB).
+        wcs (:obj: 'astWCS.WCS'): A WCS object that defines the coordinate system of the map. 
+        catalog (:obj: 'astropy.table.Table'): An astropy Table object containing the catalog. This must 
+            include columns named RADeg, decDeg that give object coordinates. For point sources, the 
+            amplitude in uK must be given in a column named deltaT_c. For clusters, M500 (in units of
+            10^14 MSun) and z must be given (GNFW profile assumed).
+        GNFWParams (str or dict, optional): Used only by cluster catalogs. If 'default', the Arnaud et al. 
+            (2010) Universal Pressure Profile is assumed. Otherwise, a dictionary that specifies the profile
+            parameters can be given here (see gnfw.py).
+            
+    Returns:
+        Map containing injected sources.
+    
+    """
+    
+    # Inspect the catalog - are we dealing with point sources or clusters?
+    
+    print("inject sources")
+    IPython.embed()
+    sys.exit()

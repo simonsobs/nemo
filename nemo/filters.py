@@ -397,7 +397,7 @@ class MapFilter(object):
         tck=interpolate.splrep(arcminRange, prof)
         FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
         
-        fig=plt.figure(num=2, figsize=(8,8))
+        fig=plt.figure(figsize=(8,8))
         #fig.canvas.set_window_title('Filter Profile in Real Space')
         plt.clf()
         plt.title("Filter Profile %s" % (self.label))
@@ -931,8 +931,11 @@ class RealSpaceMatchedFilter(MapFilter):
                 
         # Combining - inverse variance weighted average
         if dataCube.shape[0] > 1:
-            invVar=1./noiseCube**2
-            invVar[np.isinf(invVar)]=0.
+            invVar=np.zeros(noiseCube.shape)
+            mask=noiseCube > 0
+            invVar[mask]=1./noiseCube[mask]**2
+            #invVar=1./noiseCube**2
+            #invVar[np.isinf(invVar)]=0.
             # Use mask to flag pixels with zero everywhere
             zeroMask=np.equal(np.sum(invVar, axis = 0), 0)
             for z in range(invVar.shape[0]):

@@ -1,7 +1,7 @@
 """
 
-This module contains basic set-up stuff (making directories, parsing config etc.)
-used by all the scripts in bin (nemo, nemoMass, nemoSelFn etc.)
+This module contains basic set-up stuff (making directories, parsing config etc.) used by all the scripts 
+in bin/ (nemo, nemoMass, nemoSelFn etc.).
 
 """
 
@@ -16,7 +16,11 @@ from . import maps
 def parseConfigFile(parDictFileName):
     """Parse a nemo .yml config file.
     
-    Returns a dictionary of parameters
+    Args:
+        parDictFileName (str): Path to a nemo .yml configuration file.
+    
+    Returns:
+        A dictionary of parameters.
     
     """
     
@@ -74,21 +78,32 @@ def parseConfigFile(parDictFileName):
 
 #------------------------------------------------------------------------------------------------------------
 class NemoConfig(object):
+    """An object that keeps track of nemo's configuration, maps, and output directories etc..
+    
+    Attributes:
+        parDict (dict): Dictionary containing the contents of the config file.
+        rootOutDir (str): Name of the directory where all output will be written.
+        filteredMapsDir (str): Name of the directory where filtered maps will be written.
+        diagnosticsDir (str): Name of the directory where miscellaneous diagnostic data (e.g., filter 
+            kernel plots) will be written.
+        unfilteredMapsDictList (list): List of dictionaries corresponding to maps needed.
+        extNames (list): List of map tiles (extension names) to operate on.
+        MPIEnabled (bool): If True, use MPI to divide extNames list among processes.
+        comm (:obj: 'MPI.COMM_WORLD'): Used by MPI.
+        rank (int): Used by MPI.
+        size (int): Used by MPI.
+    
+    """
     
     def __init__(self, parDictFileName, makeOutputDirs = True, MPIEnabled = False):
+        """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
-        """Creates an object that keeps track of nemo's configuration, maps, output directories etc.
+        Args:
+            parDictFileName (str): Path to a nemo .yml configuration file.
+            makeOutputDirs (bool): If True, create output directories (where maps, catalogs are stored).
+            MPIEnabled (bool): If True, use MPI to divide the map into tiles, distributed among processes.
+                This requires tileDefinitions and tileNoiseRegions to be given in the .yml config file.
     
-        Members:
-        * parDict (dictionary containing the contents of the config file)
-        * rootOutDir (name of the directory where all output will be written)
-        * filteredMapsDir (name of the directory where filtered maps will be written)
-        * diagnosticsDir (name of the directory where e.g. filter kernels will be written)
-        * unfilteredMapsDictList (list of dictionaries corresponding to maps needed)
-        * extNames (list of map tiles to operate on)
-        * MPIEnabled (bool)
-        * comm, rank, size (used by MPI)
-        
         """
 
         print(">>> Running .yml config file: %s" % (parDictFileName))

@@ -34,32 +34,10 @@ if __name__ == '__main__':
     
     parDictFileName=args.configFileName
     config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
-
-    imageDict=filters.filterMaps(config.unfilteredMapsDictList, config.parDict['mapFilters'], 
-                                    extNames = config.extNames, rootOutDir = config.rootOutDir)
     
-    # Find objects in filtered maps
-    photometry.findObjects(imageDict, threshold = config.parDict['thresholdSigma'], 
-                           minObjPix = config.parDict['minObjPix'], 
-                           findCenterOfMass = config.parDict['findCenterOfMass'], 
-                           rejectBorder = config.parDict['rejectBorder'], 
-                           diagnosticsDir = config.diagnosticsDir, objIdent = config.parDict['objIdent'], 
-                           longNames = config.parDict['longNames'],
-                           useInterpolator = config.parDict['useInterpolator'], 
-                           measureShapes = config.parDict['measureShapes'])
+    imageDict=pipelines.filterMapsAndMakeCatalogs(config)
     
-    # Measure fluxes
-    photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir, 
-                             unfilteredMapsDict = config.parDict['unfilteredMaps'],
-                             useInterpolator = config.parDict['useInterpolator'])
-                    
-    # Merged/optimal catalogs
-    catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])
-    
-    # This is useful for multi-freq, e.g., relativistic SZ corrections; tracking which objects are in 148 GHz only parts of the map
-    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photometryOptions'], 
-                                       config.diagnosticsDir)
-    
+    # NOTE: Below needs to be updated to use pipelines module
     # Estimate of contamination from running cluster finding over inverted map
     if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
         conTabDict=maps.estimateContaminationFromInvertedMaps(imageDict, config.extNames, 
@@ -76,10 +54,7 @@ if __name__ == '__main__':
     # Estimate of contamination by generating a fake sky with noise, and running detection algorithm over it
     # Ultimately we want this and the above ^^^ to appear on the same plot for comparison
     if 'estimateContaminationFromSkySim' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromSkySim'] == True:
-        skySimConTabDict=maps.estimateContaminationFromSkySim(imageDict, config.extNames, 
-                                                                  parDictFileName,
-                                                                  config.parDict['numSkySims'],
-                                                                  config.diagnosticsDir)
+        skySimConTabDict=maps.estimateContaminationFromSkySim(config, imageDict) 
     else:
         skySimConTabDict={}
     
