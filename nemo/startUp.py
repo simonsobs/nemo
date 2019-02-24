@@ -95,20 +95,25 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, parDictFileName, makeOutputDirs = True, MPIEnabled = False):
+    def __init__(self, configFileName, makeOutputDirs = True, MPIEnabled = False):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
-            parDictFileName (:obj:`str`): Path to a nemo .yml configuration file.
+            configFileName (:obj:`str`): Path to a nemo .yml configuration file.
             makeOutputDirs (:obj:`bool`): If True, create output directories (where maps, catalogs are stored).
             MPIEnabled (:obj:`bool`): If True, use MPI to divide the map into tiles, distributed among processes.
                 This requires `tileDefinitions` and `tileNoiseRegions` to be given in the .yml config file.
     
         """
 
-        print(">>> Running .yml config file: %s" % (parDictFileName))
+        print(">>> Running .yml config file: %s" % (configFileName))
 
-        self.parDict=parseConfigFile(parDictFileName)
+        self.parDict=parseConfigFile(configFileName)
+        self.configFileName=configFileName
+        
+        # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
+        # restore them (e.g., if running source-free sims).
+        self._origParDict=copy.deepcopy(self.parDict)
                     
         self.MPIEnabled=MPIEnabled
         if self.MPIEnabled == True:
@@ -127,9 +132,9 @@ class NemoConfig(object):
         if 'outputDir' in list(self.parDict.keys()):
             self.rootOutDir=parDict['outDir']
         else:
-            if parDictFileName.find(".yml") == -1:
+            if configFileName.find(".yml") == -1:
                 raise Exception("File must have .yml extension")
-            self.rootOutDir=parDictFileName.replace(".yml", "")
+            self.rootOutDir=configFileName.replace(".yml", "")
         self.filteredMapsDir=self.rootOutDir+os.path.sep+"filteredMaps"
         self.diagnosticsDir=self.rootOutDir+os.path.sep+"diagnostics"
         self.mocksDir=self.rootOutDir+os.path.sep+"mocks"
@@ -184,3 +189,10 @@ class NemoConfig(object):
         # For debugging...
         print(("... rank = %d [PID = %d]: extNames = %s" % (self.rank, os.getpid(), str(self.extNames))))
   
+  
+    def restoreConfig(self):
+        """Restores the parameters dictionary (self.parDict) to the original state specified in the config 
+        .yml file.
+        
+        """      
+        self.parDict=copy.deepcopy(self._origParDict)

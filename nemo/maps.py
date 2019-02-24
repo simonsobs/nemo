@@ -823,7 +823,9 @@ def estimateContaminationFromSkySim(config, imageDict):
         print(">>> sky sim %d/%d ..." % (i+1, numSkySims))
         t0=time.time()
 
-        simConfig=copy.deepcopy(config)
+        # We don't copy this, because it's complicated due to containing MPI-related things (comm)
+        # So... we modify the config parameters in-place, and restore them before exiting this method
+        simConfig=config
         
         # We use the seed here to keep the CMB sky the same across frequencies...
         CMBSimSeed=np.random.randint(16777216)
@@ -883,7 +885,10 @@ def estimateContaminationFromSkySim(config, imageDict):
         fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, extNamesLabel)
         contaminTab=avContaminTabDict[k]
         contaminTab.write(fitsOutFileName, overwrite = True)
-        
+    
+    # Restore the original config parameters (which we overrode to make the sims here)
+    config.restoreConfig()
+    
     return avContaminTabDict
 
 #-------------------------------------------------------------------------------------------------------------
