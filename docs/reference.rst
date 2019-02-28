@@ -50,6 +50,12 @@ photometry
 .. automodule:: nemo.photometry
    :members:
 
+pipelines
+---------
+
+.. automodule:: nemo.pipelines
+   :members:
+
 plotSettings
 ------------
 

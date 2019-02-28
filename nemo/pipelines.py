@@ -16,7 +16,8 @@ from . import catalogs
 import IPython
 
 #------------------------------------------------------------------------------------------------------------
-def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False):
+def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False, measureFluxes = True, 
+                              invertMap = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -28,6 +29,10 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False):
             directory under rootOutDir. This is used by, e.g., contamination tests based on sky sims, where
             the same kernels as used on the real data are applied to simulated maps. If rootOutDir = None,
             setting copyKernels = True has no effect.
+        measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
+            detected objects.
+        invertMap (bool, optional): If True, multiply all maps by -1; needed by 
+            :meth:maps.estimateContaminationFromInvertedMaps).
     
     Returns:
         A dictionary containing filtered maps and catalogs.
@@ -68,12 +73,24 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False):
                            diagnosticsDir = config.diagnosticsDir, objIdent = config.parDict['objIdent'], 
                            longNames = config.parDict['longNames'],
                            useInterpolator = config.parDict['useInterpolator'], 
-                           measureShapes = config.parDict['measureShapes'])
+                           measureShapes = config.parDict['measureShapes'],
+                           invertMap = invertMap)
     
     # Measure fluxes
-    photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir, 
-                             unfilteredMapsDict = config.parDict['unfilteredMaps'],
-                             useInterpolator = config.parDict['useInterpolator'])
+    if measureFluxes == True:
+        photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir, 
+                                 unfilteredMapsDict = config.parDict['unfilteredMaps'],
+                                 useInterpolator = config.parDict['useInterpolator'])
+    else:
+        # Get S/N only - if the reference (fixed) filter scale has been given
+        # This is (probably) only used by maps.estimateContaminationFromInvertedMaps
+        if 'photFilter' in list(config.parDict['photometryOptions'].keys()):
+            photFilter=config.parDict['photometryOptions']['photFilter']
+        else:
+            photFilter=None
+        if photFilter != None:
+            photometry.getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, 
+                                   invertMap = invertMap)
                     
     # Merged/optimal catalogs
     catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])

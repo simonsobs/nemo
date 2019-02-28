@@ -829,7 +829,8 @@ def estimateContaminationFromSkySim(config, imageDict):
         
         # We use the seed here to keep the CMB sky the same across frequencies...
         CMBSimSeed=np.random.randint(16777216)
-                    
+        
+        # NOTE: This block below should be handled when parsing the config file - fix/remove
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
         if 'GNFWParams' not in list(simConfig.parDict.keys()):
             simConfig.parDict['GNFWParams']='default'
@@ -850,18 +851,11 @@ def estimateContaminationFromSkySim(config, imageDict):
                                                          rootOutDir = simRootOutDir,
                                                          copyKernels = True)
         
-        ## Write out sim map catalogs for debugging - needs updating after API changes
-        #skySimDir=diagnosticsDir+os.path.sep+"skySim"
-        #if len(simImageDict['optimalCatalog']) > 0:
-            #tab=catalogs.catalogListToTab(simImageDict['optimalCatalog'])    
-            #optimalCatalogFileName=skySimDir+os.path.sep+"skySim%d_optimalCatalog.csv" % (i)           
-            #catalogs.writeCatalogFromTab(tab, optimalCatalogFileName, \
-                                            #catalogs.COLUMN_NAMES, catalogs.COLUMN_FORMATS, constraintsList = ["SNR > 0.0"], 
-                                            #headings = True)
-            #addInfo=[{'key': 'SNR', 'fmt': '%.1f'}, {'key': 'fixed_SNR', 'fmt': '%.1f'}]
-            #catalogs.catalog2DS9(tab, optimalCatalogFileName.replace(".csv", ".reg"), constraintsList = ["SNR > 0.0"], \
-                                    #addInfo = addInfo, color = "cyan") 
-            
+        # Write out the last sim map catalog for debugging
+        optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
+        optimalCatalog=simImageDict['optimalCatalog']
+        catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
+        
         # Contamination estimate...
         contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', config.diagnosticsDir)
         resultsList.append(contaminTabDict)
@@ -892,8 +886,7 @@ def estimateContaminationFromSkySim(config, imageDict):
     return avContaminTabDict
 
 #-------------------------------------------------------------------------------------------------------------
-def estimateContaminationFromInvertedMaps(imageDict, extNames, thresholdSigma, minObjPix, rejectBorder, 
-                                          minSNToIncludeInOptimalCatalog, photometryOptions, diagnosticsDir, findCenterOfMass = True):
+def estimateContaminationFromInvertedMaps(config, imageDict):
     """Run the whole filtering set up again, on inverted maps.
     
     Writes a DS9. reg file, which contains only the highest SNR contaminants (since these
@@ -912,35 +905,16 @@ def estimateContaminationFromInvertedMaps(imageDict, extNames, thresholdSigma, m
     for key in imageDict:
         if key not in ignoreKeys:
             invertedDict[key]=imageDict[key]
+            
+    invertedDict=pipelines.filterMapsAndMakeCatalogs(config, measureFluxes = False, invertMap = True)
     
-    # If we have makeDS9Regions = True here, we overwrite the existing .reg files from when we ran on the non-inverted maps
-    photometry.findObjects(invertedDict, threshold = thresholdSigma, minObjPix = minObjPix,
-                           rejectBorder = rejectBorder, diagnosticsDir = diagnosticsDir,
-                           invertMap = True, makeDS9Regions = False, findCenterOfMass = findCenterOfMass)    
-
-    # For fixed filter scale
-    # Adds fixed_SNR values to catalogs for all maps
-    if 'photFilter' in list(photometryOptions.keys()):
-        photFilter=photometryOptions['photFilter']
-    else:
-        photFilter=None
-    if photFilter != None:
-        photometry.getSNValues(invertedDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, invertMap = True)
-        SNRKeys=['SNR', 'fixed_SNR']
-    else:
-        SNRKeys=['SNR']
-        
-    catalogs.mergeCatalogs(invertedDict)
-    catalogs.makeOptimalCatalog(invertedDict, minSNToIncludeInOptimalCatalog)
-    
-    contaminTabDict=estimateContamination(invertedDict, imageDict, SNRKeys, 'invertedMap', diagnosticsDir)
+    SNRKeys=['SNR', 'fixed_SNR']
+    contaminTabDict=estimateContamination(invertedDict, imageDict, SNRKeys, 'invertedMap', config.diagnosticsDir)
 
     for k in list(contaminTabDict.keys()):
-        fitsOutFileName=diagnosticsDir+os.path.sep+"%s_contaminationEstimate.fits" % (k)
-        if os.path.exists(fitsOutFileName) == True:
-            os.remove(fitsOutFileName)
+        fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate.fits" % (k)
         contaminTab=contaminTabDict[k]
-        contaminTab.write(fitsOutFileName)
+        contaminTab.write(fitsOutFileName, overwrite = True)
         
     return contaminTabDict
 

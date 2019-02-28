@@ -40,14 +40,7 @@ if __name__ == '__main__':
     # NOTE: Below needs to be updated to use pipelines module
     # Estimate of contamination from running cluster finding over inverted map
     if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
-        conTabDict=maps.estimateContaminationFromInvertedMaps(imageDict, config.extNames, 
-                                                                  config.parDict['thresholdSigma'], 
-                                                                  config.parDict['minObjPix'], 
-                                                                  config.parDict['rejectBorder'], 
-                                                                  config.parDict['catalogCuts'], 
-                                                                  config.parDict['photometryOptions'],
-                                                                  config.diagnosticsDir, 
-                                                                  findCenterOfMass = config.parDict['findCenterOfMass'])
+        conTabDict=maps.estimateContaminationFromInvertedMaps(config, imageDict)
     else:
         conTabDict={}
         
