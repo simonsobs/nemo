@@ -18,6 +18,7 @@ from . import catalogs
 from . import photometry
 from . import gnfw
 from . import plotSettings
+from . import signals
 import numpy as np
 import numpy.fft as fft
 import os
@@ -35,6 +36,26 @@ import yaml
 import IPython
 np.random.seed()
 
+#------------------------------------------------------------------------------------------------------------
+# Global constants (we could move others here but then need to give chunky obvious names, not just e.g. h)
+TCMB=2.726
+
+#------------------------------------------------------------------------------------------------------------
+def fSZ(obsFrequencyGHz):
+    """Returns the frequency dependence of the (non-relativistic) Sunyaev-Zel'dovich effect.
+    
+    """
+
+    h=6.63e-34
+    kB=1.38e-23
+    sigmaT=6.6524586e-29
+    me=9.11e-31
+    c=3e8
+    x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
+    fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
+    
+    return fSZ
+    
 #------------------------------------------------------------------------------------------------------------
 def calcR500Mpc(z, M500):
     """Given z, M500 (in MSun), returns R500 in Mpc, with respect to critical density.
@@ -136,7 +157,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beamFileName):
     
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default',
-                             deltaT0 = -1000, maxSizeDeg = 15.0, convolveWithBeam = True):
+                             deltaT0 = None, maxSizeDeg = 15.0, convolveWithBeam = True):
     """Makes a 2d signal only map containing an Arnaud model cluster. Units of M500 are MSun.
     
     degreesMap is a 2d array containing radial distance from the centre - the output map will have the same
@@ -167,12 +188,14 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     tckP=signalDict['tckP']
     theta500Arcmin=signalDict['theta500Arcmin']
     
-    # This is arbitrary if being used to set up a filter kernel
-    y0=maps.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
-    
-    # Make cluster map
+    # Make cluster map (unit-normalised profile)
     rDeg=np.linspace(0.0, 1.0, 5000)
-    profile1d=deltaT0*interpolate.splev(rDeg, tckP)
+    profile1d=interpolate.splev(rDeg, tckP)
+    if deltaT0 is not None:
+        profile1d=profile1d*deltaT0
+        y0=maps.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
+    else:
+        y0=1.0
     rRadians=np.radians(rDeg)
     radiansMap=np.radians(degreesMap)
     r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
@@ -208,7 +231,7 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
         
     else:
         signalMap=profile2d
-                
+    
     # For sanity checking later, let's dump the input properties of the model into a dictionary
     inputSignalProperties={'deltaT0': deltaT0, 'y0': y0, 'theta500Arcmin': theta500Arcmin, 
                            'obsFreqGHz': obsFreqGHz}
@@ -292,12 +315,14 @@ def fitQ(config):
             print("... %s ..." % (extName))
             
             # Some faffing to get map pixel scale        
-            img=pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName))
-            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-            RADeg, decDeg=wcs.getCentreWCSCoords()
-            clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 15.0)
-            wcs=clipDict['wcs']
+            with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName)) as img:
+                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+                RADeg, decDeg=wcs.getCentreWCSCoords()
+                clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 15.0)
+                wcs=clipDict['wcs']
             
+            # NOTE: The block below is now only getting theta500 values, which could do elsewhere
+            # So this can probably be deleted eventually...
             # Input signal maps to which we will apply filter(s)
             # We don't actually care about freq here because we deal with pressure profile itself
             # And Q measurement is relative 
@@ -320,35 +345,57 @@ def fitQ(config):
             # Set-up the beams and kernels
             # NOTE: adjusted for tileDeck files, and we have the RA, dec footprint info to deal with too
             beamsDict={}
-            kernsDict={}
             for mapDict in config.parDict['unfilteredMaps']:
                 obsFreqGHz=mapDict['obsFreqGHz']
                 beamsDict[obsFreqGHz]=mapDict['beamFileName']
-                kernImg=pyfits.open(config.diagnosticsDir+os.path.sep+"kern2d_%s#%s_%d.fits" % (photFilterLabel, extName, mapDict['obsFreqGHz']))
+            kernsDict={}            
+            with pyfits.open(config.diagnosticsDir+os.path.sep+"kern2d_%s#%s.fits" % (photFilterLabel, extName)) as kernImg:
                 kern2d=kernImg[0].data
-                kernsDict[obsFreqGHz]={'kern2d': kern2d, 'header': kernImg[0].header}
+                kernsDict={'kern2d': kern2d, 'header': kernImg[0].header}
             
-            # Filter maps with the ref kernel(s)
+            # Filter maps with the ref kernel
             # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
             Q=[]
             QTheta500Arcmin=[]
             count=0
             for z, M500MSun in zip(zRange, MRange):
                 key='%.2f_%.2f' % (z, np.log10(M500MSun))
-                peakFilteredSignals=[]  # effectively, already in yc
-                for obsFreqGHz in list(kernsDict.keys()):
-                    signalMap=np.zeros(signalMapDict[key].shape)+signalMapDict[key]
-                    signalMap=maps.subtractBackground(signalMap, wcs, 
-                                                            smoothScaleDeg = kernsDict[obsFreqGHz]['header']['BCKSCALE']/60.)
-                    filteredSignal=ndimage.convolve(signalMap, kernsDict[obsFreqGHz]['kern2d'])
-                    peakFilteredSignals.append(filteredSignal.max()*kernsDict[obsFreqGHz]['header']['SIGNORM'])
-                if np.mean(peakFilteredSignals) not in Q:
-                    Q.append(np.mean(peakFilteredSignals))  # no noise, so straight average            
+                signalMaps=[]
+                y0=2e-4
+                tol=1e-6
+                for obsFreqGHz in list(beamsDict.keys()):
+                    deltaT0=maps.convertToDeltaT(y0, obsFreqGHz)
+                    # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This does
+                    signalMap, inputProperties=signals.makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
+                                                                               degreesMap, wcs, 
+                                                                               beamsDict[obsFreqGHz], 
+                                                                               deltaT0 = deltaT0,
+                                                                               convolveWithBeam = False)
+                    if abs(y0-inputProperties['y0']) > tol:
+                        raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
+                    signalMaps.append(signalMap)
+                signalMaps=np.array(signalMaps)
+                peakFilteredSignals=[]
+                if 'BCKSCALE' in kernsDict['header'].keys() and kernsDict['header']['BCKSCALE'] > 0.0:
+                    filteredSignal=[]
+                    for i in range(signalMaps.shape[0]):
+                        filteredSignal.append(maps.subtractBackground(signalMaps[i], wcs, RADeg = RADeg,
+                                                                      decDeg = decDeg,
+                                                                      smoothScaleDeg = kernsDict['header']['BCKSCALE']/60.))
+                    filteredSignal=np.array(filteredSignal)
+                else:
+                    filteredSignal=np.zeros(signalMaps.shape)+signalMaps
+                for i in range(kern2d.shape[0]):
+                    filteredSignal[i]=ndimage.convolve(filteredSignal[i], kern2d[i])
+                filteredSignal=filteredSignal.sum(axis = 0)
+                peakFilteredSignal=filteredSignal.max()*kernsDict['header']['SIGNORM']
+                if peakFilteredSignal not in Q and theta500Arcmin[count] > 1:   # NOTE: this is to avoid problems at theta500 < beam size
+                    Q.append(peakFilteredSignal)      
                     QTheta500Arcmin.append(theta500Arcmin[count])
                 count=count+1
             Q=np.array(Q)
             Q=Q/Q[0]
-            
+                
             # Sort and do spline fit... save .fits table of theta, Q
             QTab=atpy.Table()
             QTab.add_column(atpy.Column(Q, 'Q'))

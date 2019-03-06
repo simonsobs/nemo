@@ -179,6 +179,7 @@ class MapFilter(object):
             mapDict=maps.preprocessMapDict(mapDict.copy(), extName = extName, diagnosticsDir = diagnosticsDir)
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
+        self.shape=mapDict['data'].shape
                                 
         # Get beam solid angle info (units: nanosteradians)... we'll need for fluxes in Jy later
         self.beamSolidAnglesDict={}
@@ -367,23 +368,26 @@ class MapFilter(object):
 
 
     def makeRealSpaceFilterProfile(self):
-        """Makes a 1d real-space profile of the filter.
+        """Makes a 1d real-space profile of the filter. This is normalised to 1 at the frequency of the 
+        first map given in the unfiltered maps list.
         
         Returns profile, arcminRange
-        """
-        wcs=self.wcs
         
+        """
         realSpace=fft.ifft2(self.G).real
         realSpace=fft.fftshift(realSpace)
 
         # Changed for python3 - we may want to check this...
         # i.e., force to always be int after /2 without this
-        x0=int(realSpace.shape[1]/2)
-        y0=int(realSpace.shape[0]/2)
+        x0=int(realSpace.shape[2]/2)
+        y0=int(realSpace.shape[1]/2)
 
-        prof=realSpace[y0, x0:]/realSpace[y0, x0:].max() # normalise for plot
-        arcminRange=np.arange(0, prof.shape[0])*self.degPerPixX*60.0
-        
+        # Arbitrarily normalise to 1 at the maximum (in whichever frequency that occurs)
+        normFactor=abs(realSpace[:, y0, x0:]).max() 
+        prof=realSpace[:, y0, x0:]/normFactor
+        #prof=realSpace[0, y0, x0:]/realSpace[0, y0, x0:].max() # normalise for plot
+        arcminRange=np.arange(0, prof.shape[1])*self.degPerPixX*60.0
+                
         return prof, arcminRange
     
         
@@ -395,16 +399,16 @@ class MapFilter(object):
         prof, arcminRange=self.makeRealSpaceFilterProfile()
         
         # Measure characteristic FWHM
-        tck=interpolate.splrep(arcminRange, prof)
-        FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
+        #tck=interpolate.splrep(arcminRange, prof)
+        #FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
         
         fig=plt.figure(figsize=(8,8))
         #fig.canvas.set_window_title('Filter Profile in Real Space')
-        plt.clf()
-        plt.title("Filter Profile %s" % (self.label))
+        #plt.title("Filter Profile %s" % (self.label))
         plt.ylabel("Amplitude")
         plt.xlabel("$\\theta$ (arcmin)")
-        plt.plot(arcminRange, prof)
+        for row, mapDict in zip(prof, self.unfilteredMapsDictList):
+            plt.plot(arcminRange, row, label = '%d GHz' % (mapDict['obsFreqGHz']))
         plt.xlim(0, 30.0)
         plt.ylim(prof.min(), prof.max()*1.1)
         plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+".png")
@@ -413,377 +417,7 @@ class MapFilter(object):
         # Save 2D realspace filter image too
         #astImages.saveFITS(self.diagnosticsDir+os.path.sep+"realSpaceProfile2d_"+self.label+".fits", \
                                 #realSpace, wcs)
-                    
-#------------------------------------------------------------------------------------------------------------
-class MatchedFilter(MapFilter):
-    """Matched filter...
-    
-    """
-
-    def buildAndApply(self):
-        
-        print(">>> Building filter %s ..." % (self.label))
-                    
-        # Filter both maps with the same scale filter
-        filteredMaps={}
-        for mapDict in self.unfilteredMapsDictList:   
-                        
-            maskedData=mapDict['data']
-            
-            # Replaced flipper with pixell
-            # NOTE: modLMap, modThetaMap are not exactly the same as flipper gives... doesn't seem to be python3 thing
-            # Normalisation is different to flipper, but doesn't matter if we are consistent throughout
-            fMaskedData=enmap.fft(enmap.apod(maskedData, self.apodPix))
-            modThetaMap=180.0/(enmap.modlmap(fMaskedData.shape, self.enwcs)+1)
-                            
-            # Make noise power spectrum
-            if self.params['noiseParams']['method'] == 'dataMap':
-                print("... taking noise power for filter from map ...")
-                NP=np.real(fMaskedData*fMaskedData.conj())
-            elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
-                print("... taking noise power from max(map noise power, model CMB power spectrum) ...")
-                NP=np.real(fMaskedData*fMaskedData.conj())
-                NPCMB=self.makeForegroundsPower()
-                NP=np.maximum.reduce([NP, NPCMB])
-            else:
-                raise Exception("noise method must be either 'dataMap', '4WayMaps', 'CMBOnly', or 'max(dataMap,CMB)'")
-            
-            # Save plot of 2d noise power (to easily compare different methods / frequencies)
-            # NOTE: output path here will break if we're not using RealSpaceMatchedFilter?
-            plotSettings.update_rcParams()
-            plt.figure(figsize=(9.5,9.5))
-            ax=plt.axes([0.05, 0.05, 0.9, 0.9])
-            plotData=np.log10(fft.fftshift(NP))
-            #cutImage=astImages.intensityCutImage(plotData, ['relative', 99.5])
-            cutImage=astImages.intensityCutImage(plotData, [plotData.min(), plotData.max()])
-            plt.imshow(cutImage['image'], cmap = 'gray', norm = cutImage['norm'], origin = 'lower')
-            plt.xticks([], [])
-            plt.yticks([], [])
-            plt.savefig(self.diagnosticsDir+os.path.sep+self.label.replace("realSpaceKernel", "noisePower%.1f" % (mapDict['obsFreqGHz']))+".png")
-            plt.close()
-            
-            # FFT of signal
-            signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
-            signalMap=signalMapDict['signalMap']
-            fftSignal=enmap.fft(signalMap)
-            
-            # Toby style -note smoothing noise is essential!
-            filt=1.0/NP
-            med=np.median(filt)
-            filt[np.where(filt>10*med)]=med
-            kernelSize=(5,5)
-            filt=ndimage.gaussian_filter(filt, kernelSize)
-            filt=filt*abs(fftSignal)
-            cov=filt*np.abs(fftSignal)**2
-            integral=cov.sum()/float(signalMap.shape[0])/float(signalMap.shape[1])
-            filt=filt/integral
-            self.G=filt
-            
-            # NOTE: Do not disable this weighting
-            weightedMap=mapDict['data']*np.sqrt(mapDict['weights']/mapDict['weights'].max())
-            weightedMap=enmap.apod(weightedMap, self.apodPix)
-            fMap=enmap.fft(weightedMap)
-            
-            # Check and correct for bias - apply filter to the signal template - do we recover the same flux?
-            # Rescale the filtered map so that this is taken care of (better way than this, but this
-            # should be pretty good)
-            peakCoords=np.where(abs(signalMap) == abs(signalMap).max())
-            yPeak=peakCoords[0][0]
-            xPeak=peakCoords[1][0]
-            fSignalMap=enmap.fft(signalMap)
-            filteredSignalMap=np.real(enmap.ifft(fSignalMap*self.G))
-
-            # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by the filter
-            # NOTE: this is being done the same way in RealSpaceMatchedFilter - add a function instead...
-            signalProperties=signalMapDict['inputSignalProperties']
-            if self.params['outputUnits'] == 'yc':
-                # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-                filteredSignalMap=maps.convertToY(filteredSignalMap, obsFrequencyGHz = signalProperties['obsFreqGHz'])
-                signalNorm=signalProperties['y0']/filteredSignalMap.max()
-            elif self.params['outputUnits'] == 'Y500':
-                # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
-                # We can get this from yc and the info in signalProperties, so we don't really need this
-                print("implement signal norm for %s" % (self.params['outputUnits']))
-                IPython.embed()
-                sys.exit()
-            elif self.params['outputUnits'] == 'uK':
-                # Normalise such that peak value in filtered map == peak value of source in uK
-                signalNorm=1.0/filteredSignalMap.max()
-            elif self.params['outputUnits'] == 'Jy/beam':
-                # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
-                print("implement signal norm for %s" % (self.params['outputUnits']))
-                IPython.embed()
-                sys.exit()
-            else:
-                raise Exception("didn't understand 'outputUnits' given in the .par file")
-
-            filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=np.real(enmap.ifft(fMap*self.G, normalize = False))*signalNorm
-                
-            # Linearly combine filtered maps (optional)
-            if 'mapCombination' in list(self.params.keys()):
-                combinedMap=np.zeros(filteredMaps[list(filteredMaps.keys())[0]].shape)
-                for key in list(filteredMaps.keys()):
-                    combinedMap=combinedMap+self.params['mapCombination'][key]*filteredMaps[key]
-                combinedObsFreqGHz=self.params['mapCombination']['rootFreqGHz']
-            else:
-                # If no linear map combination given, assume we only want the first item in the filtered maps list
-                combinedObsFreqGHz=self.unfilteredMapsDictList[0]['obsFreqGHz']
-                combinedMap=filteredMaps['%d' % combinedObsFreqGHz]
-
-            # Convert to whatever output units we want:
-            # Jy/sr (should go to Jy/beam eventually) for sources
-            # yc for SZ clusters
-            if 'outputUnits' in list(self.params.keys()):
-                if self.params['outputUnits'] == 'yc':
-                    combinedMap=maps.convertToY(combinedMap, combinedObsFreqGHz)
-                    combinedObsFreqGHz='yc'
-                    mapUnits='yc'
-                elif self.params['outputUnits'] == 'uK':
-                    mapUnits='uK'
-                elif self.params['outputUnits'] == 'Jy/beam':
-                    print("Jy/beam here")
-                    mapUnits='Jy/beam'
-                    IPython.embed()
-                    sys.exit()
-                else:
-                    raise Exception('need to specify "outputUnits" ("yc", "uK", or "Jy/beam") in filter params')
-                
-            # We'll be saving this shortly...
-            apodMap=enmap.apod(np.ones(maskedData.shape), self.apodPix)
-            apodMask=np.zeros(apodMap.shape)
-            apodMask[np.greater(apodMap, 0.999999)]=1.0
-            
-            # Now that we're applying the weights in here, we may as well write out the S/N map here too
-            # So we measure the RMS of the whole filtered map
-            goodAreaMask=np.greater_equal(apodMask, 1.0) # don't want the apodized edges of the map to bias this
-            mapMean=np.mean(combinedMap[goodAreaMask])
-            mapRMS=np.std(combinedMap[goodAreaMask])
-            sigmaClip=3.0
-            for i in range(10):
-                mask=np.less(abs(combinedMap), abs(mapMean+sigmaClip*mapRMS))
-                mask=np.logical_and(goodAreaMask, mask)
-                mapMean=np.mean(combinedMap[mask])
-                mapRMS=np.std(combinedMap[mask])
-            SNMap=combinedMap/mapRMS
-            
-            # NOTE: Applying weights in this way disabled Feb 2014
-            # Undo the weighting in the yc map, otherwise we underestimate decrement sizes!
-            #combinedMap=combinedMap/np.sqrt(mapDict['weights']/mapDict['weights'].max())
-            #combinedMap=np.nan_to_num(combinedMap)
-            
-            maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (mapDict['extName'])
-            if os.path.exists(maskFileName) == False:
-                astImages.saveFITS(maskFileName, apodMask, mapDict['wcs'])
-                    
-            # Blank out the apodised area
-            combinedMap=combinedMap*apodMask
-            SNMap=SNMap*apodMask
-                                        
-            # Save filter profile in real space
-            self.saveRealSpaceFilterProfile()        
-            
-        return {'data': combinedMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
-                'signalMap': signalMap, 'mapUnits': mapUnits, 
-                'inputSignalProperties': signalMapDict['inputSignalProperties']}
-            
-#------------------------------------------------------------------------------------------------------------
-class RealSpaceMatchedFilter(MapFilter):
-    """Makes a matched-filter kernel using the noise properties of a specified region of the map (e.g.
-    the deepest part) in Fourier space, which is converted into real space and truncated such that the 
-    kernel is small enough in footprint to be applied by directly convolving with the map in real space 
-    in a short amount of time. 
-    
-    First though we high-pass filter the maps on a similar scale using a Mexican hat (difference of Gaussian
-    smoothed images), to get rid of large scale noise from CMB and atmosphere.
-    
-    Tne S/N map is constructed, measuring locally on a scale 3 x that of the filter kernel, with 3-sigma
-    clipping applied. This allows us to take into account how the noise level varies across the map.
-    
-    A rank filter is used to zap noisy regions at the edge of the map, where the RMS values are
-    not accurate.
-    
-    Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
-    
-    A map of the final area searched for clusters called 'areaMask.fits' is written in the diagnostics/ 
-    folder.
-        
-    """       
-    
-    def loadKernel(self, kern2DFileName):
-        """Loads a previously cached kernel.
-        
-        Returns kern2d, signalNorm, bckSubScaleArcmin
-        
-        """
-        
-        print("... loading previously cached kernel %s ..." % (kern2DFileName))
-        with pyfits.open(kern2DFileName) as img:
-            kern2d=img[0].data
-            signalNorm=img[0].header['SIGNORM']
-            if 'BCKSCALE' in img[0].header.keys():
-                bckSubScaleArcmin=img[0].header['BCKSCALE']
-            else:
-                bckSubScaleArcmin=0
-                
-        return kern2d, signalNorm, bckSubScaleArcmin
-
-        
-    def buildKernel(self, mapDict, RADecSection, RADeg = 'centre', decDeg = 'centre'):
-        """Builds the real space kernel itself. 
-        
-        RADeg, decDeg are used for figuring out pixel scales for background subtraction
-        
-        Returns kern2d, signalNorm, bckSubScaleArcmin
-        
-        """
-        
-        # We will cache the kernel... we also may want to re-load it later (for e.g. sky sim contamination tests)
-        freqLabel=int(mapDict['obsFreqGHz'])
-        kern2DFileName=self.diagnosticsDir+os.path.sep+"kern2d_%s_%d.fits" % (self.label, freqLabel)
-        if os.path.exists(kern2DFileName) == True:
-            return self.loadKernel(kern2DFileName)
-        
-        wcs=mapDict['wcs']
-        
-        # Build the matched-filter kernel in a small section of the map
-        # Apply the same difference of Gaussians high pass filter here
-        # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
-        kernelMaxArcmin=self.params['noiseParams']['kernelMaxArcmin']
-        #mapDict['bckSubScaleArcmin']=maxArcmin
-        keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
-                    'pointSourceRemoval']
-        kernelUnfilteredMapsDict={}
-        for k in keysWanted:
-            if k in list(mapDict.keys()):
-                kernelUnfilteredMapsDict[k]=mapDict[k]
-        kernelUnfilteredMapsDict['RADecSection']=RADecSection
-        kernelUnfilteredMapsDictList=[kernelUnfilteredMapsDict]
-        kernelLabel="realSpaceKernel_%s" % (self.label)
-        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
-        if os.path.exists(matchedFilterDir) == False:
-            os.makedirs(matchedFilterDir)
-        if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
-            os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
-        matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
-        matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
-                                         extName = mapDict['extName'],
-                                         diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
-        filteredMapDict=matchedFilter.buildAndApply()
-                
-        # Turn the matched filter into a smaller real space convolution kernel
-        # This means we have to roll off the kernel to 0 at some radius
-        # This is set by maxArcmin in the .par file
-        prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
-        rIndex=np.where(arcminRange > kernelMaxArcmin)[0][0]
-        mask=np.less(arcminRange, kernelMaxArcmin)
-
-        # Alternatively, roll off to zero after the second zero crossing
-        # NOTE: now setting in the .par file, uncomment below to switch back
-        #segProf=ndimage.label(np.greater(prof, 0))[0]
-        #rIndex=np.where(segProf == 2)[0][0]
-        #maxArcmin=arcminRange[rIndex]
-
-        # Kernel can be either fully 2d, or be azimuthally averaged... in the ACTPol E-D56 paper, we used the latter
-        if self.params['noiseParams']['symmetrize'] == False:
-            profile2d=fft.ifft2(matchedFilter.G).real
-            profile2d=fft.fftshift(profile2d)
-        else:
-            rRadians=np.radians(arcminRange/60.)
-            r2p=interpolate.interp1d(rRadians[mask], prof[mask], bounds_error=False, fill_value=0.0)
-            profile2d=r2p(matchedFilter.radiansMap)
-            
-        y, x=np.where(profile2d == profile2d.max())
-        y=y[0]
-        x=x[0]
-        yMin=y-rIndex
-        yMax=y+rIndex
-        xMin=x-rIndex
-        xMax=x+rIndex
-        if (yMax-yMin) % 2 == 0:
-            yMin=yMin+1
-        if (xMax-xMin) % 2 == 0:
-            xMin=xMin+1
-        kern2d=profile2d[yMin:yMax, xMin:xMax]
-        kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
-        
-        # This is what to high pass filter on
-        if 'bckSubScaleArcmin' in self.params.keys():
-            bckSubScaleArcmin=self.params['bckSubScaleArcmin']
-        else:
-            bckSubScaleArcmin=arcminRange[prof == prof.min()][0]
-        
-        # Use the signal map we made using MatchedFilter to figure out how much it has been rolled off by:
-        # 1. The high pass filter (bck sub step)
-        # 2. The matched filter itself (includes beam)
-        signalMap=filteredMapDict['signalMap']      # Note that this has had the beam applied already
-        signalProperties=filteredMapDict['inputSignalProperties']
-        # Should add an applyKernel function to do all this
-        if self.params['bckSub'] == True and bckSubScaleArcmin > 0:
-            filteredSignal=maps.subtractBackground(signalMap, wcs, RADeg = RADeg, decDeg = decDeg,
-                                                       smoothScaleDeg = bckSubScaleArcmin/60.0)
-        else:
-            filteredSignal=np.zeros(signalMap.shape)+signalMap
-        filteredSignal=ndimage.convolve(filteredSignal, kern2d)
-        if self.params['outputUnits'] == 'yc':
-            # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-            filteredSignal=maps.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
-            signalNorm=signalProperties['y0']/filteredSignal.max()
-        elif self.params['outputUnits'] == 'Y500':
-            # Normalise such that peak value in filtered map == Y500 for the input SZ cluster model
-            # We can get this from yc and the info in signalProperties, so we don't really need this
-            print("implement signal norm for %s" % (self.params['outputUnits']))
-            IPython.embed()
-            sys.exit()
-        elif self.params['outputUnits'] == 'uK':
-            # Normalise such that peak value in filtered map == peak value of source in uK
-            # We take out the effect of the pixel window function here - this assumes we're working with sources
-            # NOTE: for amplitude, the mappers want the amplitude of the delta function, not the beam
-            # NOTE: we're now undoing the pixel window function in filterMaps (at the top)
-            #signalNorm=1.0/(signalProperties['pixWindowFactor']*filteredSignal.max())
-            signalNorm=1.0/filteredSignal.max()
-        elif self.params['outputUnits'] == 'Jy/beam':
-            # Normalise such that peak value in filtered map == flux density of the source in Jy/beam
-            print("implement signal norm for %s" % (self.params['outputUnits']))
-            IPython.embed()
-            sys.exit()
-        else:
-            raise Exception("didn't understand 'outputUnits' given in the .par file")
-        
-        # Save 2d kernel - we need this (at least for the photometry ref scale) to calc Q later
-        # Add bckSubScaleArcmin to the header
-        kernWCS=wcs.copy()
-        if self.params['bckSub'] == True:
-            kernWCS.header['BCKSCALE']=bckSubScaleArcmin
-        kernWCS.header['SIGNORM']=signalNorm
-        RADecLabel=str(RADecSection).replace(",", "_").replace(" ", "").replace("[", "").replace("]", "").replace(".", "p")
-        astImages.saveFITS(kern2DFileName, kern2d, kernWCS)
-        
-        # Filter profile plot   
-        # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
-        np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s_%d.npz" % (self.label, freqLabel), 
-                 arcminRange = arcminRange, prof = prof, mask = mask, bckSubScaleArcmin = bckSubScaleArcmin)
-        plotSettings.update_rcParams()
-        #fontDict={'size': 18, 'family': 'serif'}
-        plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.13, 0.12, 0.86, 0.86])
-        #plt.tick_params(axis='both', which='major', labelsize=15)
-        #plt.tick_params(axis='both', which='minor', labelsize=15)
-        tck=interpolate.splrep(arcminRange[mask], prof[mask])
-        plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
-        #plt.plot(arcminRange[mask], prof[mask])
-        plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
-        plt.xlabel("$\\theta$ (arcmin)")
-        plt.ylabel("Amplitude")
-        #plt.title(self.label)
-        #plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
-        plt.xlim(0, arcminRange[mask].max())
-        plt.plot([bckSubScaleArcmin]*3, np.linspace(-1, 1.2, 3), 'k--')
-        plt.ylim(-0.2, 1.2)
-        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s_%d.pdf" % (self.label, freqLabel))
-        plt.close()
-        
-        return kern2d, signalNorm, bckSubScaleArcmin
-
+      
 
     def makeNoiseMap(self, mapData):
         """Estimate the noise map using local RMS measurements on a grid, over the whole filtered map.
@@ -849,26 +483,400 @@ class RealSpaceMatchedFilter(MapFilter):
                 
         return RMSMap
     
+#------------------------------------------------------------------------------------------------------------
+class MatchedFilter(MapFilter):
+    """Multi-frequency matched filter...
     
-    def _makeCorrMap(self, dataCube, outFileName):
-        """This is a test: not generalized, just for 90 + 150 GHz for now. Records off-diagonal correlation coeff
-        measured in the same cells as makeNoiseMap uses. Saves as a map in diagnosticsDir.
+    """
+
+    def buildAndApply(self):
+        
+        print(">>> Building filter %s ..." % (self.label))
+        
+        # NOTE: We've tidied up the config file, so we don't have to feed in surveyMask and psMask like this
+        # (see startUp.parseConfig)
+        surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
+        psMask=self.unfilteredMapsDictList[0]['psMask']
+        
+        # Noise and foregrounds power spectra (for calculating covariance)
+        fMapsToFilter=[]
+        for mapDict in self.unfilteredMapsDictList:   
+            fMapsToFilter.append(enmap.fft(enmap.apod(mapDict['data'], self.apodPix)))
+        fMapsToFilter=np.array(fMapsToFilter)
+        
+        # Smoothing noise here is essential
+        kernelSize=(3,3)
+        noiseCov=[]
+        for i in range(len(self.unfilteredMapsDictList)):
+            iMap=self.unfilteredMapsDictList[i]
+            row=[]
+            for j in range(len(self.unfilteredMapsDictList)):
+                jMap=self.unfilteredMapsDictList[j]
+                if self.params['noiseParams']['method'] == 'dataMap':
+                    NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
+                elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
+                    NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
+                    NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
+                    NP=np.maximum.reduce([NP, NPCMB])
+                else:
+                    raise Exception("Other noise models not yet re-implemented")
+                NP=ndimage.gaussian_filter(NP, kernelSize)
+                row.append(NP)
+            noiseCov.append(row)
+        noiseCov=np.array(noiseCov)
+        
+        # Signal frequency weighting
+        w=[]
+        for mapDict in self.unfilteredMapsDictList:
+            if self.params['outputUnits'] == 'yc':
+                w.append(signals.fSZ(mapDict['obsFreqGHz']))
+            elif self.params['outputUnits'] == 'uK':
+                w.append(1.0)
+            else:
+                raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+        w=np.array(w)
+            
+        # Make FFTs of unit-normalised signal templates for each band
+        signalMapsList=[]
+        fSignalsArr=[]
+        for mapDict in self.unfilteredMapsDictList:
+            signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+            signalMap=signalMapDict['signalMap']
+            fSignal=enmap.fft(signalMap)
+            signalMapsList.append(signalMap)
+            fSignalsArr.append(fSignal)
+        fSignalsArr=np.array(fSignalsArr)
+                
+        # Build the filter itself
+        # NOTE: commented-out norm isn't right here... but doing with signal sims anyway...
+        t0=time.time()
+        filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]])
+        #norm=0
+        for y in range(0, self.shape[0]):
+            for x in range(0, self.shape[1]):
+                try:
+                    filt[:, y, x]=np.dot(np.linalg.inv(noiseCov[:, :, y, x]), w*abs(fSignalsArr[:, y, x])) 
+                except:
+                    continue
+                #norm=norm+np.dot(w*abs(fSignalsArr[:, y, x]), filt[:, y, x])
+        self.G=filt#*norm
+        t1=time.time()
+                        
+        # Apply filter - normalisation figured out below...
+        filteredMap=np.real(enmap.ifft(fMapsToFilter*self.G, normalize = False)).sum(axis = 0)
+
+        # Use a map with known input signal to figure out how much it has been rolled off by     
+        if self.params['outputUnits'] == 'yc':
+            # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
+            signalMaps=[]
+            fSignalMaps=[]
+            y0=2e-4
+            tol=1e-6
+            for mapDict in self.unfilteredMapsDictList:
+                deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                                                        deltaT0 = deltaT0)
+                if abs(y0-signalMapDict['inputSignalProperties']['y0']) > tol:
+                    raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
+                signalMaps.append(signalMapDict['signalMap'])
+                fSignal=enmap.fft(signalMapDict['signalMap'])
+                fSignalMaps.append(fSignal)
+            signalMaps=np.array(signalMaps)
+            fSignalMaps=np.array(fSignalMaps)        
+            filteredSignal=np.real(enmap.ifft(fSignalMaps*self.G, normalize = False)).sum(axis = 0)
+            signalNorm=y0/filteredSignal.max()
+            mapUnits='yc'
+            combinedObsFreqGHz='yc'
+            beamSolidAngle_nsr=0.0   # not used for clusters...
+        elif self.params['outputUnits'] == 'uK':
+            if len(self.unfilteredMapsDictList) > 1:
+                raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+            combinedObsFreqGHz=float(list(self.beamSolidAnglesDict.keys())[0])  # Make less clunky...
+            signalMaps=[]
+            fSignalMaps=[]
+            for mapDict in self.unfilteredMapsDictList:
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+                signalMaps.append(signalMapDict['signalMap'])
+                fSignal=enmap.fft(signalMapDict['signalMap'])
+                fSignalMaps.append(fSignal)
+                #inputSignalProperties.append(signalMapDict['inputSignalProperties'])
+            signalMaps=np.array(signalMaps)
+            fSignalMaps=np.array(fSignalMaps)        
+            filteredSignal=np.real(enmap.ifft(fSignalMaps*self.G, normalize = False)).sum(axis = 0)
+            signalNorm=1.0/filteredSignal.max()
+            mapUnits='uK'
+            beamSolidAngle_nsr=self.beamSolidAnglesDict[combinedObsFreqGHz]
+        else:
+            raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+        
+        # Apply normalisation
+        filteredMap=filteredMap*signalNorm
+
+        # Apply the point source mask here (before noise estimates etc.)
+        filteredMap=filteredMap*psMask
+                
+        # Make noise and S/N maps
+        RMSMap=self.makeNoiseMap(filteredMap)
+        validMask=np.greater(RMSMap, 0)
+        SNMap=np.zeros(filteredMap.shape)+filteredMap
+        SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
+                                                                
+        # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
+        # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
+        if 'edgeTrimArcmin' in self.params.keys():
+            trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+        else:
+            gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+            trimSizePix=int(round(gridSize*3.0))
+        edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
+        edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        filteredMap=filteredMap*edgeCheck
+        apodMask=np.not_equal(filteredMap, 0)
+        surveyMask=edgeCheck*surveyMask*psMask
+        del edgeCheck
+
+        # Apply final survey mask to signal-to-noise map and RMS map
+        # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
+        SNMap=SNMap*surveyMask
+        SNMap[np.isnan(SNMap)]=0.
+        RMSMap=RMSMap*surveyMask
+
+        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (self.extName)
+        if os.path.exists(maskFileName) == False:
+            astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
+        
+        if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
+            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
+            astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
+                                                
+        self.saveRealSpaceFilterProfile()   
+            
+        # NOTE: What to do about frequency here? Generalise for non-SZ
+        return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
+                'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}
+
+#------------------------------------------------------------------------------------------------------------
+class RealSpaceMatchedFilter(MapFilter):
+    """Makes a matched-filter kernel using the noise properties of a specified region of the map (e.g.
+    the deepest part) in Fourier space, which is converted into real space and truncated such that the 
+    kernel is small enough in footprint to be applied by directly convolving with the map in real space 
+    in a short amount of time. 
+    
+    First though we high-pass filter the maps on a similar scale using a Mexican hat (difference of Gaussian
+    smoothed images), to get rid of large scale noise from CMB and atmosphere.
+    
+    Tne S/N map is constructed, measuring locally on a scale 3 x that of the filter kernel, with 3-sigma
+    clipping applied. This allows us to take into account how the noise level varies across the map.
+    
+    A rank filter is used to zap noisy regions at the edge of the map, where the RMS values are
+    not accurate.
+    
+    Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
+    
+    A map of the final area searched for clusters called 'areaMask.fits' is written in the diagnostics/ 
+    folder.
+        
+    """       
+    
+    def loadKernel(self, kern2DFileName):
+        """Loads a previously cached kernel.
+        
+        Returns kern2d, signalNorm, bckSubScaleArcmin
         
         """
+        
+        print("... loading previously cached kernel %s ..." % (kern2DFileName))
+        with pyfits.open(kern2DFileName) as img:
+            kern2d=img[0].data
+            signalNorm=img[0].header['SIGNORM']
+            if 'BCKSCALE' in img[0].header.keys():
+                bckSubScaleArcmin=img[0].header['BCKSCALE']
+            else:
+                bckSubScaleArcmin=0
                 
+        return kern2d, signalNorm, bckSubScaleArcmin
+
+        
+    def buildKernel(self, RADecSection, RADeg = 'centre', decDeg = 'centre'):
+        """Builds the real space kernel itself. 
+        
+        RADeg, decDeg are used for figuring out pixel scales for background subtraction
+        
+        Returns kern2d, signalNorm, bckSubScaleArcmin
+        
+        """
+        
+        kern2DFileName=self.diagnosticsDir+os.path.sep+"kern2d_%s.fits" % (self.label)
+        if os.path.exists(kern2DFileName) == True:
+            return self.loadKernel(kern2DFileName)
+        
+        wcs=self.wcs
+
+        # Build the matched-filter kernel in a small section of the map
+        # Apply the same difference of Gaussians high pass filter here
+        # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
+        #mapDict['bckSubScaleArcmin']=maxArcmin
+        keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
+                    'pointSourceRemoval']
+        kernelUnfilteredMapsDictList=[]
+        for mapDict in self.unfilteredMapsDictList:
+            kernelUnfilteredMapsDict={}
+            for k in keysWanted:
+                if k in list(mapDict.keys()):
+                    kernelUnfilteredMapsDict[k]=mapDict[k]
+            kernelUnfilteredMapsDict['RADecSection']=RADecSection
+            kernelUnfilteredMapsDictList.append(kernelUnfilteredMapsDict)
+        kernelLabel="realSpaceKernel_%s" % (self.label)
+        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel
+        if os.path.exists(matchedFilterDir) == False:
+            os.makedirs(matchedFilterDir)
+        if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
+            os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
+        matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
+        matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
+                                         extName = mapDict['extName'],
+                                         diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
+        filteredMapDict=matchedFilter.buildAndApply()   
+        
+        # Turn the matched filter into a smaller real space convolution kernel
+        # This means we have to roll off the kernel to 0 at some radius
+        # This is set by maxArcmin in the config file
+        kernelMaxArcmin=self.params['noiseParams']['kernelMaxArcmin']
+        prof, arcminRange=matchedFilter.makeRealSpaceFilterProfile()
+        rIndex=np.where(arcminRange > kernelMaxArcmin)[0][0]
+        mask=np.less(arcminRange, kernelMaxArcmin)
+
+        # Kernel can be either fully 2d, or be azimuthally averaged... in the ACTPol E-D56 paper, we used the latter
+        if self.params['noiseParams']['symmetrize'] == False:
+            profile2d=fft.ifft2(matchedFilter.G).real
+            profile2d=fft.fftshift(profile2d)
+        else:
+            rRadians=np.radians(arcminRange/60.)
+            profile2d=[]
+            for i in range(prof.shape[0]):
+                r2p=interpolate.interp1d(rRadians[mask], prof[i, mask], bounds_error=False, fill_value=0.0)
+                profile2d.append(r2p(matchedFilter.radiansMap))
+            profile2d=np.array(profile2d)
+        
+        # z is not needed here - just because we switched to multi-freq throughout
+        z, y, x=np.where(abs(profile2d) == abs(profile2d).max()) 
+        #y, x=np.where(profile2d[0] == profile2d[0].max())
+        y=y[0]
+        x=x[0]
+        yMin=y-rIndex
+        yMax=y+rIndex
+        xMin=x-rIndex
+        xMax=x+rIndex
+        if (yMax-yMin) % 2 == 0:
+            yMin=yMin+1
+        if (xMax-xMin) % 2 == 0:
+            xMin=xMin+1
+        kern2d=profile2d[:, yMin:yMax, xMin:xMax]
+        kern2dRadiansMap=matchedFilter.radiansMap[yMin:yMax, xMin:xMax]
+
+        # This is what to high pass filter on
+        if 'bckSubScaleArcmin' in self.params.keys():
+            bckSubScaleArcmin=self.params['bckSubScaleArcmin']
+        else:
+            # This is here just so we can reproduce old results where this was done automatically
+            # Now we have to fiddle about a bit to check the sign of the filter 
+            # (depends on spectral response)
+            # We're only considering the first frequency given in a set of multi-freq maps
+            if np.greater(prof[0, 0], 0) == True:
+                func=np.min
+            else:
+                func=np.max
+            bckSubScaleArcmin=arcminRange[prof[0] == func(prof[0])][0]
+            
+        # Use a map with known input signal to figure out how much it has been rolled off by:
+        # 1. The high pass filter (bck sub step)
+        # 2. The matched filter itself (includes beam)       
+        # NOTE: This is SZ-specific again and needs generalising
+        signalMaps=[]
+        #inputSignalProperties=[]
+        y0=2e-4
+        tol=1e-6
+        for mapDict in self.unfilteredMapsDictList:
+            deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+            signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                                                     deltaT0 = deltaT0)
+            if abs(y0-signalMapDict['inputSignalProperties']['y0']) > tol:
+                raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
+            signalMaps.append(signalMapDict['signalMap'])
+            #inputSignalProperties.append(signalMapDict['inputSignalProperties'])
+        signalMaps=np.array(signalMaps)
+        
+        if self.params['bckSub'] == True and bckSubScaleArcmin > 0:
+            filteredSignal=[]
+            for i in range(signalMaps.shape[0]):
+                filteredSignal.append(maps.subtractBackground(signalMaps[i], wcs, RADeg = RADeg, decDeg = decDeg,
+                                                              smoothScaleDeg = bckSubScaleArcmin/60.0))
+            filteredSignal=np.array(filteredSignal)
+        else:
+            filteredSignal=np.zeros(signalMaps.shape)+signalMaps
+        for i in range(kern2d.shape[0]):
+            filteredSignal[i]=ndimage.convolve(filteredSignal[i], kern2d[i])
+        filteredSignal=filteredSignal.sum(axis = 0)
+        if self.params['outputUnits'] == 'yc':
+            # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
+            #filteredSignal=maps.convertToY(filteredSignal, obsFrequencyGHz = signalProperties['obsFreqGHz'])
+            signalNorm=y0/filteredSignal.max()
+        
+        # Save 2d kernel - we need this (at least for the photometry ref scale) to calc Q later
+        # Add bckSubScaleArcmin to the header
+        kernWCS=wcs.copy()
+        if self.params['bckSub'] == True:
+            kernWCS.header['BCKSCALE']=bckSubScaleArcmin
+        kernWCS.header['SIGNORM']=signalNorm
+        astImages.saveFITS(kern2DFileName, kern2d, kernWCS)
+        
+        # Filter profile plot   
+        # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
+        np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s.npz" % (self.label), 
+                 arcminRange = arcminRange, prof = prof, mask = mask, bckSubScaleArcmin = bckSubScaleArcmin)
+        plotSettings.update_rcParams()
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.13, 0.12, 0.86, 0.86])
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)
+        for row, mapDict in zip(prof, self.unfilteredMapsDictList):
+            tck=interpolate.splrep(arcminRange[mask], row[mask])
+            plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
+            #plt.plot(arcminRange[mask], prof[mask])
+            plt.plot(plotRange, interpolate.splev(plotRange, tck), '-', label = '%d GHz' % (mapDict['obsFreqGHz']))
+        plt.xlabel("$\\theta$ (arcmin)")
+        plt.ylabel("Amplitude")
+        plt.legend()
+        #plt.title(self.label)
+        #plt.plot(arcminRange[mask], [0]*len(arcminRange[mask]), 'k--')
+        plt.xlim(0, arcminRange[mask].max())
+        if self.params['bckSub'] == True:
+            plt.plot([bckSubScaleArcmin]*3, np.linspace(-1.2, 1.2, 3), 'k--')
+        plt.ylim(-1.2, 0.2)
+        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s.pdf" % (self.label))
+        plt.close()
+        
+        return kern2d, signalNorm, bckSubScaleArcmin
+    
+
+    def makeNoiseMap(self, mapData):
+        """Estimate the noise map using local RMS measurements on a grid, over the whole filtered map.
+        
+        """
+        
         #print "... making SN map ..."
         gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
         #gridSize=rIndex*3
         overlapPix=int(gridSize/2)
-        numXChunks=dataCube[0].shape[1]/gridSize
-        numYChunks=dataCube[0].shape[0]/gridSize
-        yChunks=np.linspace(0, dataCube[0].shape[0], numYChunks+1, dtype = int)
-        xChunks=np.linspace(0, dataCube[0].shape[1], numXChunks+1, dtype = int)
+        numXChunks=mapData.shape[1]/gridSize
+        numYChunks=mapData.shape[0]/gridSize
+        yChunks=np.linspace(0, mapData.shape[0], numYChunks+1, dtype = int)
+        xChunks=np.linspace(0, mapData.shape[1], numXChunks+1, dtype = int)
         #SNMap=np.zeros(mapData.shape)
-        apodMask=np.logical_and(np.not_equal(dataCube[0], 0), np.not_equal(dataCube[1], 0))
+        apodMask=np.not_equal(mapData, 0)
         # We could make below behaviour default if match photFilter? Would need to see photFilter though...
         #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
-        covMap=np.zeros(dataCube[0].shape)  # We're assuming 90, 150 GHz only, so we only need to collect one of the off diagonal terms
+        RMSMap=np.zeros(mapData.shape)
         for i in range(len(yChunks)-1):
             for k in range(len(xChunks)-1):
                 y0=yChunks[i]-overlapPix
@@ -877,105 +885,175 @@ class RealSpaceMatchedFilter(MapFilter):
                 x1=xChunks[k+1]+overlapPix
                 if y0 < 0:
                     y0=0
-                if y1 > dataCube[0].shape[0]:
-                    y1=dataCube[0].shape[0]
+                if y1 > mapData.shape[0]:
+                    y1=mapData.shape[0]
                 if x0 < 0:
                     x0=0
-                if x1 > dataCube[0].shape[1]:
-                    x1=dataCube[0].shape[1]
-                chunkValues=dataCube[:, y0:y1, x0:x1]
-                goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
-                cov=np.corrcoef(chunkValues[0][goodAreaMask], chunkValues[1][goodAreaMask])
-                covMap[y0:y1, x0:x1]=cov[0, 1]
-        astImages.saveFITS(outFileName, covMap, self.wcs)
-    
-    
-    def makeSZMap(self, filteredMaps):
-        """Combines maps at multiple frequencies (or just one) to make a Compton yc map, using inverse
-        variance weighting of the single frequency maps.
-        
-        Note:
-            This routine will write a FITS datacube containing the weights used to the `diagnostics/`
-            directory, if `saveFreqWeightMap` is set to True in `self.params`.
-            
-        Args:
-            filteredMaps: A dictionary containing maps. Each key gives the corresponding map frequency 
-                in GHz.
-        
-        Returns:
-            yc map, noise map, signal-to-noise map
-        
-        """
-        
-        dataCube=[]
-        noiseCube=[]
-        obsFreqs=[]
-        for key in list(filteredMaps.keys()):
-            obsFreqs.append(float(key))
-            mapData=filteredMaps[key]
-            mapData=maps.convertToY(mapData, float(key))
-            RMSMap=self.makeNoiseMap(mapData)
-            dataCube.append(mapData)
-            noiseCube.append(RMSMap)
-        dataCube=np.array(dataCube)
-        noiseCube=np.array(noiseCube)
-        
-        # Test: how correlated are the filtered maps? This is currently hardcoded for two frequencies...
-        #if dataCube.ndim == 3 and 'saveCorrMap' in self.params.keys() and self.params['saveCorrMap'] == True:
-            #self._makeCorrMap(dataCube, self.diagnosticsDir+os.path.sep+"corrMap_signal.fits")
-            #self._makeCorrMap(noiseCube, self.diagnosticsDir+os.path.sep+"corrMap_noiseLevel.fits")
+                if x1 > mapData.shape[1]:
+                    x1=mapData.shape[1]
+                chunkValues=mapData[y0:y1, x0:x1]
 
-        # Zap very low values as rounding errors (so have zero weight in combination)
-        noiseCube[np.less(noiseCube, 1e-7)]=0.
+                goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
                 
-        # Combining - inverse variance weighted average
-        if dataCube.shape[0] > 1:
-            invVar=np.zeros(noiseCube.shape)
-            mask=noiseCube > 0
-            invVar[mask]=1./noiseCube[mask]**2
-            #invVar=1./noiseCube**2
-            #invVar[np.isinf(invVar)]=0.
-            # Use mask to flag pixels with zero everywhere
-            zeroMask=np.equal(np.sum(invVar, axis = 0), 0)
-            for z in range(invVar.shape[0]):
-                invVar[z][zeroMask]=1.
-            # Make relative weights cube from inv var (for convenience really)
-            # Since we used inverse variance for making a combined y0~ estimate,
-            # we need these to weight fRel in mass estimates (see signals.calcM500Fromy0)
-            relWeightsCube=np.zeros(dataCube.shape)
-            for i in range(invVar.shape[0]):
-                relWeightsCube[i]=invVar[i]/np.sum(invVar, axis = 0)
-            weightedMap=np.average(dataCube, weights = invVar, axis = 0)
-            weightedNoise=np.sqrt(1./np.sum(invVar, axis = 0))
-            weightedNoise[np.isinf(weightedNoise)]=0.
-        else:
-            weightedMap=dataCube[0]
-            weightedNoise=noiseCube[0]
-            relWeightsCube=np.ones(dataCube.shape)
-        
-        weightedSNMap=np.zeros(weightedMap.shape)
-        mask=np.greater(weightedNoise, 0)
-        weightedSNMap[mask]=weightedMap[mask]/weightedNoise[mask]
-        
-        # Write out relative weights cube as .fits - handy not just for fRel, but also for coverage checking
-        # i.e., we can put this info into object catalogs - indicate where map was 148 GHz only, for example
-        # We store frequency info in FITS header as 0FREQGHZ 1FREQGHZ etc.
-        if 'saveFreqWeightMap' in self.params and self.params['saveFreqWeightMap'] == True:
-            cubeWCS=self.wcs.copy()
-            count=0
-            for obsFreqGHz in obsFreqs:
-                cubeWCS.header['%dFREQGHZ' % (count)]=obsFreqGHz
-                count=count+1
-            outFileName=self.diagnosticsDir+os.path.sep+"freqRelativeWeights_%s.fits" % (self.label)
-            astImages.saveFITS(outFileName, relWeightsCube, cubeWCS)
+                if 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'biweight':
+                    if goodAreaMask.sum() >= 10:
+                        # Astropy version is faster but gives identical results
+                        chunkRMS=apyStats.biweight_scale(chunkValues[goodAreaMask], c = 9.0, modify_sample_size = True)
+                        #chunkRMS=astStats.biweightScale(chunkValues[goodAreaMask], 6.0)
+                    else:
+                        chunkRMS=0.
+                else:
+                    # Default: 3-sigma clipped stdev
+                    if np.not_equal(chunkValues, 0).sum() != 0:
+                        goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                        chunkMean=np.mean(chunkValues[goodAreaMask])
+                        chunkRMS=np.std(chunkValues[goodAreaMask])
+                        sigmaClip=3.0
+                        for c in range(10):
+                            mask=np.less(abs(chunkValues), abs(chunkMean+sigmaClip*chunkRMS))
+                            mask=np.logical_and(goodAreaMask, mask)
+                            if mask.sum() > 0:
+                                chunkMean=np.mean(chunkValues[mask])
+                                chunkRMS=np.std(chunkValues[mask])
+                    else:
+                        chunkRMS=0.
                 
-        return weightedMap, weightedNoise, weightedSNMap
+                if chunkRMS > 0:
+                    RMSMap[y0:y1, x0:x1]=chunkRMS
                 
+        return RMSMap
+    
             
     def buildAndApply(self):
         
         print(">>> Building filter %s ..." % (self.label))
+
+        # NOTE: Since survey masks and point source masks are always the same, we should tidy up the config file
+        surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
+        psMask=self.unfilteredMapsDictList[0]['psMask']
         
+        # Noise region to use
+        RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
+        if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
+            kernelDict={'RADecSection': [self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
+                                         self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']],
+                                       'applyDecMin': decMin, 'applyDecMax': decMax,
+                                       'applyRAMin': RAMin, 'applyRAMax': RAMax}
+            print("... taking noise region from tileDeck image header: %s ..." % (kernelDict['RADecSection']))
+        else:
+            kernelDict={'RADecSection': self.params['noiseParams']['RADecSection'],
+                         'applyDecMin': decMin, 'applyDecMax': decMax,
+                         'applyRAMin': RAMin, 'applyRAMax': RAMax}
+        kernelDict['applyDecCentre']=(decMax+decMin)/2.
+        kernelDict['applyRACentre']=(RAMax+RAMin)/2.
+        
+        # Build kernel   
+        kern2d, signalNorm, bckSubScaleArcmin=self.buildKernel(kernelDict['RADecSection'], 
+                                                               RADeg = kernelDict['applyRACentre'], 
+                                                               decDeg = kernelDict['applyDecCentre'])
+        kernelDict['kern2d']=kern2d
+        kernelDict['signalNorm']=signalNorm
+        kernelDict['bckSubScaleArcmin']=bckSubScaleArcmin
+                
+        # Apply the high pass filter - subtract background on larger scales using difference of Gaussians 
+        filteredMap=[]
+        for mapDict in self.unfilteredMapsDictList:
+            filteredMap.append(maps.subtractBackground(mapDict['data'], self.wcs, 
+                                                       RADeg = kernelDict['applyRACentre'], 
+                                                       decDeg = kernelDict['applyDecCentre'],
+                                                       smoothScaleDeg = kernelDict['bckSubScaleArcmin']/60.))
+        filteredMap=np.array(filteredMap)
+        #if 'saveHighPassMap' in self.params and self.params['saveHighPassMap'] == True and self.params['bckSub'] == True:
+            #bckSubFileName=self.diagnosticsDir+os.path.sep+"bckSub_%s.fits" % (self.label)
+            ##astImages.saveFITS(bckSubFileName, bckSubData, mapDict['wcs'])
+            #astImages.saveFITS(bckSubFileName, mapData, mapDict['wcs'])
+        
+        # Apply the kernel
+        t0=time.time()
+        print("... convolving map with kernel ...")
+        for i in range(filteredMap.shape[0]):
+            filteredMap[i]=ndimage.convolve(filteredMap[i], kernelDict['kern2d'][i])
+        filteredMap=filteredMap.sum(axis = 0)
+        t1=time.time()
+        print("... took %.3f sec ..." % (t1-t0))
+        
+        # Apply the normalisation
+        filteredMap=filteredMap*kernelDict['signalNorm']
+                                        
+        # Apply the point source mask here (before noise estimates etc.)
+        filteredMap=filteredMap*psMask
+        
+        # Make noise and S/N maps
+        RMSMap=self.makeNoiseMap(filteredMap)
+        validMask=np.greater(RMSMap, 0)
+        SNMap=np.zeros(filteredMap.shape)+filteredMap
+        SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
+        
+        # Temporary - do properly later
+        mapUnits='yc'
+        combinedObsFreqGHz='yc'
+        beamSolidAngle_nsr=0.0   # not used...
+
+        ## Convert to whatever output units we want:
+        ## Jy/sr (should go to Jy/beam eventually) for sources
+        ## yc for SZ clusters
+        #if 'outputUnits' in list(self.params.keys()):
+            #if self.params['outputUnits'] == 'yc':
+                ## Output of below is already in yc
+                #combinedMap, RMSMap, SNMap=self.makeSZMap(filteredMaps)
+                #combinedObsFreqGHz='yc'
+                #mapUnits='yc'
+                #beamSolidAngle_nsr=0.0   # not used...
+            #elif self.params['outputUnits'] == 'uK':
+                #if len(list(filteredMaps.keys())) > 1:
+                    #raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+                #keyFreq=list(filteredMaps.keys())[0]
+                #combinedMap=filteredMaps[keyFreq]
+                #combinedObsFreqGHz=float(keyFreq)
+                #RMSMap=self.makeNoiseMap(combinedMap)
+                #validMask=np.greater(RMSMap, 0)
+                #SNMap=np.zeros(combinedMap.shape)+combinedMap
+                #SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
+                ##SNMap[np.isinf(SNMap)]=0.
+                #mapUnits='uK'
+                #beamSolidAngle_nsr=self.beamSolidAnglesDict[combinedObsFreqGHz]
+            #else:
+                #raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+
+        # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
+        # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
+        if 'edgeTrimArcmin' in self.params.keys():
+            trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+        else:
+            gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+            trimSizePix=int(round(gridSize*3.0))
+        edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
+        edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        filteredMap=filteredMap*edgeCheck
+        apodMask=np.not_equal(filteredMap, 0)
+        surveyMask=edgeCheck*surveyMask*psMask
+        del edgeCheck
+
+        # Apply final survey mask to signal-to-noise map and RMS map
+        # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
+        SNMap=SNMap*surveyMask
+        SNMap[np.isnan(SNMap)]=0.
+        RMSMap=RMSMap*surveyMask
+
+        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (self.extName)
+        if os.path.exists(maskFileName) == False:
+            astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
+        
+        if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
+            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s.fits" % (self.label)
+            astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
+
+        return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
+                'SNMap': SNMap, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}
+    
+    
+        #---
+        # Old
         # We don't want to get rid of this option for the regular matched filter...
         # BUT we don't want it here... because of the way we're implementing the multi-frequency filter for SZ searches
         if 'mapCombination' in list(self.params.keys()):
@@ -992,30 +1070,15 @@ class RealSpaceMatchedFilter(MapFilter):
             # Make kernels at different decs (can add RA needed later if necessary)
             # Copes with CAR distortion at large | dec |
             # NOTE: the way this is done currently means we should pick something contiguous in dec direction at fixed RA
+            # NOTE: We should get rid of all this RADecSectionDict stuff since we're unlikely to go back to it
             RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
             if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
                 RADecSectionDictList=[{'RADecSection': [wcs.header['NRAMIN'], wcs.header['NRAMAX'], 
                                                         wcs.header['NDEMIN'], wcs.header['NDEMAX']],
                                        'applyDecMin': decMin, 'applyDecMax': decMax,
                                        'applyRAMin': RAMin, 'applyRAMax': RAMax}]
-                print("... taking noise from tileDeck image header: %s ..." % (RADecSectionDictList[0]['RADecSection']))
-                
-            elif self.params['noiseParams']['RADecSection'] == 'auto':
-                
-                if self.params['noiseParams']['method'] != 'CMBOnly':
-                    raise Exception("'auto' option for RADecSection disabled for all methods EXCEPT CMBOnly (needs fixing)")
-
-                # NOTE: hardcoded max size... if we're using CMBOnly, we don't care (no real noise) 
-                cRADeg, cDecDeg=wcs.getCentreWCSCoords()
-                maxSizeDeg=5.0
-                kernelBuildRAMin, kernelBuildRAMax, kernelBuildDecMin, kernelBuildDecMax=astCoords.calcRADecSearchBox(cRADeg, cDecDeg, maxSizeDeg)
-                
-                RADecSectionDictList=[{'RADecSection': [kernelBuildRAMin, kernelBuildRAMax, 
-                                                        kernelBuildDecMin, kernelBuildDecMax],
-                                       'applyDecMin': decMin, 'applyDecMax': decMax,
-                                       'applyRAMin': RAMin, 'applyRAMax': RAMax}]
-                #print "... taking noise from %s ..." % (RADecSectionDictList[0]['RADecSection'])
-                
+                print("... taking noise region from tileDeck image header: %s ..." % (RADecSectionDictList[0]['RADecSection']))
+                                
             elif self.params['noiseParams']['RADecSection'][2] == 'numDecSteps':
                 numDecSteps=float(self.params['noiseParams']['RADecSection'][3])
                 decEdges=np.linspace(decMin, decMax, numDecSteps+1)
@@ -1095,13 +1158,13 @@ class RealSpaceMatchedFilter(MapFilter):
                 print("... took %.3f sec ..." % (t1-t0))
                 # Apply the normalisation
                 mapData[yMin:yMax, :]=mapData[yMin:yMax, :]*RADecSectionDict['signalNorm']
-                        
+                                          
             # Apply the point source mask here (before noise estimates etc.)
             mapData=mapData*psMask
                         
             #filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=filteredMap
             filteredMaps['%d' % int(mapDict['obsFreqGHz'])]=mapData
-        
+
         # We don't need the filteredMaps dict from here, so zap it to save memory
         #del filteredMaps
         
@@ -1185,7 +1248,7 @@ class ArnaudModelFilter(MapFilter):
     
     """
     
-    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz):
+    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz, deltaT0 = None):
         """Makes a model signal template map.
         
         Returns dictionary of {'signalMap', 'inputSignalProperties'}
@@ -1195,7 +1258,8 @@ class ArnaudModelFilter(MapFilter):
         signalMap, modelDict=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
                                                                 mapObsFreqGHz, np.degrees(self.radiansMap),
                                                                 self.wcs, beamFileName, 
-                                                                GNFWParams = self.params['GNFWParams'])
+                                                                GNFWParams = self.params['GNFWParams'],
+                                                                deltaT0 = deltaT0)
         
         return {'signalMap': signalMap, 'inputSignalProperties': modelDict}
                 

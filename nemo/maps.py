@@ -32,24 +32,11 @@ np.random.seed()
               
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
-    """Converts mapData (in delta T) at given frequency to yc 
+    """Converts mapData (in delta T) at given frequency to y.
     
     """
-    # Convert into y: (deltaT/TCMB) = yf(x), y=(kB*sigmaT)/(me*c^2) * integral of (dl neTe)
-    # f(x) = [x*coth(x/2) -4][1+relativistic correction for high T] (coth = 1/tanh)
-    # x=h*freq/kB*TCMB
-    # Maps are in delta T
-    # Let's assume we're non-relativistic and isothermal
-    # all units in kelvin, metres, Hz, kg, etc
-    h=6.63e-34
-    kB=1.38e-23
-    sigmaT=6.6524586e-29
-    me=9.11e-31
-    c=3e8
-    TCMB=2.726
-    x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
-    fx=x*(1.0/math.tanh(x/2))-4.0
-    mapData=(mapData/(TCMB*1e6))/fx # remember, map is in uK  
+    fx=signals.fSZ(obsFrequencyGHz)    
+    mapData=(mapData/(signals.TCMB*1e6))/fx # remember, map is in deltaT uK 
     
     return mapData
 
@@ -58,21 +45,8 @@ def convertToDeltaT(mapData, obsFrequencyGHz = 148):
     """Converts mapData (in yc) to deltaT (micro Kelvin) at given frequency.
     
     """
-    # Convert into y: (deltaT/TCMB) = yf(x), y=(kB*sigmaT)/(me*c^2) * integral of (dl neTe)
-    # f(x) = [x*coth(x/2) -4][1+relativistic correction for high T] (coth = 1/tanh)
-    # x=h*freq/kB*TCMB
-    # Maps are in delta T
-    # Let's assume we're non-relativistic and isothermal
-    # all units in kelvin, metres, Hz, kg, etc
-    h=6.63e-34
-    kB=1.38e-23
-    sigmaT=6.6524586e-29
-    me=9.11e-31
-    c=3e8
-    TCMB=2.726
-    x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
-    fx=x*(1.0/math.tanh(x/2))-4.0
-    mapData=mapData*fx*(TCMB*1e6)   # into uK
+    fx=signals.fSZ(obsFrequencyGHz)   
+    mapData=mapData*fx*(signals.TCMB*1e6)   # into uK
     
     return mapData
 
@@ -650,8 +624,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
     
     # Save trimmed weights
-    if os.path.exists(diagnosticsDir+os.path.sep+"weights.fits") == False:
-        astImages.saveFITS(diagnosticsDir+os.path.sep+"weights.fits", weights, wcs)
+    if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName)) == False:
+        astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName), weights, wcs)
         
     return mapDict
 

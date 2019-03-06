@@ -26,6 +26,16 @@ def parseConfigFile(parDictFileName):
     
     with open(parDictFileName, "r") as stream:
         parDict=yaml.safe_load(stream)
+        # We've moved masks out of the individual map definitions in the config file
+        # (makes config files simpler as we would never have different masks across maps)
+        # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
+        maskKeys=['pointSourceMask', 'surveyMask']
+        for mapDict in parDict['unfilteredMaps']:
+            for k in maskKeys:
+                if k in parDict.keys():
+                    mapDict[k]=parDict[k]
+                else:
+                    mapDict[k]=None
         # Apply global filter options (defined in allFilters) to mapFilters
         # Note that anything defined in mapFilters has priority
         # Bit ugly... we only support up to three levels of nested dictionaries...
@@ -66,6 +76,9 @@ def parseConfigFile(parDictFileName):
         # Don't measure object shapes by default
         if 'measureShapes' not in parDict.keys():
             parDict['measureShapes']=False
+        # Don't reject objects in map border areas by default
+        if 'rejectBorder' not in parDict.keys():
+            parDict['rejectBorder']=0
         # This is to allow source finding folks to skip this option in .yml
         # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
         if 'photometryOptions' not in parDict.keys():

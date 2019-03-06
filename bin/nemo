@@ -21,6 +21,7 @@ import types
 import yaml
 import IPython
 pylab.matplotlib.interactive(False)
+plotSettings.update_rcParams()
 
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
