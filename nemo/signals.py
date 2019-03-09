@@ -16,6 +16,7 @@ import astropy.table as atpy
 from . import maps
 from . import catalogs
 from . import photometry
+from . import filters
 from . import gnfw
 from . import plotSettings
 from . import signals
@@ -131,16 +132,21 @@ def makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = 'default'):
     return {'tckP': tckP, 'theta500Arcmin': theta500Arcmin, 'rDeg': thetaDegRange}
 
 #------------------------------------------------------------------------------------------------------------
-def makeBeamModelSignalMap(degreesMap, wcs, beamFileName):
+def makeBeamModelSignalMap(degreesMap, wcs, beamFileName, deltaT0 = None):
     """Makes a 2d signal only map containing the given beam.
+    
+    deltaT0 specifies the amplitude of the input signal (in map units, e.g., uK) - this is only needed if this
+    routine is being used to inject sources (completely arbitrary for making filter kernels).
         
     Returns signalMap (2d array), inputSignalProperties
     
     """
     
-    # Load Matthew's beam profile
+    if deltaT0 is None:
+        deltaT0=1.0
+        
     beamData=np.loadtxt(beamFileName).transpose()
-    profile1d=beamData[1]
+    profile1d=deltaT0*beamData[1]
     rArcmin=beamData[0]*60.0
     
     # Turn 1d profile into 2d
@@ -151,7 +157,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beamFileName):
 
     # This used to contain info for undoing the pixel window function
     # But that's now done in mapFilters.filterMaps
-    inputSignalProperties={}
+    inputSignalProperties={'deltaT0': deltaT0}
                 
     return signalMap, inputSignalProperties
     
@@ -189,8 +195,8 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     theta500Arcmin=signalDict['theta500Arcmin']
     
     # Make cluster map (unit-normalised profile)
-    rDeg=np.linspace(0.0, 1.0, 5000)
-    profile1d=interpolate.splev(rDeg, tckP)
+    rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+    profile1d=interpolate.splev(rDeg, tckP, ext = 1)
     if deltaT0 is not None:
         profile1d=profile1d*deltaT0
         y0=maps.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
@@ -245,15 +251,11 @@ def fitQ(config):
     
     Needs a startUp.NemoConfig object.
         
-    Use GNFWParams (in parDict) to specify a different shape.
+    Use GNFWParams (in config.parDict) to specify a different shape.
     
     The calculation will be done in parallel, if MPIEnabled = True, and comm and rank are given, and extNames 
     is different for each rank. This is only needed for the first run of this routine by the nemoMass script.
-    
-    If extNames == [], then we figure out what the extNames are from the contents of the filteredMapsDir.
-    
-    NOTE: We're assuming that beamFileName is given under parDict['unfilteredMaps'].
-    
+            
     """
 
     if config.parDict['GNFWParams'] == 'default':
@@ -267,17 +269,21 @@ def fitQ(config):
     for f in filterList:
         if f['label'] == photFilterLabel:
             ref=f
-            
+    
     # M, z ranges for Q calc
     # NOTE: ref filter that sets scale we compare to must ALWAYS come first
     # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
     MRange=[ref['params']['M500MSun']]
     zRange=[ref['params']['z']]
-    #MRange=MRange+np.logspace(13.5, 16.8, 4).tolist()
-    #zRange=zRange+[0.01, 0.1, 0.2, 0.3, 0.6, 0.9, 1.5, 2.0]
     # This should cover theta500Arcmin range fairly evenly without using too crazy masses
-    theta500Arcmin_wanted=np.logspace(np.log10(1e-1), np.log10(500), 50)
-    zRange_wanted=np.zeros(50)
+    #minTheta500Arcmin=0.5
+    #maxTheta500Arcmin=20.0
+    minTheta500Arcmin=0.1
+    maxTheta500Arcmin=500.0
+    numPoints=50
+    #theta500Arcmin_wanted=np.logspace(np.log10(1e-1), np.log10(500), 50)
+    theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
+    zRange_wanted=np.zeros(numPoints)
     zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
     zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
     zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
@@ -295,11 +301,6 @@ def fitQ(config):
         MRange_wanted.append(M500)
     MRange=MRange+MRange_wanted
     zRange=zRange+zRange_wanted.tolist()
-    # Just for checking coverage
-    #theta500Arcmin=[]
-    #for M in MRange:
-        #for z in zRange:
-            #theta500Arcmin.append(np.degrees(np.arctan(calcR500Mpc(z, M)/astCalc.da(z)))*60.0)
     
     # Q calc - results for all tiles stored in one file
     outFileName=config.selFnDir+os.path.sep+"QFit.pickle"
@@ -313,54 +314,53 @@ def fitQ(config):
         for extName in config.extNames:        
             
             print("... %s ..." % (extName))
-            
-            # Some faffing to get map pixel scale        
-            with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName)) as img:
-                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-                RADeg, decDeg=wcs.getCentreWCSCoords()
-                clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 15.0)
-                wcs=clipDict['wcs']
-            
-            # NOTE: The block below is now only getting theta500 values, which could do elsewhere
-            # So this can probably be deleted eventually...
-            # Input signal maps to which we will apply filter(s)
-            # We don't actually care about freq here because we deal with pressure profile itself
-            # And Q measurement is relative 
-            theta500Arcmin=[]
-            signalMapDict={}
-            signalMap=np.zeros(clipDict['data'].shape)
-            degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 15.0)
-            for z, M500MSun in zip(zRange, MRange):
-                key='%.2f_%.2f' % (z, np.log10(M500MSun))
-                modelDict=makeArnaudModelProfile(z, M500MSun, 148.0, GNFWParams = GNFWParams)   
-                rDeg=modelDict['rDeg']
-                profile1d=interpolate.splev(rDeg, modelDict['tckP'])
-                r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-                signalMap=r2p(degreesMap)
-                # NOTE: missing a beam convolution here?
-                signalMapDict[key]=signalMap
-                theta500Arcmin.append(modelDict['theta500Arcmin'])
-            theta500Arcmin=np.array(theta500Arcmin)
 
-            # Set-up the beams and kernels
-            # NOTE: adjusted for tileDeck files, and we have the RA, dec footprint info to deal with too
+            # Load reference scale filter
+            foundFilt=False
+            for filt in config.parDict['mapFilters']:
+                if filt['label'] == config.parDict['photometryOptions']['photFilter']:
+                    foundFilt=True
+                    break
+            if foundFilt == False:
+                raise Exception("couldn't find filter that matches photFilter")
+            filterClass=eval('filters.%s' % (filt['class']))
+            filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
+                                  extName = extName, diagnosticsDir = config.diagnosticsDir)
+            filterObj.loadFilter()
+            
+            # Real space kernel or Fourier space filter?
+            if issubclass(filterObj.__class__, filters.RealSpaceMatchedFilter) == True:
+                realSpace=True
+            else:
+                realSpace=False
+            
+            # Set-up the beams
             beamsDict={}
             for mapDict in config.parDict['unfilteredMaps']:
                 obsFreqGHz=mapDict['obsFreqGHz']
                 beamsDict[obsFreqGHz]=mapDict['beamFileName']
-            kernsDict={}            
-            with pyfits.open(config.diagnosticsDir+os.path.sep+"kern2d_%s#%s.fits" % (photFilterLabel, extName)) as kernImg:
-                kern2d=kernImg[0].data
-                kernsDict={'kern2d': kern2d, 'header': kernImg[0].header}
             
-            # Filter maps with the ref kernel
-            # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
-            Q=[]
-            QTheta500Arcmin=[]
-            count=0
+            # Some faffing to get map pixel scale
+            with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName)) as img:
+                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+                extMap=img[0].data
+                RADeg, decDeg=wcs.getCentreWCSCoords()                
+                if realSpace == True:
+                    # Safe in this case to trim the map and save time/memory
+                    clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 15.0)
+                    wcs=clipDict['wcs']
+                    extMap=clipDict['data']
+            
+            # Input signal maps to which we will apply filter(s)
+            # NOTE: This is for Fourier filter, needs generalising
+            theta500Arcmin=[]
+            signalMapDict={}
+            signalMap=np.zeros(extMap.shape)
+            degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 15.0)
             for z, M500MSun in zip(zRange, MRange):
                 key='%.2f_%.2f' % (z, np.log10(M500MSun))
                 signalMaps=[]
+                fSignalMaps=[]
                 y0=2e-4
                 tol=1e-6
                 for obsFreqGHz in list(beamsDict.keys()):
@@ -370,26 +370,29 @@ def fitQ(config):
                                                                                degreesMap, wcs, 
                                                                                beamsDict[obsFreqGHz], 
                                                                                deltaT0 = deltaT0,
-                                                                               convolveWithBeam = False)
+                                                                               convolveWithBeam = False,
+                                                                               GNFWParams = config.parDict['GNFWParams'])
                     if abs(y0-inputProperties['y0']) > tol:
                         raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
-                    signalMaps.append(signalMap)
+                    if realSpace == True:
+                        signalMaps.append(signalMap)
+                    else:
+                        signalMaps.append(enmap.fft(signalMap))
                 signalMaps=np.array(signalMaps)
-                peakFilteredSignals=[]
-                if 'BCKSCALE' in kernsDict['header'].keys() and kernsDict['header']['BCKSCALE'] > 0.0:
-                    filteredSignal=[]
-                    for i in range(signalMaps.shape[0]):
-                        filteredSignal.append(maps.subtractBackground(signalMaps[i], wcs, RADeg = RADeg,
-                                                                      decDeg = decDeg,
-                                                                      smoothScaleDeg = kernsDict['header']['BCKSCALE']/60.))
-                    filteredSignal=np.array(filteredSignal)
-                else:
-                    filteredSignal=np.zeros(signalMaps.shape)+signalMaps
-                for i in range(kern2d.shape[0]):
-                    filteredSignal[i]=ndimage.convolve(filteredSignal[i], kern2d[i])
-                filteredSignal=filteredSignal.sum(axis = 0)
-                peakFilteredSignal=filteredSignal.max()*kernsDict['header']['SIGNORM']
-                if peakFilteredSignal not in Q and theta500Arcmin[count] > 1:   # NOTE: this is to avoid problems at theta500 < beam size
+                signalMapDict[key]=signalMaps
+                theta500Arcmin.append(inputProperties['theta500Arcmin'])
+            theta500Arcmin=np.array(theta500Arcmin)
+            
+            # Filter maps with the ref kernel
+            # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
+            Q=[]
+            QTheta500Arcmin=[]
+            count=0
+            for z, M500MSun in zip(zRange, MRange):
+                key='%.2f_%.2f' % (z, np.log10(M500MSun))
+                filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
+                peakFilteredSignal=filteredSignal.max()
+                if peakFilteredSignal not in Q:   # NOTE: this is to avoid problems at theta500 < beam size
                     Q.append(peakFilteredSignal)      
                     QTheta500Arcmin.append(theta500Arcmin[count])
                 count=count+1
@@ -408,20 +411,17 @@ def fitQ(config):
             
             # Plot
             plotSettings.update_rcParams()
-            #fontSize=18.0
-            #fontDict={'size': fontSize, 'family': 'serif'}
             plt.figure(figsize=(9,6.5))
             ax=plt.axes([0.10, 0.11, 0.88, 0.88])
             #plt.tick_params(axis='both', which='major', labelsize=15)
             #plt.tick_params(axis='both', which='minor', labelsize=15)       
             thetaArr=np.linspace(0, 500, 100000)
-            #plt.plot(thetaArr, np.poly1d(coeffs)(thetaArr), 'k-')
             plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
             plt.plot(QTheta500Arcmin, Q, 'D', ms = 8)
-            #plt.plot(thetaArr, simsTools.calcQ_H13(thetaArr), 'b--')
             #plt.xlim(0, 9)
             plt.ylim(0, Q.max()*1.05)
             #plt.xlim(0, thetaArr.max())
+            #plt.xlim(0, 15)
             plt.xlim(0.1, 500)
             plt.semilogx()
             plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")

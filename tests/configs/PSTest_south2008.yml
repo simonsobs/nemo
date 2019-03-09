@@ -29,7 +29,7 @@ catalogCuts: ['SNR > 4.0']
 # Filter definitions
 mapFilters:
     - {label: "Beam",
-       class: "BeamMatchedFilter",
+       class: "BeamRealSpaceMatchedFilter",
        params: {noiseParams: {method: "max(dataMap,CMB)",
                               matchedFilterClass: 'BeamMatchedFilter',
                               RADecSection: [35.0, 40.0, -54.0, -51.0],
@@ -38,6 +38,6 @@ mapFilters:
                               noiseGridArcmin: 20.,
                               saveHighPassMap: False,
                               saveRMSMap: False},
-                bckSub: False, 
+                bckSub: True, 
                 outputUnits: 'uK'}}
 

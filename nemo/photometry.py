@@ -216,9 +216,10 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                         idNumCount=idNumCount+1     
         
         # From here on, catalogs should be astropy Table objects...
-        catalog=catalogs.catalogListToTab(catalog)
-        if makeDS9Regions == True:
-            catalogs.catalog2DS9(catalog, imageDict[key]['filteredMap'].replace(".fits", ".reg"))
+        if len(catalog) > 0:
+            catalog=catalogs.catalogListToTab(catalog)
+            if makeDS9Regions == True:
+                catalogs.catalog2DS9(catalog, imageDict[key]['filteredMap'].replace(".fits", ".reg"))
         imageDict[key]['catalog']=catalog
 
 #------------------------------------------------------------------------------------------------------------
@@ -275,7 +276,8 @@ def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = F
         else:
             print("... not using sub-pixel interpolation for SNRs ...")
         
-        imageDict[key]['catalog'].add_column(atpy.Column(np.zeros(len(imageDict[key]['catalog'])), prefix+'SNR'))
+        if len(imageDict[key]['catalog']) > 0:
+            imageDict[key]['catalog'].add_column(atpy.Column(np.zeros(len(imageDict[key]['catalog'])), prefix+'SNR'))
         for obj in imageDict[key]['catalog']:
             x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
             if int(x) > 0 and int(x) < data.shape[1] and int(y) > 0 and int(y) < data.shape[0]:
@@ -365,7 +367,8 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
             keysToAdd=keysToAdd+['fluxJy', 'err_fluxJy']        
         for prefix in prefixList:
             for k in keysToAdd:
-                catalog.add_column(atpy.Column(np.zeros(len(catalog)), prefix+k))
+                if len(catalog) > 0:
+                    catalog.add_column(atpy.Column(np.zeros(len(catalog)), prefix+k))
 
         for obj in catalog:
                         

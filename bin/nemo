@@ -120,4 +120,21 @@ if __name__ == '__main__':
     catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                          constraintsList = ["SNR > 0.0"], \
                          addInfo = addInfo, color = "cyan") 
-
+    
+    # This can at least be read as mosaic WCS by DS9 - add proper map stitching later
+    # Still need to zap the blank areas / shrink the images here
+    # But in any case, good for flicking through the data cube quickly as a sanity check
+    #import glob
+    #import astropy.io.fits as pyfits                                                                                                                                                    
+    #fileList=glob.glob(config.rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+config.parDict['photometryOptions']['photFilter']+"*SNMap.fits")
+    #fileList.sort()
+    #img=pyfits.HDUList()
+    #for f in fileList:
+        #with pyfits.open(f) as fimg:
+            #hdu=pyfits.ImageHDU(data = fimg[0].data, header = fimg[0].header, name = fimg[0].name)
+            #img.append(hdu) 
+    #img.writeto(config.rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+config.parDict['photometryOptions']['photFilter']+"_all_SNMap.fits",
+                #overwrite = True)
+    #img.close()
+    
+    

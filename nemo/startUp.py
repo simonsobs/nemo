@@ -73,12 +73,16 @@ def parseConfigFile(parDictFileName):
                     if filtDict['label'] == photFilter:
                         filtDict['params']['saveRMSMap']=True
                         filtDict['params']['saveFreqWeightMap']=True
+                        filtDict['params']['saveFilter']=True
         # Don't measure object shapes by default
         if 'measureShapes' not in parDict.keys():
             parDict['measureShapes']=False
         # Don't reject objects in map border areas by default
         if 'rejectBorder' not in parDict.keys():
             parDict['rejectBorder']=0
+        # By default, undo the pixel window function
+        if 'undoPixelWindow' not in parDict.keys():
+            parDict['undoPixelWindow']=True
         # This is to allow source finding folks to skip this option in .yml
         # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
         if 'photometryOptions' not in parDict.keys():

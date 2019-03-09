@@ -16,6 +16,7 @@ import astropy.table as atpy
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
 import pylab as plt
+import IPython
 
 #------------------------------------------------------------------------------------------------------------
 class NemoTests(object):
@@ -269,7 +270,8 @@ class NemoTests(object):
 
 
     def _run_command(self, args):
-        process = subprocess.run(args, universal_newlines=True, stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT)
-        #self._status = process.communicate()[0].strip()
+        process=subprocess.run(args, universal_newlines=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
+        if process.returncode != 0:
+             print(process.stdout)
 

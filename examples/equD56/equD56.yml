@@ -10,12 +10,12 @@ unfilteredMaps:
     - {mapFileName: "weightedMap_4.fits",
        weightsFileName: "weightedInvVar_4.fits",
        obsFreqGHz: 148.0, 'units': "uK",
-       beamFileName: "profiles_ACT/profile_AR1_2009_pixwin_130224.txt",
-       addNoise: null,
-       RADecSection: null,
-       pointSourceMask: "pointSourceMask.fits.gz",
-       surveyMask: "surveyMask.fits.gz"}
-       
+       beamFileName: "profiles_ACT/profile_AR1_2009_pixwin_130224.txt"}
+
+# Masks
+pointSourceMask: "pointSourceMask.fits.gz"
+surveyMask: "surveyMask.fits.gz"
+    
 # Detection/catalog options
 # Set useInterpolator: True for sub-pixel flux and SNR measurements
 thresholdSigma: 4.0

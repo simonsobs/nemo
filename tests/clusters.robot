@@ -8,6 +8,7 @@ Recover published ACTPol cluster masses
 Recover unbiased masses from mock catalog
     Set config              configs/equD56_quick.yml
     Run nemo selfn
+    Run nemo mass
     Run nemo mock
     Run nemo mass           configs/equD56_quick/mocks/mockCatalog_1.fits
     Cross match             configs/equD56_quick/mocks/mockCatalog_1.fits   configs/equD56_quick/mocks/mockCatalog_1_M500.fits

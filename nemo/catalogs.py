@@ -110,7 +110,8 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
 
     allCatalogs=[]
     for temp in templates:
-        allCatalogs.append(imageDict[temp]['catalog'])
+        if len(imageDict[temp]['catalog']) > 0:
+            allCatalogs.append(imageDict[temp]['catalog'])
     allCatalogs=atpy.vstack(allCatalogs)
     mergedCatalog=allCatalogs.copy()
     mergedCatalog['SNR']=-99.

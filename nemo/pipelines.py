@@ -63,7 +63,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False, me
         rootOutDir=config.rootOutDir
             
     imageDict=filters.filterMaps(config.unfilteredMapsDictList, config.parDict['mapFilters'], 
-                                 extNames = config.extNames, rootOutDir = rootOutDir)
+                                 extNames = config.extNames, rootOutDir = rootOutDir,
+                                 undoPixelWindow = config.parDict['undoPixelWindow'])
     
     # Find objects in filtered maps
     photometry.findObjects(imageDict, threshold = config.parDict['thresholdSigma'], 
