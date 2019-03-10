@@ -794,7 +794,7 @@ def estimateContaminationFromSkySim(config, imageDict):
     for i in range(numSkySims):
         
         # NOTE: we throw the first sim away on figuring out noiseBoostFactors
-        print(">>> sky sim %d/%d ..." % (i+1, numSkySims))
+        print(">>> Sky sim %d/%d ..." % (i+1, numSkySims))
         t0=time.time()
 
         # We don't copy this, because it's complicated due to containing MPI-related things (comm)
@@ -823,12 +823,13 @@ def estimateContaminationFromSkySim(config, imageDict):
                 
         simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
                                                          rootOutDir = simRootOutDir,
-                                                         copyKernels = True)
+                                                         copyFilters = True)
         
         # Write out the last sim map catalog for debugging
         optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
         optimalCatalog=simImageDict['optimalCatalog']
-        catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
+        if len(optimalCatalog) > 0:
+            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
         
         # Contamination estimate...
         contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', config.diagnosticsDir)

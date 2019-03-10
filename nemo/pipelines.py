@@ -16,7 +16,7 @@ from . import catalogs
 import IPython
 
 #------------------------------------------------------------------------------------------------------------
-def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False, measureFluxes = True, 
+def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
                               invertMap = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
@@ -24,7 +24,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False, me
         config (:obj: 'startup.NemoConfig'): Nemo configuration object.
         rootOutDir (str): If None, use the default given by config. Otherwise, use this to override where the
             output filtered maps and catalogs are written.
-        copyKernels (bool, optional): If True, and rootOutDir is given (not None), then kernels will be
+        copyFilters (bool, optional): If True, and rootOutDir is given (not None), then filters will be
             copied from the default output location (from a pre-existing nemo run) to the appropriate
             directory under rootOutDir. This is used by, e.g., contamination tests based on sky sims, where
             the same kernels as used on the real data are applied to simulated maps. If rootOutDir = None,
@@ -48,15 +48,15 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyKernels = False, me
     # will then be loaded automatically when filterMaps is called. Yes, this is a bit clunky...
     if rootOutDir != None:
         dirList=[rootOutDir]
-        if copyKernels == True:
+        if copyFilters == True:
             kernelCopyDestDir=rootOutDir+os.path.sep+"diagnostics"
             dirList.append(kernelCopyDestDir)
         for d in dirList:
             if os.path.exists(d) == False:
                 os.makedirs(d)
-        if copyKernels == True:
+        if copyFilters == True:
             for extName in config.extNames:
-                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+"kern2d*#%s*.fits" % (extName))
+                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+"filter*#%s*.fits" % (extName))
                 for f in fileNames:
                     shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
     else:

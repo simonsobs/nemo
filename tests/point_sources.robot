@@ -10,12 +10,20 @@ Recovered source positions are accurate
     Check recovered positions   toleranceArcsec=12.0    SNRMax=10.0     plotFileName=plots/positionRecovery.png
     Status should be        SUCCESS
     
-Recover published 2008 survey source fluxes
+Recover published 2008 survey source fluxes - real space filter
     Setup south2008
     Set config              configs/PSTest_south2008.yml
     Run nemo
     Cross match             testsCache/act_source_catalog_AR1_2008.fits     configs/PSTest_south2008/PSTest_south2008_optimalCatalog.fits
     Check recovered ratio   fluxJy    fluxJy    tolerance=0.01  SNRKey=SNR  SNRCut=5.0  plotFileName=plots/amplitudeRecovery_M11.png
+    Status should be        SUCCESS
+
+Recover published 2008 survey source fluxes - Fourier space filter
+    Setup south2008
+    Set config              configs/PSTest_south2008_fourier.yml
+    Run nemo
+    Cross match             testsCache/act_source_catalog_AR1_2008.fits     configs/PSTest_south2008_fourier/PSTest_south2008_fourier_optimalCatalog.fits
+    Check recovered ratio   fluxJy    fluxJy    tolerance=0.01  SNRKey=SNR  SNRCut=5.0  plotFileName=plots/amplitudeRecovery_M11_fourier.png
     Status should be        SUCCESS
     
 *** Keywords ***

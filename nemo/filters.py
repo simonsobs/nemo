@@ -266,92 +266,7 @@ class MapFilter(object):
         raise Exception("Called a base filter class without a buildAndApply() function implemented.")
         return None
     
-        
-    def loadFilter(self, filterFileName):
-        """Loads in a previously saved filter
-        
-        """
-        img=pyfits.open(filterFileName)
-        self.G=img[0].data
-               
     
-    def makeBeamPowerSpectrum(self):
-        """Makes beam image power spectrum. This is normalised.
-        
-        """
-        
-        beamFWHMRad=np.radians(1.4/60.0)
-        beamSigmaRad=beamFWHMRad/np.sqrt(8.0*np.log(2.0))       
-        beam=np.exp(-(self.radiansMap**2)/(2*beamSigmaRad**2))            
-        self.beamPowerSpectrum=fft.fft2(beam)
-        self.beamPowerSpectrum=self.beamPowerSpectrum/self.beamPowerSpectrum.max()
-        self.beamPowerSpectrum=self.beamPowerSpectrum*self.beamPowerSpectrum.conj()
-    
-    
-    def besselTransformSmoothFunction(self, x):
-        """Smoothing function used by the Bessel transform routine.
-        
-        """
-        
-        q=0.3
-        smoothFn=np.zeros(x.shape)
-        indexLow=np.less_equal(x, 0.5)
-        indexHigh=np.greater_equal(x, 1.0)
-        indexMed=np.logical_and(np.greater(x, 0.5), np.less(x, 1.0))
-
-        smoothFn[indexLow]=1.0
-        smoothFn[indexHigh]=0.0
-        smoothFn[indexMed]=(1.+np.tanh(q/(x*(indexMed)-0.5)+q/(x*(indexMed))))/2.0
-        
-        return smoothFn
-        
-
-    def besselTransform(self, profile, lDim, thetaMax, oversamplingFactor):
-        """Does the Bessel transform of the given profile in real space (i.e. function of theta in radians).
-        
-        thetaMax in radians too.
-        
-        Returns [bessel transformed array, l range]
-        
-        """
-        
-        # NOTE: IDL replicate(0, l_dim) => np.zeros(l_dim)
-        #       IDL indgen(n_dim) => np.arange(0, n_dim)
-        # x -> theta
-        thetaDim=profile.shape[0]
-        lMax=(lDim*(np.pi/2.0)/oversamplingFactor)/thetaMax
-        thetaArray=(np.arange(0, thetaDim, dtype=float))/(thetaDim)*thetaMax
-        lArray=(np.arange(0, lDim, dtype=float))/(lDim)*lMax
-        thetaUnitArray=(np.arange(0, thetaDim, dtype=float))/(thetaDim)
-        lUnitArray=(np.arange(0, lDim, dtype=float))/(lDim)
-        dTheta=thetaMax/float(thetaDim)
-
-        # Kavi's way
-        #besselTransformedArray=np.zeros(lDim, dtype=float)
-        #lSmoothed=self.besselTransformSmoothFunction(lUnitArray)
-        #thetaSmoothed=self.besselTransformSmoothFunction(thetaUnitArray)              
-        #for i in range(lDim):
-            #print "... %d/%d ..." % (i, lDim)
-            #btSum=0.0
-            #for j in range(thetaDim):
-                #z=lArray[i]*thetaArray[j]
-                #btSum=btSum+special.j0(z)*thetaArray[j]*thetaSmoothed[j]*dTheta*profile[j]*lSmoothed[i]
-            #besselTransformedArray[i]=btSum
-
-        # Fast way, looks identical to me
-        besselTransformedArray=np.zeros(lDim, dtype=float)
-        lSmoothed=self.besselTransformSmoothFunction(lUnitArray)
-        thetaSmoothed=self.besselTransformSmoothFunction(thetaUnitArray)  
-        for i in range(lDim):
-            tenPercent=lArray.shape[0]/10
-            for j in range(0,11):
-                if i == j*tenPercent:
-                    print("... "+str(j*10)+"% complete ...")
-            besselTransformedArray[i]=integrate.simps(profile*special.j0(lArray[i]*thetaArray)*thetaArray*thetaSmoothed, thetaArray)
-
-        return [2*np.pi*besselTransformedArray, lArray]
-                
-
     def makeForegroundsPower(self):
         """Returns a Power2D object with foregrounds power from the CMB (this could be extended to add other
         foregrounds if necessary).
@@ -367,13 +282,6 @@ class MapFilter(object):
                             
         return fgPower
         
-        
-    def writeFilteredMap(self, outFileName):
-        """Writes out the filtered map as a fits file.
-        
-        """
-        astImages.saveFITS(outFileName, self.filteredMap, self.wcs)
-
 
     def makeRealSpaceFilterProfile(self):
         """Makes a 1d real-space profile of the filter. This is normalised to 1 at the frequency of the 
@@ -499,101 +407,122 @@ class MatchedFilter(MapFilter):
 
     def buildAndApply(self):
         
-        print(">>> Building filter %s#%s ..." % (self.label, self.extName))
-        
-        # NOTE: We've tidied up the config file, so we don't have to feed in surveyMask and psMask like this
-        # (see startUp.parseConfig)
-        surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
-        psMask=self.unfilteredMapsDictList[0]['psMask']
-        
-        # Noise and foregrounds power spectra (for calculating covariance)
-        # NOTE: We should add a white-noise-level flattening step here for noise power in the filter
-        # (but then we should NOT do that when applying the filter to the maps)
         fMapsToFilter=[]
         for mapDict in self.unfilteredMapsDictList:   
             fMapsToFilter.append(enmap.fft(enmap.apod(mapDict['data'], self.apodPix)))
         fMapsToFilter=np.array(fMapsToFilter)
         
-        # Smoothing noise here is essential
-        kernelSize=(3,3)
-        noiseCov=[]
-        for i in range(len(self.unfilteredMapsDictList)):
-            iMap=self.unfilteredMapsDictList[i]
-            row=[]
-            for j in range(len(self.unfilteredMapsDictList)):
-                jMap=self.unfilteredMapsDictList[j]
-                if self.params['noiseParams']['method'] == 'dataMap':
-                    NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
-                elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
-                    NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
-                    NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
-                    NP=np.maximum.reduce([NP, NPCMB])
+        # NOTE: We've tidied up the config file, so we don't have to feed in surveyMask and psMask like this
+        # (see startUp.parseConfig)
+        surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
+        psMask=self.unfilteredMapsDictList[0]['psMask']
+            
+        if os.path.exists(self.filterFileName) == False:
+            print(">>> Building filter %s#%s ..." % (self.label, self.extName))
+                        
+            # Smoothing noise here is essential
+            kernelSize=(3,3)
+            noiseCov=[]
+            for i in range(len(self.unfilteredMapsDictList)):
+                iMap=self.unfilteredMapsDictList[i]
+                row=[]
+                for j in range(len(self.unfilteredMapsDictList)):
+                    jMap=self.unfilteredMapsDictList[j]
+                    if self.params['noiseParams']['method'] == 'dataMap':
+                        NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
+                    elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
+                        NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
+                        NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
+                        NP=np.maximum.reduce([NP, NPCMB])
+                    else:
+                        raise Exception("Other noise models not yet re-implemented")
+                    NP=ndimage.gaussian_filter(NP, kernelSize)
+                    row.append(NP)
+                noiseCov.append(row)
+            noiseCov=np.array(noiseCov)
+            
+            # Signal frequency weighting
+            w=[]
+            for mapDict in self.unfilteredMapsDictList:
+                if self.params['outputUnits'] == 'yc':
+                    w.append(signals.fSZ(mapDict['obsFreqGHz']))
+                elif self.params['outputUnits'] == 'uK':
+                    w.append(1.0)
                 else:
-                    raise Exception("Other noise models not yet re-implemented")
-                NP=ndimage.gaussian_filter(NP, kernelSize)
-                row.append(NP)
-            noiseCov.append(row)
-        noiseCov=np.array(noiseCov)
-        
-        # Signal frequency weighting
-        w=[]
-        for mapDict in self.unfilteredMapsDictList:
+                    raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+            w=np.array(w)
+                
+            # Make FFTs of unit-normalised signal templates for each band
+            signalMapsList=[]
+            fSignalsArr=[]
+            for mapDict in self.unfilteredMapsDictList:
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+                signalMap=signalMapDict['signalMap']
+                fSignal=enmap.fft(signalMap)
+                signalMapsList.append(signalMap)
+                fSignalsArr.append(fSignal)
+            fSignalsArr=np.array(fSignalsArr)
+                    
+            # Build the filter itself
+            # NOTE: commented-out norm isn't right here... but doing with signal sims anyway...
+            t0=time.time()
+            filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]])
+            for y in range(0, self.shape[0]):
+                for x in range(0, self.shape[1]):
+                    try:
+                        filt[:, y, x]=np.dot(np.linalg.inv(noiseCov[:, :, y, x]), w*abs(fSignalsArr[:, y, x])) 
+                    except:
+                        continue
+            self.G=filt
+            t1=time.time()
+                            
+            # Use a map with known input signal to figure out how much it has been rolled off by     
             if self.params['outputUnits'] == 'yc':
-                w.append(signals.fSZ(mapDict['obsFreqGHz']))
+                # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
+                signalMaps=[]
+                fSignalMaps=[]
+                y0=2e-4
+                tol=1e-6
+                for mapDict in self.unfilteredMapsDictList:
+                    deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                    signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                                                            deltaT0 = deltaT0)
+                    if abs(y0-signalMapDict['inputSignalProperties']['y0']) > tol:
+                        raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
+                    signalMaps.append(signalMapDict['signalMap'])
+                    fSignal=enmap.fft(signalMapDict['signalMap'])
+                    fSignalMaps.append(fSignal)
+                signalMaps=np.array(signalMaps)
+                fSignalMaps=np.array(fSignalMaps)        
+                filteredSignal=self.applyFilter(fSignalMaps)
+                self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
-                w.append(1.0)
+                if len(self.unfilteredMapsDictList) > 1:
+                    raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+                combinedObsFreqGHz=float(list(self.beamSolidAnglesDict.keys())[0])  # Make less clunky...
+                signalMaps=[]
+                fSignalMaps=[]
+                for mapDict in self.unfilteredMapsDictList:
+                    signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+                    signalMaps.append(signalMapDict['signalMap'])
+                    fSignal=enmap.fft(signalMapDict['signalMap'])
+                    fSignalMaps.append(fSignal)
+                    #inputSignalProperties.append(signalMapDict['inputSignalProperties'])
+                signalMaps=np.array(signalMaps)
+                fSignalMaps=np.array(fSignalMaps)        
+                filteredSignal=self.applyFilter(fSignalMaps)
+                self.signalNorm=1.0/filteredSignal.max()
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
-        w=np.array(w)
-            
-        # Make FFTs of unit-normalised signal templates for each band
-        signalMapsList=[]
-        fSignalsArr=[]
-        for mapDict in self.unfilteredMapsDictList:
-            signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
-            signalMap=signalMapDict['signalMap']
-            fSignal=enmap.fft(signalMap)
-            signalMapsList.append(signalMap)
-            fSignalsArr.append(fSignal)
-        fSignalsArr=np.array(fSignalsArr)
-                
-        # Build the filter itself
-        # NOTE: commented-out norm isn't right here... but doing with signal sims anyway...
-        t0=time.time()
-        filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]])
-        for y in range(0, self.shape[0]):
-            for x in range(0, self.shape[1]):
-                try:
-                    filt[:, y, x]=np.dot(np.linalg.inv(noiseCov[:, :, y, x]), w*abs(fSignalsArr[:, y, x])) 
-                except:
-                    continue
-        self.G=filt
-        t1=time.time()
-                        
-        # Apply filter - normalisation figured out below...
+        else:
+            print(">>> Loading cached filter %s#%s ..." % (self.label, self.extName))
+            self.loadFilter()
+        
+        # Apply filter
         filteredMap=self.applyFilter(fMapsToFilter)
-        #filteredMap=np.real(enmap.ifft(fMapsToFilter*self.G, normalize = False)).sum(axis = 0)
 
-        # Use a map with known input signal to figure out how much it has been rolled off by     
+        # Units etc.
         if self.params['outputUnits'] == 'yc':
-            # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-            signalMaps=[]
-            fSignalMaps=[]
-            y0=2e-4
-            tol=1e-6
-            for mapDict in self.unfilteredMapsDictList:
-                deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
-                                                        deltaT0 = deltaT0)
-                if abs(y0-signalMapDict['inputSignalProperties']['y0']) > tol:
-                    raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
-                signalMaps.append(signalMapDict['signalMap'])
-                fSignal=enmap.fft(signalMapDict['signalMap'])
-                fSignalMaps.append(fSignal)
-            signalMaps=np.array(signalMaps)
-            fSignalMaps=np.array(fSignalMaps)        
-            filteredSignal=self.applyFilter(fSignalMaps)#np.real(enmap.ifft(fSignalMaps*self.G, normalize = False)).sum(axis = 0)
-            self.signalNorm=y0/filteredSignal.max()
             mapUnits='yc'
             combinedObsFreqGHz='yc'
             beamSolidAngle_nsr=0.0   # not used for clusters...
@@ -601,26 +530,11 @@ class MatchedFilter(MapFilter):
             if len(self.unfilteredMapsDictList) > 1:
                 raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
             combinedObsFreqGHz=float(list(self.beamSolidAnglesDict.keys())[0])  # Make less clunky...
-            signalMaps=[]
-            fSignalMaps=[]
-            for mapDict in self.unfilteredMapsDictList:
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
-                signalMaps.append(signalMapDict['signalMap'])
-                fSignal=enmap.fft(signalMapDict['signalMap'])
-                fSignalMaps.append(fSignal)
-                #inputSignalProperties.append(signalMapDict['inputSignalProperties'])
-            signalMaps=np.array(signalMaps)
-            fSignalMaps=np.array(fSignalMaps)        
-            filteredSignal=self.applyFilter(fSignalMaps)#np.real(enmap.ifft(fSignalMaps*self.G, normalize = False)).sum(axis = 0)
-            self.signalNorm=1.0/filteredSignal.max()
             mapUnits='uK'
             beamSolidAngle_nsr=self.beamSolidAnglesDict[combinedObsFreqGHz]
         else:
             raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         
-        # Apply normalisation
-        filteredMap=filteredMap*self.signalNorm
-
         # Apply the point source mask here (before noise estimates etc.)
         filteredMap=filteredMap*psMask
                 
@@ -685,6 +599,9 @@ class MatchedFilter(MapFilter):
         each plane corresponding to a frequency).
         
         NOTE: doFFT option is not implemented yet.
+        
+        Returns:
+            Filtered map (2d numpy array)
         
         """
         if doFFT == True:
@@ -896,26 +813,29 @@ class RealSpaceMatchedFilter(MapFilter):
 
             
     def buildAndApply(self):
-        
-        print(">>> Building filter %s#%s ..." % (self.label, self.extName))
 
-        # NOTE: Since survey masks and point source masks are always the same, we should tidy up the config file
         surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
         psMask=self.unfilteredMapsDictList[0]['psMask']
-        
-        # Noise region to use
-        RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
-        if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
-            RADecSection=[self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
-                          self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
-            print("... taking noise region from tileDeck image header: %s ..." % (RADecSection))
+            
+        if os.path.exists(self.filterFileName) == False:
+            print(">>> Building filter %s#%s ..." % (self.label, self.extName))
+            
+            # Noise region to use
+            RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
+            if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
+                RADecSection=[self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
+                            self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
+                print("... taking noise region from tileDeck image header: %s ..." % (RADecSection))
+            else:
+                RADecSection=self.params['noiseParams']['RADecSection']
+            self.applyDecCentre=(decMax+decMin)/2.
+            self.applyRACentre=(RAMax+RAMin)/2.
+            
+            # Build kernel   
+            self.buildKernel(RADecSection, RADeg = self.applyRACentre, decDeg = self.applyDecCentre)
         else:
-            RADecSection=self.params['noiseParams']['RADecSection']
-        self.applyDecCentre=(decMax+decMin)/2.
-        self.applyRACentre=(RAMax+RAMin)/2.
-        
-        # Build kernel   
-        self.buildKernel(RADecSection, RADeg = self.applyRACentre, decDeg = self.applyDecCentre)
+            print(">>> Loading cached filter %s#%s ..." % (self.label, self.extName))
+            self.loadFilter()
 
         # Apply kernel        
         t0=time.time()
@@ -986,6 +906,9 @@ class RealSpaceMatchedFilter(MapFilter):
     def applyFilter(self, mapDataToFilter, doFFT = False):
         """Apply the kernel to the given map data (must be a cube - with each plane corresponding to a 
         frequency).
+        
+        Returns:
+            Filtered map (2d numpy array)
         
         """
         

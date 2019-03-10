@@ -112,24 +112,27 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
     for temp in templates:
         if len(imageDict[temp]['catalog']) > 0:
             allCatalogs.append(imageDict[temp]['catalog'])
-    allCatalogs=atpy.vstack(allCatalogs)
-    mergedCatalog=allCatalogs.copy()
-    mergedCatalog['SNR']=-99.
-    mergeRow=0
-    usedIndices=[]
-    for row in allCatalogs:
-        rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'], allCatalogs['decDeg']) 
-        xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
-        xMatches=allCatalogs[xIndices]
-        xMatchIndex=np.argmax(xMatches['SNR'])
-        if xIndices[xMatchIndex] not in usedIndices:
-            mergedCatalog[mergeRow]=xMatches[xMatchIndex]
-            mergeRow=mergeRow+1
-            usedIndices=usedIndices+xIndices.tolist()
-    mergedCatalog=mergedCatalog[mergedCatalog['SNR'] > 0]
-    mergedCatalog.sort(['RADeg', 'decDeg'])
-    mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
-    imageDict['optimalCatalog']=mergedCatalog    
+    if len(allCatalogs) > 0:
+        allCatalogs=atpy.vstack(allCatalogs)
+        mergedCatalog=allCatalogs.copy()
+        mergedCatalog['SNR']=-99.
+        mergeRow=0
+        usedIndices=[]
+        for row in allCatalogs:
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'], allCatalogs['decDeg']) 
+            xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
+            xMatches=allCatalogs[xIndices]
+            xMatchIndex=np.argmax(xMatches['SNR'])
+            if xIndices[xMatchIndex] not in usedIndices:
+                mergedCatalog[mergeRow]=xMatches[xMatchIndex]
+                mergeRow=mergeRow+1
+                usedIndices=usedIndices+xIndices.tolist()
+        mergedCatalog=mergedCatalog[mergedCatalog['SNR'] > 0]
+        mergedCatalog.sort(['RADeg', 'decDeg'])
+        mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
+    else:
+        mergedCatalog=[]
+    imageDict['optimalCatalog']=mergedCatalog   
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
