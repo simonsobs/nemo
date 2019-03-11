@@ -2,9 +2,9 @@ Nemo is a map filtering and source detection and characterization pipeline, desi
 galaxy clusters using the Sunyaev-Zel'dovich effect. It can also be used to find sources. 
 
 * Documentation: https://acru.ukzn.ac.za/~mjh/nemo/
-* License: TBD (this is a private repository: for now nemo cannot be used for non-ACT, 
-non-SO approved projects; however, the aim is to make the code fully public by the time the 
-first AdvACT cluster catalog is published)
+* License: Will be BSD 2-clause when released (this is a currently a private repository: for 
+now nemo cannot be used for non-ACT, non-SO approved projects; however, the aim is to make the 
+code fully public by the time the first AdvACT cluster catalog is published)
 
 Nemo is *not* the pipeline used for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), 
 but implements many of the ideas presented there, and should give similar results, given 
@@ -23,8 +23,7 @@ point sources.
 # Current status and previous internal releases
 
 **Note**: Versions in the git respository after the last tagged release (v18.06) use a new config 
-file format (.yml) - see the [examples/](examples/) directory. Nemo is currently compatible with 
-both Python 3.x and Python 2.7. However, for future releases, we only guarantee compatibility
+file format (.yml) - see the [examples/](examples/) directory. We only guarantee compatibility
 with Python 3.x (and we're no longer testing on Python 2.7).
 
 Listed below are tagged, internal releases of nemo:
@@ -36,18 +35,17 @@ Listed below are tagged, internal releases of nemo:
 
 # Software needed
 
-Nemo itself is written in Python (compatible with 2.7.x and 3.x), and requires the following 
-additional modules to be installed (currently used versions are given in brackets, 
-earlier and later versions also probably work):
+Nemo itself is written in Python (3.x), and requires the following additional modules to be installed 
+(currently used versions are given in brackets, earlier and later versions also probably work):
 
-* numpy (1.11.1)
-* scipy (0.17.1)
-* matplotlib (2.1.0)
+* numpy (1.13.3)
+* scipy (0.19.3)
+* matplotlib (2.1.1)
 * astLib (0.10.x + or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
 * [pixell](https://github.com/simonsobs/pixell/) (0.1.1 or git version)
 * Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)
-* astropy (2.0.4)
-* IPython (2.4.1)
+* astropy (3.0.5)
+* IPython (7.2.0)
 * Cython (0.24.1)
 * PyYAML (3.12)
 * hmf (3.0.3)
