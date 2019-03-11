@@ -1,0 +1,158 @@
+# Nemo config file
+# YAML format 
+# - use null to return None in Python
+# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+
+# Valid units are uK or Jy/sr
+# this should be a list of maps at different frequencies
+# NOTE: surveyMask is optional
+unfilteredMaps:
+    - {mapFileName: "maps/act+planck_day+night/TOnly_f150_daynight_all_map_mono.fits",
+       weightsFileName: "maps/act+planck_day+night/f150_daynight_all_div_mono.fits",
+       obsFreqGHz: 148.0,
+       units: 'uK',
+       beamFileName: "Beams/171226/beam_profile_171226_pa3_f150_s16_3_310_instant.txt"}
+
+# Masks
+pointSourceMask: null
+surveyMask: null
+
+# tileDeck options - cut-up each map into smaller sections, store in a multi-extension .fits file
+makeTileDeck: True
+tileOverlapDeg: 1.0
+
+# User-defined tiles
+# These will automatically be expanded by tileOverlapDeg, i.e., don't need to handle overlaps here
+tileDefinitions:
+    - {extName: '0_0', RADecSection: [116.0, 86.0, -60.35, -50.35]}
+    - {extName: '0_1', RADecSection: [86.0, 56.0, -60.35, -50.35]}
+    - {extName: '0_2', RADecSection: [56.0, 26.0, -60.35, -50.35]}
+    - {extName: '0_3', RADecSection: [26.0, 356.0, -60.35, -50.35]}
+    - {extName: '0_4', RADecSection: [356.0, 326.0, -60.35, -50.35]}
+    - {extName: '0_5', RADecSection: [326.0, 273.0, -60.35, -50.35]}
+    - {extName: '1_0', RADecSection: [116.0, 91.0, -50.35, -41.35]}
+    - {extName: '1_1', RADecSection: [91.0, 66.0, -50.35, -41.35]}
+    - {extName: '1_2', RADecSection: [66.0, 41.0, -50.35, -41.35]}
+    - {extName: '1_3', RADecSection: [41.0, 16.0, -50.35, -41.35]}
+    - {extName: '1_4_D8A', RADecSection: [16.0, 348.0, -50.35, -41.35]}
+    - {extName: '1_5', RADecSection: [348.0, 323.0, -50.35, -41.35]}
+    - {extName: '1_6', RADecSection: [323.0, 298.0, -50.35, -41.35]}
+    - {extName: '1_7', RADecSection: [298.0, 273.0, -50.35, -41.35]}
+    - {extName: '2_0', RADecSection: [116.0, 91.0, -41.35, -32.35]}
+    - {extName: '2_1', RADecSection: [91.0, 66.0, -41.35, -32.35]}
+    - {extName: '2_2', RADecSection: [66.0, 41.0, -41.35, -32.35]}
+    - {extName: '2_3', RADecSection: [41.0, 16.0, -41.35, -32.35]}
+    - {extName: '2_4_D8B', RADecSection: [16.0, 352.0, -41.35, -32.35]}
+    - {extName: '2_5', RADecSection: [352.0, 325.0, -41.35, -32.35]}
+    - {extName: '2_6', RADecSection: [325.0, 298.0, -41.35, -32.35]}
+    - {extName: '2_7', RADecSection: [298.0, 271.0, -41.35, -32.35]}
+    - {extName: '3_0', RADecSection: [109.0, 81.0, -32.35, -24.85]}
+    - {extName: '3_1', RADecSection: [81.0, 53.0, -32.35, -24.85]}
+    - {extName: '3_2', RADecSection: [53.0, 25.0, -32.35, -24.85]}
+    - {extName: '3_3', RADecSection: [25.0, 357.0, -32.35, -24.85]}
+    - {extName: '3_4', RADecSection: [357.0, 329.0, -32.35, -24.85]}
+    - {extName: '3_5', RADecSection: [329.0, 301.0, -32.35, -24.85]}
+    - {extName: '3_6', RADecSection: [301.0, 273.0, -32.35, -24.85]}
+    - {extName: '4_0', RADecSection: [109.0, 81.0, -24.85, -17.35]}
+    - {extName: '4_1', RADecSection: [81.0, 53.0, -24.85, -17.35]}
+    - {extName: '4_2', RADecSection: [53.0, 25.0, -24.85, -17.35]}
+    - {extName: '4_3', RADecSection: [25.0, 357.0, -24.85, -17.35]}
+    - {extName: '4_4', RADecSection: [357.0, 329.0, -24.85, -17.35]}
+    - {extName: '4_5', RADecSection: [329.0, 301.0, -24.85, -17.35]}
+    - {extName: '4_6', RADecSection: [301.0, 273.0, -24.85, -17.35]}
+    - {extName: '5_0', RADecSection: [101.0, 71.0, -17.35, -9.85]}
+    - {extName: '5_1', RADecSection: [71.0, 41.0, -17.35, -9.85]}
+    - {extName: '5_2', RADecSection: [41.0, 11.0, -17.35, -9.85]}
+    - {extName: '5_3', RADecSection: [11.0, 341.0, -17.35, -9.85]}
+    - {extName: '5_4', RADecSection: [341.0, 311.0, -17.35, -9.85]}
+    - {extName: '5_5', RADecSection: [311.0, 281.0, -17.35, -9.85]}
+    - {extName: '6_0', RADecSection: [86.0, 53.0, -9.85, 5.15]}
+    - {extName: '6_1_D56A', RADecSection: [53.0, 16.0, -9.85, 5.15]}
+    - {extName: '6_2_D56B', RADecSection: [16.0, 339.0, -9.85, 5.15]}
+    - {extName: '6_3', RADecSection: [339.0, 314.0, -9.85, 5.15]}
+    - {extName: '6_4', RADecSection: [314.0, 289.0, -9.85, 5.15]}
+    - {extName: '7_0', RADecSection: [80.0, 51.0, 5.15, 19.8]}
+    - {extName: '7_1', RADecSection: [51.0, 22.0, 5.15, 19.8]}
+    - {extName: '7_2', RADecSection: [22.0, 353.0, 5.15, 19.8]}
+    - {extName: '7_3', RADecSection: [353.0, 324.0, 5.15, 19.8]}
+    - {extName: '7_4', RADecSection: [324.0, 295.0, 5.15, 19.8]}
+    - {extName: 'W6_0', RADecSection: [270.0, 246.0, -5.0, 7.75]}
+    - {extName: 'W6_1', RADecSection: [246.0, 224.0, -5.0, 7.75]}
+    - {extName: 'W6_2', RADecSection: [224.0, 202.0, -5.0, 7.75]}
+    - {extName: 'W6_3', RADecSection: [202.0, 180.1, -5.0, 7.75]}
+    - {extName: 'W7_0', RADecSection: [280.0, 255.0, 7.75, 20.5]}
+    - {extName: 'W7_1', RADecSection: [255.0, 230.0, 7.75, 20.5]}
+    - {extName: 'W7_2', RADecSection: [230.0, 205.0, 7.75, 20.5]}
+    - {extName: 'W7_3', RADecSection: [205.0, 180.1, 7.75, 20.5]}
+    - {extName: 'E6_0', RADecSection: [179.9, 155.0, -4.5, 8.1]}
+    - {extName: 'E6_1', RADecSection: [155.0, 130.0, -4.5, 8.1]}
+    - {extName: 'E6_2', RADecSection: [130.0, 105.0, -4.5, 8.1]}
+    - {extName: 'E7_0', RADecSection: [179.9, 159.0, 8.1, 20.7]}
+    - {extName: 'E7_1', RADecSection: [159.0, 138.0, 8.1, 20.7]}
+    - {extName: 'E7_2', RADecSection: [138.0, 117.0, 8.1, 20.7]}
+    - {extName: 'E7_3', RADecSection: [117.0, 96.0, 8.1, 20.7]}
+
+# Corresponding regions in tiles to use for noise part of matched filter
+# IF these are modified, tileDeck files will need to be re-made (delete them and rerun nemo)
+# Format for each entry: extName: [RAMin, RAMax, decMin, decMax]
+# If no entry is given, the area of the tile minus autoBorderDeg will be used
+tileNoiseRegions:   
+    {'autoBorderDeg': 0.5,
+     '0_0': [100.0, 87.0, -59.85, -50.85],  
+     '0_5': [326.0, 284.0, -59.85, -50.85],
+     '1_0': [108.0, 91.0, -49.85, -41.85],  
+     '1_7': [295.0, 280.0, -49.85, -42.85],
+     '2_0': [107.0, 91.0, -40.85, -32.85],  
+     '2_7': [295.0, 280.0, -40.85, -32.85],
+     '3_0': [103.0, 81.0, -31.85, -25.35],  
+     '3_6': [300.0, 285.0, -31.85, -25.35],
+     '4_0': [99.0, 81.0, -24.35, -17.85],   
+     '4_6': [300.0, 285.0, -24.35, -17.85],
+     '5_0': [82.0, 71.0, -16.85, -10.35],   
+     '5_5': [309.0, 294.0, -16.85, -10.35],
+     '6_0': [78.0, 53.0, -9.35, 4.65],
+     '6_4': [313.0, 298.0, -9.35, 4.65],
+     '7_0': [60.0, 51.0, 5.65, 19.3],
+     '7_4': [321.0, 306.0, 5.65, 19.3],
+     'W6_0': [257.0, 246.0, -4.5, 7.25],   
+     'W6_3': [202.0, 180.1, -4.5, 7.25],   
+     'W7_0': [267.0, 255.0, 8.25, 20.0],
+     'W7_3': [205.0, 180.1, 8.25, 20.0],    
+     'E6_0': [179.9, 155.0, -4.0, 7.6],     
+     'E6_2': [130.0, 109.0, -4.0, 7.6],     
+     'E7_0': [179.9, 159.0, 8.6, 20.2],  
+     'E7_3': [117.0, 107.0, 8.6, 20.2]}
+
+# Use this to test on only a particular set of tiles
+# i.e., all operations will only be performed on these tiles (respected by nemo, nemoMass, nemoSelFn)
+#extNameList: ['5_1', '2_2', '3_1', '5_2']
+
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 4.0
+minObjPix: 1
+findCenterOfMass: True
+useInterpolator: True
+rejectBorder: 0
+objIdent: 'ACT-S'
+longNames: False
+catalogCuts: ['SNR > 4.0']
+
+# Photometry options
+photometryOptions: {photFilter: 'Beam'}
+
+# Filter definitions:
+mapFilters:
+    - {label: "Beam",
+       class: "BeamRealSpaceMatchedFilter",
+       params: {noiseParams: {method: "max(dataMap,CMB)",
+                              matchedFilterClass: 'BeamMatchedFilter',
+                              RADecSection: "tileNoiseRegions",
+                              kernelMaxArcmin: 7.,
+                              symmetrize: False, 
+                              noiseGridArcmin: 20.,
+                              saveHighPassMap: False,
+                              saveRMSMap: False},
+                bckSub: True, 
+                outputUnits: 'uK'}}
+

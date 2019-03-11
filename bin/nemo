@@ -13,6 +13,7 @@ import datetime
 from nemo import *
 import nemo
 import argparse
+import astropy
 import astropy.table as atpy
 import numpy as np
 import pylab
@@ -68,7 +69,11 @@ if __name__ == '__main__':
             sys.exit()
         else:
             print("... gathering catalogs ...")
-            optimalCatalog=atpy.vstack(optimalCatalogList)
+            toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
+            for collectedTab in optimalCatalogList:
+                if type(collectedTab) == astropy.table.table.Table:
+                    toStack.append(collectedTab)
+            optimalCatalog=atpy.vstack(toStack)
             print("... gathering and averaging contamination estimates ...")
             avConTabDict={}
             for k in conKeysList:

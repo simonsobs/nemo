@@ -7,6 +7,7 @@
 unfilteredMaps:
     - {mapFileName: "testsCache/ACT_148_south_season_2_1way_v3_summed.fits",
        weightsFileName: "testsCache/ACT_148_south_season_2_1way_hits_v3.fits",
+       weightsType: "hits",
        obsFreqGHz: 148.0, 'units': "uK",
        beamFileName: "testsCache/profile_AR1_2008_pixwin_130224.txt",
        addNoise: null,

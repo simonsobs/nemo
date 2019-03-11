@@ -36,6 +36,9 @@ def parseConfigFile(parDictFileName):
                     mapDict[k]=parDict[k]
                 else:
                     mapDict[k]=None
+            # Also add key for type of weight map (inverse variance is default for enki maps)
+            if 'weightsType' not in mapDict.keys():
+                mapDict['weightsType']='invVar'
         # Apply global filter options (defined in allFilters) to mapFilters
         # Note that anything defined in mapFilters has priority
         # Bit ugly... we only support up to three levels of nested dictionaries...
@@ -74,6 +77,16 @@ def parseConfigFile(parDictFileName):
                         filtDict['params']['saveRMSMap']=True
                         filtDict['params']['saveFreqWeightMap']=True
                         filtDict['params']['saveFilter']=True
+        # extNames must be case insensitive in .yml file 
+        # we force upper case here (because FITS will anyway)
+        if 'tileDefinitions' in parDict.keys():
+            for tileDef in parDict['tileDefinitions']:
+                tileDef['extName']=tileDef['extName'].upper()
+        if 'extNameList' in parDict.keys():
+            newList=[]
+            for entry in parDict['extNameList']:
+                newList.append(entry.upper())
+            parDict['extNameList']=newList
         # Don't measure object shapes by default
         if 'measureShapes' not in parDict.keys():
             parDict['measureShapes']=False
@@ -179,7 +192,7 @@ class NemoConfig(object):
             madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
             if self.rank != 0 and madeTileDeck == True:
                 self.unfilteredMapsDictList, self.extNames=maps.makeTileDeck(self.parDict)
-                
+
         # For when we want to test on only a subset of tiles
         if 'extNameList' in list(self.parDict.keys()):
             newList=[]

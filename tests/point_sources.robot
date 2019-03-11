@@ -38,6 +38,8 @@ Clean up
     Remove file             sourceInjectedMap.fits
     Remove file             inputSourcesCatalog.fits
     Remove directory        configs/PSTest_E-D56    True
+    Remove directory        configs/PSTest_south2008    True
+    Remove directory        configs/PSTest_south2008_fourier    True
 
 *** Settings ***
 

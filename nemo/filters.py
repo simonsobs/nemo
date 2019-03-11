@@ -408,7 +408,7 @@ class MatchedFilter(MapFilter):
     def buildAndApply(self):
         
         fMapsToFilter=[]
-        for mapDict in self.unfilteredMapsDictList:   
+        for mapDict in self.unfilteredMapsDictList: 
             fMapsToFilter.append(enmap.fft(enmap.apod(mapDict['data'], self.apodPix)))
         fMapsToFilter=np.array(fMapsToFilter)
         
@@ -419,7 +419,22 @@ class MatchedFilter(MapFilter):
             
         if os.path.exists(self.filterFileName) == False:
             print(">>> Building filter %s#%s ..." % (self.label, self.extName))
-                        
+            
+            fMapsForNoise=[]
+            for mapDict in self.unfilteredMapsDictList: 
+                d=mapDict['data']
+                if mapDict['weightsType'] == 'invVar':
+                    w=np.sqrt(mapDict['weights'])
+                    w=w/w.max()
+                elif mapDict['weightsType'] == 'hits':
+                    w=np.sqrt(mapDict['weights'])
+                    w=w/w.max()
+                    w=1/w
+                else:
+                    raise Exception("Didn't understand 'weightsType' - should be 'invVar' or 'hits'")
+                fMapsForNoise.append(enmap.fft(enmap.apod(d*w, self.apodPix)))
+            fMapsForNoise=np.array(fMapsForNoise)
+        
             # Smoothing noise here is essential
             kernelSize=(3,3)
             noiseCov=[]
@@ -429,9 +444,9 @@ class MatchedFilter(MapFilter):
                 for j in range(len(self.unfilteredMapsDictList)):
                     jMap=self.unfilteredMapsDictList[j]
                     if self.params['noiseParams']['method'] == 'dataMap':
-                        NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
+                        NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                     elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
-                        NP=np.real(fMapsToFilter[i]*fMapsToFilter[j].conj())
+                        NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                         NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
                         NP=np.maximum.reduce([NP, NPCMB])
                     else:
@@ -675,7 +690,7 @@ class RealSpaceMatchedFilter(MapFilter):
         # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
         #mapDict['bckSubScaleArcmin']=maxArcmin
         keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
-                    'pointSourceRemoval']
+                    'pointSourceRemoval', 'weightsType']
         kernelUnfilteredMapsDictList=[]
         for mapDict in self.unfilteredMapsDictList:
             kernelUnfilteredMapsDict={}

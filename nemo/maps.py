@@ -225,7 +225,9 @@ def makeTileDeck(parDict):
                 for c, name in zip(coordsList, extNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
-                    
+                #print("check tiles")
+                #sys.exit()
+                
                 # Make tiles
                 # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
                 # Since we would only use such an option with tileDeck files, this should be okay

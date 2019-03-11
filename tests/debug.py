@@ -10,9 +10,9 @@ import IPython
 n=NemoTests.NemoTests()
 
 # equD56
-#n.setup_equD56()
-#n.set_config("configs/equD56_quick.yml")
-#n.run_nemo()
+n.setup_equD56()
+n.set_config("configs/equD56_quick.yml")
+n.run_nemo()
 
 # 2008 stuff
 n.setup_south2008()
