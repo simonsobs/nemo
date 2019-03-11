@@ -215,7 +215,10 @@ class NemoConfig(object):
                 rankCounter=rankCounter+1
                 if rankCounter > self.size-1:
                     rankCounter=0
-            self.extNames=rankExtNames[self.rank]
+            if self.rank in rankExtNames.keys():
+                self.extNames=rankExtNames[self.rank]
+            else:
+                self.extNames=[]
         
         # For debugging...
         print(("... rank = %d [PID = %d]: extNames = %s" % (self.rank, os.getpid(), str(self.extNames))))
