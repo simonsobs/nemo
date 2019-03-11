@@ -205,16 +205,17 @@ class NemoConfig(object):
 
         # MPI: just divide up tiles pointed at by extNames among processes
         if self.MPIEnabled == True:
-            numTilesPerNode=int(len(self.extNames)/self.size)
-            startIndex=numTilesPerNode*self.rank
-            if self.rank == self.size-1:
-                endIndex=len(self.extNames)
-            else:
-                endIndex=numTilesPerNode*(self.rank+1)
-        else:
-            startIndex=0
-            endIndex=len(self.extNames)
-        self.extNames=self.extNames[startIndex:endIndex]
+            # New - bit clunky but distributes more evenly
+            rankExtNames={}
+            rankCounter=0
+            for e in self.extNames:
+                if rankCounter not in rankExtNames:
+                    rankExtNames[rankCounter]=[]
+                rankExtNames[rankCounter].append(e)
+                rankCounter=rankCounter+1
+                if rankCounter > self.size-1:
+                    rankCounter=0
+            self.extNames=rankExtNames[self.rank]
         
         # For debugging...
         print(("... rank = %d [PID = %d]: extNames = %s" % (self.rank, os.getpid(), str(self.extNames))))
