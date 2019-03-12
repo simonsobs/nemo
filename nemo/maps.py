@@ -790,7 +790,7 @@ def estimateContaminationFromSkySim(config, imageDict):
     """
 
     simRootOutDir=config.diagnosticsDir+os.path.sep+"skySim"
-    SNRKeys=['SNR', 'fixed_SNR']        
+    SNRKeys=['fixed_SNR']        
     numSkySims=config.parDict['numSkySims']
     resultsList=[]
     for i in range(numSkySims):
@@ -812,7 +812,13 @@ def estimateContaminationFromSkySim(config, imageDict):
             simConfig.parDict['GNFWParams']='default'
         for filtDict in simConfig.parDict['mapFilters']:
             filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
-            
+        
+        # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
+        for filtDict in simConfig.parDict['mapFilters']:
+            if filtDict['label'] == simConfig.parDict['photometryOptions']['photFilter']:
+                break
+        simConfig.parDict['mapFilters']=[filtDict] 
+        
         # Filling in with sim will be done when maps.preprocessMapDict is called by the filter object
         for mapDict in simConfig.unfilteredMapsDictList:
             mapDict['CMBSimSeed']=CMBSimSeed
