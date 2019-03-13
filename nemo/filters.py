@@ -756,7 +756,7 @@ class RealSpaceMatchedFilter(MapFilter):
 
         # Kernel can be either fully 2d, or be azimuthally averaged... in the ACTPol E-D56 paper, we used the latter
         if self.params['noiseParams']['symmetrize'] == False:
-            profile2d=fft.ifft2(matchedFilter.G).real
+            profile2d=fft.ifft2(matchedFilter.filt).real
             profile2d=fft.fftshift(profile2d)
         else:
             rRadians=np.radians(arcminRange/60.)
