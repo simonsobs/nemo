@@ -340,19 +340,18 @@ def fitQ(config):
                 obsFreqGHz=mapDict['obsFreqGHz']
                 beamsDict[obsFreqGHz]=mapDict['beamFileName']
             
-            # Some faffing to get map pixel scale
+            # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
+            # NOTE: 5 deg is too small for the largest very low-z clusters: it's better to add a z cut and ignore those
             with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName)) as img:
                 wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
                 extMap=img[0].data
                 RADeg, decDeg=wcs.getCentreWCSCoords()                
-                if realSpace == True:
-                    # Safe in this case to trim the map and save time/memory
-                    clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 15.0)
-                    wcs=clipDict['wcs']
-                    extMap=clipDict['data']
+                clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 5.0)
+                wcs=clipDict['wcs']
+                extMap=clipDict['data']
             
             # Input signal maps to which we will apply filter(s)
-            # NOTE: This is for Fourier filter, needs generalising
+            # We do this once and store in a dictionary for speed
             theta500Arcmin=[]
             signalMapDict={}
             signalMap=np.zeros(extMap.shape)
@@ -365,7 +364,7 @@ def fitQ(config):
                 tol=1e-6
                 for obsFreqGHz in list(beamsDict.keys()):
                     deltaT0=maps.convertToDeltaT(y0, obsFreqGHz)
-                    # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This does
+                    # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This can
                     signalMap, inputProperties=signals.makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
                                                                                degreesMap, wcs, 
                                                                                beamsDict[obsFreqGHz], 
@@ -392,7 +391,7 @@ def fitQ(config):
                 key='%.2f_%.2f' % (z, np.log10(M500MSun))
                 filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
                 peakFilteredSignal=filteredSignal.max()
-                if peakFilteredSignal not in Q:   # NOTE: this is to avoid problems at theta500 < beam size
+                if peakFilteredSignal not in Q:
                     Q.append(peakFilteredSignal)      
                     QTheta500Arcmin.append(theta500Arcmin[count])
                 count=count+1

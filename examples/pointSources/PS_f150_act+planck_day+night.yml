@@ -138,9 +138,6 @@ objIdent: 'ACT-S'
 longNames: False
 catalogCuts: ['SNR > 4.0']
 
-# Photometry options
-photometryOptions: {photFilter: 'Beam'}
-
 # Filter definitions:
 mapFilters:
     - {label: "Beam",

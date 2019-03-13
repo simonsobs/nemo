@@ -290,7 +290,7 @@ class MapFilter(object):
         Returns profile, arcminRange
         
         """
-        realSpace=fft.ifft2(self.G).real
+        realSpace=fft.ifft2(self.filt).real
         realSpace=fft.fftshift(realSpace)
 
         # Changed for python3 - we may want to check this...
@@ -419,7 +419,7 @@ class MatchedFilter(MapFilter):
             
         if os.path.exists(self.filterFileName) == False:
             print(">>> Building filter %s#%s ..." % (self.label, self.extName))
-            
+                        
             fMapsForNoise=[]
             for mapDict in self.unfilteredMapsDictList: 
                 d=mapDict['data']
@@ -454,6 +454,7 @@ class MatchedFilter(MapFilter):
                     NP=ndimage.gaussian_filter(NP, kernelSize)
                     row.append(NP)
                 noiseCov.append(row)
+            del fMapsForNoise
             noiseCov=np.array(noiseCov)
             
             # Signal frequency weighting
@@ -479,18 +480,16 @@ class MatchedFilter(MapFilter):
             fSignalsArr=np.array(fSignalsArr)
                     
             # Build the filter itself
-            # NOTE: commented-out norm isn't right here... but doing with signal sims anyway...
-            t0=time.time()
-            filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]])
+            self.filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]])
             for y in range(0, self.shape[0]):
                 for x in range(0, self.shape[1]):
                     try:
-                        filt[:, y, x]=np.dot(np.linalg.inv(noiseCov[:, :, y, x]), w*abs(fSignalsArr[:, y, x])) 
+                        self.filt[:, y, x]=np.dot(np.linalg.inv(noiseCov[:, :, y, x]), w*abs(fSignalsArr[:, y, x])) 
                     except:
                         continue
-            self.G=filt
-            t1=time.time()
-                            
+            del fSignalsArr
+            del noiseCov
+            
             # Use a map with known input signal to figure out how much it has been rolled off by     
             if self.params['outputUnits'] == 'yc':
                 # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
@@ -510,6 +509,7 @@ class MatchedFilter(MapFilter):
                 signalMaps=np.array(signalMaps)
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
+                del fSignalMaps
                 self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
                 if len(self.unfilteredMapsDictList) > 1:
@@ -522,11 +522,11 @@ class MatchedFilter(MapFilter):
                     signalMaps.append(signalMapDict['signalMap'])
                     fSignal=enmap.fft(signalMapDict['signalMap'])
                     fSignalMaps.append(fSignal)
-                    #inputSignalProperties.append(signalMapDict['inputSignalProperties'])
                 signalMaps=np.array(signalMaps)
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
                 self.signalNorm=1.0/filteredSignal.max()
+                del fSignalMaps
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         else:
@@ -535,6 +535,7 @@ class MatchedFilter(MapFilter):
         
         # Apply filter
         filteredMap=self.applyFilter(fMapsToFilter)
+        del fMapsToFilter
 
         # Units etc.
         if self.params['outputUnits'] == 'yc':
@@ -592,7 +593,7 @@ class MatchedFilter(MapFilter):
         if 'saveFilter' in self.params and self.params['saveFilter'] == True:
             img=pyfits.PrimaryHDU()                                                                                                                                                              
             img.header['SIGNORM']=self.signalNorm                                                                                                                                                
-            img.data=self.G                                                                                                                                                                      
+            img.data=self.filt                                                                                                                                                                      
             img.writeto(self.filterFileName, overwrite = True) 
             
         # NOTE: What to do about frequency here? Generalise for non-SZ
@@ -605,25 +606,59 @@ class MatchedFilter(MapFilter):
         
         """
         with pyfits.open(self.filterFileName) as img:
-            self.G=img[0].data
+            self.filt=img[0].data
             self.signalNorm=img[0].header['SIGNORM']
     
+
+    def reshapeFilter(self, shape):
+        """Use linear interpolation to transform the filter to the given shape.
+        
+        Returns:
+            Reshaped filter (2d numpy array)
+        
+        """
+        
+        # If we feed in a 2d shape, make sure we add an axis to keep generalised to multi-frequency
+        if len(shape) == 2:
+            shape=[self.filt.shape[0], shape[0], shape[1]]
+        assert(len(shape) == 3)
+
+        lx, ly=enmap.laxes(self.unfilteredMapsDictList[0]['data'].shape, self.enwcs)
+        lxToX=interpolate.interp1d(lx, np.arange(lx.shape[0]), fill_value = 'extrapolate')
+        lyToY=interpolate.interp1d(ly, np.arange(ly.shape[0]), fill_value = 'extrapolate')
+        lxOut, lyOut=enmap.laxes([shape[1], shape[2]], self.enwcs)
+        xOut=lxToX(lxOut)  
+        yOut=lyToY(lyOut)
+        reshapedFilt=np.zeros(shape)
+        for i in range(self.filt.shape[0]):
+            filtInterp=interpolate.interp2d(np.arange(ly.shape[0]), np.arange(lx.shape[0]), self.filt[i])
+            reshapedFilt[i]=filtInterp(yOut, xOut)
+        
+        return reshapedFilt
     
-    def applyFilter(self, mapDataToFilter, doFFT = False):
-        """Apply the filter to the given Fourier-transformed map data (must be a cube - with
-        each plane corresponding to a frequency).
-        
-        NOTE: doFFT option is not implemented yet.
-        
+            
+    def applyFilter(self, mapDataToFilter):
+        """Apply the filter to the given map data (must be a cube - with each plane corresponding to a 
+        frequency). If the map data is not complex, it will be Fourier transformed. If the map data 
+        is not the same shape as the filter, the filter will be interpolated to match.
+                
         Returns:
             Filtered map (2d numpy array)
         
         """
-        if doFFT == True:
-            raise Exception("doFFT option not implemented yet")
+        
+        # NOTE: need to check appropriate signalNorm after reshaping
+        if mapDataToFilter.shape == self.filt.shape:
+            filt=self.filt
         else:
+            filt=self.reshapeFilter(mapDataToFilter.shape)
+        
+        if np.any(np.iscomplex(mapDataToFilter)) == True:
             fMapsToFilter=mapDataToFilter
-        filteredMap=np.real(enmap.ifft(fMapsToFilter*self.G, normalize = False)).sum(axis = 0)
+        else:
+            fMapsToFilter=enmap.fft(enmap.apod(mapDataToFilter, self.apodPix))
+
+        filteredMap=np.real(enmap.ifft(fMapsToFilter*filt, normalize = False)).sum(axis = 0)
         filteredMap=filteredMap*self.signalNorm
         
         return filteredMap
