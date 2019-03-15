@@ -91,7 +91,11 @@ def makeTileDeck(parDict):
                         
             # Added an option to define tiles in the .par file... otherwise, we will do the automatic tiling
             if 'tileDefinitions' in list(parDict.keys()):
-                tileDeckFileNameLabel="userDefined_%.1f" % (parDict['tileOverlapDeg'])
+                if 'tileDefLabel' in list(parDict.keys()):
+                    tileDefLabel=parDict['tileDefLabel']
+                else:
+                    tileDefLabel='userDefined'
+                tileDeckFileNameLabel="%s_%.1f" % (tileDefLabel, parDict['tileOverlapDeg'])
                 defineTilesAutomatically=False
             else:
                 tileDeckFileNameLabel="%dx%d_%.1f" % (parDict['numHorizontalTiles'],
@@ -796,7 +800,7 @@ def estimateContaminationFromSkySim(config, imageDict):
     for i in range(numSkySims):
         
         # NOTE: we throw the first sim away on figuring out noiseBoostFactors
-        print(">>> Sky sim %d/%d ..." % (i+1, numSkySims))
+        print(">>> Sky sim %d/%d [rank = %d] ..." % (i+1, numSkySims, config.rank))
         t0=time.time()
 
         # We don't copy this, because it's complicated due to containing MPI-related things (comm)
@@ -834,10 +838,11 @@ def estimateContaminationFromSkySim(config, imageDict):
                                                          copyFilters = True)
         
         # Write out the last sim map catalog for debugging
-        optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
-        optimalCatalog=simImageDict['optimalCatalog']
-        if len(optimalCatalog) > 0:
-            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
+        # NOTE: extName here makes no sense - this should be happening in the pipeline call above
+        #optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
+        #optimalCatalog=simImageDict['optimalCatalog']
+        #if len(optimalCatalog) > 0:
+            #catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
         
         # Contamination estimate...
         contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', config.diagnosticsDir)
