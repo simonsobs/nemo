@@ -518,7 +518,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
                     % (mapDict['obsFreqGHz']))
 
     # Load weight map if given
-    if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] != None:
+    if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] is not None:
         with pyfits.open(mapDict['weightsFileName'], memmap = True) as wht:
             weights=wht[extName].data
         # For Enki maps... take only I (temperature) for now, add options for this later
@@ -534,14 +534,14 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     data[weights == 0]=0
     
     # Load survey and point source masks, if given
-    if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] !=  None:
+    if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
         with pyfits.open(mapDict['surveyMask'], memmap = True) as smImg:
             surveyMask=smImg[extName].data
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
 
-    if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] != None:
+    if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] is not None:
         with pyfits.open(mapDict['pointSourceMask'], memmap = True) as psImg:
             psMask=psImg[extName].data
     else:
@@ -550,7 +550,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     print("... opened map %s ..." % (mapDict['mapFileName']))
     
     # Optional map clipping
-    if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] != None:
+    if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] is not None:
         RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
         clip=astImages.clipUsingRADecCoords(data, wcs, RAMin, RAMax, decMin, decMax)
         data=clip['data']
@@ -598,23 +598,33 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
                     
     # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
     # or a wavelet decomposition scale image
-    if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] != None:
+    if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] is not None:
         data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
     
-    # Optional masking of point sources from external catalog - needed, e.g., for point source subtracted
-    # maps from Jon's pipeline, because otherwise we get negative bits that are detected as spurious 
-    # clusters
-    if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] != None:
-        print("Add code for masking point sources in a catalog")
-        IPython.embed()
-        sys.exit()        
-    
-    # Apply a ready-made point source and in-paint - added Feb 2018 (should then remove other stuff above)
-    # This only reduced bright edges around masked regions... which is nice, but not essential
-    # May allow us to use smaller holes in PS mask though
-    #smoothedMap=ndimage.median_filter(data, 13) # size chosen for typical hole size... slow... but quite good
-    #data[np.where(psMask == 0)]=smoothedMap[np.where(psMask == 0)]
-    
+    # Optional masking of point sources from external catalog
+    # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
+    if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
+        with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
+            wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
+            data=img[extName].data
+        # Make mask from catalog
+        tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
+        psMask=np.ones(data.shape)
+        pixCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()), dtype = int)
+        xMask=np.logical_and(pixCoords[:, 0] >= 0, pixCoords[:, 0] < psMask.shape[1])
+        yMask=np.logical_and(pixCoords[:, 1] >= 0, pixCoords[:, 1] < psMask.shape[0])
+        pixCoords=pixCoords[np.logical_and(xMask, yMask)]
+        for p in pixCoords:
+            psMask[p[1], p[0]]=0
+        pixRad=(4.0/60.0)/wcs.getPixelSizeDeg() # Masks 4' radius BUT circular
+        psMask=1.0*(ndimage.distance_transform_edt(psMask) > pixRad)
+        # Fill holes in mask
+        annulus=photometry.makeAnnulus(pixRad, pixRad+5)
+        numValues=annulus.flatten().nonzero()[0].shape[0]
+        bckData=ndimage.rank_filter(data, int(round(0.5*numValues)), footprint = annulus)
+        #bckData=ndimage.median_filter(data, int(pixRad)) # size chosen for typical hole size... slow... but quite good
+        data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]
+            
     # Add the map data to the dict
     mapDict['data']=data
     mapDict['weights']=weights
