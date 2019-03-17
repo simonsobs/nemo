@@ -103,6 +103,13 @@ def parseConfigFile(parDictFileName):
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
+        # Sanity check of tile definitions
+        if 'tileDefinitions' in parDict.keys():
+            checkList=[]
+            for entry in parDict['tileDefinitions']:
+                if entry['extName'] in checkList:
+                    raise Exception("Duplicate extName '%s' in tileDefinitions - fix in config file" % (entry['extName']))
+                checkList.append(entry['extName'])
     
     return parDict
 
