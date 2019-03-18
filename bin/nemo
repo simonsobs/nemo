@@ -38,8 +38,13 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
     
     imageDict=pipelines.filterMapsAndMakeCatalogs(config)
+
+    # Q function (filter mismatch) - if needed options have been given
+    # We may as well do this here to save having to run nemoMass separately (though we still can...)
+    # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)
+    if 'photometryOptions' in config.parDict.keys() and 'photFilter' in config.parDict['photometryOptions'].keys():
+        tckQFitDict=signals.fitQ(config)
     
-    # NOTE: Below needs to be updated to use pipelines module
     # Estimate of contamination from running cluster finding over inverted map
     if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
         conTabDict=maps.estimateContaminationFromInvertedMaps(config, imageDict)
