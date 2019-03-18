@@ -755,17 +755,17 @@ class RealSpaceMatchedFilter(MapFilter):
         mask=np.less(arcminRange, kernelMaxArcmin)
 
         # Kernel can be either fully 2d, or be azimuthally averaged... in the ACTPol E-D56 paper, we used the latter
-        if self.params['noiseParams']['symmetrize'] == False:
-            profile2d=fft.ifft2(matchedFilter.filt).real
-            profile2d=fft.fftshift(profile2d)
-        else:
+        if 'symmetrize' in self.params['noiseParams'].keys() and self.params['noiseParams']['symmetrize'] == True:
             rRadians=np.radians(arcminRange/60.)
             profile2d=[]
             for i in range(prof.shape[0]):
                 r2p=interpolate.interp1d(rRadians[mask], prof[i, mask], bounds_error=False, fill_value=0.0)
                 profile2d.append(r2p(matchedFilter.radiansMap))
             profile2d=np.array(profile2d)
-        
+        else:
+            profile2d=fft.ifft2(matchedFilter.filt).real
+            profile2d=fft.fftshift(profile2d)
+            
         # z is not needed here - just because we switched to multi-freq throughout
         z, y, x=np.where(abs(profile2d) == abs(profile2d).max()) 
         #y, x=np.where(profile2d[0] == profile2d[0].max())
@@ -928,7 +928,10 @@ class RealSpaceMatchedFilter(MapFilter):
         else:
             gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
             trimSizePix=int(round(gridSize*3.0))
-        edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
+        if trimSizePix > 0:
+            edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
+        else:
+            edgeCheck=np.ones(filteredMap.shape)
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
         filteredMap=filteredMap*edgeCheck
         apodMask=np.not_equal(filteredMap, 0)
