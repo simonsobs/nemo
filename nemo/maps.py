@@ -484,10 +484,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     CMBSimSeed (:obj:`int`)
         If present, replace the map with a source-free simulated CMB realisation, generated using the given
         seed number. Used by :meth:`estimateContaminationFromSkySim`.
-        
-    bckSubScaleArcmin (:obj:`float`)
-        If present, high-pass filter the map at the given scale, using :meth:`subtractBackground`.
-    
+            
     Args:
         mapDict (:obj:`dict`): A dictionary with the same keys as given in the unfilteredMaps list in the 
             .yml configuration file (i.e., it must contain at least the keys 'mapFileName', 'units', and
@@ -598,8 +595,11 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
                     
     # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
     # or a wavelet decomposition scale image
-    if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] is not None:
-        data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
+    # If want to put this back in docs
+    # bckSubScaleArcmin (:obj:`float`)
+    # If present, high-pass filter the map at the given scale, using :meth:`subtractBackground`.
+    #if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] is not None:
+        #data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
     
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)

@@ -319,6 +319,7 @@ class MapFilter(object):
         #FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
         
         fig=plt.figure(figsize=(8,8))
+        ax=plt.axes([0.14, 0.11, 0.85, 0.86])
         #fig.canvas.set_window_title('Filter Profile in Real Space')
         #plt.title("Filter Profile %s" % (self.label))
         plt.ylabel("Amplitude")
@@ -327,6 +328,7 @@ class MapFilter(object):
             plt.plot(arcminRange, row, label = '%d GHz' % (mapDict['obsFreqGHz']))
         plt.xlim(0, 30.0)
         plt.ylim(prof.min(), prof.max()*1.1)
+        plt.legend()
         plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+"#"+self.extName+".png")
         plt.close()
         
@@ -452,6 +454,7 @@ class MatchedFilter(MapFilter):
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
+                    #astImages.saveFITS("test_%d_%d.fits" % (i,  j), fft.fftshift(NP), None)
                     row.append(NP)
                 noiseCov.append(row)
             del fMapsForNoise
@@ -641,6 +644,9 @@ class MatchedFilter(MapFilter):
         """Apply the filter to the given map data (must be a cube - with each plane corresponding to a 
         frequency). If the map data is not complex, it will be Fourier transformed. If the map data 
         is not the same shape as the filter, the filter will be interpolated to match.
+        
+        An optional additional high-pass filter can be applied if 'bckSub' and 'bckSubScaleArcmin' are
+        given in self.params.
                 
         Returns:
             Filtered map (2d numpy array)
@@ -659,6 +665,11 @@ class MatchedFilter(MapFilter):
             fMapsToFilter=enmap.fft(enmap.apod(mapDataToFilter, self.apodPix))
 
         filteredMap=np.real(enmap.ifft(fMapsToFilter*filt, normalize = False)).sum(axis = 0)
+
+        # Optional additional high-pass filter
+        if 'bckSub' in self.params.keys() and 'bckSubScaleArcmin' in self.params.keys() and self.params['bckSub'] == True:
+            filteredMap=maps.subtractBackground(filteredMap, self.wcs, smoothScaleDeg = self.params['bckSubScaleArcmin']/60.)
+        
         filteredMap=filteredMap*self.signalNorm
         
         return filteredMap
