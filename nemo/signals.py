@@ -19,7 +19,6 @@ from . import photometry
 from . import filters
 from . import gnfw
 from . import plotSettings
-from . import signals
 import numpy as np
 import numpy.fft as fft
 import os
@@ -366,12 +365,12 @@ def fitQ(config):
                 for obsFreqGHz in list(beamsDict.keys()):
                     deltaT0=maps.convertToDeltaT(y0, obsFreqGHz)
                     # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This can
-                    signalMap, inputProperties=signals.makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
-                                                                               degreesMap, wcs, 
-                                                                               beamsDict[obsFreqGHz], 
-                                                                               deltaT0 = deltaT0,
-                                                                               convolveWithBeam = False,
-                                                                               GNFWParams = config.parDict['GNFWParams'])
+                    signalMap, inputProperties=makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
+                                                                        degreesMap, wcs, 
+                                                                        beamsDict[obsFreqGHz], 
+                                                                        deltaT0 = deltaT0,
+                                                                        convolveWithBeam = False,
+                                                                        GNFWParams = config.parDict['GNFWParams'])
                     if abs(y0-inputProperties['y0']) > tol:
                         raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
                     if realSpace == True:
@@ -427,6 +426,7 @@ def fitQ(config):
             plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
             plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
             plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
+            plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (extName))
             plt.close()
         
         # Gather and save all the Q fits
