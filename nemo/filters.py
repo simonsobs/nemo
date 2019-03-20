@@ -425,16 +425,19 @@ class MatchedFilter(MapFilter):
             fMapsForNoise=[]
             for mapDict in self.unfilteredMapsDictList: 
                 d=mapDict['data']
-                if mapDict['weightsType'] == 'invVar':
-                    w=np.sqrt(mapDict['weights'])
-                    w=w/w.max()
-                elif mapDict['weightsType'] == 'hits':
-                    w=np.sqrt(mapDict['weights'])
-                    w=w/w.max()
-                    w=1/w
-                else:
-                    raise Exception("Didn't understand 'weightsType' - should be 'invVar' or 'hits'")
-                fMapsForNoise.append(enmap.fft(enmap.apod(d*w, self.apodPix)))
+                # This weight flattening business was the wrong thing to do...
+                #if mapDict['weightsType'] == 'invVar':
+                    #w=np.sqrt(mapDict['weights'])
+                    #w=w/w.max()
+                    #w=np.ones(w.shape)
+                #elif mapDict['weightsType'] == 'hits':
+                    #w=np.sqrt(mapDict['weights'])
+                    #w=w/w.max()
+                    #w=1/w
+                #else:
+                    #raise Exception("Didn't understand 'weightsType' - should be 'invVar' or 'hits'")
+                #fMapsForNoise.append(enmap.fft(enmap.apod(d*w, self.apodPix)))
+                fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
             fMapsForNoise=np.array(fMapsForNoise)
         
             # Smoothing noise here is essential
@@ -454,7 +457,7 @@ class MatchedFilter(MapFilter):
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
-                    #astImages.saveFITS("test_%d_%d.fits" % (i,  j), fft.fftshift(NP), None)
+                    astImages.saveFITS("test_%d_%d_%s.fits" % (i,  j, self.extName), fft.fftshift(NP), None)
                     row.append(NP)
                 noiseCov.append(row)
             del fMapsForNoise

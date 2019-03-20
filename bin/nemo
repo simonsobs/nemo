@@ -117,7 +117,8 @@ if __name__ == '__main__':
         maps.plotContamination(conTabDict, config.diagnosticsDir)           
     
     # Strip out duplicates (this is necessary when run in tileDeck mode under MPI)
-    optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+    if len(optimalCatalog) > 0:
+        optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
     # We can do this twice as a sanity check... not necessary if we add a proper test elsewhere
     #optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
     #assert(numDuplicatesFound == 0)
