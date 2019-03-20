@@ -634,7 +634,7 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
         t0=time.time()
         for y0Noise in RMSTab['y0RMS']:
             count=count+1
-            print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
+            #print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
             compMz=calcCompleteness(RMSTab[np.where(RMSTab['y0RMS'] == y0Noise)], SNRCut, extName, mockSurvey, 
                                     scalingRelationDict, tckQFitDict, z = z)
             massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(compMz-0.9))]

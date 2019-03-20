@@ -257,6 +257,11 @@ def fitQ(config):
             
     """
 
+    outFileName=config.selFnDir+os.path.sep+"QFit.pickle"
+    if os.path.exists(outFileName) == True:
+        print(">>> Loading previously cached Q fit ...")
+        return loadQ(outFileName)
+        
     if config.parDict['GNFWParams'] == 'default':
         GNFWParams=gnfw._default_params
     else:
@@ -304,158 +309,151 @@ def fitQ(config):
     # Q calc - results for all tiles stored in one file
     outFileName=config.selFnDir+os.path.sep+"QFit.pickle"
     rank_QTabDict={}
-    if os.path.exists(outFileName) == False:
         
-        print(">>> Fitting for Q ...")
+    print(">>> Fitting for Q ...")
+    
+    # Do each tile in turn
+    # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that at some point...
+    for extName in config.extNames:        
         
-        # Do each tile in turn
-        # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that at some point...
-        for extName in config.extNames:        
-            
-            print("... %s ..." % (extName))
+        print("... %s ..." % (extName))
 
-            # Load reference scale filter
-            foundFilt=False
-            for filt in config.parDict['mapFilters']:
-                if filt['label'] == config.parDict['photometryOptions']['photFilter']:
-                    foundFilt=True
-                    break
-            if foundFilt == False:
-                raise Exception("couldn't find filter that matches photFilter")
-            filterClass=eval('filters.%s' % (filt['class']))
-            filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
-                                  extName = extName, diagnosticsDir = config.diagnosticsDir)
-            filterObj.loadFilter()
-            
-            # Real space kernel or Fourier space filter?
-            if issubclass(filterObj.__class__, filters.RealSpaceMatchedFilter) == True:
-                realSpace=True
-            else:
-                realSpace=False
-            
-            # Set-up the beams
-            beamsDict={}
-            for mapDict in config.parDict['unfilteredMaps']:
-                obsFreqGHz=mapDict['obsFreqGHz']
-                beamsDict[obsFreqGHz]=mapDict['beamFileName']
-            
-            # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
-            # NOTE: 5 deg is too small for the largest very low-z clusters: it's better to add a z cut and ignore those
-            # NOTE: 5 deg fell over (ringing) for tiles_v2 RE6_10_0, but 10 deg worked fine
-            with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName)) as img:
-                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-                extMap=img[0].data
-                RADeg, decDeg=wcs.getCentreWCSCoords()                
-                clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 10.0)
-                wcs=clipDict['wcs']
-                extMap=clipDict['data']
-            
-            # Input signal maps to which we will apply filter(s)
-            # We do this once and store in a dictionary for speed
-            theta500Arcmin=[]
-            signalMapDict={}
-            signalMap=np.zeros(extMap.shape)
-            degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 15.0)
-            for z, M500MSun in zip(zRange, MRange):
-                key='%.2f_%.2f' % (z, np.log10(M500MSun))
-                signalMaps=[]
-                fSignalMaps=[]
-                y0=2e-4
-                tol=1e-6
-                for obsFreqGHz in list(beamsDict.keys()):
-                    deltaT0=maps.convertToDeltaT(y0, obsFreqGHz)
-                    # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This can
-                    signalMap, inputProperties=makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
-                                                                        degreesMap, wcs, 
-                                                                        beamsDict[obsFreqGHz], 
-                                                                        deltaT0 = deltaT0,
-                                                                        convolveWithBeam = False,
-                                                                        GNFWParams = config.parDict['GNFWParams'])
-                    if abs(y0-inputProperties['y0']) > tol:
-                        raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
-                    if realSpace == True:
-                        signalMaps.append(signalMap)
-                    else:
-                        signalMaps.append(enmap.fft(signalMap))
-                signalMaps=np.array(signalMaps)
-                signalMapDict[key]=signalMaps
-                theta500Arcmin.append(inputProperties['theta500Arcmin'])
-            theta500Arcmin=np.array(theta500Arcmin)
-            
-            # Filter maps with the ref kernel
-            # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
-            Q=[]
-            QTheta500Arcmin=[]
-            count=0
-            for z, M500MSun in zip(zRange, MRange):
-                key='%.2f_%.2f' % (z, np.log10(M500MSun))
-                filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
-                peakFilteredSignal=filteredSignal.max()
-                if peakFilteredSignal not in Q:
-                    Q.append(peakFilteredSignal)      
-                    QTheta500Arcmin.append(theta500Arcmin[count])
-                count=count+1
-            Q=np.array(Q)
-            Q=Q/Q[0]
-                
-            # Sort and do spline fit... save .fits table of theta, Q
-            QTab=atpy.Table()
-            QTab.add_column(atpy.Column(Q, 'Q'))
-            QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
-            QTab.sort('theta500Arcmin')
-            rank_QTabDict[extName]=QTab
-                       
-            # Fit with spline
-            tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
-            
-            # Plot
-            plotSettings.update_rcParams()
-            plt.figure(figsize=(9,6.5))
-            ax=plt.axes([0.10, 0.11, 0.88, 0.88])
-            #plt.tick_params(axis='both', which='major', labelsize=15)
-            #plt.tick_params(axis='both', which='minor', labelsize=15)       
-            thetaArr=np.linspace(0, 500, 100000)
-            plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
-            plt.plot(QTheta500Arcmin, Q, 'D', ms = 8)
-            #plt.xlim(0, 9)
-            plt.ylim(0, Q.max()*1.05)
-            #plt.xlim(0, thetaArr.max())
-            #plt.xlim(0, 15)
-            plt.xlim(0.1, 500)
-            plt.semilogx()
-            plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
-            plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
-            plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
-            plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (extName))
-            plt.close()
+        # Load reference scale filter
+        foundFilt=False
+        for filt in config.parDict['mapFilters']:
+            if filt['label'] == config.parDict['photometryOptions']['photFilter']:
+                foundFilt=True
+                break
+        if foundFilt == False:
+            raise Exception("couldn't find filter that matches photFilter")
+        filterClass=eval('filters.%s' % (filt['class']))
+        filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
+                                extName = extName, diagnosticsDir = config.diagnosticsDir)
+        filterObj.loadFilter()
         
-        # Gather and save all the Q fits
-        if config.MPIEnabled == True:
-            gathered_QTabDicts=config.comm.gather(rank_QTabDict, root = 0)
-            if config.rank != 0:
-                assert gathered_QTabDicts is None
-                print("... MPI rank %d finished ..." % (config.rank))
-                sys.exit()
-            else:
-                print("... gathering QTabDicts ...")
-                QTabDict={}
-                for tabDict in gathered_QTabDicts:
-                    for key in tabDict:
-                        QTabDict[key]=tabDict[key]
+        # Real space kernel or Fourier space filter?
+        if issubclass(filterObj.__class__, filters.RealSpaceMatchedFilter) == True:
+            realSpace=True
         else:
-            QTabDict=rank_QTabDict
+            realSpace=False
+        
+        # Set-up the beams
+        beamsDict={}
+        for mapDict in config.parDict['unfilteredMaps']:
+            obsFreqGHz=mapDict['obsFreqGHz']
+            beamsDict[obsFreqGHz]=mapDict['beamFileName']
+        
+        # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
+        # NOTE: 5 deg is too small for the largest very low-z clusters: it's better to add a z cut and ignore those
+        # NOTE: 5 deg fell over (ringing) for tiles_v2 RE6_10_0, but 10 deg worked fine
+        with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName)) as img:
+            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            extMap=img[0].data
+            RADeg, decDeg=wcs.getCentreWCSCoords()                
+            clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 10.0)
+            wcs=clipDict['wcs']
+            extMap=clipDict['data']
+        
+        # Input signal maps to which we will apply filter(s)
+        # We do this once and store in a dictionary for speed
+        theta500Arcmin=[]
+        signalMapDict={}
+        signalMap=np.zeros(extMap.shape)
+        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 15.0)
+        for z, M500MSun in zip(zRange, MRange):
+            key='%.2f_%.2f' % (z, np.log10(M500MSun))
+            signalMaps=[]
+            fSignalMaps=[]
+            y0=2e-4
+            tol=1e-6
+            for obsFreqGHz in list(beamsDict.keys()):
+                deltaT0=maps.convertToDeltaT(y0, obsFreqGHz)
+                # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This can
+                signalMap, inputProperties=makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
+                                                                    degreesMap, wcs, 
+                                                                    beamsDict[obsFreqGHz], 
+                                                                    deltaT0 = deltaT0,
+                                                                    convolveWithBeam = False,
+                                                                    GNFWParams = config.parDict['GNFWParams'])
+                if abs(y0-inputProperties['y0']) > tol:
+                    raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
+                if realSpace == True:
+                    signalMaps.append(signalMap)
+                else:
+                    signalMaps.append(enmap.fft(signalMap))
+            signalMaps=np.array(signalMaps)
+            signalMapDict[key]=signalMaps
+            theta500Arcmin.append(inputProperties['theta500Arcmin'])
+        theta500Arcmin=np.array(theta500Arcmin)
+        
+        # Filter maps with the ref kernel
+        # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
+        Q=[]
+        QTheta500Arcmin=[]
+        count=0
+        for z, M500MSun in zip(zRange, MRange):
+            key='%.2f_%.2f' % (z, np.log10(M500MSun))
+            filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
+            peakFilteredSignal=filteredSignal.max()
+            if peakFilteredSignal not in Q:
+                Q.append(peakFilteredSignal)      
+                QTheta500Arcmin.append(theta500Arcmin[count])
+            count=count+1
+        Q=np.array(Q)
+        Q=Q/Q[0]
+            
+        # Sort and do spline fit... save .fits table of theta, Q
+        QTab=atpy.Table()
+        QTab.add_column(atpy.Column(Q, 'Q'))
+        QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
+        QTab.sort('theta500Arcmin')
+        rank_QTabDict[extName]=QTab
                     
+        # Fit with spline
+        tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
+        
+        # Plot
+        plotSettings.update_rcParams()
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.10, 0.11, 0.88, 0.88])
+        #plt.tick_params(axis='both', which='major', labelsize=15)
+        #plt.tick_params(axis='both', which='minor', labelsize=15)       
+        thetaArr=np.linspace(0, 500, 100000)
+        plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
+        plt.plot(QTheta500Arcmin, Q, 'D', ms = 8)
+        #plt.xlim(0, 9)
+        plt.ylim(0, Q.max()*1.05)
+        #plt.xlim(0, thetaArr.max())
+        #plt.xlim(0, 15)
+        plt.xlim(0.1, 500)
+        plt.semilogx()
+        plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
+        plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
+        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
+        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (extName))
+        plt.close()
+        print("... Q fit finished [extName = %s, rank = %d] ..." % (extName, config.rank))
+            
+    # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+    if config.MPIEnabled == True:
+        gathered_QTabDicts=config.comm.gather(rank_QTabDict, root = 0)
+        if config.rank == 0:
+            print("... gathering QTabDicts ...")
+            QTabDict={}
+            for tabDict in gathered_QTabDicts:
+                for key in tabDict:
+                    QTabDict[key]=tabDict[key]
+            with open(outFileName, "wb") as pickleFile:
+                pickler=pickle.Pickler(pickleFile)
+                pickler.dump(QTabDict)
+        else:
+            QTabDict=None
+        QTabDict=config.comm.bcast(QTabDict, root = 0)
+    else:
+        QTabDict=rank_QTabDict
         with open(outFileName, "wb") as pickleFile:
             pickler=pickle.Pickler(pickleFile)
             pickler.dump(QTabDict)
-            
-    else:
-        
-        if config.MPIEnabled == True and config.rank != 0:
-            sys.exit()
-        
-        print(">>> Loading previously cached Q fit ...")
-        return loadQ(outFileName)
         
     tckDict={}
     for key in QTabDict:

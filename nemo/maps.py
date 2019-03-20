@@ -803,7 +803,7 @@ def estimateContaminationFromSkySim(config, imageDict):
     
     """
 
-    simRootOutDir=config.diagnosticsDir+os.path.sep+"skySim"
+    simRootOutDir=config.diagnosticsDir+os.path.sep+"skySim_rank%d" % (config.rank)
     SNRKeys=['fixed_SNR']        
     numSkySims=config.parDict['numSkySims']
     resultsList=[]
