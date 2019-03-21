@@ -224,13 +224,11 @@ def makeTileDeck(parDict):
                 # Output a .reg file for debugging (pixel coords)
                 outFile=open(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
                 outFile.write("# Region file format: DS9 version 4.1\n")
-                outFile.write('global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+                outFile.write('global color=blue dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
                 outFile.write("image\n")
                 for c, name in zip(coordsList, extNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
-                #print("check tiles")
-                #sys.exit()
                 
                 # Make tiles
                 # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
@@ -544,7 +542,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     else:
         psMask=np.ones(data.shape)
             
-    print("... opened map %s ..." % (mapDict['mapFileName']))
+    #print("... opened map %s ..." % (mapDict['mapFileName']))
     
     # Optional map clipping
     if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] is not None:

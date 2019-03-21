@@ -63,7 +63,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         # Load area mask
         extName=key.split("#")[-1]
         if diagnosticsDir != None:
-            img=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+            img=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
             areaMask=img[0].data
         else:
             areaMask=None

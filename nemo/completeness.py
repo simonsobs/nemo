@@ -197,7 +197,7 @@ def loadAreaMask(extName, diagnosticsDir):
     
     """
     
-    areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+    areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
     areaMap=areaImg[0].data
     wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
     areaImg.close()
@@ -647,7 +647,7 @@ def makeMassLimitMap(SNRCut, z, extName, photFilterLabel, mockSurvey, scalingRel
     # Summary: agrees within 0.2% on average, but some tiles out by up to 3%
     #massImg=pyfits.open(outFileName)
     #massLimMap=massImg[0].data
-    #areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+    #areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
     #areaMap=areaImg[0].data
     #wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
     #areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
@@ -703,7 +703,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir):
     for extName in extNames:
         massLimImg=pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName))
         massLimMap=massLimImg[0].data
-        areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
         areaMap=areaImg[0].data
         wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
         areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
@@ -821,7 +821,7 @@ def makeFullSurveyMassLimitMapPlot(z, diagnosticsDir):
             img=pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName))
             data=img[0].data
             imgWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
-            areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+            areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
             areaMap=areaImg[0].data
             for y in range(data.shape[0]):
                 for x in range(data.shape[1]):

@@ -2,8 +2,7 @@
 
 Filter classes are defined in this module, together with the `filterMaps` function that uses them.
 
-There are two main classes of filter: `MatchedFilter` and `RealSpaceMatchedFilter`. 
-`RealSpaceMatcherFilter` is the preferred one to use.
+There are two main classes of filter: `MatchedFilter` and `RealSpaceMatchedFilter`.
 
 New base classes can be derived from the overall base class: `MapFilter`.
 
@@ -177,7 +176,7 @@ class MapFilter(object):
         self.extName=extName
         self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.extName)
         
-        # Prepare all the unfilteredMaps (in terms of cutting sections, adding noise etc.)
+        # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
         # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDeck files
         self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:           
@@ -426,6 +425,7 @@ class MatchedFilter(MapFilter):
             for mapDict in self.unfilteredMapsDictList: 
                 d=mapDict['data']
                 # This weight flattening business was the wrong thing to do...
+                # Shouldn't need anyway - as we estimate S/N in cells later
                 #if mapDict['weightsType'] == 'invVar':
                     #w=np.sqrt(mapDict['weights'])
                     #w=w/w.max()
@@ -586,7 +586,7 @@ class MatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (self.extName)
+        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (self.extName)
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
         
@@ -695,7 +695,7 @@ class RealSpaceMatchedFilter(MapFilter):
     
     Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
     
-    A map of the final area searched for clusters called 'areaMask.fits' is written in the diagnostics/ 
+    A map of the final area searched for clusters called 'areaMask.fits.gz' is written in the diagnostics/ 
     folder.
         
     """       
@@ -958,7 +958,7 @@ class RealSpaceMatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (self.extName)
+        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (self.extName)
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
         
