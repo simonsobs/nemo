@@ -318,7 +318,57 @@ def makeTileDeck(parDict):
             unfilteredMapsDictList.append(mapDict.copy())
     
     return unfilteredMapsDictList, extNames
+
+#-------------------------------------------------------------------------------------------------------------
+def stitchTiles(filePattern, outFileName, outWCS, outShape):
+    """Fast routine for stitching map tiles back together. Since this uses interpolation, you probably don't 
+    want to do analysis on the output - this is just for checking / making plots etc.. This routine sums 
+    images as it pastes them into the larger map grid. So, if the zeroed (overlap) borders are not handled,
+    correctly, this will be obvious in the output.
+
+    NOTE: This assumes RA in x direction, dec in y direction (and CAR projection).
     
+    NOTE: This routine only writes output if there are multiple files that match filePattern (to save needless
+    duplicating maps if nemo was not run in tileDeck mode).
+
+    Takes 10 sec for AdvACT S16-sized downsampled by a factor of 4 in resolution.
+    
+    """
+    
+    # Set-up template blank map into which we'll dump tiles
+    outData=np.zeros(outShape)
+    outRACoords=np.array(outWCS.pix2wcs(np.arange(outData.shape[1]), [0]*outData.shape[1]))
+    outDecCoords=np.array(outWCS.pix2wcs([0]*np.arange(outData.shape[0]), np.arange(outData.shape[0])))
+    outRA=outRACoords[:, 0]
+    outDec=outDecCoords[:, 1]
+    RAToX=interpolate.interp1d(outRA, np.arange(outData.shape[1]), fill_value = 'extrapolate')
+    DecToY=interpolate.interp1d(outDec, np.arange(outData.shape[0]), fill_value = 'extrapolate')
+
+    # Splat tiles into output map
+    inFiles=glob.glob(filePattern)
+    if len(inFiles) == 0:
+        raise Exception("No matching tile images to stitch together")
+    if len(inFiles) == 1:
+        return None # No point stitching together 1 tile (probably means didn't run in tiles mode)
+    count=0
+    for f in inFiles:
+        count=count+1
+        #print("... %d/%d ..." % (count, len(inFiles)))
+        with pyfits.open(f) as img:
+            d=img[0].data
+            inWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+        xIn=np.arange(d.shape[1])
+        yIn=np.arange(d.shape[0])
+        inRACoords=np.array(inWCS.pix2wcs(xIn, [0]*len(xIn)))
+        inDecCoords=np.array(inWCS.pix2wcs([0]*len(yIn), yIn))
+        inRA=inRACoords[:, 0]
+        inDec=inDecCoords[:, 1]
+        xOut=np.array(RAToX(inRA), dtype = int)
+        yOut=np.array(DecToY(inDec), dtype = int)
+        for i in range(len(yOut)):
+            outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
+    astImages.saveFITS(outFileName, outData, outWCS)
+
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
     """Given a mapData array and a catalog of source positions, replace the values at the object positions 
@@ -827,7 +877,7 @@ def estimateContaminationFromSkySim(config, imageDict):
         
         # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
         for filtDict in simConfig.parDict['mapFilters']:
-            if filtDict['label'] == simConfig.parDict['photometryOptions']['photFilter']:
+            if filtDict['label'] == simConfig.parDict['photFilter']:
                 break
         simConfig.parDict['mapFilters']=[filtDict] 
         

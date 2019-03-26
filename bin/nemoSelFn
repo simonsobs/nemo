@@ -69,7 +69,7 @@ if __name__ == '__main__':
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
     
     # We only care about the filter used for fixed_ columns
-    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    photFilterLabel=config.parDict['photFilter']
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             break

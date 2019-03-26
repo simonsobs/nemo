@@ -82,7 +82,7 @@ class SelFn(object):
         
         
         # We only care about the filter used for fixed_ columns
-        self.photFilterLabel=parDict['photometryOptions']['photFilter']
+        self.photFilterLabel=['photFilter']
         
         self.scalingRelationDict=parDict['massOptions']
         

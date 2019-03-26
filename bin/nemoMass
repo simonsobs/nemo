@@ -45,7 +45,7 @@ def addForcedPhotometry(forcedTab, config):
     print(">>> Doing forced photometry ...")
     
     # Filter maps - but should already have been done, this is just for easy set up
-    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    photFilterLabel=config.parDict['photFilter']
     photFilterList=[]
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
@@ -77,12 +77,12 @@ def addForcedPhotometry(forcedTab, config):
                     objDict['y']=y
                     catalog.append(objDict)
     imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
-    photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir, unfilteredMapsDict = config.parDict['unfilteredMaps'])
+    photometry.measureFluxes(imageDict, config.parDict['photFilter'], config.diagnosticsDir, unfilteredMapsDict = config.parDict['unfilteredMaps'])
     catalogs.mergeCatalogs(imageDict)
     
     # No cuts here, because if we're using this mode, the objects almost certainly weren't detected...
     catalogs.makeOptimalCatalog(imageDict, [])  
-    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir)
+    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photFilter'], config.diagnosticsDir)
 
     # Make into an atpy Table
     # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog

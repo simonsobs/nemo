@@ -79,14 +79,14 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     
     # Measure fluxes
     if measureFluxes == True:
-        photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir, 
+        photometry.measureFluxes(imageDict, config.parDict['photFilter'], config.diagnosticsDir, 
                                  unfilteredMapsDict = config.parDict['unfilteredMaps'],
                                  useInterpolator = config.parDict['useInterpolator'])
     else:
         # Get S/N only - if the reference (fixed) filter scale has been given
         # This is (probably) only used by maps.estimateContaminationFromInvertedMaps
-        if 'photFilter' in list(config.parDict['photometryOptions'].keys()):
-            photFilter=config.parDict['photometryOptions']['photFilter']
+        if 'photFilter' in list(config.parDict.keys()):
+            photFilter=config.parDict['photFilter']
         else:
             photFilter=None
         if photFilter != None:
@@ -97,7 +97,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])
     
     # This is useful for multi-freq, e.g., relativistic SZ corrections; tracking which objects are in 148 GHz only parts of the map
-    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photometryOptions'], 
+    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photFilter'], 
                                        config.diagnosticsDir)
     
     return imageDict

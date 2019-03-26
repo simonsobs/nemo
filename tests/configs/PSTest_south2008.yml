@@ -10,10 +10,7 @@ unfilteredMaps:
        weightsType: "hits",
        obsFreqGHz: 148.0, 'units': "uK",
        beamFileName: "testsCache/profile_AR1_2008_pixwin_130224.txt",
-       addNoise: null,
        RADecSection: [1.87, 104.0, -56.5, -49.5],
-       pointSourceMask: null,
-       surveyMask: null,
        solidAngle_nsr: 216.6}
 
 # Detection/catalog options

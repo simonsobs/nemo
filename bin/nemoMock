@@ -74,7 +74,7 @@ if __name__ == '__main__':
     tckQFitDict=signals.fitQ(config)
 
     # We only care about the filter used for fixed_ columns
-    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    photFilterLabel=config.parDict['photFilter']
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             break
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     RMSMapDict={}
     for extName in config.extNames:
         # Need area covered 
-        areaImg=pyfits.open(config.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaImg=pyfits.open(config.diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
         areaMask=areaImg[0].data
         wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
         areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)

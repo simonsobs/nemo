@@ -287,7 +287,7 @@ def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = F
                     obj[prefix+'SNR']=data[int(round(y)), int(round(x))] # read directly off of S/N map
        
 #------------------------------------------------------------------------------------------------------------
-def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator = True, unfilteredMapsDict = None):
+def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True, unfilteredMapsDict = None):
     """Add flux measurements to each catalog pointed to in the imageDict. Measured in 'outputUnits' 
     specified in the filter definition in the .par file (and written to the image header as 'BUNIT').
     
@@ -295,21 +295,15 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
     position equal to the flux that is wanted (yc, uK or Jy/beam). This includes taking out the effect of
     the beam.
     
-    Under 'photometryOptions', use the 'photFilter' key to choose which filtered map in which to make
-    flux measurements at fixed scale (fixed_delta_T_c, fixed_y_c etc.) 
+    Use 'photFilter' to choose which filtered map in which to make flux measurements at fixed scale
+    (fixed_delta_T_c, fixed_y_c etc.). Set to None if you don't want these.
 
     """
     
     print(">>> Doing photometry ...")
 
-    # For fixed filter scale
-    if 'photFilter' in list(photometryOptions.keys()):
-        photFilter=photometryOptions['photFilter']
-    else:
-        photFilter=None
-
     # Adds fixed_SNR values to catalogs for all maps
-    if photFilter != None:
+    if photFilter is not None:
         getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, 
                     useInterpolator = useInterpolator)
 
@@ -347,7 +341,7 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
         interpolatorList=[mapInterpolator]
         prefixList=['']
         extName=key.split("#")[-1]
-        if 'photFilter' in list(photometryOptions.keys()):
+        if photFilter is not None:
             photImg=pyfits.open(imageDict[photFilter+"#"+extName]['filteredMap'])
             photMapData=photImg[0].data
             mapDataList.append(photMapData)
@@ -403,22 +397,19 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
                             obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
 
 #------------------------------------------------------------------------------------------------------------
-def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
+def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
     """Add relative weighting by frequency for each object in the optimal catalog, extracted from the 
     data cube saved under diagnosticsDir (this is made by makeSZMap in RealSpaceMatchedFilter). This is
     needed for multi-frequency cluster finding / analysis - for, e.g., weighting relativistic corrections to
     y0~ (which was estimated from the inverse variance weighted average of y0~ from each frequency map).
     
-    NOTE: this is only applied for the reference filter (pointed to by photometryOptions['photFilter']).
+    NOTE: this is only applied for the reference filter (pointed to by photFilter)
     
     """
 
-    # We only For fixed filter scale
-    if 'photFilter' in list(photometryOptions.keys()):
-        photFilter=photometryOptions['photFilter']
-    else:
+    if photFilter is None:
         return None
-
+    
     catalog=imageDict['optimalCatalog']
     for extName in imageDict['extNames']:
         label=photFilter+"#"+extName

@@ -268,7 +268,7 @@ def fitQ(config):
         GNFWParams=config.parDict['GNFWParams']
         
     # Spin through the filter kernels
-    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    photFilterLabel=config.parDict['photFilter']
     filterList=config.parDict['mapFilters']
     for f in filterList:
         if f['label'] == photFilterLabel:
@@ -321,7 +321,7 @@ def fitQ(config):
         # Load reference scale filter
         foundFilt=False
         for filt in config.parDict['mapFilters']:
-            if filt['label'] == config.parDict['photometryOptions']['photFilter']:
+            if filt['label'] == config.parDict['photFilter']:
                 foundFilt=True
                 break
         if foundFilt == False:

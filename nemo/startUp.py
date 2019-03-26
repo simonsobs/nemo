@@ -9,6 +9,8 @@ import os
 import sys
 import yaml
 import copy
+import astropy.io.fits as pyfits
+from astLib import astWCS
 import IPython
 from . import maps
 
@@ -68,15 +70,17 @@ def parseConfigFile(parDictFileName):
             parDict['mapFilters']=mapFiltersList
         # We always need RMSMap and freqWeightsMap to do any photometry
         # So we may as well force inclusion if they have not been explicitly given
-        if 'photometryOptions' in parDict.keys():
-            photometryOptions=parDict['photometryOptions']
-            if 'photFilter' in list(photometryOptions.keys()):
-                photFilter=photometryOptions['photFilter']
-                for filtDict in parDict['mapFilters']:
-                    if filtDict['label'] == photFilter:
-                        filtDict['params']['saveRMSMap']=True
-                        filtDict['params']['saveFreqWeightMap']=True
-                        filtDict['params']['saveFilter']=True
+        if 'photFilter' not in parDict.keys():
+            # This is to allow source finding folks to skip this option in .yml
+            # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
+            parDict['photFilter']=None
+        else:
+            photFilter=parDict['photFilter']
+            for filtDict in parDict['mapFilters']:
+                if filtDict['label'] == photFilter:
+                    filtDict['params']['saveRMSMap']=True
+                    filtDict['params']['saveFreqWeightMap']=True
+                    filtDict['params']['saveFilter']=True
         # extNames must be case insensitive in .yml file 
         # we force upper case here (because FITS will anyway)
         if 'tileDefinitions' in parDict.keys():
@@ -96,10 +100,6 @@ def parseConfigFile(parDictFileName):
         # By default, undo the pixel window function
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True
-        # This is to allow source finding folks to skip this option in .yml
-        # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
-        if 'photometryOptions' not in parDict.keys():
-            parDict['photometryOptions']={}
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
@@ -147,6 +147,11 @@ class NemoConfig(object):
 
         self.parDict=parseConfigFile(configFileName)
         self.configFileName=configFileName
+        
+        # We want the original map WCS and shape (for using stitchMaps later)
+        with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
+            self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+            self.origShape=img[0].data.shape
         
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).

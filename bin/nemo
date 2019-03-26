@@ -15,6 +15,8 @@ import nemo
 import argparse
 import astropy
 import astropy.table as atpy
+import astropy.io.fits as pyfits
+from astLib import astWCS
 import numpy as np
 import pylab
 import pickle
@@ -42,7 +44,7 @@ if __name__ == '__main__':
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
     # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)
-    if 'photometryOptions' in config.parDict.keys() and 'photFilter' in config.parDict['photometryOptions'].keys():
+    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
         tckQFitDict=signals.fitQ(config)
     
     # Estimate of contamination from running cluster finding over inverted map
@@ -132,20 +134,17 @@ if __name__ == '__main__':
                          constraintsList = ["SNR > 0.0"], \
                          addInfo = addInfo, color = "cyan") 
     
-    # This can at least be read as mosaic WCS by DS9 - add proper map stitching later
-    # Still need to zap the blank areas / shrink the images here
-    # But in any case, good for flicking through the data cube quickly as a sanity check
-    #import glob
-    #import astropy.io.fits as pyfits                                                                                                                                                    
-    #fileList=glob.glob(config.rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+config.parDict['photometryOptions']['photFilter']+"*SNMap.fits")
-    #fileList.sort()
-    #img=pyfits.HDUList()
-    #for f in fileList:
-        #with pyfits.open(f) as fimg:
-            #hdu=pyfits.ImageHDU(data = fimg[0].data, header = fimg[0].header, name = fimg[0].name)
-            #img.append(hdu) 
-    #img.writeto(config.rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+config.parDict['photometryOptions']['photFilter']+"_all_SNMap.fits",
-                #overwrite = True)
-    #img.close()
+    # Stitch together map tiles
+    # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
+    # RMS
+    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"RMSMap*.fits", 
+                     config.diagnosticsDir+os.path.sep+"stitched_RMSMap.fits", 
+                     config.origWCS, config.origShape)
+    # S/N maps at reference filter scale
+    if config.parDict['photFilter'] is not None:
+        maps.stitchTiles(config.filteredMapsDir+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
+                         config.filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (config.parDict['photFilter']), 
+                         config.origWCS, config.origShape)    
+
     
     
