@@ -346,9 +346,7 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape):
 
     # Splat tiles into output map
     inFiles=glob.glob(filePattern)
-    if len(inFiles) == 0:
-        raise Exception("No matching tile images to stitch together")
-    if len(inFiles) == 1:
+    if len(inFiles) < 2:
         return None # No point stitching together 1 tile (probably means didn't run in tiles mode)
     count=0
     for f in inFiles:
