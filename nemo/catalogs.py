@@ -102,7 +102,7 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
     
     """
     
-    # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
+    # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names    
     templates=[]
     for key in imageDict['mapKeys']:
         if key != "mergedCatalog" and key != "optimalCatalog":
@@ -115,18 +115,15 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
     if len(allCatalogs) > 0:
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
-        mergedCatalog['SNR']=-99.
-        mergeRow=0
-        usedIndices=[]
         for row in allCatalogs:
             rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'], allCatalogs['decDeg']) 
             xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
-            xMatches=allCatalogs[xIndices]
-            xMatchIndex=np.argmax(xMatches['SNR'])
-            if xIndices[xMatchIndex] not in usedIndices:
-                mergedCatalog[mergeRow]=xMatches[xMatchIndex]
-                mergeRow=mergeRow+1
-                usedIndices=usedIndices+xIndices.tolist()
+            if len(xIndices) > 1:
+                xMatches=allCatalogs[xIndices]
+                xMatchIndex=np.argmax(xMatches['SNR'])
+                for index in xIndices:
+                    if index != xIndices[xMatchIndex]:
+                        mergedCatalog['SNR'][index]=-99
         mergedCatalog=mergedCatalog[mergedCatalog['SNR'] > 0]
         mergedCatalog.sort(['RADeg', 'decDeg'])
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)

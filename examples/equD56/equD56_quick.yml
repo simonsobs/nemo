@@ -82,3 +82,7 @@ numSkySims: 1
 # Set this to True to estimate contamination by running cluster finder over inverted maps
 # This is sensitive to how well point source masking is done
 estimateContaminationFromInvertedMaps: False
+    
+# Run position recovery test
+positionRecoveryTest: False
+

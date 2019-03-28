@@ -41,6 +41,10 @@ if __name__ == '__main__':
     
     imageDict=pipelines.filterMapsAndMakeCatalogs(config)
 
+    # Optional position recovery test (how well do we recovery positions as fn. of S/N)
+    if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
+        maps.positionRecoveryTest(config, imageDict)
+        
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
     # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)

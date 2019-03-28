@@ -10,6 +10,7 @@ from scipy import interpolate
 from scipy.signal import convolve as scipy_convolve
 import astropy.io.fits as pyfits
 import astropy.table as atpy
+import astropy.stats as apyStats
 import numpy as np
 import pylab as plt
 import glob
@@ -650,26 +651,59 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
+        # This is fast enough if using small tiles and running in parallel...
         with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
             wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
             data=img[extName].data
-        # Make mask from catalog
         tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
+        RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
+        tab=tab[np.where(tab['RADeg'] > RAMin)]
+        tab=tab[np.where(tab['RADeg'] < RAMax)]
+        tab=tab[np.where(tab['decDeg'] > decMin)]
+        tab=tab[np.where(tab['decDeg'] < decMax)]
+        # Variable sized holes: based on inspecting sources by deltaT in f150 maps
+        tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
+        tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 50000)]=8.0
+        tab['rArcmin'][tab['deltaT_c'] >= 50000]=10.0
         psMask=np.ones(data.shape)
-        pixCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()), dtype = int)
-        xMask=np.logical_and(pixCoords[:, 0] >= 0, pixCoords[:, 0] < psMask.shape[1])
-        yMask=np.logical_and(pixCoords[:, 1] >= 0, pixCoords[:, 1] < psMask.shape[0])
-        pixCoords=pixCoords[np.logical_and(xMask, yMask)]
-        for p in pixCoords:
-            psMask[p[1], p[0]]=0
-        pixRad=(4.0/60.0)/wcs.getPixelSizeDeg() # Masks 4' radius BUT circular
-        psMask=1.0*(ndimage.distance_transform_edt(psMask) > pixRad)
-        # Fill holes in mask
-        annulus=photometry.makeAnnulus(pixRad, pixRad+5)
-        numValues=annulus.flatten().nonzero()[0].shape[0]
-        bckData=ndimage.rank_filter(data, int(round(0.5*numValues)), footprint = annulus)
-        #bckData=ndimage.median_filter(data, int(pixRad)) # size chosen for typical hole size... slow... but quite good
-        data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]
+        for row in tab:
+            rArcminMap=nemoCython.makeDegreesDistanceMap(psMask, wcs, row['RADeg'], row['decDeg'], row['rArcmin']/60.)*60
+            psMask[rArcminMap < row['rArcmin']]=0
+        # Fill holes with smoothed map + white noise
+        pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+        bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
+        if mapDict['weightsType'] =='invVar':
+            rms=1.0/np.sqrt(weights)
+        else:
+            raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
+        data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+        #---
+        # Old - fixed size but quick
+        #with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
+            #wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
+            #data=img[extName].data
+        ## Make mask from catalog
+        #tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
+        #psMask=np.ones(data.shape)
+        #pixCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()), dtype = int)
+        #xMask=np.logical_and(pixCoords[:, 0] >= 0, pixCoords[:, 0] < psMask.shape[1])
+        #yMask=np.logical_and(pixCoords[:, 1] >= 0, pixCoords[:, 1] < psMask.shape[0])
+        #pixCoords=pixCoords[np.logical_and(xMask, yMask)]
+        #for p in pixCoords:
+            #psMask[p[1], p[0]]=0
+        #pixRad=(4.0/60.0)/wcs.getPixelSizeDeg() # Masks 4' radius BUT circular
+        #psMask=1.0*(ndimage.distance_transform_edt(psMask) > pixRad)
+        ## Fill holes in mask
+        #annulus=photometry.makeAnnulus(pixRad, pixRad+5)
+        #numValues=annulus.flatten().nonzero()[0].shape[0]
+        #bckData=ndimage.rank_filter(data, int(round(0.5*numValues)), footprint = annulus)
+        ##bckData=ndimage.median_filter(data, int(pixRad)) # size chosen for typical hole size... slow... but quite good
+        #data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]
             
     # Add the map data to the dict
     mapDict['data']=data
@@ -1099,3 +1133,79 @@ def injectSources(data, wcs, catalog, GNFWParams = 'default'):
     #print("inject sources")
     #IPython.embed()
     #sys.exit()
+
+#------------------------------------------------------------------------------------------------------------
+def positionRecoveryTest(config, imageDict):
+    """Insert sources with known positions and properties into the map, apply the filter, and record their
+    offset with respect to the true location as a function of S/N (for the fixed reference scale only).
+    
+    Writes output to the diagnostics/ directory.
+    
+    Args:
+        config (:obj:`startUp.NemoConfig`): Nemo configuration object.
+        imageDict (:obj:`dict`): A dictionary containing the output filtered maps and catalogs from running 
+        on the real data (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be 
+        modified.
+    
+    """
+    
+    simRootOutDir=config.diagnosticsDir+os.path.sep+"posRec_rank%d" % (config.rank)
+    SNRKeys=['fixed_SNR']
+    
+    print("position recovery test")
+    IPython.embed()
+    sys.exit()
+    
+
+        
+    # NOTE: we throw the first sim away on figuring out noiseBoostFactors
+    print(">>> Sky sim %d/%d [rank = %d] ..." % (i+1, numSkySims, config.rank))
+    t0=time.time()
+
+    # We don't copy this, because it's complicated due to containing MPI-related things (comm)
+    # So... we modify the config parameters in-place, and restore them before exiting this method
+    simConfig=config
+    
+    # We use the seed here to keep the CMB sky the same across frequencies...
+    CMBSimSeed=np.random.randint(16777216)
+    
+    # NOTE: This block below should be handled when parsing the config file - fix/remove
+    # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+    if 'GNFWParams' not in list(simConfig.parDict.keys()):
+        simConfig.parDict['GNFWParams']='default'
+    for filtDict in simConfig.parDict['mapFilters']:
+        filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
+    
+    # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
+    for filtDict in simConfig.parDict['mapFilters']:
+        if filtDict['label'] == simConfig.parDict['photFilter']:
+            break
+    simConfig.parDict['mapFilters']=[filtDict] 
+    
+    # Filling in with sim will be done when maps.preprocessMapDict is called by the filter object
+    for mapDict in simConfig.unfilteredMapsDictList:
+        mapDict['CMBSimSeed']=CMBSimSeed
+                
+    # NOTE: we need to zap ONLY specific maps for when we are running in parallel
+    for extName in simConfig.extNames:
+        mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
+        for m in mapFileNames:
+            os.remove(m)
+            
+    simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
+                                                    rootOutDir = simRootOutDir,
+                                                    copyFilters = True)
+    
+    # Write out the last sim map catalog for debugging
+    # NOTE: extName here makes no sense - this should be happening in the pipeline call above
+    #optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
+    #optimalCatalog=simImageDict['optimalCatalog']
+    #if len(optimalCatalog) > 0:
+        #catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
+    
+    # Contamination estimate...
+    contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', config.diagnosticsDir)
+    resultsList.append(contaminTabDict)
+    t1=time.time()
+    print("... time taken for sky sim run = %.3f sec" % (t1-t0))
+        
