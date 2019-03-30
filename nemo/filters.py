@@ -594,7 +594,10 @@ class MatchedFilter(MapFilter):
             RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.extName)
             astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
 
-        self.saveRealSpaceFilterProfile()   
+        try:
+            self.saveRealSpaceFilterProfile()   
+        except:
+            raise Exception("Error saving real space filter profile for filter '%s', tile '%s'" % (self.label, self.extName))
         
         if 'saveFilter' in self.params and self.params['saveFilter'] == True:
             img=pyfits.PrimaryHDU()                                                                                                                                                              

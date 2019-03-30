@@ -609,6 +609,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
             raise Exception("Clipping using RADecSection returned empty array - check RADecSection in config .yml file is in map")
         #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
     
+    # For source-free simulations (contamination tests)
     if 'CMBSimSeed' in list(mapDict.keys()):
         randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beamFileName = mapDict['beamFileName'], 
                           seed = mapDict['CMBSimSeed'])
@@ -639,19 +640,19 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         # Sanity check
         outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], extName) 
         astImages.saveFITS(outFileName, data, wcs)
-                    
-    # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
-    # or a wavelet decomposition scale image
-    # If want to put this back in docs
-    # bckSubScaleArcmin (:obj:`float`)
-    # If present, high-pass filter the map at the given scale, using :meth:`subtractBackground`.
-    #if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] is not None:
-        #data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
+    
+    # For position recovery tests
+    if 'injectSources' in list(mapDict.keys()):
+        # NOTE: Need to add varying GNFWParams here
+        # NOTE: We should also stop loading the beam from disk each time
+        data=injectSources(data, wcs, mapDict['injectSources'], mapDict['beamFileName'], 
+                           obsFreqGHz = mapDict['obsFreqGHz'], GNFWParams = 'default')
     
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
         # This is fast enough if using small tiles and running in parallel...
+        # If our masking/filling is effective enough, we may not need to mask so much here...
         with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
             wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
             data=img[extName].data
@@ -682,29 +683,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         else:
             raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
         data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
-        #---
-        # Old - fixed size but quick
-        #with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
-            #wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-            #data=img[extName].data
-        ## Make mask from catalog
-        #tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
-        #psMask=np.ones(data.shape)
-        #pixCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()), dtype = int)
-        #xMask=np.logical_and(pixCoords[:, 0] >= 0, pixCoords[:, 0] < psMask.shape[1])
-        #yMask=np.logical_and(pixCoords[:, 1] >= 0, pixCoords[:, 1] < psMask.shape[0])
-        #pixCoords=pixCoords[np.logical_and(xMask, yMask)]
-        #for p in pixCoords:
-            #psMask[p[1], p[0]]=0
-        #pixRad=(4.0/60.0)/wcs.getPixelSizeDeg() # Masks 4' radius BUT circular
-        #psMask=1.0*(ndimage.distance_transform_edt(psMask) > pixRad)
-        ## Fill holes in mask
-        #annulus=photometry.makeAnnulus(pixRad, pixRad+5)
-        #numValues=annulus.flatten().nonzero()[0].shape[0]
-        #bckData=ndimage.rank_filter(data, int(round(0.5*numValues)), footprint = annulus)
-        ##bckData=ndimage.median_filter(data, int(pixRad)) # size chosen for typical hole size... slow... but quite good
-        #data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]
-            
+    
     # Add the map data to the dict
     mapDict['data']=data
     mapDict['weights']=weights
@@ -719,9 +698,9 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     if mapDict['data'].shape != mapDict['surveyMask'].shape:
         raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
     
-    # Save trimmed weights
-    if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName)) == False:
-        astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName), weights, wcs)
+    ## Save trimmed weights - this isn't necessary
+    #if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName)) == False:
+        #astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName), weights, wcs)
         
     return mapDict
 
@@ -1109,7 +1088,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
     return contaminTabDict
 
 #------------------------------------------------------------------------------------------------------------
-def injectSources(data, wcs, catalog, GNFWParams = 'default'):
+def injectSources(data, wcs, catalog, beamFileName, obsFreqGHz = 148.0, GNFWParams = 'default'):
     """Inject sources (clusters or point sources) with properties listed in the catalog into the map defined
     by data, wcs.
     
@@ -1120,6 +1099,8 @@ def injectSources(data, wcs, catalog, GNFWParams = 'default'):
             include columns named RADeg, decDeg that give object coordinates. For point sources, the 
             amplitude in uK must be given in a column named deltaT_c. For clusters, M500 (in units of
             10^14 MSun) and z must be given (GNFW profile assumed).
+        beamFileName: Path to a text file that describes the beam.
+        obsFreqGHz (float, optional): Used only by cluster catalogs - for converting SZ y into delta T uK.
         GNFWParams (str or dict, optional): Used only by cluster catalogs. If 'default', the Arnaud et al. 
             (2010) Universal Pressure Profile is assumed. Otherwise, a dictionary that specifies the profile
             parameters can be given here (see gnfw.py).
@@ -1130,10 +1111,16 @@ def injectSources(data, wcs, catalog, GNFWParams = 'default'):
     """
     
     # Inspect the catalog - are we dealing with point sources or clusters?
-    #print("inject sources")
-    #IPython.embed()
-    #sys.exit()
-
+    print("inject sources")
+    IPython.embed()
+    sys.exit()
+    #for row in catalog:
+        
+    #if 'fixed_y_c' in catalog.keys():
+    #signals.makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default',
+                             #deltaT0 = None, maxSizeDeg = 15.0, convolveWithBeam = True)
+    #signals.makeBeamModelSignalMap(degreesMap, wcs, beamFileName, deltaT0 = None)
+    
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryTest(config, imageDict):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
@@ -1151,23 +1138,13 @@ def positionRecoveryTest(config, imageDict):
     
     simRootOutDir=config.diagnosticsDir+os.path.sep+"posRec_rank%d" % (config.rank)
     SNRKeys=['fixed_SNR']
-    
-    print("position recovery test")
-    IPython.embed()
-    sys.exit()
-    
 
-        
-    # NOTE: we throw the first sim away on figuring out noiseBoostFactors
-    print(">>> Sky sim %d/%d [rank = %d] ..." % (i+1, numSkySims, config.rank))
+    print(">>> Position recovery test [rank = %d] ..." % (config.rank))
     t0=time.time()
 
     # We don't copy this, because it's complicated due to containing MPI-related things (comm)
     # So... we modify the config parameters in-place, and restore them before exiting this method
     simConfig=config
-    
-    # We use the seed here to keep the CMB sky the same across frequencies...
-    CMBSimSeed=np.random.randint(16777216)
     
     # NOTE: This block below should be handled when parsing the config file - fix/remove
     # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
@@ -1177,14 +1154,23 @@ def positionRecoveryTest(config, imageDict):
         filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
     
     # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
+    # NOTE: As it stands, point-source only runs may not define photFilter - we need to handle that
+    # That should be obvious, as mapFilters will only have one entry
     for filtDict in simConfig.parDict['mapFilters']:
         if filtDict['label'] == simConfig.parDict['photFilter']:
             break
     simConfig.parDict['mapFilters']=[filtDict] 
-    
-    # Filling in with sim will be done when maps.preprocessMapDict is called by the filter object
+        
+    # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
+    # Generate catalog here
+    if filtDict['class'].find("ArnaudModel") != -1:
+        mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
+    elif filtDict['class'].find("BeamModel") != -1:
+        raise Exception("Haven't implemented generating mock source catalogs here yet")
+    else:
+        raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
     for mapDict in simConfig.unfilteredMapsDictList:
-        mapDict['CMBSimSeed']=CMBSimSeed
+        mapDict['injectSources']=mockCatalog
                 
     # NOTE: we need to zap ONLY specific maps for when we are running in parallel
     for extName in simConfig.extNames:
@@ -1193,19 +1179,12 @@ def positionRecoveryTest(config, imageDict):
             os.remove(m)
             
     simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
-                                                    rootOutDir = simRootOutDir,
-                                                    copyFilters = True)
+                                                     rootOutDir = simRootOutDir,
+                                                     copyFilters = True)
     
-    # Write out the last sim map catalog for debugging
-    # NOTE: extName here makes no sense - this should be happening in the pipeline call above
-    #optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
-    #optimalCatalog=simImageDict['optimalCatalog']
-    #if len(optimalCatalog) > 0:
-        #catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
+    # Cross match the output with the input catalog - how close were we?
+    print("pos recovery results")
+    IPython.embed()
+    sys.exit()
     
-    # Contamination estimate...
-    contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', config.diagnosticsDir)
-    resultsList.append(contaminTabDict)
-    t1=time.time()
-    print("... time taken for sky sim run = %.3f sec" % (t1-t0))
         
