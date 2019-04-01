@@ -657,11 +657,16 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
             wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
             data=img[extName].data
         tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
-        RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
-        tab=tab[np.where(tab['RADeg'] > RAMin)]
-        tab=tab[np.where(tab['RADeg'] < RAMax)]
-        tab=tab[np.where(tab['decDeg'] > decMin)]
-        tab=tab[np.where(tab['decDeg'] < decMax)]
+        RADecCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
+        RADecCoords=np.array(RADecCoords, dtype = int)
+        mask=[]
+        for i in range(len(tab)):
+            x, y=RADecCoords[i][1], RADecCoords[i][0]
+            if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]:
+                mask.append(True)
+            else:
+                mask.append(False)
+        tab=tab[mask]
         # Variable sized holes: based on inspecting sources by deltaT in f150 maps
         tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
         tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
