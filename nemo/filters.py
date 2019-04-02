@@ -341,6 +341,7 @@ class MapFilter(object):
         
         """
         
+        # Grid method
         #print "... making SN map ..."
         gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
         #gridSize=rIndex*3
@@ -379,6 +380,8 @@ class MapFilter(object):
                         #chunkRMS=astStats.biweightScale(chunkValues[goodAreaMask], 6.0)
                     else:
                         chunkRMS=0.
+                elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'percentile':
+                    chunkRMS=np.percentile(abs(chunkValues[goodAreaMask]), 68.3)
                 else:
                     # Default: 3-sigma clipped stdev
                     if np.not_equal(chunkValues, 0).sum() != 0:
@@ -397,7 +400,7 @@ class MapFilter(object):
                 
                 if chunkRMS > 0:
                     RMSMap[y0:y1, x0:x1]=chunkRMS
-                
+        
         return RMSMap
     
 #------------------------------------------------------------------------------------------------------------
@@ -495,7 +498,7 @@ class MatchedFilter(MapFilter):
                         continue
             del fSignalsArr
             del noiseCov
-            
+                        
             # Use a map with known input signal to figure out how much it has been rolled off by     
             if self.params['outputUnits'] == 'yc':
                 # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
@@ -542,7 +545,7 @@ class MatchedFilter(MapFilter):
         # Apply filter
         filteredMap=self.applyFilter(fMapsToFilter)
         del fMapsToFilter
-
+                
         # Units etc.
         if self.params['outputUnits'] == 'yc':
             mapUnits='yc'
@@ -557,7 +560,7 @@ class MatchedFilter(MapFilter):
         else:
             raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         
-        # Apply the point source mask here (before noise estimates etc.)
+        # Apply the point source mask here (before noise estimates etc.)        
         filteredMap=filteredMap*psMask
                 
         # Make noise and S/N maps
@@ -565,7 +568,11 @@ class MatchedFilter(MapFilter):
         validMask=np.greater(RMSMap, 0)
         SNMap=np.zeros(filteredMap.shape)+filteredMap
         SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
-                                                                
+        
+        # If we did a good job of subtracting / filling mask holes, we could apply mask after noise estimates
+        #filteredMap=filteredMap*psMask
+        #SNMap=SNMap*psMask
+        
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
