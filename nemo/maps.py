@@ -652,17 +652,14 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
         # This is fast enough if using small tiles and running in parallel...
-        # If our masking/filling is effective enough, we may not need to mask so much here...
-        with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
-            wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-            data=img[extName].data
+        # If our masking/filling is effective enough, we may not need to mask so much here...     
         tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
-        RADecCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
-        RADecCoords=np.array(RADecCoords, dtype = int)
+        xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
+        xyCoords=np.array(xyCoords, dtype = int)
         mask=[]
         for i in range(len(tab)):
-            x, y=RADecCoords[i][1], RADecCoords[i][0]
-            if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]:
+            x, y=xyCoords[i][0], xyCoords[i][1]
+            if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]-1:
                 mask.append(True)
             else:
                 mask.append(False)
@@ -689,6 +686,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         else:
             raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
         data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+        #astImages.saveFITS("test.fits", data, wcs)
     
     # Add the map data to the dict
     mapDict['data']=data
