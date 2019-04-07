@@ -230,6 +230,8 @@ def makeTileDeck(parDict):
                 for c, name in zip(coordsList, extNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
+                #print("check tiles")
+                #sys.exit()
                 
                 # Make tiles
                 # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
@@ -321,7 +323,59 @@ def makeTileDeck(parDict):
     return unfilteredMapsDictList, extNames
 
 #-------------------------------------------------------------------------------------------------------------
-def stitchTiles(filePattern, outFileName, outWCS, outShape):
+def shrinkWCS(origShape, origWCS, scaleFactor):
+    """Given an astWCS object and corresponding image shape, scale the WCS by scaleFactor. Used for making 
+    downsampled quicklook images (using stitchMaps).
+    
+    Args:
+        origShape (tuple): Shape of the original image.
+        origWCS (astWCS.WCS object): WCS for the original image.
+        scaleFactor (float): The factor by which to scale the image WCS.
+    Returns:
+        shape (tuple), WCS (astWCS.WCS object)
+    
+    """
+    scaledShape=[int(origShape[0]*scaleFactor), int(origShape[1]*scaleFactor)]
+    scaledData=np.zeros(scaledShape)
+    
+    trueScaleFactor=np.array(scaledData.shape, dtype = float) / np.array(origShape, dtype = float)
+    offset=0.
+    imageWCS=origWCS.copy()
+    try:
+        oldCRPIX1=imageWCS.header['CRPIX1']
+        oldCRPIX2=imageWCS.header['CRPIX2']
+        CD11=imageWCS.header['CD1_1']
+        CD21=imageWCS.header['CD2_1']
+        CD12=imageWCS.header['CD1_2']
+        CD22=imageWCS.header['CD2_2'] 
+    except KeyError:
+        oldCRPIX1=imageWCS.header['CRPIX1']
+        oldCRPIX2=imageWCS.header['CRPIX2']
+        CD11=imageWCS.header['CDELT1']
+        CD21=0
+        CD12=0
+        CD22=imageWCS.header['CDELT2']
+
+    CDMatrix=np.array([[CD11, CD12], [CD21, CD22]], dtype=np.float64)
+    scaleFactorMatrix=np.array([[1.0/trueScaleFactor[1], 0], [0, 1.0/trueScaleFactor[0]]])
+    scaleFactorMatrix=np.array([[1.0/trueScaleFactor[1], 0], [0, 1.0/trueScaleFactor[0]]])
+    scaledCDMatrix=np.dot(scaleFactorMatrix, CDMatrix)
+
+    scaledWCS=imageWCS.copy()
+    scaledWCS.header['NAXIS1']=scaledData.shape[1]
+    scaledWCS.header['NAXIS2']=scaledData.shape[0]
+    scaledWCS.header['CRPIX1']=oldCRPIX1*trueScaleFactor[1]
+    scaledWCS.header['CRPIX2']=oldCRPIX2*trueScaleFactor[0]
+    scaledWCS.header['CD1_1']=scaledCDMatrix[0][0]
+    scaledWCS.header['CD2_1']=scaledCDMatrix[1][0]
+    scaledWCS.header['CD1_2']=scaledCDMatrix[0][1]
+    scaledWCS.header['CD2_2']=scaledCDMatrix[1][1]
+    scaledWCS.updateFromHeader()
+    
+    return scaledShape, scaledWCS
+        
+#-------------------------------------------------------------------------------------------------------------
+def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
     """Fast routine for stitching map tiles back together. Since this uses interpolation, you probably don't 
     want to do analysis on the output - this is just for checking / making plots etc.. This routine sums 
     images as it pastes them into the larger map grid. So, if the zeroed (overlap) borders are not handled,
@@ -331,6 +385,8 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape):
     
     NOTE: This routine only writes output if there are multiple files that match filePattern (to save needless
     duplicating maps if nemo was not run in tileDeck mode).
+    
+    Output map will be multiplied by fluxRescale (this is necessary if downsampling in resolution).
 
     Takes 10 sec for AdvACT S16-sized downsampled by a factor of 4 in resolution.
     
@@ -366,7 +422,7 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape):
         yOut=np.array(DecToY(inDec), dtype = int)
         for i in range(len(yOut)):
             outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
-    astImages.saveFITS(outFileName, outData, outWCS)
+    astImages.saveFITS(outFileName, outData*fluxRescale, outWCS)
 
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
@@ -686,7 +742,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         else:
             raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
         data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
-        #astImages.saveFITS("test.fits", data, wcs)
+        #astImages.saveFITS("test_%s.fits" % (extName), data, wcs)
     
     # Add the map data to the dict
     mapDict['data']=data

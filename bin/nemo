@@ -138,17 +138,17 @@ if __name__ == '__main__':
                          constraintsList = ["SNR > 0.0"], \
                          addInfo = addInfo, color = "cyan") 
     
-    # Stitch together map tiles
+    # Stitch together map tiles - these are 'quicklook' images (downsampled by factor 4 in resolution)
     # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
     # RMS
     maps.stitchTiles(config.diagnosticsDir+os.path.sep+"RMSMap*.fits", 
-                     config.diagnosticsDir+os.path.sep+"stitched_RMSMap.fits", 
-                     config.origWCS, config.origShape)
+                     config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits", 
+                     config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
     # S/N maps at reference filter scale
     if config.parDict['photFilter'] is not None:
         maps.stitchTiles(config.filteredMapsDir+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
-                         config.filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (config.parDict['photFilter']), 
-                         config.origWCS, config.origShape)    
+                         config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
+                         config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
 
     
     
