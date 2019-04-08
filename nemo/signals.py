@@ -257,7 +257,7 @@ def fitQ(config):
             
     """
 
-    outFileName=config.selFnDir+os.path.sep+"QFit.pickle"
+    outFileName=config.selFnDir+os.path.sep+"QFit.fits"
     if os.path.exists(outFileName) == True:
         print(">>> Loading previously cached Q fit ...")
         return loadQ(outFileName)
@@ -306,14 +306,10 @@ def fitQ(config):
     MRange=MRange+MRange_wanted
     zRange=zRange+zRange_wanted.tolist()
     
-    # Q calc - results for all tiles stored in one file
-    outFileName=config.selFnDir+os.path.sep+"QFit.pickle"
-    rank_QTabDict={}
-        
-    print(">>> Fitting for Q ...")
-    
+    # Q calc - results for all tiles stored in one file    
     # Do each tile in turn
-    # Since our multi-freq filter adjusts pixel-by-pixel for frequencies available, we need to also account for that at some point...
+    rank_QTabDict={}
+    print(">>> Fitting for Q ...")
     for extName in config.extNames:        
         
         print("... %s ..." % (extName))
@@ -328,7 +324,7 @@ def fitQ(config):
             raise Exception("couldn't find filter that matches photFilter")
         filterClass=eval('filters.%s' % (filt['class']))
         filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
-                                extName = extName, diagnosticsDir = config.diagnosticsDir)
+                              extName = extName, diagnosticsDir = config.diagnosticsDir)
         filterObj.loadFilter()
         
         # Real space kernel or Fourier space filter?
@@ -359,7 +355,7 @@ def fitQ(config):
         theta500Arcmin=[]
         signalMapDict={}
         signalMap=np.zeros(extMap.shape)
-        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 15.0)
+        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 10.0)
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
@@ -415,14 +411,14 @@ def fitQ(config):
         # Plot
         plotSettings.update_rcParams()
         plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.10, 0.11, 0.88, 0.88])
+        ax=plt.axes([0.12, 0.11, 0.86, 0.88])
         #plt.tick_params(axis='both', which='major', labelsize=15)
         #plt.tick_params(axis='both', which='minor', labelsize=15)       
         thetaArr=np.linspace(0, 500, 100000)
         plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
         plt.plot(QTheta500Arcmin, Q, 'D', ms = 8)
         #plt.xlim(0, 9)
-        plt.ylim(0, Q.max()*1.05)
+        plt.ylim(0, 1.9)
         #plt.xlim(0, thetaArr.max())
         #plt.xlim(0, 15)
         plt.xlim(0.1, 500)
@@ -443,38 +439,52 @@ def fitQ(config):
             for tabDict in gathered_QTabDicts:
                 for key in tabDict:
                     QTabDict[key]=tabDict[key]
-            with open(outFileName, "wb") as pickleFile:
-                pickler=pickle.Pickler(pickleFile)
-                pickler.dump(QTabDict)
+            combinedQTab=makeCombinedQTable(QTabDict, outFileName)
         else:
-            QTabDict=None
-        QTabDict=config.comm.bcast(QTabDict, root = 0)
+            combinedQTab=None
+        combinedQTab=config.comm.bcast(combinedQTab, root = 0)
     else:
         QTabDict=rank_QTabDict
-        with open(outFileName, "wb") as pickleFile:
-            pickler=pickle.Pickler(pickleFile)
-            pickler.dump(QTabDict)
+        combinedQTab=makeCombinedQTable(QTabDict, outFileName)
         
     tckDict={}
-    for key in QTabDict:
-        tckDict[key]=interpolate.splrep(QTabDict[key]['theta500Arcmin'], QTabDict[key]['Q'])
+    for key in combinedQTab.keys():
+        if key != 'theta500Arcmin':
+            tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
     
     return tckDict
 
 #------------------------------------------------------------------------------------------------------------
-def loadQ(pickledQFileName):
+def makeCombinedQTable(QTabDict, outFileName):
+    """Writes dictionary of tables (containing individual tile Q fits) as a single .fits table.
+    
+    Returns combined Q astropy table object
+    
+    """
+    combinedQTab=atpy.Table()
+    for tabKey in list(QTabDict.keys()):
+        for colKey in QTabDict[tabKey].keys():
+            if colKey == 'theta500Arcmin':
+                if colKey not in combinedQTab.keys():
+                    combinedQTab.add_column(QTabDict[tabKey]['theta500Arcmin'], index = 0)
+            else:
+                combinedQTab.add_column(atpy.Column(QTabDict[tabKey][colKey].data, tabKey))
+    combinedQTab.write(outFileName, overwrite = True)
+    
+    return combinedQTab
+
+#------------------------------------------------------------------------------------------------------------
+def loadQ(combinedQTabFileName):
     """Loads tckQFitDict from given path.
     
     """
     
-    with open(pickledQFileName, "rb") as pickleFile:
-        unpickler=pickle.Unpickler(pickleFile)
-        QTabDict=unpickler.load()
-    
+    combinedQTab=atpy.Table().read(combinedQTabFileName)
     tckDict={}
-    for key in QTabDict:
-        tckDict[key]=interpolate.splrep(QTabDict[key]['theta500Arcmin'], QTabDict[key]['Q'])
-    
+    for key in combinedQTab.keys():
+        if key != 'theta500Arcmin':
+            tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
+
     return tckDict
 
 #------------------------------------------------------------------------------------------------------------

@@ -272,7 +272,17 @@ def makeTileDeck(parDict):
                                 dec1=dec1+tileOverlapDeg
                             if ra1 > ra0:
                                 ra1=-(360-ra1)
+                            # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
+                            # (which happens if image dimensions are both odd)
+                            # I _think_ this is related to the interpolation done in signals.fitQ
+                            ddec=0.5/60.
+                            count=0
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
+                            while clip['data'].shape[0] % 2 != 0:
+                                clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1+ddec*count)
+                                count=count+1
+                            # Old
+                            #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
                             header=clip['wcs'].header.copy()
                             if 'tileNoiseRegions' in list(parDict.keys()):

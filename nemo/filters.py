@@ -412,7 +412,7 @@ class MatchedFilter(MapFilter):
     def buildAndApply(self):
         
         fMapsToFilter=[]
-        for mapDict in self.unfilteredMapsDictList: 
+        for mapDict in self.unfilteredMapsDictList:
             fMapsToFilter.append(enmap.fft(enmap.apod(mapDict['data'], self.apodPix)))
         fMapsToFilter=np.array(fMapsToFilter)
         

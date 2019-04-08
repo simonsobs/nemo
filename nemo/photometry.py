@@ -152,6 +152,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                     objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
                 # Optional SExtractor style shape measurements                
                 if measureShapes == True:
+                    doubleCheck=False
                     if objDict['numSigPix'] > 9:
                         mask=np.equal(segmentationMap, objIDs[i])
                         ys, xs=np.where(segmentationMap == objIDs[i])
@@ -174,30 +175,28 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                             theta=theta+90
                         elif xy < 0 and theta > 0:
                             theta=theta-90
-                        doubleCheck=False
                         if theta > 0 and xy > 0:
                             doubleCheck=True
                         if theta < 0 and xy < 0:
                             doubleCheck=True
-                        if doubleCheck == False:
-                            raise Exception("name = %s: theta, xy not same sign, argh!" % (objDict['name']))
-                        A=np.sqrt((x2+y2)/2.0 + np.sqrt( ((x2-y2)/2)**2 + xy**2))
-                        B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
-                        # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
-                        # Shape measurement is okay though - so just scale A, B to match segMap area
-                        segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
-                        curArea=A*B*np.pi
-                        scaleFactor=np.sqrt(segArea/curArea)
-                        A=A*scaleFactor
-                        B=B*scaleFactor  
-                        ecc=np.sqrt(1-B**2/A**2)
-                        objDict['ellipse_PA']=theta
-                        objDict['ellipse_A']=A
-                        objDict['ellipse_B']=B
-                        objDict['ellipse_x0']=cx2+xMin
-                        objDict['ellipse_y0']=cy2+yMin
-                        objDict['ellipse_e']=ecc
-                    else:
+                        if doubleCheck == True:
+                            A=np.sqrt((x2+y2)/2.0 + np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                            B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                            # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
+                            # Shape measurement is okay though - so just scale A, B to match segMap area
+                            segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
+                            curArea=A*B*np.pi
+                            scaleFactor=np.sqrt(segArea/curArea)
+                            A=A*scaleFactor
+                            B=B*scaleFactor  
+                            ecc=np.sqrt(1-B**2/A**2)
+                            objDict['ellipse_PA']=theta
+                            objDict['ellipse_A']=A
+                            objDict['ellipse_B']=B
+                            objDict['ellipse_x0']=cx2+xMin
+                            objDict['ellipse_y0']=cy2+yMin
+                            objDict['ellipse_e']=ecc
+                    if objDict['numSigPix'] <= 9 or doubleCheck == False:
                         objDict['ellipse_PA']=-99
                         objDict['ellipse_A']=-99
                         objDict['ellipse_B']=-99
