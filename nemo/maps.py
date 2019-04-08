@@ -345,6 +345,7 @@ def shrinkWCS(origShape, origWCS, scaleFactor):
         shape (tuple), WCS (astWCS.WCS object)
     
     """
+    
     scaledShape=[int(origShape[0]*scaleFactor), int(origShape[1]*scaleFactor)]
     scaledData=np.zeros(scaledShape)
     

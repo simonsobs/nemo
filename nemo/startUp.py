@@ -154,8 +154,9 @@ class NemoConfig(object):
             self.origShape=img[0].data.shape
             
         # Downsampled WCS and shape for 'quicklook' stitched images
-        self.quicklookScale=0.25
-        self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+        if 'makeQuickLookMaps' in self.parDict.keys() and self.parDict['makeQuickLookMaps'] == True:
+            self.quicklookScale=0.25
+            self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
         
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
