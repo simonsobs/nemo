@@ -51,7 +51,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
 
     # Q varies across tiles
-    QFitFileName=config.selFnDir+os.path.sep+"QFit.pickle"
+    QFitFileName=config.selFnDir+os.path.sep+"QFit.fits"
     if os.path.exists(QFitFileName) == True:
         tckQFitDict=signals.loadQ(QFitFileName)
     else:
