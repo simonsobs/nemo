@@ -70,7 +70,7 @@ class SelFn(object):
         #self.tileNames=config.tileNames
         
         # Sanity check that any given footprint is defined - if not, give a useful error message
-        if footprintLabel != None:
+        if footprintLabel is not None:
             if 'selFnFootprints' not in parDict.keys():
                 raise Exception("No footprints defined in .yml config file")
             else:
@@ -79,7 +79,6 @@ class SelFn(object):
                     labelsList.append(footprintDict['label'])
                 if footprintLabel not in labelsList:
                     raise Exception("Footprint '%s' not found in selFnFootprints - check .yml config file" % (footprintLabel))
-        
         
         # We only care about the filter used for fixed_ columns
         self.photFilterLabel=['photFilter']
@@ -93,13 +92,14 @@ class SelFn(object):
             RMSTab=getRMSTab(tileName, self.photFilterLabel, self.selFnDir, footprintLabel = self.footprintLabel)
             if type(RMSTab) == atpy.Table:
                 tileAreaDeg2=RMSTab['areaDeg2'].sum()
-                if downsampleRMS == True:
-                    RMSTab=downsampleRMSTab(RMSTab)
-                selFnDict={'tileName': tileName,
-                           'RMSTab': RMSTab,
-                           'tileAreaDeg2': tileAreaDeg2}
-                self.selFnDictList.append(selFnDict)
-                self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
+                if tileAreaDeg2 > 0:
+                    if downsampleRMS == True:
+                        RMSTab=downsampleRMSTab(RMSTab)
+                    selFnDict={'tileName': tileName,
+                            'RMSTab': RMSTab,
+                            'tileAreaDeg2': tileAreaDeg2}
+                    self.selFnDictList.append(selFnDict)
+                    self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
 
         # Set initial fiducial cosmology - can be overridden using update function     
         minMass=5e13
