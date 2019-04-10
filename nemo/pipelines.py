@@ -62,15 +62,15 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             if os.path.exists(d) == False:
                 os.makedirs(d)
         if copyFilters == True:
-            for extName in config.extNames:
-                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+"filter*#%s*.fits" % (extName))
+            for tileName in config.tileNames:
+                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+"filter*#%s*.fits" % (tileName))
                 for f in fileNames:
                     shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
     else:
         rootOutDir=config.rootOutDir
             
     imageDict=filters.filterMaps(config.unfilteredMapsDictList, config.parDict['mapFilters'], 
-                                 extNames = config.extNames, rootOutDir = rootOutDir,
+                                 tileNames = config.tileNames, rootOutDir = rootOutDir,
                                  undoPixelWindow = config.parDict['undoPixelWindow'])
     
     # Find objects in filtered maps
@@ -78,7 +78,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                            minObjPix = config.parDict['minObjPix'], 
                            findCenterOfMass = config.parDict['findCenterOfMass'], 
                            rejectBorder = config.parDict['rejectBorder'], 
-                           diagnosticsDir = config.diagnosticsDir, objIdent = config.parDict['objIdent'], 
+                           selFnDir = config.selFnDir, objIdent = config.parDict['objIdent'], 
                            longNames = config.parDict['longNames'],
                            useInterpolator = config.parDict['useInterpolator'], 
                            measureShapes = config.parDict['measureShapes'],
@@ -156,15 +156,15 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     mockSurveyDict={}
     wcsDict={}
     RMSMapDict={}
-    for extName in config.extNames:
+    for tileName in config.tileNames:
         # Need area covered 
-        areaImg=pyfits.open(config.diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
+        areaImg=pyfits.open(config.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
         areaMask=areaImg[0].data
         wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
         areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
 
         # Need RMS map to apply selection function
-        RMSImg=pyfits.open(config.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (photFilterLabel, extName))
+        RMSImg=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName))
         RMSMap=RMSImg[0].data
     
         # For a mock, we could vary the input cosmology...
@@ -177,9 +177,9 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
         sigma_8=0.8
         mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
         
-        mockSurveyDict[extName]=mockSurvey
-        RMSMapDict[extName]=RMSMap
-        wcsDict[extName]=wcs
+        mockSurveyDict[tileName]=mockSurvey
+        RMSMapDict[tileName]=RMSMap
+        wcsDict[tileName]=wcs
     
     t1=time.time()
     if verbose: print("... took %.3f sec ..." % (t1-t0))
@@ -188,17 +188,17 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     catList=[]
     for i in range(numMocksToMake):       
         mockTabsList=[]
-        for extName in config.extNames:
+        for tileName in config.tileNames:
             t0=time.time()
-            mockTab=mockSurveyDict[extName].drawSample(RMSMapDict[extName], scalingRelationDict, tckQFitDict, wcs = wcsDict[extName], 
-                                                       photFilterLabel = photFilterLabel, extName = extName, makeNames = True,
+            mockTab=mockSurveyDict[tileName].drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
+                                                       photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
                                                        SNRLimit = thresholdSigma, applySNRCut = True, 
                                                        applyPoissonScatter = applyPoissonScatter, 
                                                        applyIntrinsicScatter = applyIntrinsicScatter,
                                                        applyNoiseScatter = applyNoiseScatter)
             t1=time.time()
             mockTabsList.append(mockTab)
-            if verbose: print("... making mock catalog %d for extName = %s took %.3f sec ..." % (i+1, extName, t1-t0))
+            if verbose: print("... making mock catalog %d for tileName = %s took %.3f sec ..." % (i+1, tileName, t1-t0))
             
         tab=atpy.vstack(mockTabsList)
         catList.append(tab)

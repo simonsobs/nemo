@@ -140,16 +140,16 @@ if __name__ == '__main__':
     
     # Stitch together map tiles - these are 'quicklook' images (downsampled by factor 4 in resolution)
     # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
-    # RMS
     if 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
-        maps.stitchTiles(config.diagnosticsDir+os.path.sep+"RMSMap*.fits", 
-                        config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits", 
-                        config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
+        # RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure) 
+        maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits.gz", 
+                         config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits.gz", 
+                         config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
         # S/N maps at reference filter scale
         if config.parDict['photFilter'] is not None:
             maps.stitchTiles(config.filteredMapsDir+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
-                            config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
-                            config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
+                             config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
+                             config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
 
     
     

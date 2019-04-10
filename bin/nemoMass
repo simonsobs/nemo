@@ -50,20 +50,20 @@ def addForcedPhotometry(forcedTab, config):
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             photFilterList.append(filterDict)
-    imageDict=mapFilters.filterMaps(config.parDict['unfilteredMaps'], photFilterList, extNames = config.extNames, rootOutDir = config.rootOutDir)
+    imageDict=mapFilters.filterMaps(config.parDict['unfilteredMaps'], photFilterList, tileNames = config.tileNames, rootOutDir = config.rootOutDir)
     
     # Re-jig the catalog into the appropriate format before feeding through photometry routine
     catalog=[]
-    for extName in config.extNames:
+    for tileName in config.tileNames:
         # We need this to check if objects in the catalog are actually in the footprint
-        areaMaskImg=pyfits.open(config.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaMaskImg=pyfits.open(config.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
         areaMask=areaMaskImg[0].data
         wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
         for row in forcedTab:
             objDict={}
             for key in list(forcedTab.keys()):
                 objDict[key]=row[key]
-            objDict['template']=photFilterLabel+"#"+extName
+            objDict['template']=photFilterLabel+"#"+tileName
             objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
             objDict['redshift']=row['redshift']
             if 'redshiftErr' in forcedTab.keys():
@@ -76,7 +76,7 @@ def addForcedPhotometry(forcedTab, config):
                     objDict['x']=x
                     objDict['y']=y
                     catalog.append(objDict)
-    imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
+    imageDict[photFilterLabel+"#"+tileName]['catalog']=catalog
     photometry.measureFluxes(imageDict, config.parDict['photFilter'], config.diagnosticsDir, unfilteredMapsDict = config.parDict['unfilteredMaps'])
     catalogs.mergeCatalogs(imageDict)
     
@@ -91,7 +91,7 @@ def addForcedPhotometry(forcedTab, config):
         if key.find("fixed_y_c_weight") != -1:
             wantedKeys.append(key)
     tab=atpy.Table()
-    for extName in config.extNames:
+    for tileName in config.tileNames:
         catalog=imageDict['optimalCatalog']
         for key in wantedKeys:
             arr=[]
@@ -254,7 +254,7 @@ if __name__ == '__main__':
     count=0
     for row in tab:
         count=count+1
-        extName=row['template'].split("#")[-1]
+        tileName=row['template'].split("#")[-1]
         fRelWeightsDict={}
         for key in fRelKeysDict:
             fRelWeightsDict[fRelKeysDict[key]]=row[key]
@@ -268,7 +268,7 @@ if __name__ == '__main__':
                                           B0 = massOptions['B0'], 
                                           Mpivot = massOptions['Mpivot'], 
                                           sigma_int = massOptions['sigma_int'],
-                                          tckQFit = tckQFitDict[extName], mockSurvey = mockSurvey, 
+                                          tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                           applyMFDebiasCorrection = True,
                                           fRelWeightsDict = fRelWeightsDict)
         row['M500']=massDict['M500']
@@ -281,7 +281,7 @@ if __name__ == '__main__':
                                                 B0 = massOptions['B0'], 
                                                 Mpivot = massOptions['Mpivot'], 
                                                 sigma_int = massOptions['sigma_int'],
-                                                tckQFit = tckQFitDict[extName], mockSurvey = mockSurvey, 
+                                                tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                                 applyMFDebiasCorrection = False,
                                                 fRelWeightsDict = fRelWeightsDict)
         row['M500Uncorr']=unCorrMassDict['M500']

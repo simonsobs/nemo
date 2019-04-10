@@ -52,7 +52,7 @@ import time
 import IPython
 
 #-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], rootOutDir = ".", verbose = True,
+def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], rootOutDir = ".", verbose = True,
                undoPixelWindow = True):
     """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
     can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
@@ -66,10 +66,11 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     
     """
     
-    # Storage, in case it doesn't already exist
+    # Storage, in case it doesn't already exist (these are created by NemoConfig in startUp.py anyway)
     filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
     diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    dirList=[filteredMapsDir, diagnosticsDir]
+    selFnDir=rootOutDir+os.path.sep+"selFn"
+    dirList=[filteredMapsDir, diagnosticsDir, selFnDir]
     for d in dirList:
         if os.path.exists(d) == False:
             os.makedirs(d)
@@ -78,9 +79,9 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     imageDict={}
     
     # For handling tileDeck style .fits files
-    imageDict['extNames']=extNames
+    imageDict['tileNames']=tileNames
     
-    # Since we're putting stuff like extNames in the top level, let's keep a separate list of mapDicts
+    # Since we're putting stuff like tileNames in the top level, let's keep a separate list of mapDicts
     imageDict['mapKeys']=[]
     
     # Make filtered maps for each filter
@@ -88,26 +89,26 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     for f in filtersList:
         
         # Iterate over all extensions (for tileDeck files)...
-        for extName in extNames:
+        for tileName in tileNames:
             
-            print("--> extName = %s ..." % (extName))
+            print("--> tileName = %s ..." % (tileName))
             
             # This is the label tracked in imageDict, catalog template column
             # Should NOT be fed in as filterClass label
-            label=f['label']+"#"+extName
+            label=f['label']+"#"+tileName
             
             filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
             SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
             signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
-            #transferFnFileName=filteredMapsDir+os.path.sep+"%s_transferFunction.fits" % (f['label'])
 
             if os.path.exists(filteredMapFileName) == False:
                 
                 print("... making filtered map %s ..." % (label)) 
                 filterClass=eval('%s' % (f['class']))
                 filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
-                                      extName = extName, 
-                                      diagnosticsDir = diagnosticsDir)
+                                      tileName = tileName, 
+                                      diagnosticsDir = diagnosticsDir,
+                                      selFnDir = selFnDir)
                 filteredMapDict=filterObj.buildAndApply()
                     
                 # Keywords we need for photometry later
@@ -156,8 +157,8 @@ class MapFilter(object):
     """Generic map filter base class. Defines common interface.
     
     """
-    def __init__(self, label, unfilteredMapsDictList, paramsDict, extName = 'PRIMARY', writeFilter = False, 
-                 forceRebuild = False, diagnosticsDir = None):
+    def __init__(self, label, unfilteredMapsDictList, paramsDict, tileName = 'PRIMARY', writeFilter = False, 
+                 forceRebuild = False, diagnosticsDir = None, selFnDir = None):
         """Initialises a MapFilter. unfilteredMapsDictList describes the input maps, paramsDict describes
         the filter options. The convention is that single frequency only filters (e.g. GaussianWienerFilter)
         only operate on the first map in the unfilteredMapDictList.
@@ -173,14 +174,15 @@ class MapFilter(object):
         
         # Set up storage if necessary, build this filter if not already stored
         self.diagnosticsDir=diagnosticsDir
-        self.extName=extName
-        self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.extName)
+        self.selFnDir=selFnDir
+        self.tileName=tileName
+        self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
         
         # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
         # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDeck files
         self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:           
-            mapDict=maps.preprocessMapDict(mapDict.copy(), extName = extName, diagnosticsDir = diagnosticsDir)
+            mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
         self.shape=mapDict['data'].shape
@@ -328,7 +330,7 @@ class MapFilter(object):
         plt.xlim(0, 30.0)
         plt.ylim(prof.min(), prof.max()*1.1)
         plt.legend()
-        plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+"#"+self.extName+".png")
+        plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+"#"+self.tileName+".png")
         plt.close()
         
         # Save 2D realspace filter image too
@@ -422,7 +424,7 @@ class MatchedFilter(MapFilter):
         psMask=self.unfilteredMapsDictList[0]['psMask']
             
         if os.path.exists(self.filterFileName) == False:
-            print(">>> Building filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Building filter %s#%s ..." % (self.label, self.tileName))
                         
             fMapsForNoise=[]
             for mapDict in self.unfilteredMapsDictList: 
@@ -460,7 +462,7 @@ class MatchedFilter(MapFilter):
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
-                    #astImages.saveFITS("test_%d_%d_%s.fits" % (i,  j, self.extName), fft.fftshift(NP), None)
+                    #astImages.saveFITS("test_%d_%d_%s.fits" % (i,  j, self.tileName), fft.fftshift(NP), None)
                     row.append(NP)
                 noiseCov.append(row)
             del fMapsForNoise
@@ -539,7 +541,7 @@ class MatchedFilter(MapFilter):
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         else:
-            print(">>> Loading cached filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Loading cached filter %s#%s ..." % (self.label, self.tileName))
             self.loadFilter()
         
         # Apply filter
@@ -593,18 +595,18 @@ class MatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (self.extName)
+        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (self.tileName)
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.extName)
+            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (self.label, self.tileName)
             astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
 
         try:
             self.saveRealSpaceFilterProfile()   
         except:
-            raise Exception("Error saving real space filter profile for filter '%s', tile '%s'" % (self.label, self.extName))
+            raise Exception("Error saving real space filter profile for filter '%s', tile '%s'" % (self.label, self.tileName))
         
         if 'saveFilter' in self.params and self.params['saveFilter'] == True:
             img=pyfits.PrimaryHDU()                                                                                                                                                              
@@ -705,7 +707,7 @@ class RealSpaceMatchedFilter(MapFilter):
     
     Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
     
-    A map of the final area searched for clusters called 'areaMask.fits.gz' is written in the diagnostics/ 
+    A map of the final area searched for clusters called 'areaMask.fits.gz' is written in the selFn/ 
     folder.
         
     """       
@@ -759,15 +761,17 @@ class RealSpaceMatchedFilter(MapFilter):
             kernelUnfilteredMapsDict['RADecSection']=RADecSection
             kernelUnfilteredMapsDictList.append(kernelUnfilteredMapsDict)
         kernelLabel="realSpaceKernel_%s" % (self.label)
-        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel+"#"+self.extName
-        if os.path.exists(matchedFilterDir) == False:
-            os.makedirs(matchedFilterDir)
-        if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
-            os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
+        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel+"#"+self.tileName
+        diagnosticsDir=matchedFilterDir+os.path.sep+'diagnostics'
+        selFnDir=matchedFilterDir+os.path.sep+'selFn'
+        for d in [matchedFilterDir, diagnosticsDir, selFnDir]:
+            if os.path.exists(d) == False:
+                os.makedirs(d)
         matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
         matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
-                                         extName = mapDict['extName'],
-                                         diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
+                                         tileName = mapDict['tileName'],
+                                         diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics',
+                                         selFnDir = matchedFilterDir+os.path.sep+'selFn')
         filteredMapDict=matchedFilter.buildAndApply()   
         
         # Turn the matched filter into a smaller real space convolution kernel
@@ -860,7 +864,7 @@ class RealSpaceMatchedFilter(MapFilter):
         
         # Filter profile plot   
         # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
-        np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s#%s.npz" % (self.label, self.extName), 
+        np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s#%s.npz" % (self.label, self.tileName), 
                  arcminRange = arcminRange, prof = prof, mask = mask, 
                  bckSubScaleArcmin = self.bckSubScaleArcmin)
         plotSettings.update_rcParams()
@@ -882,7 +886,7 @@ class RealSpaceMatchedFilter(MapFilter):
         if self.params['bckSub'] == True:
             plt.plot([self.bckSubScaleArcmin]*3, np.linspace(-1.2, 1.2, 3), 'k--')
         plt.ylim(-1.2, 0.2)
-        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s#%s.pdf" % (self.label, self.extName))
+        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s#%s.pdf" % (self.label, self.tileName))
         plt.close()
 
             
@@ -892,7 +896,7 @@ class RealSpaceMatchedFilter(MapFilter):
         psMask=self.unfilteredMapsDictList[0]['psMask']
             
         if os.path.exists(self.filterFileName) == False:
-            print(">>> Building filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Building filter %s#%s ..." % (self.label, self.tileName))
             
             # Noise region to use
             RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
@@ -908,7 +912,7 @@ class RealSpaceMatchedFilter(MapFilter):
             # Build kernel   
             self.buildKernel(RADecSection, RADeg = self.applyRACentre, decDeg = self.applyDecCentre)
         else:
-            print(">>> Loading cached filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Loading cached filter %s#%s ..." % (self.label, self.tileName))
             self.loadFilter()
 
         # Apply kernel        
@@ -968,12 +972,12 @@ class RealSpaceMatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (self.extName)
+        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (self.tileName)
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.extName)
+            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (self.label, self.tileName)
             astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
 
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,

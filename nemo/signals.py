@@ -252,7 +252,7 @@ def fitQ(config):
         
     Use GNFWParams (in config.parDict) to specify a different shape.
     
-    The calculation will be done in parallel, if MPIEnabled = True, and comm and rank are given, and extNames 
+    The calculation will be done in parallel, if MPIEnabled = True, and comm and rank are given, and tileNames 
     is different for each rank. This is only needed for the first run of this routine by the nemoMass script.
             
     """
@@ -310,9 +310,9 @@ def fitQ(config):
     # Do each tile in turn
     rank_QTabDict={}
     print(">>> Fitting for Q ...")
-    for extName in config.extNames:        
+    for tileName in config.tileNames:        
         
-        print("... %s ..." % (extName))
+        print("... %s ..." % (tileName))
 
         # Load reference scale filter
         foundFilt=False
@@ -324,7 +324,7 @@ def fitQ(config):
             raise Exception("couldn't find filter that matches photFilter")
         filterClass=eval('filters.%s' % (filt['class']))
         filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
-                              extName = extName, diagnosticsDir = config.diagnosticsDir)
+                              tileName = tileName, diagnosticsDir = config.diagnosticsDir)
         filterObj.loadFilter()
         
         # Real space kernel or Fourier space filter?
@@ -342,7 +342,7 @@ def fitQ(config):
         # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
         # NOTE: 5 deg is too small for the largest very low-z clusters: it's better to add a z cut and ignore those
         # NOTE: 5 deg fell over (ringing) for tiles_v2 RE6_10_0, but 10 deg worked fine
-        with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (extName)) as img:
+        with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (tileName)) as img:
             wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
             extMap=img[0].data
             RADeg, decDeg=wcs.getCentreWCSCoords()                
@@ -403,7 +403,7 @@ def fitQ(config):
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
         QTab.sort('theta500Arcmin')
-        rank_QTabDict[extName]=QTab
+        rank_QTabDict[tileName]=QTab
                     
         # Fit with spline
         tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
@@ -425,10 +425,10 @@ def fitQ(config):
         plt.semilogx()
         plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
         plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
-        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (extName))
-        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (extName))
+        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (tileName))
+        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (tileName))
         plt.close()
-        print("... Q fit finished [extName = %s, rank = %d] ..." % (extName, config.rank))
+        print("... Q fit finished [tileName = %s, rank = %d] ..." % (tileName, config.rank))
             
     # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
     if config.MPIEnabled == True:

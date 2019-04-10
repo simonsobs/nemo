@@ -74,20 +74,20 @@ def makeTileDeck(parDict):
     # Some of this is rather clunky...
     unfilteredMapsDictList=[]
     if parDict['makeTileDeck'] == False:
-        extNames=[]        
+        tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
             unfilteredMapsDictList.append(mapDict.copy())
             img=pyfits.open(mapDict['mapFileName'])
-            if extNames == []:
+            if tileNames == []:
                 for ext in img:
-                    extNames.append(ext.name)
+                    tileNames.append(ext.name)
             else:
                 for ext in img:
-                    if ext.name not in extNames:
+                    if ext.name not in tileNames:
                         raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             img.close()
     else:
-        extNames=[]        
+        tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
                         
             # Added an option to define tiles in the .par file... otherwise, we will do the automatic tiling
@@ -133,12 +133,12 @@ def makeTileDeck(parDict):
             if allFilesMade == True:
                 # We need the extension names only here...
                 img=pyfits.open(outFileNames[0])
-                if extNames == []:
+                if tileNames == []:
                     for ext in img:
-                        extNames.append(ext.name)
+                        tileNames.append(ext.name)
                 else:
                     for ext in img:
-                        if ext.name not in extNames:
+                        if ext.name not in tileNames:
                             raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             else:
                 
@@ -181,7 +181,7 @@ def makeTileDeck(parDict):
                     ys.sort()
                     ys=np.array(ys)
                     coordsList=[]
-                    extNames=[]
+                    tileNames=[]
                     tileHeightPix=int(np.ceil((ys.max()-ys.min())/float(numVerticalTiles)))
                     for i in range(numVerticalTiles):
                         yMin=ys.min()+i*tileHeightPix
@@ -201,7 +201,7 @@ def makeTileDeck(parDict):
                             xMin=minXMin+j*tileWidthPix
                             xMax=minXMin+(j+1)*tileWidthPix
                             coordsList.append([xMin, xMax, yMin, yMax])
-                            extNames.append("%d_%d" % (j, i))
+                            tileNames.append("%d_%d" % (j, i))
                     
                     # Not sure if this will actually tidy up...
                     wht.close()
@@ -209,7 +209,7 @@ def makeTileDeck(parDict):
                 
                 else:
                     # Use user-defined tiles - this is a bit of a faff, to avoid re-writing below bit where we make the tiles...
-                    extNames=[]
+                    tileNames=[]
                     coordsList=[]
                     for tileDict in parDict['tileDefinitions']:
                         ra0, ra1, dec0, dec1=tileDict['RADecSection']
@@ -220,14 +220,14 @@ def makeTileDeck(parDict):
                         yMin=min([y0, y1])
                         yMax=max([y0, y1])
                         coordsList.append([xMin, xMax, yMin, yMax])
-                        extNames.append(tileDict['extName'])   
+                        tileNames.append(tileDict['tileName'])   
                 
                 # Output a .reg file for debugging (pixel coords)
                 outFile=open(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
                 outFile.write("# Region file format: DS9 version 4.1\n")
                 outFile.write('global color=blue dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
                 outFile.write("image\n")
-                for c, name in zip(coordsList, extNames):
+                for c, name in zip(coordsList, tileNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
                 #print("check tiles")
@@ -254,7 +254,7 @@ def makeTileDeck(parDict):
                         # If anyone wants to find polarized sources, this will need changing...
                         if mapData.ndim == 3:
                             mapData=mapData[0, :]
-                        for c, name in zip(coordsList, extNames):
+                        for c, name in zip(coordsList, tileNames):
                             y0=c[2]
                             y1=c[3]
                             x0=c[0]
@@ -292,7 +292,7 @@ def makeTileDeck(parDict):
                                     if 'autoBorderDeg' in parDict['tileNoiseRegions']:
                                         autoBorderDeg=parDict['tileNoiseRegions']['autoBorderDeg']
                                         for tileDef in parDict['tileDefinitions']:
-                                            if tileDef['extName'] == name:
+                                            if tileDef['tileName'] == name:
                                                 break
                                         noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=tileDef['RADecSection']
                                         noiseRAMin=noiseRAMin+autoBorderDeg
@@ -300,7 +300,7 @@ def makeTileDeck(parDict):
                                         noiseDecMin=noiseDecMin+autoBorderDeg
                                         noiseDecMax=noiseDecMax-autoBorderDeg
                                     else:
-                                        raise Exception("No entry in tileNoiseRegions in config file for extName '%s' - either add one, or add 'autoBorderDeg': 0.5 (or similar) to tileNoiseRegions" % (name))
+                                        raise Exception("No entry in tileNoiseRegions in config file for tileName '%s' - either add one, or add 'autoBorderDeg': 0.5 (or similar) to tileNoiseRegions" % (name))
                                 print("... adding noise region [%.3f, %.3f, %.3f, %.3f] to header %s ..." % (noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax, name))
                                 header['NRAMIN']=noiseRAMin
                                 header['NRAMAX']=noiseRAMax
@@ -330,7 +330,7 @@ def makeTileDeck(parDict):
                 mapDict[key]=outFileName
             unfilteredMapsDictList.append(mapDict.copy())
     
-    return unfilteredMapsDictList, extNames
+    return unfilteredMapsDictList, tileNames
 
 #-------------------------------------------------------------------------------------------------------------
 def shrinkWCS(origShape, origWCS, scaleFactor):
@@ -414,8 +414,8 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
 
     # Splat tiles into output map
     inFiles=glob.glob(filePattern)
-    if len(inFiles) < 2:
-        return None # No point stitching together 1 tile (probably means didn't run in tiles mode)
+    if len(inFiles) < 1:
+        return None # We could raise an Exception here instead
     count=0
     for f in inFiles:
         count=count+1
@@ -576,7 +576,7 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
     
 #-------------------------------------------------------------------------------------------------------------
-def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
+def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     """Applies a number of pre-processing steps to the map described by `mapDict`, prior to filtering.
     
     The first step is to load the map itself and the associated weights. Some other operations that may be 
@@ -603,7 +603,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         mapDict (:obj:`dict`): A dictionary with the same keys as given in the unfilteredMaps list in the 
             .yml configuration file (i.e., it must contain at least the keys 'mapFileName', 'units', and
             'weightsFileName', and may contain some of the optional keys listed above).
-        extName (:obj:`str`): Name of the map tile (extension name) to operate on.
+        tileName (:obj:`str`): Name of the map tile (extension name) to operate on.
         diagnosticsDir (:obj:`str`): Path to a directory where miscellaneous diagnostic data are written.
     
     Returns:
@@ -613,8 +613,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     """
             
     with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
-        wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-        data=img[extName].data
+        wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
+        data=img[tileName].data
     
     # For Enki maps... take only I (temperature) for now, add options for this later
     if data.ndim == 3:
@@ -631,7 +631,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Load weight map if given
     if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] is not None:
         with pyfits.open(mapDict['weightsFileName'], memmap = True) as wht:
-            weights=wht[extName].data
+            weights=wht[tileName].data
         # For Enki maps... take only I (temperature) for now, add options for this later
         if weights.ndim == 3:       # I, Q, U
             weights=weights[0, :]
@@ -647,14 +647,14 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Load survey and point source masks, if given
     if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
         with pyfits.open(mapDict['surveyMask'], memmap = True) as smImg:
-            surveyMask=smImg[extName].data
+            surveyMask=smImg[tileName].data
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
 
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] is not None:
         with pyfits.open(mapDict['pointSourceMask'], memmap = True) as psImg:
-            psMask=psImg[extName].data
+            psMask=psImg[tileName].data
     else:
         psMask=np.ones(data.shape)
             
@@ -705,7 +705,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         data[mask]=np.random.normal(randMap[mask], bestBoostFactor*whiteNoiseLevel[mask], 
                                     whiteNoiseLevel[mask].shape)
         # Sanity check
-        outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], extName) 
+        outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], tileName) 
         astImages.saveFITS(outFileName, data, wcs)
     
     # For position recovery tests
@@ -753,7 +753,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         else:
             raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
         data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
-        #astImages.saveFITS("test_%s.fits" % (extName), data, wcs)
+        #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
     
     # Add the map data to the dict
     mapDict['data']=data
@@ -761,7 +761,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     mapDict['wcs']=wcs
     mapDict['surveyMask']=surveyMask
     mapDict['psMask']=psMask
-    mapDict['extName']=extName
+    mapDict['tileName']=tileName
     
     # Sanity check - no point continuing if masks are different shape to map (easier to tell user here)
     if mapDict['data'].shape != mapDict['psMask'].shape:
@@ -770,8 +770,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
     
     ## Save trimmed weights - this isn't necessary
-    #if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName)) == False:
-        #astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName), weights, wcs)
+    #if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName)) == False:
+        #astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName), weights, wcs)
         
     return mapDict
 
@@ -968,8 +968,8 @@ def estimateContaminationFromSkySim(config, imageDict):
             mapDict['CMBSimSeed']=CMBSimSeed
                     
         # NOTE: we need to zap ONLY specific maps for when we are running in parallel
-        for extName in simConfig.extNames:
-            mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
+        for tileName in simConfig.tileNames:
+            mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
             for m in mapFileNames:
                 os.remove(m)
                 
@@ -978,8 +978,8 @@ def estimateContaminationFromSkySim(config, imageDict):
                                                          copyFilters = True)
         
         # Write out the last sim map catalog for debugging
-        # NOTE: extName here makes no sense - this should be happening in the pipeline call above
-        #optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
+        # NOTE: tileName here makes no sense - this should be happening in the pipeline call above
+        #optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (tileName)    
         #optimalCatalog=simImageDict['optimalCatalog']
         #if len(optimalCatalog) > 0:
             #catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
@@ -1001,10 +1001,10 @@ def estimateContaminationFromSkySim(config, imageDict):
             avContaminTabDict[k][kk]=avContaminTabDict[k][kk]/float(len(resultsList))
     
     # For writing separate contamination .fits tables if running in parallel
-    # (if we're running in serial, then we'll get a giant file name with full extNames list... fix later)
-    extNamesLabel="#"+str(config.extNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
+    # (if we're running in serial, then we'll get a giant file name with full tileNames list... fix later)
+    tileNamesLabel="#"+str(config.tileNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
     for k in list(avContaminTabDict.keys()):
-        fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, extNamesLabel)
+        fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, tileNamesLabel)
         contaminTab=avContaminTabDict[k]
         contaminTab.write(fitsOutFileName, overwrite = True)
     
@@ -1244,8 +1244,8 @@ def positionRecoveryTest(config, imageDict):
         mapDict['injectSources']=mockCatalog
                 
     # NOTE: we need to zap ONLY specific maps for when we are running in parallel
-    for extName in simConfig.extNames:
-        mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
+    for tileName in simConfig.tileNames:
+        mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
         for m in mapFileNames:
             os.remove(m)
             

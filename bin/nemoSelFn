@@ -94,14 +94,14 @@ if __name__ == '__main__':
         if footprintDict['label'] not in selFnCollection.keys():
             selFnCollection[footprintDict['label']]=[]
             
-    for extName in config.extNames:
-        RMSTab=completeness.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
-        compMz=completeness.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
+    for tileName in config.tileNames:
+        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
+        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
                                            numDraws = config.parDict['selFnOptions']['numDraws'],
                                            numIterations = config.parDict['selFnOptions']['numIterations'],
                                            method = config.parDict['selFnOptions']['method'],
-                                           plotFileName = config.diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (extName))
-        selFnDict={'extName': extName,
+                                           plotFileName = config.diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (tileName))
+        selFnDict={'tileName': tileName,
                    'RMSTab': RMSTab,
                    'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                    'compMz': compMz}
@@ -110,16 +110,16 @@ if __name__ == '__main__':
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
         for footprintDict in footprintsList:
-            completeness.makeIntersectionMask(extName, config.diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
-            tileAreaDeg2=completeness.getTileTotalAreaDeg2(extName, config.diagnosticsDir, footprintLabel = footprintDict['label'])
+            completeness.makeIntersectionMask(tileName, config.diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
+            tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.diagnosticsDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
-                RMSTab=completeness.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
+                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
                                               footprintLabel = footprintDict['label'])
-                compMz=completeness.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
+                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
                                                    numDraws = config.parDict['selFnOptions']['numDraws'],
                                                    numIterations = config.parDict['selFnOptions']['numIterations'],
                                                    method = config.parDict['selFnOptions']['method'])
-                selFnDict={'extName': extName,
+                selFnDict={'tileName': tileName,
                            'RMSTab': RMSTab,
                            'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                            'compMz': compMz}
@@ -128,7 +128,7 @@ if __name__ == '__main__':
         # Optional mass-limit maps
         if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
             for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], extName, photFilterLabel, mockSurvey, 
+                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
                                             config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
                                             config.selFnDir)  
         
@@ -161,7 +161,7 @@ if __name__ == '__main__':
     if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
         print(">>> Making cumulative area plots and full survey mass limit plots ...")
         for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-            completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir) 
+            completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir) 
             completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
             
             

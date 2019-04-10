@@ -23,14 +23,13 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
                 findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
-                diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
+                selFnDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
                 verbose = True, useInterpolator = True, measureShapes = False):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
     
     SNMap == 'file' means that the SNMap will be loaded from disk, SNMap == 'array' means it is a np
-    array already in memory. SNMap == 'local', means use the a ranked filter to get noise in annulus around
-    given position. This doesn't seem to work as well...
+    array already in memory.
     
     Throw out objects within rejectBorder pixels of edge of frame if rejectBorder != None
     
@@ -46,14 +45,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
     
     if rejectBorder == None:
         rejectBorder=0
-  
-    # Load point source mask - this is hacked for 148 only at the moment
-    if diagnosticsDir != None and os.path.exists(diagnosticsDir+os.path.sep+"psMask_148.fits") == True:
-        img=pyfits.open(diagnosticsDir+os.path.sep+"psMask_148.fits")
-        psMaskMap=img[0].data
-    else:
-        psMaskMap=None
-                
+                  
     # Do search on each filtered map separately
     for key in imageDict['mapKeys']:
         
@@ -61,9 +53,9 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
             print("... searching %s ..." % (key))
         
         # Load area mask
-        extName=key.split("#")[-1]
-        if diagnosticsDir != None:
-            img=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
+        tileName=key.split("#")[-1]
+        if selFnDir != None:
+            img=pyfits.open(selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
             areaMask=img[0].data
         else:
             areaMask=None
@@ -203,16 +195,9 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                         objDict['ellipse_x0']=-99
                         objDict['ellipse_y0']=-99
                         objDict['ellipse_e']=-99
-                # Check against mask
-                if objDict['x'] > minX and objDict['x'] < maxX and \
-                    objDict['y'] > minY and objDict['y'] < maxY:
-                    masked=False
-                    if psMaskMap != None:
-                        if psMaskMap[int(round(objDict['y'])), int(round(objDict['x']))] > 0:
-                            masked=True
-                    if masked == False:
-                        catalog.append(objDict)
-                        idNumCount=idNumCount+1     
+                # Add to catalog (masks now applied before we get here so no need to check)
+                catalog.append(objDict)
+                idNumCount=idNumCount+1     
         
         # From here on, catalogs should be astropy Table objects...
         if len(catalog) > 0:
@@ -247,7 +232,7 @@ def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = F
         else:
             templateKey=None
             for k in imageDict['mapKeys']:
-                # Match the reference filter name and the extName
+                # Match the reference filter name and the tileName
                 if k.split("#")[0] == template and k.split("#")[-1] == key.split("#")[-1]:
                     templateKey=k
             if templateKey == None:
@@ -339,9 +324,9 @@ def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True,
         mapDataList=[mapData]
         interpolatorList=[mapInterpolator]
         prefixList=['']
-        extName=key.split("#")[-1]
+        tileName=key.split("#")[-1]
         if photFilter is not None:
-            photImg=pyfits.open(imageDict[photFilter+"#"+extName]['filteredMap'])
+            photImg=pyfits.open(imageDict[photFilter+"#"+tileName]['filteredMap'])
             photMapData=photImg[0].data
             mapDataList.append(photMapData)
             prefixList.append('fixed_')
@@ -410,8 +395,8 @@ def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
         return None
     
     catalog=imageDict['optimalCatalog']
-    for extName in imageDict['extNames']:
-        label=photFilter+"#"+extName
+    for tileName in imageDict['tileNames']:
+        label=photFilter+"#"+tileName
         freqWeightMapFileName=diagnosticsDir+os.path.sep+"freqRelativeWeights_%s.fits" % (label)
         if os.path.exists(freqWeightMapFileName) == True:
             img=pyfits.open(freqWeightMapFileName)
@@ -427,7 +412,7 @@ def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
                 if keyToAdd not in catalog.keys():
                     catalog.add_column(atpy.Column(np.zeros(len(catalog)), keyToAdd))
             for row in catalog:
-                if row['template'].split("#")[-1] == extName:
+                if row['template'].split("#")[-1] == tileName:
                     x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                     x=int(round(x))
                     y=int(round(y))

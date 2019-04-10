@@ -222,7 +222,7 @@ class MockSurvey(object):
 
 
     def drawSample(self, y0Noise, scalingRelationDict, tckQFitDict, wcs = None, photFilterLabel = None, 
-                   extName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
+                   tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
                    areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
                    applyIntrinsicScatter = True, applyNoiseScatter = True):
         """Draw a cluster sample from the mass function, generate mock y0~ values by applying the given 
@@ -238,8 +238,8 @@ class MockSurvey(object):
         Most likely you should set SNRLimit to thresholdSigma, as given in the nemo .yml config file
         (the resulting catalog could be cut in z, fixed_SNR afterwards anyway).
         
-        photFilterLabel and extName are only used for adding a 'template' key to each object: useful
-        for quickly checking which tile (extName) an object is in.
+        photFilterLabel and tileName are only used for adding a 'template' key to each object: useful
+        for quickly checking which tile (tileName) an object is in.
         
         If z is given, the sample is drawn from only that redshift. The default (z = None) is to use
         the range given by self.z
@@ -362,7 +362,7 @@ class MockSurvey(object):
             log10Ms_zk[log10Ms_zk > self.log10M.max()]=self.log10M.max()
             
             theta500s_zk=interpolate.splev(log10Ms_zk, self.theta500Splines[k], ext = 3)
-            Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[extName], ext = 3)
+            Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[tileName], ext = 3)
 
             # For some cosmo parameters, fRel can wander outside its range for crazy masses
             # So we just cap it at 0.1 here just to avoid -ve in log
@@ -399,8 +399,8 @@ class MockSurvey(object):
         tab.add_column(atpy.Column(measured_y0s/y0Noise, 'fixed_SNR'))
         tab.add_column(atpy.Column(zs, 'redshift'))
         tab.add_column(atpy.Column(zErrs, 'redshiftErr'))
-        if photFilterLabel != None and extName != None:
-            tab.add_column(atpy.Column([photFilterLabel+"#"+extName]*len(tab), 'template'))
+        if photFilterLabel != None and tileName != None:
+            tab.add_column(atpy.Column([photFilterLabel+"#"+tileName]*len(tab), 'template'))
                 
         # Apply selection?
         if applySNRCut == True:
