@@ -162,6 +162,6 @@ if __name__ == '__main__':
         print(">>> Making cumulative area plots and full survey mass limit plots ...")
         for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
             completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir) 
-            completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config.diagnosticsDir)
+            completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
             
             

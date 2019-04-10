@@ -753,94 +753,17 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir):
     plt.close()
         
 #------------------------------------------------------------------------------------------------------------
-def makeFullSurveyMassLimitMapPlot(z, diagnosticsDir):
+def makeFullSurveyMassLimitMapPlot(z, config):
     """Reprojects tile mass limit maps onto the full map pixelisation, then makes a plot and saves a
     .fits image.
-    
-    NOTE: we hardcoded the pixelisation in here for now...
-    
+        
     """
-
-    # Making the full res reprojected map takes ~1650 sec
-    outFileName=diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
-    if os.path.exists(outFileName) == False:
-
-        print(">>> Making reprojected full survey mass limit map:")
-        
-        # Downsampled
-        h=pyfits.Header()
-        h['NAXIS']=2
-        h['NAXIS1']=10800
-        h['NAXIS2']=2580
-        h['WCSAXES']=2
-        h['CRPIX1']=5400.25
-        h['CRPIX2']=1890.25
-        h['CDELT1']=-0.0333333333333332
-        h['CDELT2']=0.0333333333333332
-        h['CUNIT1']='deg'
-        h['CUNIT2']='deg'
-        h['CTYPE1']='RA---CAR'
-        h['CTYPE2']='DEC--CAR'
-        h['CRVAL1']=0.0
-        h['CRVAL2']=0.0
-        h['LONPOLE']=0.0
-        h['LATPOLE']=90.0
-        h['RADESYS']='ICRS'
-        # Full res
-        #h['NAXIS']=2
-        #h['NAXIS1']=43200
-        #h['NAXIS2']=10320
-        #h['WCSAXES']=2
-        #h['CRPIX1']=21601.0
-        #h['CRPIX2']=7561.0
-        #h['CDELT1']=-0.0083333333333333
-        #h['CDELT2']=0.0083333333333333
-        #h['CUNIT1']='deg'
-        #h['CUNIT2']='deg'
-        #h['CTYPE1']='RA---CAR'
-        #h['CTYPE2']='DEC--CAR'
-        #h['CRVAL1']=0.0
-        #h['CRVAL2']=0.0
-        #h['LONPOLE']=0.0
-        #h['LATPOLE']=90.0
-        #h['RADESYS']='ICRS'
-        wcs=astWCS.WCS(h, mode = 'pyfits')
-        
-        reproj=np.zeros([wcs.header['NAXIS2'], wcs.header['NAXIS1']])
-        sumPix=np.zeros([wcs.header['NAXIS2'], wcs.header['NAXIS1']])
-        
-        fileList=glob.glob(diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")))
-        extNames=[]
-        for f in fileList:
-            extNames.append(f.split("#")[-1].split(".fits")[0])
-        extNames.sort()
-        
-        t0=time.time()
-        for extName in extNames:
-            print("... %s ..." % (extName))
-            img=pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), extName))
-            data=img[0].data
-            imgWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
-            areaImg=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits.gz" % (extName))
-            areaMap=areaImg[0].data
-            for y in range(data.shape[0]):
-                for x in range(data.shape[1]):
-                    outRADeg, outDecDeg=imgWCS.pix2wcs(x, y)
-                    inX, inY=wcs.wcs2pix(outRADeg, outDecDeg)
-                    # Once, this returned infinity...
-                    try:
-                        inX=int(round(inX))
-                        inY=int(round(inY))
-                    except:
-                        continue
-                    # handle the overlap regions, which were zeroed
-                    if areaMap[y, x] > 0:   
-                        reproj[inY, inX]=reproj[inY, inX]+data[y, x]
-                        sumPix[inY, inX]=sumPix[inY, inX]+1.0
-        t1=time.time()
-        #print(t1-t0)
-        astImages.saveFITS(outFileName, reproj/sumPix, wcs)
     
+    outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
+    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")), 
+                     outFileName, config.quicklookWCS, config.quicklookShape, 
+                     fluxRescale = config.quicklookScale)
+
     # Make plot
     img=pyfits.open(outFileName)
     reproj=np.nan_to_num(img[0].data)
@@ -852,7 +775,7 @@ def makeFullSurveyMassLimitMapPlot(z, diagnosticsDir):
     figSize=(16, 5.7)
     axesLabels="sexagesimal"
     axes=[0.08,0.15,0.91,0.88]
-    cutLevels=[2, 9]
+    cutLevels=[2, int(np.median(reproj[np.nonzero(reproj)]))+2]
     colorMapName=colorcet.m_rainbow
     fig=plt.figure(figsize = figSize)
     p=astPlots.ImagePlot(reproj, wcs, cutLevels = cutLevels, title = None, axes = axes, 
@@ -865,5 +788,5 @@ def makeFullSurveyMassLimitMapPlot(z, diagnosticsDir):
     cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18, 
                     shrink = cbShrink, aspect = cbAspect)
     plt.figtext(0.53, 0.04, cbLabel, size = 20, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
-    plt.savefig(outFileName.replace(".fits", ".pdf"))
+    plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
     plt.close()
