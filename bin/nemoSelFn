@@ -114,7 +114,7 @@ if __name__ == '__main__':
             tileAreaDeg2=completeness.getTileTotalAreaDeg2(extName, config.diagnosticsDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(extName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
-                                            footprintLabel = footprintDict['label'])
+                                              footprintLabel = footprintDict['label'])
                 compMz=completeness.calcCompleteness(RMSTab, SNRCut, extName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
                                                    numDraws = config.parDict['selFnOptions']['numDraws'],
                                                    numIterations = config.parDict['selFnOptions']['numIterations'],
@@ -124,7 +124,7 @@ if __name__ == '__main__':
                            'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                            'compMz': compMz}
                 selFnCollection[footprintDict['label']].append(selFnDict)
-        
+            
         # Optional mass-limit maps
         if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
             for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     # Survey completeness stats now all lumped together in one routine
     # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
     completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
-                                       additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
+                                         additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
     
     # If we made mass limit maps...
     # ... make cumulative area versus mass limit plot(s)

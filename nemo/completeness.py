@@ -60,7 +60,7 @@ class SelFn(object):
         self.applyMFDebiasCorrection=applyMFDebiasCorrection
         self.selFnDir=selFnDir
 
-        self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.pickle")
+        self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
         parDict=startUp.parseConfigFile(parDictFileName)
         self.extNames=self.tckQFitDict.keys()
         
