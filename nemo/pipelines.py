@@ -102,11 +102,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                     
     # Merged/optimal catalogs
     catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])
-    
-    # This is useful for multi-freq, e.g., relativistic SZ corrections; tracking which objects are in 148 GHz only parts of the map
-    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photFilter'], 
-                                       config.diagnosticsDir)
-    
+        
     return imageDict
     
 #------------------------------------------------------------------------------------------------------------

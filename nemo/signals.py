@@ -242,7 +242,44 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
                            'obsFreqGHz': obsFreqGHz}
     
     return signalMap, inputSignalProperties
+
+#------------------------------------------------------------------------------------------------------------
+def getFRelWeights(config):
+    """Returns a dictionary of frequency weights used in relativistic corrections for each tile. This is 
+    cached in the selFn/ dir after the first time this routine is called.
     
+    """
+    
+    if 'photFilter' not in config.parDict.keys():
+        return {}
+    
+    fRelWeightsFileName=config.selFnDir+os.path.sep+"fRelWeights.fits"
+    if os.path.exists(fRelWeightsFileName) == False:
+        fRelTab=atpy.Table()
+        fRelTab.add_column(atpy.Column(config.tileNames, 'tileName'))
+        for tileCount in range(len(config.tileNames)):
+            tileName=config.tileNames[tileCount]
+            filterFileName=config.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (config.parDict['photFilter'], tileName)
+            with pyfits.open(filterFileName) as img:
+                for i in range(1, 10):
+                    if 'RW%d_GHZ' % (i) in img[0].header.keys():
+                        freqGHz=str(img[0].header['RW%d_GHZ' % (i)])
+                        if freqGHz not in fRelTab.keys():
+                            fRelTab.add_column(atpy.Column(np.zeros(len(config.tileNames)), freqGHz))
+                        fRelTab[freqGHz][tileCount]=img[0].header['RW%d' % (i)]
+        fRelTab.write(fRelWeightsFileName, overwrite = True)
+    else:
+        fRelTab=atpy.Table().read(fRelWeightsFileName)
+        
+    fRelWeightsDict={}
+    for row in fRelTab:
+        fRelWeightsDict[row['tileName']]={}
+        for key in fRelTab.keys():
+            if key != 'tileName':
+                fRelWeightsDict[row['tileName']][float(key)]=row[key]
+    
+    return fRelWeightsDict
+        
 #------------------------------------------------------------------------------------------------------------
 def fitQ(config):
     """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot in the diagnosticDir
@@ -430,7 +467,6 @@ def fitQ(config):
         plt.close()
         print("... Q fit finished [tileName = %s, rank = %d] ..." % (tileName, config.rank))
             
-    # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
     if config.MPIEnabled == True:
         gathered_QTabDicts=config.comm.gather(rank_QTabDict, root = 0)
         if config.rank == 0:
@@ -676,8 +712,8 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
             
 #------------------------------------------------------------------------------------------------------------
 def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
-                   sigma_int = 0.2, applyMFDebiasCorrection = True, calcErrors = True,
-                   fRelWeightsDict = {148.0: 1.0}):
+                   sigma_int = 0.2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
+                   calcErrors = True, fRelWeightsDict = {148.0: 1.0}):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
@@ -689,6 +725,9 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B
     tckQFit is a set of spline knots, as returned by fitQ.
     
     If applyMFDebiasCorrection == True, apply correction that accounts for steepness of mass function.
+    
+    If applyRelativisticCorrection == True, apply relativistic correction (weighted by frequency using the
+    contents of fRelWeightsDict).
     
     If calcErrors == False, error bars are not calculated, they are just set to zero.
     
@@ -706,15 +745,16 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B
             
     P=calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
                 sigma_int = sigma_int, applyMFDebiasCorrection = applyMFDebiasCorrection,
-                fRelWeightsDict = fRelWeightsDict)
+                applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict)
     
     M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     
     return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus}
 
 #------------------------------------------------------------------------------------------------------------
-def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2, 
-             applyMFDebiasCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False):
+def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
+              sigma_int = 0.2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True, 
+              fRelWeightsDict = {148.0: 1.0}, return2D = False):
     """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
     et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
@@ -760,7 +800,9 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
         Qs=interpolate.splev(theta500s, tckQFit, ext = 3)
         fRels=interpolate.splev(log10Ms, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)   
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
-        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
+        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
+        if applyRelativisticCorrection == True:
+            y0pred=y0pred*fRels
         if np.less(y0pred, 0).sum() > 0:
             # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
             # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)

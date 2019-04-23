@@ -230,6 +230,7 @@ class MapFilter(object):
         
         # This is a default - will get modified (calculated) by buildAndApply
         self.signalNorm=1.0
+        self.fRelWeights={}
                
         
     def makeRadiansMap(self):
@@ -405,6 +406,18 @@ class MapFilter(object):
         
         return RMSMap
     
+    
+    def loadFRelWeights(self):
+        """Reads frequency weights used for relativistic corrections from filter header.
+        
+        """
+        with pyfits.open(self.filterFileName) as img:
+            self.fRelWeights={}
+            for i in range(1, 10):
+                if 'RW%d_GHZ' % (i) in img[0].header.keys():
+                    freqGHz=img[0].header['RW%d_GHZ' % (i)]
+                    self.fRelWeights[freqGHz]=img[0].header['RW%d' % (i)]
+    
 #------------------------------------------------------------------------------------------------------------
 class MatchedFilter(MapFilter):
     """Multi-frequency matched filter...
@@ -520,6 +533,15 @@ class MatchedFilter(MapFilter):
                 signalMaps=np.array(signalMaps)
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
+                self.signalNorm=y0/filteredSignal.max()
+                # For relativistic corrections (see signals module)
+                totalSignal=filteredSignal.flatten()[np.argmax(filteredSignal)]
+                filteredSignalCube=np.real(enmap.ifft(fSignalMaps*self.filt, normalize = False))
+                self.fRelWeights={}
+                for filteredSignalPlane, mapDict in zip(filteredSignalCube, self.unfilteredMapsDictList):
+                    freqGHz=mapDict['obsFreqGHz']
+                    fRelWeight=filteredSignalPlane.flatten()[np.argmax(filteredSignal)]/totalSignal
+                    self.fRelWeights[freqGHz]=fRelWeight
                 del fSignalMaps
                 self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
@@ -610,7 +632,12 @@ class MatchedFilter(MapFilter):
         
         if 'saveFilter' in self.params and self.params['saveFilter'] == True:
             img=pyfits.PrimaryHDU()                                                                                                                                                              
-            img.header['SIGNORM']=self.signalNorm                                                                                                                                                
+            img.header['SIGNORM']=self.signalNorm
+            count=0
+            for key in list(self.fRelWeights.keys()):
+                count=count+1
+                img.header['RW%d_GHZ' % (count)]=key
+                img.header['RW%d' % (count)]=self.fRelWeights[key]
             img.data=self.filt                                                                                                                                                                      
             img.writeto(self.filterFileName, overwrite = True) 
             
@@ -626,7 +653,8 @@ class MatchedFilter(MapFilter):
         with pyfits.open(self.filterFileName) as img:
             self.filt=img[0].data
             self.signalNorm=img[0].header['SIGNORM']
-    
+        self.loadFRelWeights()
+        
 
     def reshapeFilter(self, shape):
         """Use linear interpolation to transform the filter to the given shape.
@@ -842,11 +870,10 @@ class RealSpaceMatchedFilter(MapFilter):
             signalMaps.append(signalMapDict['signalMap'])
         signalMaps=np.array(signalMaps)
         
-        filteredSignal=self.applyFilter(signalMaps)
-
+        filteredSignal=self.applyFilter(signalMaps, calcFRelWeights = True)
         if self.params['outputUnits'] == 'yc':
             # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-            self.signalNorm=y0/filteredSignal.max()
+            self.signalNorm=y0/filteredSignal.max()            
         elif self.params['outputUnits'] == 'uK':
             self.signalNorm=1.0/filteredSignal.max()
         else:
@@ -984,9 +1011,13 @@ class RealSpaceMatchedFilter(MapFilter):
                 'SNMap': SNMap, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}
 
     
-    def applyFilter(self, mapDataToFilter, doFFT = False):
+    def applyFilter(self, mapDataToFilter, calcFRelWeights = False):
         """Apply the kernel to the given map data (must be a cube - with each plane corresponding to a 
         frequency).
+        
+        NOTE: calcFRelWeights = True should ONLY be set if this routine is being applied to an ideal
+        signal map (when calculating signalNorm). This operation is being done in here to save 
+        complications / time from doing unnecessary convolution operations elsewhere.
         
         Returns:
             Filtered map (2d numpy array)
@@ -1005,13 +1036,20 @@ class RealSpaceMatchedFilter(MapFilter):
             filteredMap=filteredMap+mapDataToFilter
         
         # Apply the kernel
-        #t0=time.time()
-        #print("... convolving map with kernel ...")
         for i in range(filteredMap.shape[0]):
             filteredMap[i]=ndimage.convolve(filteredMap[i], self.kern2d[i])
+        
+        # For relativistic corrections (see signals module)
+        if calcFRelWeights == True:
+            self.fRelWeights={}
+            maxIndex=np.argmax(filteredMap.sum(axis = 0))
+            totalSignal=filteredMap.sum(axis = 0).flatten()[maxIndex]
+            for filteredSignalPlane, mapDict in zip(filteredMap, self.unfilteredMapsDictList):
+                freqGHz=mapDict['obsFreqGHz']
+                fRelWeight=filteredSignalPlane.flatten()[maxIndex]/totalSignal
+                self.fRelWeights[freqGHz]=fRelWeight
+                
         filteredMap=filteredMap.sum(axis = 0)
-        t1=time.time()
-        #print("... took %.3f sec ..." % (t1-t0))
         
         # Apply the normalisation
         filteredMap=filteredMap*self.signalNorm
