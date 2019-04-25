@@ -321,7 +321,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
     
     if footprintLabel != None:  
-        intersectMask=makeIntersectionMask(tileName, diagnosticsDir, footprintLabel)
+        intersectMask=makeIntersectionMask(tileName, selFnDir, footprintLabel)
         areaMapSqDeg=areaMapSqDeg*intersectMask        
         RMSMap=RMSMap*intersectMask
 

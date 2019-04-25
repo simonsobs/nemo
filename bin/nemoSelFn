@@ -110,8 +110,8 @@ if __name__ == '__main__':
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
         for footprintDict in footprintsList:
-            completeness.makeIntersectionMask(tileName, config.diagnosticsDir, footprintDict['label'], masksList = footprintDict['maskList'])
-            tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.diagnosticsDir, footprintLabel = footprintDict['label'])
+            completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
+            tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
                                               footprintLabel = footprintDict['label'])
