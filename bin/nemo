@@ -137,11 +137,7 @@ if __name__ == '__main__':
     catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                          constraintsList = ["SNR > 0.0"], \
                          addInfo = addInfo, color = "cyan") 
-    
-    # Cache file containing weights for relatvistic corrections
-    # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do
-    signals.getFRelWeights(config)
-    
+        
     # Stitch together map tiles - these are 'quicklook' images (downsampled by factor 4 in resolution)
     # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
     if 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
@@ -155,5 +151,10 @@ if __name__ == '__main__':
                              config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
                              config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
 
+    # Cache file containing weights for relatvistic corrections
+    # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do
+    # Needs full tileNames list though to make sense...
+    config.restoreConfig()
+    signals.getFRelWeights(config)
     
     
