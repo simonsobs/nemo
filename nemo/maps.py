@@ -598,6 +598,10 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     CMBSimSeed (:obj:`int`)
         If present, replace the map with a source-free simulated CMB realisation, generated using the given
         seed number. Used by :meth:`estimateContaminationFromSkySim`.
+    
+    applyBeamConvolution (:obj: `str`)
+        If True, the map is convolved with the beam given in the beamFileName key. This should only be 
+        needed when using preliminary y-maps made by tILe-C.
             
     Args:
         mapDict (:obj:`dict`): A dictionary with the same keys as given in the unfilteredMaps list in the 
@@ -714,7 +718,13 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         # NOTE: We should also stop loading the beam from disk each time
         data=injectSources(data, wcs, mapDict['injectSources'], mapDict['beamFileName'], 
                            obsFreqGHz = mapDict['obsFreqGHz'], GNFWParams = 'default')
-    
+
+    # Should only be needed for handling preliminary tILe-C maps
+    if 'applyBeamConvolution' in mapDict.keys() and mapDict['applyBeamConvolution'] == True:
+        data=convolveMapWithBeam(data, wcs, mapDict['beamFileName'], maxDistDegrees = 1.0)
+        if diagnosticsDir is not None:
+            astImages.saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
+        
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
@@ -845,7 +855,8 @@ def convolveMapWithBeam(data, wcs, beamFileName, maxDistDegrees = 1.0):
     """
     
     RADeg, decDeg=wcs.getCentreWCSCoords()
-    degreesMap=nemoCython.makeDegreesDistanceMap(data, wcs, RADeg, decDeg, maxDistDegrees)
+    degreesMap=nemoCython.makeDegreesDistanceMap(np.array(data, dtype = float), wcs, RADeg, decDeg, 
+                                                 maxDistDegrees)
 
     beamMap, sigDict=signals.makeBeamModelSignalMap(degreesMap, wcs, beamFileName)
     ys, xs=np.where(degreesMap < maxDistDegrees)

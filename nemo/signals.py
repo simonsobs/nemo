@@ -85,7 +85,7 @@ def calcTheta500Arcmin(z, M500):
     return theta500Arcmin
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = 'default'):
+def makeArnaudModelProfile(z, M500, GNFWParams = 'default'):
     """Given z, M500 (in MSun), returns dictionary containing Arnaud model profile (well, knots from spline 
     fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
     (particularly 'y0', 'theta500Arcmin').
@@ -162,7 +162,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beamFileName, deltaT0 = None):
     
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default',
-                             deltaT0 = None, maxSizeDeg = 15.0, convolveWithBeam = True):
+                             deltaT0 = None, y0 = None, maxSizeDeg = 15.0, convolveWithBeam = True):
     """Makes a 2d signal only map containing an Arnaud model cluster. Units of M500 are MSun.
     
     degreesMap is a 2d array containing radial distance from the centre - the output map will have the same
@@ -189,7 +189,7 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     """
 
     # Making the 1d profile itself is the slowest part (~1 sec)
-    signalDict=makeArnaudModelProfile(z, M500, obsFreqGHz, GNFWParams = GNFWParams)
+    signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
     theta500Arcmin=signalDict['theta500Arcmin']
     
@@ -199,7 +199,7 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     if deltaT0 is not None:
         profile1d=profile1d*deltaT0
         y0=maps.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
-    else:
+    elif y0 is None and deltaT0 is None:
         y0=1.0
     rRadians=np.radians(rDeg)
     radiansMap=np.radians(degreesMap)
@@ -264,6 +264,9 @@ def getFRelWeights(config):
                 for i in range(1, 10):
                     if 'RW%d_GHZ' % (i) in img[0].header.keys():
                         freqGHz=str(img[0].header['RW%d_GHZ' % (i)])
+                        if freqGHz == '':
+                            freqGHz='148.0'
+                            print(">>> WARNING: setting freqGHz = '%s' in getFRelWeights - this is okay if you're running on a tILe-C y-map" % (freqGHz))
                         if freqGHz not in fRelTab.keys():
                             fRelTab.add_column(atpy.Column(np.zeros(len(config.tileNames)), freqGHz))
                         fRelTab[freqGHz][tileCount]=img[0].header['RW%d' % (i)]
@@ -400,12 +403,16 @@ def fitQ(config):
             y0=2e-4
             tol=1e-6
             for obsFreqGHz in list(beamsDict.keys()):
-                deltaT0=maps.convertToDeltaT(y0, obsFreqGHz)
+                if mapDict['obsFreqGHz'] is not None:   # Normal case
+                    deltaT0=maps.convertToDeltaT(y0, obsFreqGHz)
+                else:                                   # tILe-C case
+                    deltaT0=None
                 # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This can
                 signalMap, inputProperties=makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
                                                                     degreesMap, wcs, 
                                                                     beamsDict[obsFreqGHz], 
                                                                     deltaT0 = deltaT0,
+                                                                    y0 = y0,
                                                                     convolveWithBeam = False,
                                                                     GNFWParams = config.parDict['GNFWParams'])
                 if abs(y0-inputProperties['y0']) > tol:

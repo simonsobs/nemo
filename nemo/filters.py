@@ -327,7 +327,11 @@ class MapFilter(object):
         plt.ylabel("Amplitude")
         plt.xlabel("$\\theta$ (arcmin)")
         for row, mapDict in zip(prof, self.unfilteredMapsDictList):
-            plt.plot(arcminRange, row, label = '%d GHz' % (mapDict['obsFreqGHz']))
+            if mapDict['obsFreqGHz'] is not None:
+                label = '%d GHz' % (mapDict['obsFreqGHz'])
+            elif mapDict['units'] == 'yc':
+                label = 'yc'
+            plt.plot(arcminRange, row, label = label)
         plt.xlim(0, 30.0)
         plt.ylim(prof.min(), prof.max()*1.1)
         plt.legend()
@@ -442,19 +446,6 @@ class MatchedFilter(MapFilter):
             fMapsForNoise=[]
             for mapDict in self.unfilteredMapsDictList: 
                 d=mapDict['data']
-                # This weight flattening business was the wrong thing to do...
-                # Shouldn't need anyway - as we estimate S/N in cells later
-                #if mapDict['weightsType'] == 'invVar':
-                    #w=np.sqrt(mapDict['weights'])
-                    #w=w/w.max()
-                    #w=np.ones(w.shape)
-                #elif mapDict['weightsType'] == 'hits':
-                    #w=np.sqrt(mapDict['weights'])
-                    #w=w/w.max()
-                    #w=1/w
-                #else:
-                    #raise Exception("Didn't understand 'weightsType' - should be 'invVar' or 'hits'")
-                #fMapsForNoise.append(enmap.fft(enmap.apod(d*w, self.apodPix)))
                 fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
             fMapsForNoise=np.array(fMapsForNoise)
         
@@ -484,12 +475,16 @@ class MatchedFilter(MapFilter):
             # Signal frequency weighting
             w=[]
             for mapDict in self.unfilteredMapsDictList:
-                if self.params['outputUnits'] == 'yc':
-                    w.append(signals.fSZ(mapDict['obsFreqGHz']))
-                elif self.params['outputUnits'] == 'uK':
-                    w.append(1.0)
+                if mapDict['units'] != 'yc':
+                    if self.params['outputUnits'] == 'yc':
+                        w.append(signals.fSZ(mapDict['obsFreqGHz']))
+                    elif self.params['outputUnits'] == 'uK':
+                        # This is where variable spectral weighting for sources would be added...
+                        w.append(1.0)
+                    else:
+                        raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
                 else:
-                    raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+                    w.append(1.0)   # For tILe-C: there should only be one map if input units are yc anyway...
             w=np.array(w)
                 
             # Make FFTs of unit-normalised signal templates for each band
@@ -522,9 +517,13 @@ class MatchedFilter(MapFilter):
                 y0=2e-4
                 tol=1e-6
                 for mapDict in self.unfilteredMapsDictList:
-                    deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
-                    signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
-                                                            deltaT0 = deltaT0)
+                    if mapDict['units'] == 'yc':    # For handling tILe-C maps
+                        signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                                                                 y0 = y0)
+                    else:                           # The normal case
+                        deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                        signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                                                                 deltaT0 = deltaT0)
                     if abs(y0-signalMapDict['inputSignalProperties']['y0']) > tol:
                         raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
                     signalMaps.append(signalMapDict['signalMap'])
@@ -858,15 +857,19 @@ class RealSpaceMatchedFilter(MapFilter):
         # NOTE: This is SZ-specific again and needs generalising
         signalMaps=[]
         for mapDict in self.unfilteredMapsDictList:
+            # This has been made more complicated because of tILe-C
             if self.params['outputUnits'] == 'yc':
                 y0=2e-4
-                deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                if mapDict['obsFreqGHz'] is not None:   # Normal case
+                    deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                else:                                   # tILe-C case
+                    deltaT0=None
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                                                         deltaT0 = deltaT0, y0 = y0)
             elif self.params['outputUnits'] == 'uK':
-                deltaT0=None
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
-            signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
-                                                     deltaT0 = deltaT0)
             signalMaps.append(signalMapDict['signalMap'])
         signalMaps=np.array(signalMaps)
         
@@ -903,7 +906,11 @@ class RealSpaceMatchedFilter(MapFilter):
             tck=interpolate.splrep(arcminRange[mask], row[mask])
             plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
             #plt.plot(arcminRange[mask], prof[mask])
-            plt.plot(plotRange, interpolate.splev(plotRange, tck), '-', label = '%d GHz' % (mapDict['obsFreqGHz']))
+            if mapDict['obsFreqGHz'] is not None:
+                label = '%d GHz' % (mapDict['obsFreqGHz'])
+            elif mapDict['units'] == 'yc':
+                label = 'yc'
+            plt.plot(plotRange, interpolate.splev(plotRange, tck), '-', label = label)
         plt.xlabel("$\\theta$ (arcmin)")
         plt.ylabel("Amplitude")
         plt.legend()
@@ -1081,7 +1088,7 @@ class ArnaudModelFilter(MapFilter):
     
     """
     
-    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz, deltaT0 = None):
+    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz, deltaT0 = None, y0 = None):
         """Makes a model signal template map.
         
         Returns dictionary of {'signalMap', 'inputSignalProperties'}
@@ -1092,7 +1099,7 @@ class ArnaudModelFilter(MapFilter):
                                                                 mapObsFreqGHz, np.degrees(self.radiansMap),
                                                                 self.wcs, beamFileName, 
                                                                 GNFWParams = self.params['GNFWParams'],
-                                                                deltaT0 = deltaT0)
+                                                                deltaT0 = deltaT0, y0 = y0)
         
         return {'signalMap': signalMap, 'inputSignalProperties': modelDict}
                 
