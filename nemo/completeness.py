@@ -251,8 +251,14 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
     else:
         if masksList == []:
             raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
-        print("... creating %s intersection mask (%s) ..." % (label, tileName)) 
+        print("... creating %s intersection mask (%s) ..." % (label, tileName))         
         intersectMask=np.zeros(areaMap.shape)
+        outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
+        outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
+        outRA=outRACoords[:, 0]
+        outDec=outDecCoords[:, 1]
+        RAToX=interpolate.interp1d(outRA, np.arange(intersectMask.shape[1]), fill_value = 'extrapolate')
+        DecToY=interpolate.interp1d(outDec, np.arange(intersectMask.shape[0]), fill_value = 'extrapolate')
         for fileName in masksList:
             with pyfits.open(fileName) as maskImg:
                 for hdu in maskImg:
@@ -260,28 +266,33 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
                         break
                 maskWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
                 maskData=hdu.data
-            # For speed: assuming mask is aligned with dec in y direction and no rotation
-            blah, yMin=maskWCS.wcs2pix(0.0, decMin)
-            blah, yMax=maskWCS.wcs2pix(0.0, decMax)
-            yMin=int(round(yMin))
-            yMax=int(round(yMax))
-            if yMin < 0:
-                yMin=0
-            if yMax >= maskData.shape[0]:
-                yMax=maskData.shape[0]-1
-            ys, xs=np.where(maskData[yMin:yMax] == 1)
-            if len(ys) > 0:
-                RADec=maskWCS.pix2wcs(xs, ys+yMin)
-                RADec=np.array(RADec)
-                areaMapCoords=wcs.wcs2pix(RADec[:, 0], RADec[:, 1])
-                areaMapCoords=np.array(areaMapCoords)
-                areaMapCoords=np.array(np.round(areaMapCoords), dtype = int)
-                xMask=np.logical_and(np.greater_equal(areaMapCoords[:, 0], 0), np.less(areaMapCoords[:, 0], areaMap.shape[1]-1))
-                yMask=np.logical_and(np.greater_equal(areaMapCoords[:, 1], 0), np.less(areaMapCoords[:, 1], areaMap.shape[0]-1))
-                for coord in areaMapCoords[np.logical_and(xMask, yMask)]:
-                    intersectMask[coord[1], coord[0]]=1
+            # From sourcery tileDir stuff
+            RAc, decc=wcs.getCentreWCSCoords()
+            xc, yc=maskWCS.wcs2pix(RAc, decc)
+            xc, yc=int(xc), int(yc)
+            xIn=np.arange(maskData.shape[1])
+            yIn=np.arange(maskData.shape[0])
+            inRACoords=np.array(maskWCS.pix2wcs(xIn, [yc]*len(xIn)))
+            inDecCoords=np.array(maskWCS.pix2wcs([xc]*len(yIn), yIn))
+            inRA=inRACoords[:, 0]
+            inDec=inDecCoords[:, 1]
+            RAToX=interpolate.interp1d(inRA, xIn, fill_value = 'extrapolate')
+            DecToY=interpolate.interp1d(inDec, yIn, fill_value = 'extrapolate')
+            outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
+            outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
+            outRA=outRACoords[:, 0]
+            outDec=outDecCoords[:, 1]
+            xIn=np.array(RAToX(outRA), dtype = int)
+            yIn=np.array(DecToY(outDec), dtype = int)
+            xMask=np.logical_and(xIn >= 0, xIn < maskData.shape[1])
+            yMask=np.logical_and(yIn >= 0, yIn < maskData.shape[0])
+            xOut=np.arange(intersectMask.shape[1])
+            yOut=np.arange(intersectMask.shape[0])
+            for i in yOut[yMask]:
+                intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
+        intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
         astImages.saveFITS(intersectFileName, intersectMask, wcs)
-    
+        
     return intersectMask
 
 #------------------------------------------------------------------------------------------------------------
