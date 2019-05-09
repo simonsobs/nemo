@@ -39,7 +39,8 @@ plt.matplotlib.interactive(False)
 class SelFn(object):
         
     def __init__(self, parDictFileName, selFnDir, SNRCut, footprintLabel = None, zStep = 0.01, 
-                 enableDrawSample = False, downsampleRMS = True, applyMFDebiasCorrection = True):
+                 enableDrawSample = False, downsampleRMS = True, applyMFDebiasCorrection = True,
+                 setUpAreaMask = False, enableCompletenessCalc = True):
         """Initialise a SelFn object.
         
         This is a class that uses the output from nemoSelFn to re-calculate the selection function
@@ -85,7 +86,17 @@ class SelFn(object):
         
         self.scalingRelationDict=parDict['massOptions']
         
+        # Load area masks
+        if setUpAreaMask == True:
+            # Takes around 20 sec
+            self._setUpAreaMask()
+        else:
+            self.tileTab=None
+            self.WCSDict=None
+            self.areaMaskDict=None
+        
         # Tile-weighted average noise and area will not change... we'll just re-calculate fitTab and put in place here
+        # Takes around 20 sec
         self.selFnDictList=[]
         self.totalAreaDeg2=0.0
         for tileName in self.tileNames:
@@ -100,20 +111,97 @@ class SelFn(object):
                             'tileAreaDeg2': tileAreaDeg2}
                     self.selFnDictList.append(selFnDict)
                     self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
-
-        # Set initial fiducial cosmology - can be overridden using update function     
-        minMass=5e13
-        zMin=0.0
-        zMax=2.0
-        H0=70.
-        Om0=0.30
-        Ob0=0.05
-        sigma_8=0.8
-        self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = zStep, enableDrawSample = enableDrawSample)
         
-        # An initial run...
-        self.update(H0, Om0, Ob0, sigma_8)
+        # Set initial fiducial cosmology - can be overridden using update function
+        if enableCompletenessCalc == True:
+            minMass=5e13
+            zMin=0.0
+            zMax=2.0
+            H0=70.
+            Om0=0.30
+            Ob0=0.05
+            sigma_8=0.8
+            self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = zStep, enableDrawSample = enableDrawSample)
+            # An initial run...
+            self.update(H0, Om0, Ob0, sigma_8)
 
+
+    def _setUpAreaMask(self):
+        """Sets-up WCS info and loads area masks - needed for quick position checks etc.
+        
+        """
+        
+        # This takes ~20 sec to set-up - we could cache, or it's overhead when initialising SelFn
+        # We could do a lot of this by just making the area mask, mass limit maps etc. MEFs
+        # But then we wouldn't want to lazily load them (probably)
+        self.tileTab=atpy.Table()
+        self.tileTab.add_column(atpy.Column(list(self.tileNames), 'tileName'))
+        self.tileTab.add_column(atpy.Column(np.zeros(len(self.tileNames)), 'RAMin'))
+        self.tileTab.add_column(atpy.Column(np.zeros(len(self.tileNames)), 'RAMax'))
+        self.tileTab.add_column(atpy.Column(np.zeros(len(self.tileNames)), 'decMin'))
+        self.tileTab.add_column(atpy.Column(np.zeros(len(self.tileNames)), 'decMax'))
+        self.WCSDict={}
+        self.areaMaskDict={}
+        for row in self.tileTab:
+            areaMap, wcs=loadAreaMask(row['tileName'], self.selFnDir)
+            self.WCSDict[row['tileName']]=wcs.copy()
+            self.areaMaskDict[row['tileName']]=areaMap
+            ra0, dec0=self.WCSDict[row['tileName']].pix2wcs(0, 0)
+            ra1, dec1=self.WCSDict[row['tileName']].pix2wcs(wcs.header['NAXIS1'], wcs.header['NAXIS2'])
+            if ra1 > ra0:
+                ra1=-(360-ra1)
+            row['RAMin']=min([ra0, ra1])
+            row['RAMax']=max([ra0, ra1])
+            row['decMin']=min([dec0, dec1])
+            row['decMax']=max([dec0, dec1])
+            
+            
+    def checkCoordsInAreaMask(self, RADeg, decDeg):
+        """Checks if the given RA, dec coords are in valid regions of the map. 
+        
+        Args:
+            RADeg (float or numpy array): RA in decimal degrees
+            decDeg (float or numpy array): dec in decimal degrees
+        
+        Returns:
+            True if in the area mask mask, False if not
+            
+        """
+
+        if self.tileTab is None:
+            self._setUpAreaMask()
+                    
+        RADeg=np.array(RADeg)
+        decDeg=np.array(decDeg)
+        if RADeg.shape == ():
+            RADeg=[RADeg]
+        if decDeg.shape == ():
+            decDeg=[decDeg]
+        inMaskList=[]
+        for ra, dec in zip(RADeg, decDeg):
+            inMask=False
+            # Inside footprint check
+            raMask=np.logical_and(np.greater_equal(ra, self.tileTab['RAMin']), np.less(ra, self.tileTab['RAMax']))
+            decMask=np.logical_and(np.greater_equal(dec, self.tileTab['decMin']), np.less(dec, self.tileTab['decMax']))
+            tileMask=np.logical_and(raMask, decMask)
+            # This is just dealing with bytes versus strings in python3
+            matchTilesList=[]
+            for item in self.tileTab['tileName'][tileMask].tolist():
+                if type(item) == bytes:
+                    matchTilesList.append(item.decode('utf-8'))
+                else:
+                    matchTilesList.append(str(item))
+            for tileName in matchTilesList:
+                x, y=self.WCSDict[tileName].wcs2pix(ra, dec)
+                if self.areaMaskDict[tileName][int(y), int(x)] > 0:
+                    inMask=True
+            inMaskList.append(inMask)
+        
+        if len(inMaskList) > 1:
+            return np.array(inMaskList)
+        else:
+            return inMaskList[0]            
+            
 
     def overrideRMS(self, RMS, obsFreqGHz = 148.0):
         """Override the RMS noise of the SelFn object - replacing it with constant value RMS (given in uK/arcmin^2).

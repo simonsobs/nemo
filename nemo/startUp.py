@@ -132,7 +132,7 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, configFileName, makeOutputDirs = True, MPIEnabled = False):
+    def __init__(self, configFileName, makeOutputDirs = True, MPIEnabled = False, verbose = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
@@ -238,7 +238,7 @@ class NemoConfig(object):
                 self.tileNames=[]
         
         # For debugging...
-        print(("... rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
+        if verbose: print(("... rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
     def restoreConfig(self):

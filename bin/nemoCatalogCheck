@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+
+"""
+
+Quick check of one catalog against another - which clusters (in some .fits table) are missing against a 
+cluster or candidate list? We can also check survey masks while we're at it. And spit out mass limit 
+information at positions of missing clusters.
+
+"""
+
+import os
+import sys
+from nemo import startUp
+from nemo import completeness
+import astropy.table as atpy
+from astLib import *
+import numpy as np
+import time
+import argparse
+import IPython
+
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    parser=argparse.ArgumentParser("nemoCatalogCheck")
+    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("catalogFileName", help = """Object catalog to check against nemo output (.fits format).
+                        The catalog must contain at least the following columns: name, RADeg, decDeg.""")
+    parser.add_argument("-r", "--match-radius", dest="matchRadiusArcmin", help = """Cross-matching radius in 
+                        arcmin.""", default = 2.5)
+    parser.add_argument("-S", "--fixed-SNR-cut", dest="fixedSNRCut", help = """Cut in fixed_SNR used to select
+                        nemo cluster candidates.""", default = 4.0)
+    args = parser.parse_args()
+    
+    parDictFileName=args.configFileName
+    catFileName=args.catalogFileName
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = False, verbose = False)
+    
+    print(">>> Checking catalog %s against nemo output:" % (catFileName))
+    optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+    checkAgainst=atpy.Table().read(optimalCatalogFileName)
+    
+    tab=atpy.Table().read(catFileName)
+    
+    # Use selFn routines to determine if objects were in the valid area mask
+    selFn=completeness.SelFn(args.configFileName, config.selFnDir, args.fixedSNRCut, setUpAreaMask = True,
+                             enableCompletenessCalc = False)
+    inMask=selFn.checkCoordsInAreaMask(tab['RADeg'], tab['decDeg'])
+    maxPossibleMatches=inMask.sum()
+    tab.add_column(atpy.Column(inMask, "inMask"))
+    
+    print("... %d/%d objects in %s are in the valid area mask for %s ..." % (maxPossibleMatches, len(tab), 
+                                                                             catFileName, config.rootOutDir))
+
+    # Cross matching
+    xMatchRadiusDeg=args.matchRadiusArcmin/60.
+    missing=[]
+    for row in tab:
+        rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], checkAgainst['RADeg'], checkAgainst['decDeg'])
+        if rDeg.min() > xMatchRadiusDeg:
+            missing.append(True)
+        else:
+            missing.append(False)
+    missTab=tab[missing]
+    missTab=missTab[np.where(missTab['inMask'] == True)]
+    print("... %d/%d maximum possible matches in %s are not found within %.1f arcmin of an object in the %s catalog ..." % (len(missTab), maxPossibleMatches, catFileName, args.matchRadiusArcmin, config.rootOutDir))
+    
+    # We could add mass limits at each location here if we wanted...
+    # Write to file
+    outFileName=os.path.split(catFileName)[-1].replace(".fits", "_missed_in_%s.fits" % (config.rootOutDir))
+    missTab.write(outFileName, overwrite = True)
+    print("... written missed objects table to %s ..." % (outFileName))
