@@ -149,7 +149,7 @@ if __name__ == '__main__':
                 for key in all_selFnCollection.keys():
                     all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
             selFnCollection=all_selFnCollection
-                
+    
     # Survey completeness stats now all lumped together in one routine
     # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
     completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 

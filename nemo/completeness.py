@@ -439,7 +439,7 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
 
         # 90% mass completeness limit and plots
         massLimit_90Complete=np.average(completeness, axis = 0, weights = fracArea)  # agrees with full mass limit map
-        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, diagnosticsDir+os.path.sep+"completeness90Percent_%s%s.pdf" % (footprintLabel, additionalLabel))
+        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, diagnosticsDir+os.path.sep+"completeness90Percent_%s%s.pdf" % (footprintLabel, additionalLabel), title = "footprint: %s" % (footprintLabel))
         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
         print("... total survey area (after masking) = %.3f sq deg" % (np.sum(tileAreas)))
@@ -661,10 +661,9 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     
     plotSettings.update_rcParams()
     plt.figure(figsize=(9,6.5))
-    if title == None:
-        ax=plt.axes([0.10, 0.11, 0.87, 0.86])
-    else:
-        ax=plt.axes([0.10, 0.11, 0.87, 0.80])
+    ax=plt.axes([0.10, 0.11, 0.87, 0.86])
+    if title is not None:
+        plt.figtext(0.15, 0.2, title, ha="left", va="center")
     tck=interpolate.splrep(zRange, massLimit_90Complete)
     plotRange=np.linspace(0, 2, 100)
     plt.plot(plotRange, interpolate.splev(plotRange, tck), 'k-')
@@ -675,9 +674,9 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     plt.xlim(0, 2)
     labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]"
     plt.ylabel(labelStr)
-    if title != None:
-        plt.title(title)
     plt.savefig(outFileName)
+    if outFileName.find(".pdf") != -1:
+        plt.savefig(outFileName.replace(".pdf", ".png"))
     plt.close()   
     
 #------------------------------------------------------------------------------------------------------------
@@ -710,13 +709,22 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
             areas.append(areaMapSqDeg[np.where(massLimMap == l)].sum())
         allLimits=allLimits+limits
         allAreas=allAreas+areas
-    tab=atpy.Table()
-    tab.add_column(atpy.Column(allLimits, 'MLim'))
-    tab.add_column(atpy.Column(allAreas, 'areaDeg2'))
-    tab.sort('MLim')
-
-    plotSettings.update_rcParams()
     
+    # Reduce redundant mass limits
+    allLimits=np.array(allLimits)
+    allAreas=np.array(allAreas)
+    uniqLimits=np.unique(allLimits)
+    uniqAreas=[]
+    for u in uniqLimits:
+        uniqAreas.append(allAreas[allLimits == u].sum())
+    uniqAreas=np.array(uniqAreas)
+    tab=atpy.Table()
+    tab.add_column(atpy.Column(uniqLimits, 'MLim'))
+    tab.add_column(atpy.Column(uniqAreas, 'areaDeg2'))
+    tab.sort('MLim')
+    
+    plotSettings.update_rcParams()
+        
     # Full survey plot
     plt.figure(figsize=(9,6.5))
     ax=plt.axes([0.155, 0.12, 0.82, 0.86])
@@ -726,25 +734,27 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
     labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
     plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
-    plt.xlim(tab['MLim'].min()*0.9, tab['MLim'].max())
+    plt.xlim(0, 15.0)
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.pdf" % (str(z).replace(".", "p")))
+    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.png" % (str(z).replace(".", "p")))
     plt.close()
     
-    # Deepest 20%
+    # Deepest 20% - we show a bit beyond this
     totalAreaDeg2=tab['areaDeg2'].sum()
-    deepTab=tab[np.where(np.cumsum(tab['areaDeg2']) < 0.2 * totalAreaDeg2)]
+    deepTab=tab[np.where(np.cumsum(tab['areaDeg2']) < 0.25 * totalAreaDeg2)]
     plt.figure(figsize=(9,6.5))
     ax=plt.axes([0.155, 0.12, 0.82, 0.86])
     plt.minorticks_on()
-    plt.plot(deepTab['MLim'], np.cumsum(deepTab['areaDeg2']), 'k-')
+    plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
     plt.ylabel("survey area < $M_{\\rm 500c}$ limit (deg$^2$)")
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
-    labelStr="area of deepest 20%% = %.0f deg$^2$" % (np.cumsum(deepTab['areaDeg2']).max())
+    labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
     plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
-    plt.xlim(deepTab['MLim'].min()*0.9, deepTab['MLim'].max())
+    plt.xlim(0.0, 5.0)
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.pdf" % (str(z).replace(".", "p")))
+    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.png" % (str(z).replace(".", "p")))
     plt.close()
         
 #------------------------------------------------------------------------------------------------------------
@@ -789,4 +799,5 @@ def makeFullSurveyMassLimitMapPlot(z, config):
                             shrink = cbShrink, aspect = cbAspect)
             plt.figtext(0.53, 0.04, cbLabel, size = 20, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
             plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
+            plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
             plt.close()
