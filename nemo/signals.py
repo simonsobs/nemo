@@ -7,6 +7,8 @@ This module contains routines for modeling cluster and source signals.
 from pixell import enmap
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
+import astropy.constants
+from astropy.cosmology import FlatLambdaCDM
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
@@ -38,7 +40,9 @@ np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
 # Global constants (we could move others here but then need to give chunky obvious names, not just e.g. h)
-TCMB=2.726
+TCMB=2.72548
+Mpc_in_cm=astropy.constants.pc.value*100*1e6
+MSun_in_g=astropy.constants.M_sun.value*1000
 
 #------------------------------------------------------------------------------------------------------------
 def fSZ(obsFrequencyGHz):
@@ -57,7 +61,7 @@ def fSZ(obsFrequencyGHz):
     return fSZ
     
 #------------------------------------------------------------------------------------------------------------
-def calcR500Mpc(z, M500):
+def calcR500Mpc(z, M500, cosmoModel):
     """Given z, M500 (in MSun), returns R500 in Mpc, with respect to critical density.
     
     """
@@ -65,27 +69,26 @@ def calcR500Mpc(z, M500):
     if type(M500) == str:
         raise Exception("M500 is a string - check M500MSun in your .yml config file: use, e.g., 1.0e+14 (not 1e14 or 1e+14)")
 
-    Ez=astCalc.Ez(z)    # h(z) in Arnaud speak
-    Hz=astCalc.Ez(z)*astCalc.H0  
-    G=4.301e-9  # in MSun-1 km2 s-2 Mpc
-    criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
+    Ez=cosmoModel.efunc(z)
+    criticalDensity=cosmoModel.critical_density(z).value
+    criticalDensity=(criticalDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
     R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)
         
     return R500Mpc
 
 #------------------------------------------------------------------------------------------------------------
-def calcTheta500Arcmin(z, M500):
+def calcTheta500Arcmin(z, M500, cosmoModel):
     """Given z, M500 (in MSun), returns angular size equivalent to R500, with respect to critical density.
     
     """
     
-    R500Mpc=calcR500Mpc(z, M500)
-    theta500Arcmin=np.degrees(np.arctan(R500Mpc/astCalc.da(z)))*60.0
+    R500Mpc=calcR500Mpc(z, M500, cosmoModel)
+    theta500Arcmin=np.degrees(np.arctan(R500Mpc/cosmoModel.angular_diameter_distance(z).value))*60.0
     
     return theta500Arcmin
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelProfile(z, M500, GNFWParams = 'default'):
+def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
     """Given z, M500 (in MSun), returns dictionary containing Arnaud model profile (well, knots from spline 
     fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
     (particularly 'y0', 'theta500Arcmin').
@@ -98,9 +101,14 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default'):
     Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
     GNFWParams in the filter params in the nemo .par file (see the example .par files).
     
+    If cosmoModel is None, use default (Om0, Ol0, H0) = (0.3, 0.7, 70 km/s/Mpc) cosmology.
+    
     Used by ArnaudModelFilter
     
     """
+
+    if cosmoModel is None:
+        cosmoModel=FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = TCMB)
 
     if GNFWParams == 'default':
         GNFWParams=gnfw._default_params
@@ -121,7 +129,7 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default'):
     cylPProfile=cylPProfile/cylPProfile.max()
 
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
-    theta500Arcmin=calcTheta500Arcmin(z, M500)
+    theta500Arcmin=calcTheta500Arcmin(z, M500, cosmoModel)
     
     # Map between b and angular coordinates
     # NOTE: c500 now taken into account in gnfw.py
@@ -271,9 +279,17 @@ def getFRelWeights(config):
                             fRelTab.add_column(atpy.Column(np.zeros(len(config.tileNames)), freqGHz))
                         fRelTab[freqGHz][tileCount]=img[0].header['RW%d' % (i)]
         fRelTab.write(fRelWeightsFileName, overwrite = True)
-    else:
-        fRelTab=atpy.Table().read(fRelWeightsFileName)
-        
+    
+    return loadFRelWeights(fRelWeightsFileName)
+
+#------------------------------------------------------------------------------------------------------------
+def loadFRelWeights(fRelWeightsFileName):
+    """Returns a dictionary of frequency weights used in relativistic corrections for each tile (stored in
+    a .fits table, made by getFRelWeights).
+    
+    """
+
+    fRelTab=atpy.Table().read(fRelWeightsFileName)
     fRelWeightsDict={}
     for row in fRelTab:
         fRelWeightsDict[row['tileName']]={}
@@ -282,7 +298,7 @@ def getFRelWeights(config):
                 fRelWeightsDict[row['tileName']][float(key)]=row[key]
     
     return fRelWeightsDict
-        
+
 #------------------------------------------------------------------------------------------------------------
 def fitQ(config):
     """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot in the diagnosticDir
@@ -558,7 +574,7 @@ def calcWeightedFRel(z, M500, fRelWeightsDict):
     return fRel
     
 #------------------------------------------------------------------------------------------------------------
-def calcFRel(z, M500, obsFreqGHz = 148.0):
+def calcFRel(z, M500, cosmoModel, obsFreqGHz = 148.0):
     """Calculates relativistic correction to SZ effect at specified frequency, given z, M500 in MSun.
        
     This assumes the Arnaud et al. (2005) M-T relation, and applies formulae of Itoh et al. (1998)
@@ -574,12 +590,11 @@ def calcFRel(z, M500, obsFreqGHz = 148.0):
     me=9.11e-31
     e=1.6e-19
     c=3e8
-    TCMB=2.726
     
     # Using Arnaud et al. (2005) M-T to get temperature
     A=3.84e14
     B=1.71
-    TkeV=5.*np.power(((astCalc.Ez(z)*M500)/A), 1/B)
+    TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)
     TKelvin=TkeV*((1000*e)/kB)
 
     # Itoh et al. (1998) eqns. 2.25 - 2.30
@@ -658,13 +673,11 @@ def getM500FromP(P, log10M, calcErrors = True):
 
 #------------------------------------------------------------------------------------------------------------
 def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2,
-                  H0 = None, OmegaM0 = None, OmegaL0 = None, fRelWeightsDict = {148.0: 1.0}):
+                  cosmoModel = None, fRelWeightsDict = {148.0: 1.0}):
     """Predict y0~ given logM500 (in MSun) and redshift. Default scaling relation parameters are A10 (as in
     H13).
     
-    Use H0, OmegaM0, OmegaL0 to specify different cosmological parameters to the default stored under
-    astCalc.H0, astCalc.OMEGA_M0, astCalc.OMEGA_L0 (used for E(z) and angular size calculation). If these
-    are set to None, the defaults will be used.
+    Use cosmoModel (astropy.cosmology object) to change/specify cosmological parameters.
     
     fRelWeightsDict is used to account for the relativistic correction when y0~ has been constructed
     from multi-frequency maps. Weights should sum to 1.0; keys are observed frequency in GHz.
@@ -675,22 +688,11 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
 
     if type(Mpivot) == str:
         raise Exception("Mpivot is a string - check Mpivot in your .yml config file: use, e.g., 3.0e+14 (not 3e14 or 3e+14)")
-    
-    # Change cosmology for this call, if required... then put it back afterwards (just in case)
-    if H0 != None:
-        oldH0=astCalc.H0
-        astCalc.H0=H0
-    if OmegaM0 != None:
-        oldOmegaM0=astCalc.OMEGA_M0
-        astCalc.OMEGA_M0=OmegaM0
-    if OmegaL0 != None:
-        oldOmegaL0=astCalc.OMEGA_L0
-        astCalc.OMEGA_L0=OmegaL0
-    
+        
     # Filtering/detection was performed with a fixed fiducial cosmology... so we don't need to recalculate Q
     # We just need to recalculate theta500Arcmin and E(z) only
     M500=np.power(10, log10M500)
-    theta500Arcmin=calcTheta500Arcmin(z, M500)
+    theta500Arcmin=calcTheta500Arcmin(z, M500, cosmoModel)
     Q=calcQ(theta500Arcmin, tckQFit)
     
     # Relativistic correction: now a little more complicated, to account for fact y0~ maps are weighted sum
@@ -698,23 +700,15 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     fRels=[]
     freqWeights=[]
     for obsFreqGHz in fRelWeightsDict.keys():
-        fRels.append(calcFRel(z, M500, obsFreqGHz = obsFreqGHz))
+        fRels.append(calcFRel(z, M500, cosmoModel, obsFreqGHz = obsFreqGHz))
         freqWeights.append(fRelWeightsDict[obsFreqGHz])
-    fRel=np.average(fRels, weights = freqWeights)
+    fRel=np.average(np.array(fRels), axis = 0, weights = freqWeights)
     
     # UPP relation according to H13
     # NOTE: m in H13 is M/Mpivot
     # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
-    y0pred=tenToA0*np.power(astCalc.Ez(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*fRel
-            
-    # Restore cosmology if we changed it for this call
-    if H0 != None:
-        astCalc.H0=oldH0
-    if OmegaM0 != None:
-        astCalc.OMEGA_M0=oldOmegaM0
-    if OmegaL0 != None:
-        astCalc.OMEGA_L0=oldOmegaL0
-        
+    y0pred=tenToA0*np.power(cosmoModel.efunc(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*fRel
+    
     return y0pred, theta500Arcmin, Q
             
 #------------------------------------------------------------------------------------------------------------

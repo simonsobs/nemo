@@ -129,7 +129,7 @@ if __name__ == '__main__':
     
     parDictFileName=args.configFileName
     catFileName=args.catFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False)
         
     massOptions=config.parDict['massOptions']
     if 'relativisticCorrection' not in massOptions.keys():

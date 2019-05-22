@@ -132,12 +132,15 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, configFileName, makeOutputDirs = True, MPIEnabled = False, verbose = True):
+    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, MPIEnabled = False, 
+                 verbose = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
             configFileName (:obj:`str`): Path to a nemo .yml configuration file.
             makeOutputDirs (:obj:`bool`): If True, create output directories (where maps, catalogs are stored).
+            setUpMaps (:obj: `bool`): If True, set-up data structures for handling maps (inc. breaking into 
+                tiles if wanted).
             MPIEnabled (:obj:`bool`): If True, use MPI to divide the map into tiles, distributed among processes.
                 This requires `tileDefinitions` and `tileNoiseRegions` to be given in the .yml config file.
     
@@ -149,14 +152,22 @@ class NemoConfig(object):
         self.configFileName=configFileName
         
         # We want the original map WCS and shape (for using stitchMaps later)
-        with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
-            self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
-            self.origShape=img[0].data.shape
+        try:
+            with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
+                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+                self.origShape=img[0].data.shape
+        except:
+            # We don't always need or want this... should we warn by default if not found?
+            self.origWCS=None
+            self.origShape=None
             
         # Downsampled WCS and shape for 'quicklook' stitched images
         if 'makeQuickLookMaps' in self.parDict.keys() and self.parDict['makeQuickLookMaps'] == True:
             self.quicklookScale=0.25
-            self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+            if self.origWCS is not None:
+                self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+            else:
+                if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail ...")
         
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
@@ -199,26 +210,36 @@ class NemoConfig(object):
             filtDict['params']['GNFWParams']=self.parDict['GNFWParams']
 
         # tileDeck file handling - either make one, or handle loading of one
-        # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
-        if self.rank == 0:
-            self.unfilteredMapsDictList, self.tileNames=maps.makeTileDeck(self.parDict)
-            madeTileDeck=True
-        else:
-            madeTileDeck=None
-        if self.MPIEnabled == True:
-            madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
-            if self.rank != 0 and madeTileDeck == True:
+        if setUpMaps == True:
+            # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+            if self.rank == 0:
                 self.unfilteredMapsDictList, self.tileNames=maps.makeTileDeck(self.parDict)
+                madeTileDeck=True
+            else:
+                madeTileDeck=None
+            if self.MPIEnabled == True:
+                madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
+                if self.rank != 0 and madeTileDeck == True:
+                    self.unfilteredMapsDictList, self.tileNames=maps.makeTileDeck(self.parDict)
 
-        # For when we want to test on only a subset of tiles
-        if 'tileNameList' in list(self.parDict.keys()):
-            newList=[]
-            for name in self.tileNames:
-                if name in self.parDict['tileNameList']:
-                    newList.append(name)
-            if newList == []:
-                raise Exception("tileNameList given in nemo config file but no extensions in images match")
-            self.tileNames=newList
+            # For when we want to test on only a subset of tiles
+            if 'tileNameList' in list(self.parDict.keys()):
+                newList=[]
+                for name in self.tileNames:
+                    if name in self.parDict['tileNameList']:
+                        newList.append(name)
+                if newList == []:
+                    raise Exception("tileNameList given in nemo config file but no extensions in images match")
+                self.tileNames=newList
+        else:
+            # If we don't have maps, we would still want the list of tile names
+            from . import signals
+            QFitFileName=self.selFnDir+os.path.sep+"QFit.fits"
+            if os.path.exists(QFitFileName) == True:
+                tckQFitDict=signals.loadQ(QFitFileName)
+                self.tileNames=list(tckQFitDict.keys())
+            else:
+                raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))
 
         # MPI: just divide up tiles pointed at by tileNames among processes
         if self.MPIEnabled == True:

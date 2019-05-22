@@ -15,7 +15,6 @@ import subprocess
 import hmf
 from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
-import astropy.constants
 from . import signals
 from . import catalogs
 import pickle
@@ -24,11 +23,6 @@ from scipy.interpolate import InterpolatedUnivariateSpline as _spline
 from scipy import stats
 from astLib import *
 import time
-
-#------------------------------------------------------------------------------------------------------------
-# Conversion constants
-Mpc_in_cm=astropy.constants.pc.value*100*1e6
-MSun_in_g=astropy.constants.M_sun.value*1000
 
 #------------------------------------------------------------------------------------------------------------
 class MockSurvey(object):
@@ -50,8 +44,8 @@ class MockSurvey(object):
         # Globally change hmf's cosmology - at least, according to the docs...
         # NOTE: for astropy 2.0+ need to actually set Tcmb0 here as it defaults to zero
         # Here we use the value from Fixsen (2009): http://adsabs.harvard.edu/abs/2009ApJ...707..916F
-        self.cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
-        cosmo.Cosmology(cosmo_model = self.cosmo_model)
+        self.cosmoModel=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = signals.TCMB)
+        cosmo.Cosmology(cosmo_model = self.cosmoModel)
         
         # For drawSample, we use astLib routines (a few times faster than cosmo_model)
         # This is just to make sure we used the same parameters
@@ -68,7 +62,7 @@ class MockSurvey(object):
         # Externally, we still give  inputs without h^-1
         # NOTE: default was dlog10m = 0.01; cranking resolution to 0.001 makes a difference, but beyond that converges
         self.mf=hmf.MassFunction(z = zRange[0], dlog10m=0.01, Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
-                                 sigma_8 = sigma_8, cosmo_model = self.cosmo_model)#, force_flat = True, cut_fit = False)
+                                 sigma_8 = sigma_8, cosmo_model = self.cosmoModel)#, force_flat = True, cut_fit = False)
             
         self.log10M=np.log10(self.mf.m/self.mf.cosmo.h)
         self.areaSr=areaSr
@@ -96,9 +90,9 @@ class MockSurvey(object):
         astCalc.OMEGA_M0=Om0
         astCalc.OMEGA_L0=1.0-Om0
         try:
-            self.cosmo_model=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = 2.72548)
-            #cosmo.Cosmology(cosmo_model = self.cosmo_model) # Makes no difference...
-            self.mf.update(cosmo_model = self.cosmo_model, sigma_8 = sigma_8)
+            self.cosmoModel=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = signals.TCMB)
+            #cosmo.Cosmology(cosmo_model = self.cosmoModel) # Makes no difference...
+            self.mf.update(cosmo_model = self.cosmoModel, sigma_8 = sigma_8)
         except:
             raise Exception("failed to update mf when H0 = %.3f Om0 = %.3f Ob0 = %.3f sigma_8 = %.3f" % (H0, Om0, Ob0, sigma_8))
         self._doClusterCount()
@@ -106,10 +100,10 @@ class MockSurvey(object):
         # For quick Q, fRel calc (these are in MockSurvey rather than SelFn as used by drawSample)
         self.theta500Splines=[]
         self.fRelSplines=[]
-        self.Ez=self.cosmo_model.efunc(self.z)
-        self.DAz=self.cosmo_model.angular_diameter_distance(self.z).value
-        self.criticalDensity=self.cosmo_model.critical_density(self.z).value
-        self.criticalDensity=(self.criticalDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
+        self.Ez=self.cosmoModel.efunc(self.z)
+        self.DAz=self.cosmoModel.angular_diameter_distance(self.z).value
+        self.criticalDensity=self.cosmoModel.critical_density(self.z).value
+        self.criticalDensity=(self.criticalDensity*np.power(signals.Mpc_in_cm, 3))/signals.MSun_in_g
         for k in range(len(self.z)):
             zk=self.z[k]
             interpLim_minLog10M=self.log10M.min()
@@ -123,7 +117,7 @@ class MockSurvey(object):
             Ez=self.Ez[k]
             R500Mpc=np.power((3*fitM500s)/(4*np.pi*500*criticalDensity), 1.0/3.0)                     
             fitTheta500s=np.degrees(np.arctan(R500Mpc/DA))*60.0
-            fitFRels=signals.calcFRel(zk, fitM500s)
+            fitFRels=signals.calcFRel(zk, fitM500s, self.cosmoModel)
             tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
             tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
             self.theta500Splines.append(tckLog10MToTheta500)

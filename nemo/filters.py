@@ -890,6 +890,11 @@ class RealSpaceMatchedFilter(MapFilter):
         kernWCS.header['SIGNORM']=self.signalNorm
         kernWCS.header['APP_RA']=self.applyRACentre
         kernWCS.header['APP_DEC']=self.applyDecCentre
+        count=0
+        for key in list(self.fRelWeights.keys()):
+            count=count+1
+            kernWCS.header['RW%d_GHZ' % (count)]=key
+            kernWCS.header['RW%d' % (count)]=self.fRelWeights[key]
         astImages.saveFITS(self.filterFileName, self.kern2d, kernWCS)
         
         # Filter profile plot   
