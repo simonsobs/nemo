@@ -491,7 +491,7 @@ class MatchedFilter(MapFilter):
             signalMapsList=[]
             fSignalsArr=[]
             for mapDict in self.unfilteredMapsDictList:
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'])
                 signalMap=signalMapDict['signalMap']
                 fSignal=enmap.fft(signalMap)
                 signalMapsList.append(signalMap)
@@ -515,17 +515,14 @@ class MatchedFilter(MapFilter):
                 signalMaps=[]
                 fSignalMaps=[]
                 y0=2e-4
-                tol=1e-6
                 for mapDict in self.unfilteredMapsDictList:
                     if mapDict['units'] == 'yc':    # For handling tILe-C maps
-                        signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
-                                                                 y0 = y0)
+                        signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], y0 = y0)
                     else:                           # The normal case
                         deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
-                        signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                        signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], 
+                                                                 obsFreqGHz = mapDict['obsFreqGHz'], 
                                                                  deltaT0 = deltaT0)
-                    if abs(y0-signalMapDict['inputSignalProperties']['y0']) > tol:
-                        raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
                     signalMaps.append(signalMapDict['signalMap'])
                     fSignal=enmap.fft(signalMapDict['signalMap'])
                     fSignalMaps.append(fSignal)
@@ -533,6 +530,7 @@ class MatchedFilter(MapFilter):
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
                 self.signalNorm=y0/filteredSignal.max()
+
                 # For relativistic corrections (see signals module)
                 totalSignal=filteredSignal.flatten()[np.argmax(filteredSignal)]
                 filteredSignalCube=np.real(enmap.ifft(fSignalMaps*self.filt, normalize = False))
@@ -550,7 +548,7 @@ class MatchedFilter(MapFilter):
                 signalMaps=[]
                 fSignalMaps=[]
                 for mapDict in self.unfilteredMapsDictList:
-                    signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+                    signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'])
                     signalMaps.append(signalMapDict['signalMap'])
                     fSignal=enmap.fft(signalMapDict['signalMap'])
                     fSignalMaps.append(fSignal)
@@ -864,10 +862,11 @@ class RealSpaceMatchedFilter(MapFilter):
                     deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
                 else:                                   # tILe-C case
                     deltaT0=None
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], 
+                                                         obsFreqGHz = mapDict['obsFreqGHz'], 
                                                          deltaT0 = deltaT0, y0 = y0)
             elif self.params['outputUnits'] == 'uK':
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
+                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'])
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
             signalMaps.append(signalMapDict['signalMap'])
@@ -1075,7 +1074,7 @@ class BeamFilter(MapFilter):
         
     """
     
-    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz, deltaT0 = None):
+    def makeSignalTemplateMap(self, beamFileName, obsFreqGHz = None, deltaT0 = None):
         """Makes a beam model signal template map.
         
         """
@@ -1093,7 +1092,7 @@ class ArnaudModelFilter(MapFilter):
     
     """
     
-    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz, deltaT0 = None, y0 = None):
+    def makeSignalTemplateMap(self, beamFileName, obsFreqGHz = None, deltaT0 = None, y0 = None):
         """Makes a model signal template map.
         
         Returns dictionary of {'signalMap', 'inputSignalProperties'}
@@ -1101,10 +1100,11 @@ class ArnaudModelFilter(MapFilter):
         """
         
         signalMap, modelDict=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
-                                                                mapObsFreqGHz, np.degrees(self.radiansMap),
-                                                                self.wcs, beamFileName, 
-                                                                GNFWParams = self.params['GNFWParams'],
-                                                                deltaT0 = deltaT0, y0 = y0)
+                                                              np.degrees(self.radiansMap),
+                                                              self.wcs, beamFileName, 
+                                                              GNFWParams = self.params['GNFWParams'],
+                                                              obsFreqGHz = obsFreqGHz,
+                                                              deltaT0 = deltaT0, y0 = y0)
         
         return {'signalMap': signalMap, 'inputSignalProperties': modelDict}
                 

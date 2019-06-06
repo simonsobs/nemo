@@ -9,6 +9,8 @@ import sys
 import subprocess
 import shutil
 import numpy as np
+from nemo import catalogs
+from nemo import maps
 from pixell import utils, pointsrcs, enmap
 from astLib import *
 import astropy.io.fits as pyfits
@@ -115,7 +117,7 @@ class NemoTests(object):
         self._run_command(["nemoMock", self.configFileName])
         
 
-    def inject_sources(self, outMapFileName = "sourceInjectedMap.fits", 
+    def inject_sources_using_pixell(self, outMapFileName = "sourceInjectedMap.fits", 
                        catalogFileName = "inputSourcesCatalog.fits", numSources = 1000):
         """Injects a bunch of point sources into a map, using a vaguely plausible amplitude distribution
         based on the sources found in the deep56 map.
@@ -160,6 +162,26 @@ class NemoTests(object):
 
         omap=pointsrcs.sim_srcs(imap.shape, imap.wcs, srcparam, beam, imap, smul=smul, nsigma=nsigma, pixwin=True)
         enmap.write_map(outMapFileName, omap)
+
+
+    def inject_sources_using_nemo(self, outMapFileName = "sourceInjectedMap.fits", 
+                       catalogFileName = "inputSourcesCatalog.fits", numSources = 1000):
+        """Injects a bunch of point sources into a map, using a vaguely plausible amplitude distribution
+        based on the sources found in the deep56 map.
+        
+        """
+        
+        with pyfits.open(self.inMapFileName) as img:
+            mapData=img[0].data
+            if mapData.ndim > 2:
+                mapData=mapData[0]
+            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+        simCat=catalogs.generateRandomSourcesCatalog(mapData, wcs, numSources)
+        simCat.write(catalogFileName, overwrite = True)
+        #catalogs.catalog2DS9(simCat, catalogFileName.replace(".fits", ".reg"))
+
+        modelMap=maps.makeModelImage(mapData.shape, wcs, simCat, self.beamFileName)
+        astImages.saveFITS(outMapFileName, modelMap+mapData, wcs)
         
         
     def cross_match(self, inCatalogFileName, outCatalogFileName, radiusArcmin = 2.5):

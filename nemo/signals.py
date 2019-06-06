@@ -45,6 +45,37 @@ Mpc_in_cm=astropy.constants.pc.value*100*1e6
 MSun_in_g=astropy.constants.M_sun.value*1000
 
 #------------------------------------------------------------------------------------------------------------
+class BeamProfile(object):
+    
+    def __init__(self, beamFileName = None, profile1d = None, rDeg = None):
+        """Create a BeamProfile object - either by reading from a file, or by passing in arrays that 
+        define it.
+        
+        Args:
+            beamFileName(str, optional): Path to text file containing a beam profile in the ACT format.
+            profile1d
+            
+        Attributes:
+            profile1d (:obj:`np.ndarray`): One dimensional beam profile, with index 0 at the centre.
+            rDeg (:obj: `np.ndarray`): Corresponding angular distance in degrees from the centre for the 
+                beam profile.
+            tck (:obj: tuple): Spline knots for interpolating the beam onto different angular binning 
+                (in degrees), for use with interpolate.splev.
+
+        """
+        
+        if beamFileName is not None:
+            beamData=np.loadtxt(beamFileName).transpose()
+            self.profile1d=beamData[1]
+            self.rDeg=beamData[0]
+        else:
+            self.profile1d=profile1d
+            self.rDeg=rDeg
+        
+        if self.profile1d is not None and self.rDeg is not None:
+            self.tck=interpolate.splrep(self.rDeg, self.profile1d)
+
+#------------------------------------------------------------------------------------------------------------
 def fSZ(obsFrequencyGHz):
     """Returns the frequency dependence of the (non-relativistic) Sunyaev-Zel'dovich effect.
     
@@ -139,22 +170,30 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
     return {'tckP': tckP, 'theta500Arcmin': theta500Arcmin, 'rDeg': thetaDegRange}
 
 #------------------------------------------------------------------------------------------------------------
-def makeBeamModelSignalMap(degreesMap, wcs, beamFileName, deltaT0 = None):
+def makeBeamModelSignalMap(degreesMap, wcs, beam, deltaT0 = None):
     """Makes a 2d signal only map containing the given beam.
     
-    deltaT0 specifies the amplitude of the input signal (in map units, e.g., uK) - this is only needed if this
-    routine is being used to inject sources (completely arbitrary for making filter kernels).
+    Args:
+        degreesMap (:obj:`np.ndarray`): Map of angular distance from the object position.
+        wcs (:obj:`astWCS.WCS`): WCS corresponding to degreesMap.
+        beam (:obj:`BeamProfile` or str): Either a BeamProfile object, or a string that gives the path to a 
+            text file that describes the beam profile.
+        deltaT0 (:obj: float, optional): Specifies the amplitude of the input signal (in map units, e.g., uK)
+            - this is only needed if this routine is being used to inject sources (not needed for making 
+            filter kernels).
         
-    Returns signalMap (2d array), inputSignalProperties
+    Returns:
+        signalMap (:obj:`np.ndarray`), inputSignalProperties (dictionary)
     
     """
     
     if deltaT0 is None:
         deltaT0=1.0
-        
-    beamData=np.loadtxt(beamFileName).transpose()
-    profile1d=deltaT0*beamData[1]
-    rArcmin=beamData[0]*60.0
+    
+    if type(beam) == str:
+        beam=BeamProfile(beamFileName = beam)        
+    profile1d=deltaT0*beam.profile1d
+    rArcmin=beam.rDeg*60.0
     
     # Turn 1d profile into 2d
     rRadians=np.radians(rArcmin/60.0)
@@ -169,9 +208,13 @@ def makeBeamModelSignalMap(degreesMap, wcs, beamFileName, deltaT0 = None):
     return signalMap, inputSignalProperties
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default',
-                             deltaT0 = None, y0 = None, maxSizeDeg = 15.0, convolveWithBeam = True):
-    """Makes a 2d signal only map containing an Arnaud model cluster. Units of M500 are MSun.
+def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'default', deltaT0 = None, 
+                             obsFreqGHz = None, y0 = None, maxSizeDeg = 15.0, convolveWithBeam = True):
+    """Makes a 2d signal only map containing an Arnaud model cluster. 
+    
+    Args:
+        
+    Units of M500 are MSun.
     
     degreesMap is a 2d array containing radial distance from the centre - the output map will have the same
     dimensions and pixel scale (see nemoCython.makeDegreesDistanceMap).
@@ -184,8 +227,8 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
     GNFWParams in the filter params in the nemo .par file (see the example .par files).
     
-    deltaT0 specifies the amplitude of the input signal (in map units, e.g., uK) - this is only needed if this
-    routine is being used to inject sources (completely arbitrary for making filter kernels).
+    Use either deltaT0 (in uK) and obsFreqGHz OR y0 to specify the amplitude of the input signal - this is only 
+    needed if this routine is being used to inject sources (completely arbitrary for making filter kernels).
     
     maxSizeDeg is used to limit the region over which the beam convolution is done, for speed.
     
@@ -204,11 +247,10 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
     # Make cluster map (unit-normalised profile)
     rDeg=np.linspace(0.0, maxSizeDeg, 5000)
     profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-    if deltaT0 is not None:
+    if deltaT0 is not None and obsFreqGHz is not None:  # When we want to figure out norm - normal MFMF case
         profile1d=profile1d*deltaT0
-        y0=maps.convertToY(deltaT0, obsFrequencyGHz = obsFreqGHz)
-    elif y0 is None and deltaT0 is None:
-        y0=1.0
+    elif deltaT0 is None and y0 is not None:            # When we want to figure out norm - tILe-C case
+        profile1d=profile1d*y0 
     rRadians=np.radians(rDeg)
     radiansMap=np.radians(degreesMap)
     r2p=interpolate.interp1d(rRadians, profile1d, bounds_error=False, fill_value=0.0)
@@ -220,12 +262,10 @@ def makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName,
         # This is slow...
         #signalMap=maps.convolveMapWithBeam(profile2d, wcs, beamFileName, maxDistDegrees = 1.0)        
         
-        # This is fast...
-        beamData=np.loadtxt(beamFileName).transpose()
-        profile1d_beam=beamData[1]
-        rDeg_beam=beamData[0]
-        tck_beam=interpolate.splrep(rDeg_beam, profile1d_beam)
-        profile1d_beam=interpolate.splev(rDeg, tck_beam, ext = 1) # ext = 1 sets out-of-range values to 0 rather than extrapolating beam
+        # This is fast(er)...
+        if type(beam) == str:
+            beam=BeamProfile(beamFileName = beam)        
+        profile1d_beam=interpolate.splev(rDeg, beam.tck, ext = 1) # ext = 1 sets out-of-range values to 0 rather than extrapolating beam
         
         ys, xs=np.where(degreesMap < maxSizeDeg)
         yMin=ys.min()
@@ -258,7 +298,7 @@ def getFRelWeights(config):
     
     """
     
-    if 'photFilter' not in config.parDict.keys():
+    if 'photFilter' not in config.parDict.keys() or config.parDict['photFilter'] is None:
         return {}
     
     fRelWeightsFileName=config.selFnDir+os.path.sep+"fRelWeights.fits"
@@ -411,7 +451,8 @@ def fitQ(config):
         theta500Arcmin=[]
         signalMapDict={}
         signalMap=np.zeros(extMap.shape)
-        degreesMap=nemoCython.makeDegreesDistanceMap(signalMap, wcs, RADeg, decDeg, 10.0)
+        degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
+        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 10.0)
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
@@ -424,11 +465,12 @@ def fitQ(config):
                 else:                                   # tILe-C case
                     deltaT0=None
                 # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This can
-                signalMap, inputProperties=makeArnaudModelSignalMap(z, M500MSun, obsFreqGHz, 
+                signalMap, inputProperties=makeArnaudModelSignalMap(z, M500MSun,
                                                                     degreesMap, wcs, 
                                                                     beamsDict[obsFreqGHz], 
                                                                     deltaT0 = deltaT0,
                                                                     y0 = y0,
+                                                                    obsFreqGHz = obsFreqGHz,
                                                                     convolveWithBeam = False,
                                                                     GNFWParams = config.parDict['GNFWParams'])
                 if abs(y0-inputProperties['y0']) > tol:

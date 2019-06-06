@@ -452,3 +452,35 @@ def removeDuplicates(tab):
     
     return keepTab, len(dupTab), dupTab['name']
     
+#------------------------------------------------------------------------------------------------------------
+def generateRandomSourcesCatalog(mapData, wcs, numSources):
+    """Generate a random source catalog (with amplitudes in deltaT uK), with random positions within the 
+    footprint of the given map (areas where pixel values == 0 are ignored). The distribution of source 
+    amplitudes is roughly similar to that seen in the 148 GHz ACT maps, but this routine should only be used
+    for tests - it is not a serious attempt at simulating the real extragalactic source population.
+    
+    Args:
+        mapData (:obj:`numpy.ndarray`): Map pixel-data, only used for determining valid area in which sources
+            may be randomly placed (pixel values == 0 are ignored).
+        wcs (:obj:`astWCS.WCS`): WCS corresponding to the map.
+        numSources (int): Number of random sources to put into the output catalog.
+    
+    Returns:
+        An astropy Table object containing the catalog.
+        
+    """
+    
+    deltaT=np.random.lognormal(np.log(600), 1.1, numSources)
+    ys, xs=np.where(mapData != 0)
+    ys=ys+np.random.uniform(0, 1, len(ys))
+    xs=xs+np.random.uniform(0, 1, len(xs))
+    indices=np.random.randint(0, len(ys), numSources)
+    coords=wcs.pix2wcs(xs[indices], ys[indices])
+    coords=np.array(coords)
+    tab=atpy.Table()
+    tab.add_column(atpy.Column(np.arange(0, numSources)+1, "name"))
+    tab.add_column(atpy.Column(coords[:, 0], "RADeg"))
+    tab.add_column(atpy.Column(coords[:, 1], "decDeg"))
+    tab.add_column(atpy.Column(deltaT, "deltaT_c"))
+    
+    return tab

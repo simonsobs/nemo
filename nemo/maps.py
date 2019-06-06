@@ -23,6 +23,7 @@ import time
 import shutil
 import copy
 import IPython
+from pixell import enmap
 import nemo
 from . import catalogs
 from . import signals
@@ -459,8 +460,10 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
 
     for obj in catalog:
         if wcs.coordsAreInImage(obj['RADeg'], obj['decDeg']) == True:
-            rRange=nemoCython.makeDegreesDistanceMap(maskedMapData, wcs, obj['RADeg'], obj['decDeg'], 
-                                                    20.0/60.0)         
+            degreesMap=np.ones(mapData.shape, dtype = float)*1e6
+            rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                       obj['RADeg'], obj['decDeg'], 
+                                                                       20.0/60.0)         
             circleMask=np.less(rRange, radiusArcmin/60.0)
             grownCircleMask=np.less(rRange, (radiusArcmin*growMaskedArea)/60.0)
             maskMap[grownCircleMask]=1.0
@@ -550,7 +553,10 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
         elif mask == "whiteNoise":
             RADeg, decDeg=mapWCS.pix2wcs(pos[1], pos[0])
             if np.isnan(RADeg) == False and np.isnan(decDeg) == False:
-                rRange=nemoCython.makeDegreesDistanceMap(mapData, mapWCS, RADeg, decDeg, (radiusArcmin*4)/60.0)        
+                degreesMap=np.ones(mapData.shape, dtype = float)*1e6
+                rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, mapWCS, 
+                                                                           RADeg, decDeg, 
+                                                                           (radiusArcmin*4)/60.0)        
                 # Get pedestal level and white noise level from average between radiusArcmin and  2*radiusArcmin
                 annulusMask=np.logical_and(np.greater(rRange, radiusArcmin/60.0), \
                                               np.less(rRange, 2*radiusArcmin/60.0))
@@ -752,7 +758,11 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         tab['rArcmin'][tab['deltaT_c'] >= 50000]=10.0
         psMask=np.ones(data.shape)
         for row in tab:
-            rArcminMap=nemoCython.makeDegreesDistanceMap(psMask, wcs, row['RADeg'], row['decDeg'], row['rArcmin']/60.)*60
+            rArcminMap=np.ones(data.shape, dtype = float)*1e6
+            rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                           row['RADeg'], row['decDeg'], 
+                                                                           row['rArcmin']/60.)
+            rArcminMap=rArcminMap*60
             psMask[rArcminMap < row['rArcmin']]=0
         # Fill holes with smoothed map + white noise
         pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
@@ -855,8 +865,9 @@ def convolveMapWithBeam(data, wcs, beamFileName, maxDistDegrees = 1.0):
     """
     
     RADeg, decDeg=wcs.getCentreWCSCoords()
-    degreesMap=nemoCython.makeDegreesDistanceMap(np.array(data, dtype = float), wcs, RADeg, decDeg, 
-                                                 maxDistDegrees)
+    degreesMap=np.ones(data.shape, dtype = float)*1e6
+    degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 
+                                                                   maxDistDegrees)
 
     beamMap, sigDict=signals.makeBeamModelSignalMap(degreesMap, wcs, beamFileName)
     ys, xs=np.where(degreesMap < maxDistDegrees)
@@ -1170,39 +1181,96 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
     return contaminTabDict
 
 #------------------------------------------------------------------------------------------------------------
-def injectSources(data, wcs, catalog, beamFileName, obsFreqGHz = 148.0, GNFWParams = 'default'):
-    """Inject sources (clusters or point sources) with properties listed in the catalog into the map defined
-    by data, wcs.
+def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
+                   cosmoModel = None, applyPixelWindow = True):
+    """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
+    with properties as listed in the catalog. This can be used to either inject or subtract sources
+    from real maps.
     
     Args:
-        data (:obj:`numpy.ndarray`): The (2d) pixel data of a map in units of uK (delta T CMB).
+        shape (tuple): The dimensions of the output map (height, width) that will contain the model sources.
         wcs (:obj:`astWCS.WCS`): A WCS object that defines the coordinate system of the map. 
         catalog (:obj:`astropy.table.Table`): An astropy Table object containing the catalog. This must 
-            include columns named RADeg, decDeg that give object coordinates. For point sources, the 
-            amplitude in uK must be given in a column named deltaT_c. For clusters, M500 (in units of
-            10^14 MSun) and z must be given (GNFW profile assumed).
+            include columns named 'RADeg', 'decDeg' that give object coordinates. For point sources, the 
+            amplitude in uK must be given in a column named 'deltaT_c'. For clusters, either 'M500' (in 
+            units of 10^14 MSun), 'z', and 'fixed_y_c' must be given (as in a mock catalog), OR the 
+            catalog must contain a 'template' column, with templates named like, e.g., Arnaud_M1e14_z0p2
+            (for a z = 0.2, M500 = 1e14 MSun cluster; see the example .yml config files included with nemo).
         beamFileName: Path to a text file that describes the beam.
-        obsFreqGHz (float, optional): Used only by cluster catalogs - for converting SZ y into delta T uK.
+        obsFreqGHz (float, optional): Used only by cluster catalogs - if given, the returned map will be 
+            converted into delta T uK, assuming the given frequency. Otherwise, a y0 map is returned.
         GNFWParams (str or dict, optional): Used only by cluster catalogs. If 'default', the Arnaud et al. 
             (2010) Universal Pressure Profile is assumed. Otherwise, a dictionary that specifies the profile
             parameters can be given here (see gnfw.py).
+        applyPixelWindow (bool, optional): If True, apply the pixel window function to the map.
             
     Returns:
         Map containing injected sources.
     
     """
     
-    # Inspect the catalog - are we dealing with point sources or clusters?
-    print("inject sources")
-    IPython.embed()
-    sys.exit()
-    #for row in catalog:
+    print(">>> Making model image ...")
+    modelMap=np.zeros(shape, dtype = float)
         
-    #if 'fixed_y_c' in catalog.keys():
-    #signals.makeArnaudModelSignalMap(z, M500, obsFreqGHz, degreesMap, wcs, beamFileName, GNFWParams = 'default',
-                             #deltaT0 = None, maxSizeDeg = 15.0, convolveWithBeam = True)
-    #signals.makeBeamModelSignalMap(degreesMap, wcs, beamFileName, deltaT0 = None)
+    if cosmoModel is None:
+        cosmoModel=signals.FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = signals.TCMB)
     
+    # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
+    numFWHM=5.0
+    beam=signals.BeamProfile(beamFileName = beamFileName)
+    maxSizeDeg=beam.rDeg[np.argmin(abs(beam.profile1d-0.5))]*2*numFWHM 
+    
+    # Map of distance(s) from objects - this will get updated in place (fast)
+    degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
+
+    if 'fixed_y_c' in catalog.keys():
+        # Clusters - insert one at a time (different sizes etc.) - currently taking ~1.6 sec per object
+        count=0
+        for row in catalog:
+            count=count+1
+            print("... %d/%d ..." % (count, len(catalog)))
+            # HACK: For now, get z and M500 from template key
+            # This won't work if others use different labelling scheme
+            if 'template' not in catalog.keys():
+                raise Exception("No template column found in catalog - no other ways of inserting clusters yet implemented.")
+            bits=row['template'].split("#")[0].split("_")
+            M500=float(bits[1][1:].replace("p", "."))
+            z=float(bits[2][1:].replace("p", "."))
+            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+            maxSizeDeg=5*(theta500Arcmin/60)
+            degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                           row['RADeg'], row['decDeg'], 
+                                                                           maxSizeDeg)
+            modelMap=modelMap+signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
+                                                               GNFWParams = GNFWParams, obsFreqGHz = None,
+                                                               deltaT0 = None, y0 = row['y_c']*1e-4, 
+                                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True)[0]
+            t1=time.time()
+            print(t1-t0)
+    else:
+        # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
+        fluxScaleMap=np.zeros(modelMap.shape)
+        for row in catalog:
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                        row['RADeg'], row['decDeg'], 
+                                                                        maxSizeDeg)
+            fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
+        modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)[0]
+        modelMap=modelMap*fluxScaleMap
+
+    # Optional: convert map to deltaT uK
+    # This should only be used if working with clusters - source amplitudes are fed in as delta T uK already
+    if obsFreqGHz is not None:
+        modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz)
+    
+    # Optional: apply pixel window function - generally this should be True
+    # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
+    if applyPixelWindow == True:
+        modelMap=enmap.apply_window(modelMap, pow = 1.0)
+
+    return modelMap
+        
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryTest(config, imageDict):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
