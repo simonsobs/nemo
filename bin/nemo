@@ -41,16 +41,18 @@ if __name__ == '__main__':
     
     imageDict=pipelines.filterMapsAndMakeCatalogs(config)
 
-    # Optional position recovery test (how well do we recovery positions as fn. of S/N)
-    if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
-        maps.positionRecoveryTest(config, imageDict)
-        
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
     # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
         tckQFitDict=signals.fitQ(config)
-    
+        
+    # Optional position recovery test (how well do we recovery positions as fn. of S/N?)
+    if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
+        posRecTable=maps.positionRecoveryTest(config, imageDict)
+    else:
+        posRecTable=None
+            
     # Estimate of contamination from running cluster finding over inverted map
     if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
         conTabDict=maps.estimateContaminationFromInvertedMaps(config, imageDict)
@@ -70,8 +72,10 @@ if __name__ == '__main__':
         conTabDict[k]=skySimConTabDict[k]
         
     # MPI: gather together and merge all of the catalogs from each process, and contamination test results
+    # This needs tidying up...
     if config.MPIEnabled == True:
         optimalCatalogList=config.comm.gather(imageDict['optimalCatalog'], root = 0)
+        posRecTableList=config.comm.gather(posRecTable, root = 0)
         conKeysList=list(conTabDict.keys())
         conTabDictList=config.comm.gather(conTabDict, root = 0)
         if config.rank != 0:
@@ -85,6 +89,17 @@ if __name__ == '__main__':
                 if type(collectedTab) == astropy.table.table.Table:
                     toStack.append(collectedTab)
             optimalCatalog=atpy.vstack(toStack)
+            print("... gathering position recovery tests ...")
+            toAverage=[]
+            for posRecTable in posRecTableList:
+                if type(posRecTable) == astropy.table.table.Table:
+                    toAverage.append(posRecTable)
+            if len(toAverage) > 0:
+                posRecTable=atpy.vstack(toAverage)
+                for key in posRecTable.keys():
+                    posRecTable[key]=posRecTable[key]/len(toAverage)
+            else:
+                posRecTable=None
             print("... gathering and averaging contamination estimates ...")
             avConTabDict={}
             for k in conKeysList:
@@ -118,6 +133,10 @@ if __name__ == '__main__':
     else:
         optimalCatalog=imageDict['optimalCatalog']
     
+    # Plot tile-averaged position recovery test
+    if posRecTable is not None:
+        maps.plotPositionRecovery(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average.pdf")
+        
     # Plot contamination together
     if conTabDict != {}:
         maps.plotContamination(conTabDict, config.diagnosticsDir)           

@@ -667,9 +667,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             psMask=psImg[tileName].data
     else:
         psMask=np.ones(data.shape)
-            
-    #print("... opened map %s ..." % (mapDict['mapFileName']))
-    
+                
     # Optional map clipping
     if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] is not None:
         RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
@@ -721,9 +719,10 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     # For position recovery tests
     if 'injectSources' in list(mapDict.keys()):
         # NOTE: Need to add varying GNFWParams here
-        # NOTE: We should also stop loading the beam from disk each time
-        data=injectSources(data, wcs, mapDict['injectSources'], mapDict['beamFileName'], 
-                           obsFreqGHz = mapDict['obsFreqGHz'], GNFWParams = 'default')
+        modelMap=makeModelImage(data.shape, wcs, mapDict['injectSources'], mapDict['beamFileName'], 
+                                obsFreqGHz = mapDict['obsFreqGHz'], GNFWParams = 'default')
+        modelMap[weights == 0]=0
+        data=data+modelMap
 
     # Should only be needed for handling preliminary tILe-C maps
     if 'applyBeamConvolution' in mapDict.keys() and mapDict['applyBeamConvolution'] == True:
@@ -1229,13 +1228,18 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         for row in catalog:
             count=count+1
             print("... %d/%d ..." % (count, len(catalog)))
-            # HACK: For now, get z and M500 from template key
-            # This won't work if others use different labelling scheme
-            if 'template' not in catalog.keys():
-                raise Exception("No template column found in catalog - no other ways of inserting clusters yet implemented.")
-            bits=row['template'].split("#")[0].split("_")
-            M500=float(bits[1][1:].replace("p", "."))
-            z=float(bits[2][1:].replace("p", "."))
+            # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
+            if 'true_M500' in catalog.keys():
+                M500=row['true_M500']*1e14
+                z=row['redshift']
+                y0ToInsert=row['fixed_y_c']*1e-4
+            else:
+                if 'template' not in catalog.keys():
+                    raise Exception("No M500, z, or template column found in catalog.")
+                bits=row['template'].split("#")[0].split("_")
+                M500=float(bits[1][1:].replace("p", "."))
+                z=float(bits[2][1:].replace("p", "."))
+                y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
             theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
             maxSizeDeg=5*(theta500Arcmin/60)
             degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
@@ -1244,10 +1248,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                                            maxSizeDeg)
             modelMap=modelMap+signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
                                                                GNFWParams = GNFWParams, obsFreqGHz = None,
-                                                               deltaT0 = None, y0 = row['y_c']*1e-4, 
+                                                               deltaT0 = None, y0 = y0ToInsert, 
                                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = True)[0]
-            t1=time.time()
-            print(t1-t0)
     else:
         # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
         fluxScaleMap=np.zeros(modelMap.shape)
@@ -1284,6 +1286,9 @@ def positionRecoveryTest(config, imageDict):
         on the real data (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be 
         modified.
     
+    Returns:
+        An astropy Table containing percentiles of offset distribution in fixed_SNR bins.
+    
     """
     
     simRootOutDir=config.diagnosticsDir+os.path.sep+"posRec_rank%d" % (config.rank)
@@ -1312,7 +1317,8 @@ def positionRecoveryTest(config, imageDict):
     simConfig.parDict['mapFilters']=[filtDict] 
         
     # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
-    # Generate catalog here
+    # So, we only generate the catalog here
+    print("... generating mock catalog ...")
     if filtDict['class'].find("ArnaudModel") != -1:
         mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
     elif filtDict['class'].find("BeamModel") != -1:
@@ -1327,14 +1333,67 @@ def positionRecoveryTest(config, imageDict):
         mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
         for m in mapFileNames:
             os.remove(m)
-            
+
     simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
                                                      rootOutDir = simRootOutDir,
                                                      copyFilters = True)
     
     # Cross match the output with the input catalog - how close were we?
-    print("pos recovery results")
-    IPython.embed()
-    sys.exit()
+    recCatalog=simImageDict['optimalCatalog']
+    x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
     
-        
+    # It makes most sense to just record %-ile matching radii in bins
+    percentilesToCalc=[1, 5, 10, 16, 50, 84, 90, 95, 99]
+    SNRs=x_recCatalog['fixed_SNR']    
+    #binEdges=np.linspace(4.0, 20.0, (5*16)+1)  # 0.2 binning
+    binEdges=np.linspace(4.0, 10.0, 13) 
+    binCentres=(binEdges[:-1]+binEdges[1:])/2.
+    percentileTable=atpy.Table()
+    percentileTable.add_column(atpy.Column(binCentres, 'fixed_SNR'))
+    for p in percentilesToCalc:
+        vals=np.zeros(len(binCentres))
+        for i in range(len(binEdges)-1):
+            rArcmin=(rDeg*60)[np.logical_and(np.greater_equal(SNRs, binEdges[i]), np.less(SNRs, binEdges[i+1]))]
+            if len(rArcmin) > 0:
+                vals[i]=np.percentile(rArcmin, p)
+        percentileTable.add_column(atpy.Column(vals, 'rArcmin_%dpercent' % (p)))
+    
+    # Write out for debugging - we might not want to do this when tested...
+    fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
+    percentileTable.write(fitsOutFileName, overwrite = True)
+
+    plotFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.pdf" % (config.rank)   
+    plotPositionRecovery(percentileTable, plotFileName)
+    
+    return percentileTable
+
+#------------------------------------------------------------------------------------------------------------
+def plotPositionRecovery(percentileTable, plotFileName, percentilesToPlot = [50]):
+    """Plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using the contents
+    of percentileTable (see positionRecoveryTest).
+    
+    Args:
+        percentileTable (:obj:`astropy.table.Table`): Table of recovery percentiles as returned by 
+            maps.positionRecoveryTest.
+        plotFileName (str): Path where the plot file will be written (if the extension is .pdf, both .pdf 
+            and .png versions of the plot will be written).
+        percentilesToPlot (list, optional): List of percentiles to plot (must be integers and present in the
+            column names for percentileTable).
+    
+    """
+    plotSettings.update_rcParams()
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.10, 0.11, 0.87, 0.87]) 
+    for p in percentilesToPlot:
+        validMask=np.greater(percentileTable['rArcmin_%dpercent' % (p)], 0)
+        plt.plot(percentileTable['fixed_SNR'][validMask], percentileTable['rArcmin_%dpercent' % (p)][validMask], 
+                 '-', label = p)
+    plt.xlim(percentileTable['fixed_SNR'].min(), percentileTable['fixed_SNR'].max())
+    plt.ylim(0,)
+    plt.legend()
+    plt.xlabel("SNR$_{2.4}$")
+    plt.ylabel("Recovered Position Offset ($^\prime$)")
+    plt.savefig(plotFileName)
+    plt.savefig(plotFileName.replace(".pdf", ".png"))
+    plt.close()
+    
