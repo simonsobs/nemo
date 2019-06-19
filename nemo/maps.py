@@ -1247,9 +1247,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                                            row['RADeg'], row['decDeg'], 
                                                                            maxSizeDeg)
             modelMap=modelMap+signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
-                                                               GNFWParams = GNFWParams, obsFreqGHz = None,
-                                                               deltaT0 = None, y0 = y0ToInsert, 
-                                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True)[0]
+                                                               GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True)
     else:
         # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
         fluxScaleMap=np.zeros(modelMap.shape)
@@ -1258,7 +1257,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                                         row['RADeg'], row['decDeg'], 
                                                                         maxSizeDeg)
             fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
-        modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)[0]
+        modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
         modelMap=modelMap*fluxScaleMap
 
     # Optional: convert map to deltaT uK

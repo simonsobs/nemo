@@ -284,4 +284,5 @@ class NemoTests(object):
                                stderr=subprocess.STDOUT)
         if process.returncode != 0:
              print(process.stdout)
+             raise AssertionError("Return code of '%s' is non-zero." % (str(args)))
 
