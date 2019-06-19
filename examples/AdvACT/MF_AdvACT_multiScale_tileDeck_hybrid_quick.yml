@@ -35,42 +35,42 @@ tileOverlapDeg: 1.0
 # User-defined tiles
 # These will automatically be expanded by tileOverlapDeg, i.e., don't need to handle overlaps here
 tileDefinitions:
-    - {extName: '0_0', RADecSection: [122.7, 103.8, -61., -51.]}
-    - {extName: '0_1', RADecSection: [103.8, 66.6, -61., -51.]}
-    - {extName: '0_2', RADecSection: [66.6, 14.3, -61., -51.]}
-    - {extName: '0_3', RADecSection: [14.3, 321., -61., -51.]}
-    - {extName: '0_4', RADecSection: [321., 258., -61., -51.]}
-    - {extName: '1_0', RADecSection: [117., 67.3, -51., -41.]}
-    - {extName: '1_1', RADecSection: [67.3, 13.3, -51., -41.]}
-    - {extName: '1_2', RADecSection: [13.3, 334.2, -51., -41.]}
-    - {extName: '1_3', RADecSection: [334.2, 300., -51., -41.]}
-    - {extName: '1_4', RADecSection: [300., 264., -51., -41.]}
-    - {extName: '2_0', RADecSection: [110., 68.2, -41., -31.]}
-    - {extName: '2_1', RADecSection: [68.2, 15.5, -41., -31.]}
-    - {extName: '2_2', RADecSection: [15.5, 334.2, -41., -31.]}
-    - {extName: '2_3', RADecSection: [334.2, 300., -41., -31.]}
-    - {extName: '2_4', RADecSection: [300., 266., -41., -31.]}
-    - {extName: '3_0', RADecSection: [110., 45., -31., -21.]}
-    - {extName: '3_1', RADecSection: [45., 345., -31., -21.]}
-    - {extName: '3_2', RADecSection: [345., 276., -31., -21.]}
-    - {extName: '4_0', RADecSection: [102., 45., -21., -11.]}
-    - {extName: '4_1', RADecSection: [45., 345., -21., -11.]}
-    - {extName: '4_2', RADecSection: [345., 281., -21., -11.]}
-    - {extName: '5_0', RADecSection: [86., 45., -11., 5.5]}
-    - {extName: '5_1', RADecSection: [45., 345., -11., 5.5]}
-    - {extName: '5_2', RADecSection: [345., 291., -11., 5.5]}
-    - {extName: '5A_0', RADecSection: [179.9, 105., -6., 5.5]}
-    - {extName: '5A_1', RADecSection: [262., 217., -6., 5.5]}
-    - {extName: '5A_2', RADecSection: [217., 180.1, -6., 5.5]}
-    - {extName: '6_0', RADecSection: [179.9, 100., 5.5, 22.]}
-    - {extName: '6_1', RADecSection: [81., 6., 5.5, 22.]}
-    - {extName: '6_2', RADecSection: [6., 298., 5.5, 22.]}
-    - {extName: '6_3', RADecSection: [269., 217., 5.5, 22.]}
-    - {extName: '6_4', RADecSection: [217., 180.1, 5.5, 22.]}
+    - {tileName: '0_0', RADecSection: [122.7, 103.8, -61., -51.]}
+    - {tileName: '0_1', RADecSection: [103.8, 66.6, -61., -51.]}
+    - {tileName: '0_2', RADecSection: [66.6, 14.3, -61., -51.]}
+    - {tileName: '0_3', RADecSection: [14.3, 321., -61., -51.]}
+    - {tileName: '0_4', RADecSection: [321., 258., -61., -51.]}
+    - {tileName: '1_0', RADecSection: [117., 67.3, -51., -41.]}
+    - {tileName: '1_1', RADecSection: [67.3, 13.3, -51., -41.]}
+    - {tileName: '1_2', RADecSection: [13.3, 334.2, -51., -41.]}
+    - {tileName: '1_3', RADecSection: [334.2, 300., -51., -41.]}
+    - {tileName: '1_4', RADecSection: [300., 264., -51., -41.]}
+    - {tileName: '2_0', RADecSection: [110., 68.2, -41., -31.]}
+    - {tileName: '2_1', RADecSection: [68.2, 15.5, -41., -31.]}
+    - {tileName: '2_2', RADecSection: [15.5, 334.2, -41., -31.]}
+    - {tileName: '2_3', RADecSection: [334.2, 300., -41., -31.]}
+    - {tileName: '2_4', RADecSection: [300., 266., -41., -31.]}
+    - {tileName: '3_0', RADecSection: [110., 45., -31., -21.]}
+    - {tileName: '3_1', RADecSection: [45., 345., -31., -21.]}
+    - {tileName: '3_2', RADecSection: [345., 276., -31., -21.]}
+    - {tileName: '4_0', RADecSection: [102., 45., -21., -11.]}
+    - {tileName: '4_1', RADecSection: [45., 345., -21., -11.]}
+    - {tileName: '4_2', RADecSection: [345., 281., -21., -11.]}
+    - {tileName: '5_0', RADecSection: [86., 45., -11., 5.5]}
+    - {tileName: '5_1', RADecSection: [45., 345., -11., 5.5]}
+    - {tileName: '5_2', RADecSection: [345., 291., -11., 5.5]}
+    - {tileName: '5A_0', RADecSection: [179.9, 105., -6., 5.5]}
+    - {tileName: '5A_1', RADecSection: [262., 217., -6., 5.5]}
+    - {tileName: '5A_2', RADecSection: [217., 180.1, -6., 5.5]}
+    - {tileName: '6_0', RADecSection: [179.9, 100., 5.5, 22.]}
+    - {tileName: '6_1', RADecSection: [81., 6., 5.5, 22.]}
+    - {tileName: '6_2', RADecSection: [6., 298., 5.5, 22.]}
+    - {tileName: '6_3', RADecSection: [269., 217., 5.5, 22.]}
+    - {tileName: '6_4', RADecSection: [217., 180.1, 5.5, 22.]}
 
 # Corresponding regions in tiles to use for noise part of matched filter
 # IF these are modified, tileDeck files will need to be re-made (delete them and rerun nemo)
-# Format for each entry: extName: [RAMin, RAMax, decMin, decMax]
+# Format for each entry: tileName: [RAMin, RAMax, decMin, decMax]
 tileNoiseRegions:
     {'0_0': [111., 103., -59., -52.],
      '0_1': [97., 73., -59., -52.],
@@ -107,8 +107,8 @@ tileNoiseRegions:
 
 # Use this to test on only a particular set of tiles
 # i.e., all operations will only be performed on these tiles (respected by nemo, nemoMass, nemoSelFn)
-#extNameList: ['2_1', '2_2', '3_1', '5_1']
-extNameList: ['5_1']
+#tileNameList: ['2_1', '2_2', '3_1', '5_1']
+tileNameList: ['5_1']
 
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
@@ -122,7 +122,7 @@ longNames: False
 catalogCuts: ['SNR > 4.0']
 
 # Photometry options
-photometryOptions: {photFilter: 'Arnaud_M2e14_z0p4'}
+photFilter: 'Arnaud_M2e14_z0p4'
 
 # Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
 # The example below is for the Planck Pressure Profile (PPP)

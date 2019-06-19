@@ -23,14 +23,13 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
                 findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
-                diagnosticsDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
+                selFnDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
                 verbose = True, useInterpolator = True, measureShapes = False):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
     
     SNMap == 'file' means that the SNMap will be loaded from disk, SNMap == 'array' means it is a np
-    array already in memory. SNMap == 'local', means use the a ranked filter to get noise in annulus around
-    given position. This doesn't seem to work as well...
+    array already in memory.
     
     Throw out objects within rejectBorder pixels of edge of frame if rejectBorder != None
     
@@ -46,14 +45,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
     
     if rejectBorder == None:
         rejectBorder=0
-  
-    # Load point source mask - this is hacked for 148 only at the moment
-    if diagnosticsDir != None and os.path.exists(diagnosticsDir+os.path.sep+"psMask_148.fits") == True:
-        img=pyfits.open(diagnosticsDir+os.path.sep+"psMask_148.fits")
-        psMaskMap=img[0].data
-    else:
-        psMaskMap=None
-                
+                  
     # Do search on each filtered map separately
     for key in imageDict['mapKeys']:
         
@@ -61,9 +53,9 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
             print("... searching %s ..." % (key))
         
         # Load area mask
-        extName=key.split("#")[-1]
-        if diagnosticsDir != None:
-            img=pyfits.open(diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        tileName=key.split("#")[-1]
+        if selFnDir != None:
+            img=pyfits.open(selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
             areaMask=img[0].data
         else:
             areaMask=None
@@ -152,6 +144,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                     objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
                 # Optional SExtractor style shape measurements                
                 if measureShapes == True:
+                    doubleCheck=False
                     if objDict['numSigPix'] > 9:
                         mask=np.equal(segmentationMap, objIDs[i])
                         ys, xs=np.where(segmentationMap == objIDs[i])
@@ -174,46 +167,37 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
                             theta=theta+90
                         elif xy < 0 and theta > 0:
                             theta=theta-90
-                        doubleCheck=False
                         if theta > 0 and xy > 0:
                             doubleCheck=True
                         if theta < 0 and xy < 0:
                             doubleCheck=True
-                        if doubleCheck == False:
-                            raise Exception("name = %s: theta, xy not same sign, argh!" % (objDict['name']))
-                        A=np.sqrt((x2+y2)/2.0 + np.sqrt( ((x2-y2)/2)**2 + xy**2))
-                        B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
-                        # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
-                        # Shape measurement is okay though - so just scale A, B to match segMap area
-                        segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
-                        curArea=A*B*np.pi
-                        scaleFactor=np.sqrt(segArea/curArea)
-                        A=A*scaleFactor
-                        B=B*scaleFactor  
-                        ecc=np.sqrt(1-B**2/A**2)
-                        objDict['ellipse_PA']=theta
-                        objDict['ellipse_A']=A
-                        objDict['ellipse_B']=B
-                        objDict['ellipse_x0']=cx2+xMin
-                        objDict['ellipse_y0']=cy2+yMin
-                        objDict['ellipse_e']=ecc
-                    else:
+                        if doubleCheck == True:
+                            A=np.sqrt((x2+y2)/2.0 + np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                            B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                            # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
+                            # Shape measurement is okay though - so just scale A, B to match segMap area
+                            segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
+                            curArea=A*B*np.pi
+                            scaleFactor=np.sqrt(segArea/curArea)
+                            A=A*scaleFactor
+                            B=B*scaleFactor  
+                            ecc=np.sqrt(1-B**2/A**2)
+                            objDict['ellipse_PA']=theta
+                            objDict['ellipse_A']=A
+                            objDict['ellipse_B']=B
+                            objDict['ellipse_x0']=cx2+xMin
+                            objDict['ellipse_y0']=cy2+yMin
+                            objDict['ellipse_e']=ecc
+                    if objDict['numSigPix'] <= 9 or doubleCheck == False:
                         objDict['ellipse_PA']=-99
                         objDict['ellipse_A']=-99
                         objDict['ellipse_B']=-99
                         objDict['ellipse_x0']=-99
                         objDict['ellipse_y0']=-99
                         objDict['ellipse_e']=-99
-                # Check against mask
-                if objDict['x'] > minX and objDict['x'] < maxX and \
-                    objDict['y'] > minY and objDict['y'] < maxY:
-                    masked=False
-                    if psMaskMap != None:
-                        if psMaskMap[int(round(objDict['y'])), int(round(objDict['x']))] > 0:
-                            masked=True
-                    if masked == False:
-                        catalog.append(objDict)
-                        idNumCount=idNumCount+1     
+                # Add to catalog (masks now applied before we get here so no need to check)
+                catalog.append(objDict)
+                idNumCount=idNumCount+1     
         
         # From here on, catalogs should be astropy Table objects...
         if len(catalog) > 0:
@@ -248,7 +232,7 @@ def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = F
         else:
             templateKey=None
             for k in imageDict['mapKeys']:
-                # Match the reference filter name and the extName
+                # Match the reference filter name and the tileName
                 if k.split("#")[0] == template and k.split("#")[-1] == key.split("#")[-1]:
                     templateKey=k
             if templateKey == None:
@@ -287,7 +271,7 @@ def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = F
                     obj[prefix+'SNR']=data[int(round(y)), int(round(x))] # read directly off of S/N map
        
 #------------------------------------------------------------------------------------------------------------
-def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator = True, unfilteredMapsDict = None):
+def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True, unfilteredMapsDict = None):
     """Add flux measurements to each catalog pointed to in the imageDict. Measured in 'outputUnits' 
     specified in the filter definition in the .par file (and written to the image header as 'BUNIT').
     
@@ -295,21 +279,15 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
     position equal to the flux that is wanted (yc, uK or Jy/beam). This includes taking out the effect of
     the beam.
     
-    Under 'photometryOptions', use the 'photFilter' key to choose which filtered map in which to make
-    flux measurements at fixed scale (fixed_delta_T_c, fixed_y_c etc.) 
+    Use 'photFilter' to choose which filtered map in which to make flux measurements at fixed scale
+    (fixed_delta_T_c, fixed_y_c etc.). Set to None if you don't want these.
 
     """
     
     print(">>> Doing photometry ...")
 
-    # For fixed filter scale
-    if 'photFilter' in list(photometryOptions.keys()):
-        photFilter=photometryOptions['photFilter']
-    else:
-        photFilter=None
-
     # Adds fixed_SNR values to catalogs for all maps
-    if photFilter != None:
+    if photFilter is not None:
         getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, 
                     useInterpolator = useInterpolator)
 
@@ -346,9 +324,9 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
         mapDataList=[mapData]
         interpolatorList=[mapInterpolator]
         prefixList=['']
-        extName=key.split("#")[-1]
-        if 'photFilter' in list(photometryOptions.keys()):
-            photImg=pyfits.open(imageDict[photFilter+"#"+extName]['filteredMap'])
+        tileName=key.split("#")[-1]
+        if photFilter is not None:
+            photImg=pyfits.open(imageDict[photFilter+"#"+tileName]['filteredMap'])
             photMapData=photImg[0].data
             mapDataList.append(photMapData)
             prefixList.append('fixed_')
@@ -403,25 +381,22 @@ def measureFluxes(imageDict, photometryOptions, diagnosticsDir, useInterpolator 
                             obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
 
 #------------------------------------------------------------------------------------------------------------
-def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
+def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
     """Add relative weighting by frequency for each object in the optimal catalog, extracted from the 
     data cube saved under diagnosticsDir (this is made by makeSZMap in RealSpaceMatchedFilter). This is
     needed for multi-frequency cluster finding / analysis - for, e.g., weighting relativistic corrections to
     y0~ (which was estimated from the inverse variance weighted average of y0~ from each frequency map).
     
-    NOTE: this is only applied for the reference filter (pointed to by photometryOptions['photFilter']).
+    NOTE: this is only applied for the reference filter (pointed to by photFilter)
     
     """
 
-    # We only For fixed filter scale
-    if 'photFilter' in list(photometryOptions.keys()):
-        photFilter=photometryOptions['photFilter']
-    else:
+    if photFilter is None:
         return None
-
+    
     catalog=imageDict['optimalCatalog']
-    for extName in imageDict['extNames']:
-        label=photFilter+"#"+extName
+    for tileName in imageDict['tileNames']:
+        label=photFilter+"#"+tileName
         freqWeightMapFileName=diagnosticsDir+os.path.sep+"freqRelativeWeights_%s.fits" % (label)
         if os.path.exists(freqWeightMapFileName) == True:
             img=pyfits.open(freqWeightMapFileName)
@@ -437,7 +412,7 @@ def addFreqWeightsToCatalog(imageDict, photometryOptions, diagnosticsDir):
                 if keyToAdd not in catalog.keys():
                     catalog.add_column(atpy.Column(np.zeros(len(catalog)), keyToAdd))
             for row in catalog:
-                if row['template'].split("#")[-1] == extName:
+                if row['template'].split("#")[-1] == tileName:
                     x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                     x=int(round(x))
                     y=int(round(y))

@@ -10,6 +10,7 @@ from scipy import interpolate
 from scipy.signal import convolve as scipy_convolve
 import astropy.io.fits as pyfits
 import astropy.table as atpy
+import astropy.stats as apyStats
 import numpy as np
 import pylab as plt
 import glob
@@ -22,6 +23,7 @@ import time
 import shutil
 import copy
 import IPython
+from pixell import enmap
 import nemo
 from . import catalogs
 from . import signals
@@ -73,20 +75,20 @@ def makeTileDeck(parDict):
     # Some of this is rather clunky...
     unfilteredMapsDictList=[]
     if parDict['makeTileDeck'] == False:
-        extNames=[]        
+        tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
             unfilteredMapsDictList.append(mapDict.copy())
             img=pyfits.open(mapDict['mapFileName'])
-            if extNames == []:
+            if tileNames == []:
                 for ext in img:
-                    extNames.append(ext.name)
+                    tileNames.append(ext.name)
             else:
                 for ext in img:
-                    if ext.name not in extNames:
+                    if ext.name not in tileNames:
                         raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             img.close()
     else:
-        extNames=[]        
+        tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
                         
             # Added an option to define tiles in the .par file... otherwise, we will do the automatic tiling
@@ -132,12 +134,12 @@ def makeTileDeck(parDict):
             if allFilesMade == True:
                 # We need the extension names only here...
                 img=pyfits.open(outFileNames[0])
-                if extNames == []:
+                if tileNames == []:
                     for ext in img:
-                        extNames.append(ext.name)
+                        tileNames.append(ext.name)
                 else:
                     for ext in img:
-                        if ext.name not in extNames:
+                        if ext.name not in tileNames:
                             raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             else:
                 
@@ -180,7 +182,7 @@ def makeTileDeck(parDict):
                     ys.sort()
                     ys=np.array(ys)
                     coordsList=[]
-                    extNames=[]
+                    tileNames=[]
                     tileHeightPix=int(np.ceil((ys.max()-ys.min())/float(numVerticalTiles)))
                     for i in range(numVerticalTiles):
                         yMin=ys.min()+i*tileHeightPix
@@ -200,7 +202,7 @@ def makeTileDeck(parDict):
                             xMin=minXMin+j*tileWidthPix
                             xMax=minXMin+(j+1)*tileWidthPix
                             coordsList.append([xMin, xMax, yMin, yMax])
-                            extNames.append("%d_%d" % (j, i))
+                            tileNames.append("%d_%d" % (j, i))
                     
                     # Not sure if this will actually tidy up...
                     wht.close()
@@ -208,7 +210,7 @@ def makeTileDeck(parDict):
                 
                 else:
                     # Use user-defined tiles - this is a bit of a faff, to avoid re-writing below bit where we make the tiles...
-                    extNames=[]
+                    tileNames=[]
                     coordsList=[]
                     for tileDict in parDict['tileDefinitions']:
                         ra0, ra1, dec0, dec1=tileDict['RADecSection']
@@ -219,14 +221,14 @@ def makeTileDeck(parDict):
                         yMin=min([y0, y1])
                         yMax=max([y0, y1])
                         coordsList.append([xMin, xMax, yMin, yMax])
-                        extNames.append(tileDict['extName'])   
+                        tileNames.append(tileDict['tileName'])   
                 
                 # Output a .reg file for debugging (pixel coords)
                 outFile=open(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
                 outFile.write("# Region file format: DS9 version 4.1\n")
-                outFile.write('global color=green dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+                outFile.write('global color=blue dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
                 outFile.write("image\n")
-                for c, name in zip(coordsList, extNames):
+                for c, name in zip(coordsList, tileNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
                 #print("check tiles")
@@ -253,7 +255,7 @@ def makeTileDeck(parDict):
                         # If anyone wants to find polarized sources, this will need changing...
                         if mapData.ndim == 3:
                             mapData=mapData[0, :]
-                        for c, name in zip(coordsList, extNames):
+                        for c, name in zip(coordsList, tileNames):
                             y0=c[2]
                             y1=c[3]
                             x0=c[0]
@@ -271,7 +273,17 @@ def makeTileDeck(parDict):
                                 dec1=dec1+tileOverlapDeg
                             if ra1 > ra0:
                                 ra1=-(360-ra1)
+                            # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
+                            # (which happens if image dimensions are both odd)
+                            # I _think_ this is related to the interpolation done in signals.fitQ
+                            ddec=0.5/60.
+                            count=0
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
+                            while clip['data'].shape[0] % 2 != 0:
+                                clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1+ddec*count)
+                                count=count+1
+                            # Old
+                            #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
                             header=clip['wcs'].header.copy()
                             if 'tileNoiseRegions' in list(parDict.keys()):
@@ -281,7 +293,7 @@ def makeTileDeck(parDict):
                                     if 'autoBorderDeg' in parDict['tileNoiseRegions']:
                                         autoBorderDeg=parDict['tileNoiseRegions']['autoBorderDeg']
                                         for tileDef in parDict['tileDefinitions']:
-                                            if tileDef['extName'] == name:
+                                            if tileDef['tileName'] == name:
                                                 break
                                         noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=tileDef['RADecSection']
                                         noiseRAMin=noiseRAMin+autoBorderDeg
@@ -289,7 +301,7 @@ def makeTileDeck(parDict):
                                         noiseDecMin=noiseDecMin+autoBorderDeg
                                         noiseDecMax=noiseDecMax-autoBorderDeg
                                     else:
-                                        raise Exception("No entry in tileNoiseRegions in config file for extName '%s' - either add one, or add 'autoBorderDeg': 0.5 (or similar) to tileNoiseRegions" % (name))
+                                        raise Exception("No entry in tileNoiseRegions in config file for tileName '%s' - either add one, or add 'autoBorderDeg': 0.5 (or similar) to tileNoiseRegions" % (name))
                                 print("... adding noise region [%.3f, %.3f, %.3f, %.3f] to header %s ..." % (noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax, name))
                                 header['NRAMIN']=noiseRAMin
                                 header['NRAMAX']=noiseRAMax
@@ -319,8 +331,111 @@ def makeTileDeck(parDict):
                 mapDict[key]=outFileName
             unfilteredMapsDictList.append(mapDict.copy())
     
-    return unfilteredMapsDictList, extNames
+    return unfilteredMapsDictList, tileNames
+
+#-------------------------------------------------------------------------------------------------------------
+def shrinkWCS(origShape, origWCS, scaleFactor):
+    """Given an astWCS object and corresponding image shape, scale the WCS by scaleFactor. Used for making 
+    downsampled quicklook images (using stitchMaps).
     
+    Args:
+        origShape (tuple): Shape of the original image.
+        origWCS (astWCS.WCS object): WCS for the original image.
+        scaleFactor (float): The factor by which to scale the image WCS.
+    Returns:
+        shape (tuple), WCS (astWCS.WCS object)
+    
+    """
+    
+    scaledShape=[int(origShape[0]*scaleFactor), int(origShape[1]*scaleFactor)]
+    scaledData=np.zeros(scaledShape)
+    
+    trueScaleFactor=np.array(scaledData.shape, dtype = float) / np.array(origShape, dtype = float)
+    offset=0.
+    imageWCS=origWCS.copy()
+    try:
+        oldCRPIX1=imageWCS.header['CRPIX1']
+        oldCRPIX2=imageWCS.header['CRPIX2']
+        CD11=imageWCS.header['CD1_1']
+        CD21=imageWCS.header['CD2_1']
+        CD12=imageWCS.header['CD1_2']
+        CD22=imageWCS.header['CD2_2'] 
+    except KeyError:
+        oldCRPIX1=imageWCS.header['CRPIX1']
+        oldCRPIX2=imageWCS.header['CRPIX2']
+        CD11=imageWCS.header['CDELT1']
+        CD21=0
+        CD12=0
+        CD22=imageWCS.header['CDELT2']
+
+    CDMatrix=np.array([[CD11, CD12], [CD21, CD22]], dtype=np.float64)
+    scaleFactorMatrix=np.array([[1.0/trueScaleFactor[1], 0], [0, 1.0/trueScaleFactor[0]]])
+    scaleFactorMatrix=np.array([[1.0/trueScaleFactor[1], 0], [0, 1.0/trueScaleFactor[0]]])
+    scaledCDMatrix=np.dot(scaleFactorMatrix, CDMatrix)
+
+    scaledWCS=imageWCS.copy()
+    scaledWCS.header['NAXIS1']=scaledData.shape[1]
+    scaledWCS.header['NAXIS2']=scaledData.shape[0]
+    scaledWCS.header['CRPIX1']=oldCRPIX1*trueScaleFactor[1]
+    scaledWCS.header['CRPIX2']=oldCRPIX2*trueScaleFactor[0]
+    scaledWCS.header['CD1_1']=scaledCDMatrix[0][0]
+    scaledWCS.header['CD2_1']=scaledCDMatrix[1][0]
+    scaledWCS.header['CD1_2']=scaledCDMatrix[0][1]
+    scaledWCS.header['CD2_2']=scaledCDMatrix[1][1]
+    scaledWCS.updateFromHeader()
+    
+    return scaledShape, scaledWCS
+        
+#-------------------------------------------------------------------------------------------------------------
+def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
+    """Fast routine for stitching map tiles back together. Since this uses interpolation, you probably don't 
+    want to do analysis on the output - this is just for checking / making plots etc.. This routine sums 
+    images as it pastes them into the larger map grid. So, if the zeroed (overlap) borders are not handled,
+    correctly, this will be obvious in the output.
+
+    NOTE: This assumes RA in x direction, dec in y direction (and CAR projection).
+    
+    NOTE: This routine only writes output if there are multiple files that match filePattern (to save needless
+    duplicating maps if nemo was not run in tileDeck mode).
+    
+    Output map will be multiplied by fluxRescale (this is necessary if downsampling in resolution).
+
+    Takes 10 sec for AdvACT S16-sized downsampled by a factor of 4 in resolution.
+    
+    """
+    
+    # Set-up template blank map into which we'll dump tiles
+    outData=np.zeros(outShape)
+    outRACoords=np.array(outWCS.pix2wcs(np.arange(outData.shape[1]), [0]*outData.shape[1]))
+    outDecCoords=np.array(outWCS.pix2wcs([0]*np.arange(outData.shape[0]), np.arange(outData.shape[0])))
+    outRA=outRACoords[:, 0]
+    outDec=outDecCoords[:, 1]
+    RAToX=interpolate.interp1d(outRA, np.arange(outData.shape[1]), fill_value = 'extrapolate')
+    DecToY=interpolate.interp1d(outDec, np.arange(outData.shape[0]), fill_value = 'extrapolate')
+
+    # Splat tiles into output map
+    inFiles=glob.glob(filePattern)
+    if len(inFiles) < 1:
+        return None # We could raise an Exception here instead
+    count=0
+    for f in inFiles:
+        count=count+1
+        #print("... %d/%d ..." % (count, len(inFiles)))
+        with pyfits.open(f) as img:
+            d=img[0].data
+            inWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+        xIn=np.arange(d.shape[1])
+        yIn=np.arange(d.shape[0])
+        inRACoords=np.array(inWCS.pix2wcs(xIn, [0]*len(xIn)))
+        inDecCoords=np.array(inWCS.pix2wcs([0]*len(yIn), yIn))
+        inRA=inRACoords[:, 0]
+        inDec=inDecCoords[:, 1]
+        xOut=np.array(RAToX(inRA), dtype = int)
+        yOut=np.array(DecToY(inDec), dtype = int)
+        for i in range(len(yOut)):
+            outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
+    astImages.saveFITS(outFileName, outData*fluxRescale, outWCS)
+
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
     """Given a mapData array and a catalog of source positions, replace the values at the object positions 
@@ -345,8 +460,10 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
 
     for obj in catalog:
         if wcs.coordsAreInImage(obj['RADeg'], obj['decDeg']) == True:
-            rRange=nemoCython.makeDegreesDistanceMap(maskedMapData, wcs, obj['RADeg'], obj['decDeg'], 
-                                                    20.0/60.0)         
+            degreesMap=np.ones(mapData.shape, dtype = float)*1e6
+            rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                       obj['RADeg'], obj['decDeg'], 
+                                                                       20.0/60.0)         
             circleMask=np.less(rRange, radiusArcmin/60.0)
             grownCircleMask=np.less(rRange, (radiusArcmin*growMaskedArea)/60.0)
             maskMap[grownCircleMask]=1.0
@@ -436,7 +553,10 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
         elif mask == "whiteNoise":
             RADeg, decDeg=mapWCS.pix2wcs(pos[1], pos[0])
             if np.isnan(RADeg) == False and np.isnan(decDeg) == False:
-                rRange=nemoCython.makeDegreesDistanceMap(mapData, mapWCS, RADeg, decDeg, (radiusArcmin*4)/60.0)        
+                degreesMap=np.ones(mapData.shape, dtype = float)*1e6
+                rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, mapWCS, 
+                                                                           RADeg, decDeg, 
+                                                                           (radiusArcmin*4)/60.0)        
                 # Get pedestal level and white noise level from average between radiusArcmin and  2*radiusArcmin
                 annulusMask=np.logical_and(np.greater(rRange, radiusArcmin/60.0), \
                                               np.less(rRange, 2*radiusArcmin/60.0))
@@ -462,7 +582,7 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
     
 #-------------------------------------------------------------------------------------------------------------
-def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
+def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     """Applies a number of pre-processing steps to the map described by `mapDict`, prior to filtering.
     
     The first step is to load the map itself and the associated weights. Some other operations that may be 
@@ -484,12 +604,16 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     CMBSimSeed (:obj:`int`)
         If present, replace the map with a source-free simulated CMB realisation, generated using the given
         seed number. Used by :meth:`estimateContaminationFromSkySim`.
+    
+    applyBeamConvolution (:obj: `str`)
+        If True, the map is convolved with the beam given in the beamFileName key. This should only be 
+        needed when using preliminary y-maps made by tILe-C.
             
     Args:
         mapDict (:obj:`dict`): A dictionary with the same keys as given in the unfilteredMaps list in the 
             .yml configuration file (i.e., it must contain at least the keys 'mapFileName', 'units', and
             'weightsFileName', and may contain some of the optional keys listed above).
-        extName (:obj:`str`): Name of the map tile (extension name) to operate on.
+        tileName (:obj:`str`): Name of the map tile (extension name) to operate on.
         diagnosticsDir (:obj:`str`): Path to a directory where miscellaneous diagnostic data are written.
     
     Returns:
@@ -499,8 +623,8 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     """
             
     with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
-        wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-        data=img[extName].data
+        wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
+        data=img[tileName].data
     
     # For Enki maps... take only I (temperature) for now, add options for this later
     if data.ndim == 3:
@@ -517,7 +641,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Load weight map if given
     if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] is not None:
         with pyfits.open(mapDict['weightsFileName'], memmap = True) as wht:
-            weights=wht[extName].data
+            weights=wht[tileName].data
         # For Enki maps... take only I (temperature) for now, add options for this later
         if weights.ndim == 3:       # I, Q, U
             weights=weights[0, :]
@@ -533,19 +657,17 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     # Load survey and point source masks, if given
     if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
         with pyfits.open(mapDict['surveyMask'], memmap = True) as smImg:
-            surveyMask=smImg[extName].data
+            surveyMask=smImg[tileName].data
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
 
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] is not None:
         with pyfits.open(mapDict['pointSourceMask'], memmap = True) as psImg:
-            psMask=psImg[extName].data
+            psMask=psImg[tileName].data
     else:
         psMask=np.ones(data.shape)
-            
-    print("... opened map %s ..." % (mapDict['mapFileName']))
-    
+                
     # Optional map clipping
     if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] is not None:
         RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
@@ -562,6 +684,7 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
             raise Exception("Clipping using RADecSection returned empty array - check RADecSection in config .yml file is in map")
         #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
     
+    # For source-free simulations (contamination tests)
     if 'CMBSimSeed' in list(mapDict.keys()):
         randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beamFileName = mapDict['beamFileName'], 
                           seed = mapDict['CMBSimSeed'])
@@ -590,48 +713,74 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
         data[mask]=np.random.normal(randMap[mask], bestBoostFactor*whiteNoiseLevel[mask], 
                                     whiteNoiseLevel[mask].shape)
         # Sanity check
-        outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], extName) 
+        outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], tileName) 
         astImages.saveFITS(outFileName, data, wcs)
-                    
-    # Optional background subtraction - subtract smoothed version of map, this is like high pass filtering
-    # or a wavelet decomposition scale image
-    # If want to put this back in docs
-    # bckSubScaleArcmin (:obj:`float`)
-    # If present, high-pass filter the map at the given scale, using :meth:`subtractBackground`.
-    #if 'bckSubScaleArcmin' in list(mapDict.keys()) and mapDict['bckSubScaleArcmin'] is not None:
-        #data=subtractBackground(data, wcs, smoothScaleDeg = mapDict['bckSubScaleArcmin']/60.)
     
+    # For position recovery tests
+    if 'injectSources' in list(mapDict.keys()):
+        # NOTE: Need to add varying GNFWParams here
+        modelMap=makeModelImage(data.shape, wcs, mapDict['injectSources'], mapDict['beamFileName'], 
+                                obsFreqGHz = mapDict['obsFreqGHz'], GNFWParams = 'default')
+        modelMap[weights == 0]=0
+        data=data+modelMap
+
+    # Should only be needed for handling preliminary tILe-C maps
+    if 'applyBeamConvolution' in mapDict.keys() and mapDict['applyBeamConvolution'] == True:
+        data=convolveMapWithBeam(data, wcs, mapDict['beamFileName'], maxDistDegrees = 1.0)
+        if diagnosticsDir is not None:
+            astImages.saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
+        
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
-        with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
-            wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-            data=img[extName].data
-        # Make mask from catalog
+        # This is fast enough if using small tiles and running in parallel...
+        # If our masking/filling is effective enough, we may not need to mask so much here...     
         tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
+        xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
+        xyCoords=np.array(xyCoords, dtype = int)
+        mask=[]
+        for i in range(len(tab)):
+            x, y=xyCoords[i][0], xyCoords[i][1]
+            if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]-1:
+                mask.append(True)
+            else:
+                mask.append(False)
+        tab=tab[mask]
+        # Variable sized holes: based on inspecting sources by deltaT in f150 maps
+        tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
+        tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
+        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 50000)]=8.0
+        tab['rArcmin'][tab['deltaT_c'] >= 50000]=10.0
         psMask=np.ones(data.shape)
-        pixCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()), dtype = int)
-        xMask=np.logical_and(pixCoords[:, 0] >= 0, pixCoords[:, 0] < psMask.shape[1])
-        yMask=np.logical_and(pixCoords[:, 1] >= 0, pixCoords[:, 1] < psMask.shape[0])
-        pixCoords=pixCoords[np.logical_and(xMask, yMask)]
-        for p in pixCoords:
-            psMask[p[1], p[0]]=0
-        pixRad=(4.0/60.0)/wcs.getPixelSizeDeg() # Masks 4' radius BUT circular
-        psMask=1.0*(ndimage.distance_transform_edt(psMask) > pixRad)
-        # Fill holes in mask
-        annulus=photometry.makeAnnulus(pixRad, pixRad+5)
-        numValues=annulus.flatten().nonzero()[0].shape[0]
-        bckData=ndimage.rank_filter(data, int(round(0.5*numValues)), footprint = annulus)
-        #bckData=ndimage.median_filter(data, int(pixRad)) # size chosen for typical hole size... slow... but quite good
-        data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]
-            
+        for row in tab:
+            rArcminMap=np.ones(data.shape, dtype = float)*1e6
+            rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                           row['RADeg'], row['decDeg'], 
+                                                                           row['rArcmin']/60.)
+            rArcminMap=rArcminMap*60
+            psMask[rArcminMap < row['rArcmin']]=0
+        # Fill holes with smoothed map + white noise
+        pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+        bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
+        if mapDict['weightsType'] =='invVar':
+            rms=np.zeros(weights.shape)
+            rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
+        else:
+            raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
+        data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+        #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
+    
     # Add the map data to the dict
     mapDict['data']=data
     mapDict['weights']=weights
     mapDict['wcs']=wcs
     mapDict['surveyMask']=surveyMask
     mapDict['psMask']=psMask
-    mapDict['extName']=extName
+    mapDict['tileName']=tileName
     
     # Sanity check - no point continuing if masks are different shape to map (easier to tell user here)
     if mapDict['data'].shape != mapDict['psMask'].shape:
@@ -639,9 +788,9 @@ def preprocessMapDict(mapDict, extName = 'PRIMARY', diagnosticsDir = None):
     if mapDict['data'].shape != mapDict['surveyMask'].shape:
         raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
     
-    # Save trimmed weights
-    if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName)) == False:
-        astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (extName), weights, wcs)
+    ## Save trimmed weights - this isn't necessary
+    #if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName)) == False:
+        #astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName), weights, wcs)
         
     return mapDict
 
@@ -715,7 +864,9 @@ def convolveMapWithBeam(data, wcs, beamFileName, maxDistDegrees = 1.0):
     """
     
     RADeg, decDeg=wcs.getCentreWCSCoords()
-    degreesMap=nemoCython.makeDegreesDistanceMap(data, wcs, RADeg, decDeg, maxDistDegrees)
+    degreesMap=np.ones(data.shape, dtype = float)*1e6
+    degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 
+                                                                   maxDistDegrees)
 
     beamMap, sigDict=signals.makeBeamModelSignalMap(degreesMap, wcs, beamFileName)
     ys, xs=np.where(degreesMap < maxDistDegrees)
@@ -829,7 +980,7 @@ def estimateContaminationFromSkySim(config, imageDict):
         
         # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
         for filtDict in simConfig.parDict['mapFilters']:
-            if filtDict['label'] == simConfig.parDict['photometryOptions']['photFilter']:
+            if filtDict['label'] == simConfig.parDict['photFilter']:
                 break
         simConfig.parDict['mapFilters']=[filtDict] 
         
@@ -838,8 +989,8 @@ def estimateContaminationFromSkySim(config, imageDict):
             mapDict['CMBSimSeed']=CMBSimSeed
                     
         # NOTE: we need to zap ONLY specific maps for when we are running in parallel
-        for extName in simConfig.extNames:
-            mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (extName))
+        for tileName in simConfig.tileNames:
+            mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
             for m in mapFileNames:
                 os.remove(m)
                 
@@ -848,8 +999,8 @@ def estimateContaminationFromSkySim(config, imageDict):
                                                          copyFilters = True)
         
         # Write out the last sim map catalog for debugging
-        # NOTE: extName here makes no sense - this should be happening in the pipeline call above
-        #optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (extName)    
+        # NOTE: tileName here makes no sense - this should be happening in the pipeline call above
+        #optimalCatalogFileName=simRootOutDir+os.path.sep+"CMBSim_optimalCatalog#%s.csv" % (tileName)    
         #optimalCatalog=simImageDict['optimalCatalog']
         #if len(optimalCatalog) > 0:
             #catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
@@ -871,10 +1022,10 @@ def estimateContaminationFromSkySim(config, imageDict):
             avContaminTabDict[k][kk]=avContaminTabDict[k][kk]/float(len(resultsList))
     
     # For writing separate contamination .fits tables if running in parallel
-    # (if we're running in serial, then we'll get a giant file name with full extNames list... fix later)
-    extNamesLabel="#"+str(config.extNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
+    # (if we're running in serial, then we'll get a giant file name with full tileNames list... fix later)
+    tileNamesLabel="#"+str(config.tileNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
     for k in list(avContaminTabDict.keys()):
-        fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, extNamesLabel)
+        fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, tileNamesLabel)
         contaminTab=avContaminTabDict[k]
         contaminTab.write(fitsOutFileName, overwrite = True)
     
@@ -1029,27 +1180,219 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
     return contaminTabDict
 
 #------------------------------------------------------------------------------------------------------------
-def injectSources(data, wcs, catalog, GNFWParams = 'default'):
-    """Inject sources (clusters or point sources) with properties listed in the catalog into the map defined
-    by data, wcs.
+def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
+                   cosmoModel = None, applyPixelWindow = True):
+    """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
+    with properties as listed in the catalog. This can be used to either inject or subtract sources
+    from real maps.
     
     Args:
-        data (:obj:`numpy.ndarray`): The (2d) pixel data of a map in units of uK (delta T CMB).
+        shape (tuple): The dimensions of the output map (height, width) that will contain the model sources.
         wcs (:obj:`astWCS.WCS`): A WCS object that defines the coordinate system of the map. 
         catalog (:obj:`astropy.table.Table`): An astropy Table object containing the catalog. This must 
-            include columns named RADeg, decDeg that give object coordinates. For point sources, the 
-            amplitude in uK must be given in a column named deltaT_c. For clusters, M500 (in units of
-            10^14 MSun) and z must be given (GNFW profile assumed).
+            include columns named 'RADeg', 'decDeg' that give object coordinates. For point sources, the 
+            amplitude in uK must be given in a column named 'deltaT_c'. For clusters, either 'M500' (in 
+            units of 10^14 MSun), 'z', and 'fixed_y_c' must be given (as in a mock catalog), OR the 
+            catalog must contain a 'template' column, with templates named like, e.g., Arnaud_M1e14_z0p2
+            (for a z = 0.2, M500 = 1e14 MSun cluster; see the example .yml config files included with nemo).
+        beamFileName: Path to a text file that describes the beam.
+        obsFreqGHz (float, optional): Used only by cluster catalogs - if given, the returned map will be 
+            converted into delta T uK, assuming the given frequency. Otherwise, a y0 map is returned.
         GNFWParams (str or dict, optional): Used only by cluster catalogs. If 'default', the Arnaud et al. 
             (2010) Universal Pressure Profile is assumed. Otherwise, a dictionary that specifies the profile
             parameters can be given here (see gnfw.py).
+        applyPixelWindow (bool, optional): If True, apply the pixel window function to the map.
             
     Returns:
         Map containing injected sources.
     
     """
     
-    # Inspect the catalog - are we dealing with point sources or clusters?
-    #print("inject sources")
-    #IPython.embed()
-    #sys.exit()
+    print(">>> Making model image ...")
+    modelMap=np.zeros(shape, dtype = float)
+        
+    if cosmoModel is None:
+        cosmoModel=signals.FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = signals.TCMB)
+    
+    # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
+    numFWHM=5.0
+    beam=signals.BeamProfile(beamFileName = beamFileName)
+    maxSizeDeg=beam.rDeg[np.argmin(abs(beam.profile1d-0.5))]*2*numFWHM 
+    
+    # Map of distance(s) from objects - this will get updated in place (fast)
+    degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
+
+    if 'fixed_y_c' in catalog.keys():
+        # Clusters - insert one at a time (different sizes etc.) - currently taking ~1.6 sec per object
+        count=0
+        for row in catalog:
+            count=count+1
+            print("... %d/%d ..." % (count, len(catalog)))
+            # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
+            if 'true_M500' in catalog.keys():
+                M500=row['true_M500']*1e14
+                z=row['redshift']
+                y0ToInsert=row['fixed_y_c']*1e-4
+            else:
+                if 'template' not in catalog.keys():
+                    raise Exception("No M500, z, or template column found in catalog.")
+                bits=row['template'].split("#")[0].split("_")
+                M500=float(bits[1][1:].replace("p", "."))
+                z=float(bits[2][1:].replace("p", "."))
+                y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+            maxSizeDeg=5*(theta500Arcmin/60)
+            degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                           row['RADeg'], row['decDeg'], 
+                                                                           maxSizeDeg)
+            modelMap=modelMap+signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
+                                                               GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True)
+    else:
+        # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
+        fluxScaleMap=np.zeros(modelMap.shape)
+        for row in catalog:
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                        row['RADeg'], row['decDeg'], 
+                                                                        maxSizeDeg)
+            fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
+        modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
+        modelMap=modelMap*fluxScaleMap
+
+    # Optional: convert map to deltaT uK
+    # This should only be used if working with clusters - source amplitudes are fed in as delta T uK already
+    if obsFreqGHz is not None:
+        modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz)
+    
+    # Optional: apply pixel window function - generally this should be True
+    # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
+    if applyPixelWindow == True:
+        modelMap=enmap.apply_window(modelMap, pow = 1.0)
+
+    return modelMap
+        
+#------------------------------------------------------------------------------------------------------------
+def positionRecoveryTest(config, imageDict):
+    """Insert sources with known positions and properties into the map, apply the filter, and record their
+    offset with respect to the true location as a function of S/N (for the fixed reference scale only).
+    
+    Writes output to the diagnostics/ directory.
+    
+    Args:
+        config (:obj:`startUp.NemoConfig`): Nemo configuration object.
+        imageDict (:obj:`dict`): A dictionary containing the output filtered maps and catalogs from running 
+        on the real data (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be 
+        modified.
+    
+    Returns:
+        An astropy Table containing percentiles of offset distribution in fixed_SNR bins.
+    
+    """
+    
+    simRootOutDir=config.diagnosticsDir+os.path.sep+"posRec_rank%d" % (config.rank)
+    SNRKeys=['fixed_SNR']
+
+    print(">>> Position recovery test [rank = %d] ..." % (config.rank))
+    t0=time.time()
+
+    # We don't copy this, because it's complicated due to containing MPI-related things (comm)
+    # So... we modify the config parameters in-place, and restore them before exiting this method
+    simConfig=config
+    
+    # NOTE: This block below should be handled when parsing the config file - fix/remove
+    # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+    if 'GNFWParams' not in list(simConfig.parDict.keys()):
+        simConfig.parDict['GNFWParams']='default'
+    for filtDict in simConfig.parDict['mapFilters']:
+        filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
+    
+    # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
+    # NOTE: As it stands, point-source only runs may not define photFilter - we need to handle that
+    # That should be obvious, as mapFilters will only have one entry
+    for filtDict in simConfig.parDict['mapFilters']:
+        if filtDict['label'] == simConfig.parDict['photFilter']:
+            break
+    simConfig.parDict['mapFilters']=[filtDict] 
+        
+    # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
+    # So, we only generate the catalog here
+    print("... generating mock catalog ...")
+    if filtDict['class'].find("ArnaudModel") != -1:
+        mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
+    elif filtDict['class'].find("BeamModel") != -1:
+        raise Exception("Haven't implemented generating mock source catalogs here yet")
+    else:
+        raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
+    for mapDict in simConfig.unfilteredMapsDictList:
+        mapDict['injectSources']=mockCatalog
+                
+    # NOTE: we need to zap ONLY specific maps for when we are running in parallel
+    for tileName in simConfig.tileNames:
+        mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
+        for m in mapFileNames:
+            os.remove(m)
+
+    simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
+                                                     rootOutDir = simRootOutDir,
+                                                     copyFilters = True)
+    
+    # Cross match the output with the input catalog - how close were we?
+    recCatalog=simImageDict['optimalCatalog']
+    x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
+    
+    # It makes most sense to just record %-ile matching radii in bins
+    percentilesToCalc=[1, 5, 10, 16, 50, 84, 90, 95, 99]
+    SNRs=x_recCatalog['fixed_SNR']    
+    #binEdges=np.linspace(4.0, 20.0, (5*16)+1)  # 0.2 binning
+    binEdges=np.linspace(4.0, 10.0, 13) 
+    binCentres=(binEdges[:-1]+binEdges[1:])/2.
+    percentileTable=atpy.Table()
+    percentileTable.add_column(atpy.Column(binCentres, 'fixed_SNR'))
+    for p in percentilesToCalc:
+        vals=np.zeros(len(binCentres))
+        for i in range(len(binEdges)-1):
+            rArcmin=(rDeg*60)[np.logical_and(np.greater_equal(SNRs, binEdges[i]), np.less(SNRs, binEdges[i+1]))]
+            if len(rArcmin) > 0:
+                vals[i]=np.percentile(rArcmin, p)
+        percentileTable.add_column(atpy.Column(vals, 'rArcmin_%dpercent' % (p)))
+    
+    # Write out for debugging - we might not want to do this when tested...
+    fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
+    percentileTable.write(fitsOutFileName, overwrite = True)
+
+    plotFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.pdf" % (config.rank)   
+    plotPositionRecovery(percentileTable, plotFileName)
+    
+    return percentileTable
+
+#------------------------------------------------------------------------------------------------------------
+def plotPositionRecovery(percentileTable, plotFileName, percentilesToPlot = [50]):
+    """Plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using the contents
+    of percentileTable (see positionRecoveryTest).
+    
+    Args:
+        percentileTable (:obj:`astropy.table.Table`): Table of recovery percentiles as returned by 
+            maps.positionRecoveryTest.
+        plotFileName (str): Path where the plot file will be written (if the extension is .pdf, both .pdf 
+            and .png versions of the plot will be written).
+        percentilesToPlot (list, optional): List of percentiles to plot (must be integers and present in the
+            column names for percentileTable).
+    
+    """
+    plotSettings.update_rcParams()
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.10, 0.11, 0.87, 0.87]) 
+    for p in percentilesToPlot:
+        validMask=np.greater(percentileTable['rArcmin_%dpercent' % (p)], 0)
+        plt.plot(percentileTable['fixed_SNR'][validMask], percentileTable['rArcmin_%dpercent' % (p)][validMask], 
+                 '-', label = p)
+    plt.xlim(percentileTable['fixed_SNR'].min(), percentileTable['fixed_SNR'].max())
+    plt.ylim(0,)
+    plt.legend()
+    plt.xlabel("SNR$_{2.4}$")
+    plt.ylabel("Recovered Position Offset ($^\prime$)")
+    plt.savefig(plotFileName)
+    plt.savefig(plotFileName.replace(".pdf", ".png"))
+    plt.close()
+    

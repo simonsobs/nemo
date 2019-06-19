@@ -15,6 +15,8 @@ import nemo
 import argparse
 import astropy
 import astropy.table as atpy
+import astropy.io.fits as pyfits
+from astLib import astWCS
 import numpy as np
 import pylab
 import pickle
@@ -42,9 +44,15 @@ if __name__ == '__main__':
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
     # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)
-    if 'photometryOptions' in config.parDict.keys() and 'photFilter' in config.parDict['photometryOptions'].keys():
+    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
         tckQFitDict=signals.fitQ(config)
-    
+        
+    # Optional position recovery test (how well do we recovery positions as fn. of S/N?)
+    if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
+        posRecTable=maps.positionRecoveryTest(config, imageDict)
+    else:
+        posRecTable=None
+            
     # Estimate of contamination from running cluster finding over inverted map
     if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
         conTabDict=maps.estimateContaminationFromInvertedMaps(config, imageDict)
@@ -64,8 +72,10 @@ if __name__ == '__main__':
         conTabDict[k]=skySimConTabDict[k]
         
     # MPI: gather together and merge all of the catalogs from each process, and contamination test results
+    # This needs tidying up...
     if config.MPIEnabled == True:
         optimalCatalogList=config.comm.gather(imageDict['optimalCatalog'], root = 0)
+        posRecTableList=config.comm.gather(posRecTable, root = 0)
         conKeysList=list(conTabDict.keys())
         conTabDictList=config.comm.gather(conTabDict, root = 0)
         if config.rank != 0:
@@ -79,6 +89,17 @@ if __name__ == '__main__':
                 if type(collectedTab) == astropy.table.table.Table:
                     toStack.append(collectedTab)
             optimalCatalog=atpy.vstack(toStack)
+            print("... gathering position recovery tests ...")
+            toAverage=[]
+            for posRecTable in posRecTableList:
+                if type(posRecTable) == astropy.table.table.Table:
+                    toAverage.append(posRecTable)
+            if len(toAverage) > 0:
+                posRecTable=atpy.vstack(toAverage)
+                for key in posRecTable.keys():
+                    posRecTable[key]=posRecTable[key]/len(toAverage)
+            else:
+                posRecTable=None
             print("... gathering and averaging contamination estimates ...")
             avConTabDict={}
             for k in conKeysList:
@@ -112,12 +133,17 @@ if __name__ == '__main__':
     else:
         optimalCatalog=imageDict['optimalCatalog']
     
+    # Plot tile-averaged position recovery test
+    if posRecTable is not None:
+        maps.plotPositionRecovery(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average.pdf")
+        
     # Plot contamination together
     if conTabDict != {}:
         maps.plotContamination(conTabDict, config.diagnosticsDir)           
     
     # Strip out duplicates (this is necessary when run in tileDeck mode under MPI)
-    optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+    if len(optimalCatalog) > 0:
+        optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
     # We can do this twice as a sanity check... not necessary if we add a proper test elsewhere
     #optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
     #assert(numDuplicatesFound == 0)
@@ -130,21 +156,24 @@ if __name__ == '__main__':
     catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                          constraintsList = ["SNR > 0.0"], \
                          addInfo = addInfo, color = "cyan") 
-    
-    # This can at least be read as mosaic WCS by DS9 - add proper map stitching later
-    # Still need to zap the blank areas / shrink the images here
-    # But in any case, good for flicking through the data cube quickly as a sanity check
-    #import glob
-    #import astropy.io.fits as pyfits                                                                                                                                                    
-    #fileList=glob.glob(config.rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+config.parDict['photometryOptions']['photFilter']+"*SNMap.fits")
-    #fileList.sort()
-    #img=pyfits.HDUList()
-    #for f in fileList:
-        #with pyfits.open(f) as fimg:
-            #hdu=pyfits.ImageHDU(data = fimg[0].data, header = fimg[0].header, name = fimg[0].name)
-            #img.append(hdu) 
-    #img.writeto(config.rootOutDir+os.path.sep+"filteredMaps"+os.path.sep+config.parDict['photometryOptions']['photFilter']+"_all_SNMap.fits",
-                #overwrite = True)
-    #img.close()
+        
+    # Stitch together map tiles - these are 'quicklook' images (downsampled by factor 4 in resolution)
+    # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
+    if 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
+        # RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure) 
+        maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits.gz", 
+                         config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits.gz", 
+                         config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
+        # S/N maps at reference filter scale
+        if config.parDict['photFilter'] is not None:
+            maps.stitchTiles(config.filteredMapsDir+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
+                             config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
+                             config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
+
+    # Cache file containing weights for relatvistic corrections
+    # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do
+    # Needs full tileNames list though to make sense...
+    config.restoreConfig()
+    signals.getFRelWeights(config)
     
     

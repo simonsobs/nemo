@@ -45,25 +45,25 @@ def addForcedPhotometry(forcedTab, config):
     print(">>> Doing forced photometry ...")
     
     # Filter maps - but should already have been done, this is just for easy set up
-    photFilterLabel=config.parDict['photometryOptions']['photFilter']
+    photFilterLabel=config.parDict['photFilter']
     photFilterList=[]
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             photFilterList.append(filterDict)
-    imageDict=mapFilters.filterMaps(config.parDict['unfilteredMaps'], photFilterList, extNames = config.extNames, rootOutDir = config.rootOutDir)
+    imageDict=mapFilters.filterMaps(config.parDict['unfilteredMaps'], photFilterList, tileNames = config.tileNames, rootOutDir = config.rootOutDir)
     
     # Re-jig the catalog into the appropriate format before feeding through photometry routine
     catalog=[]
-    for extName in config.extNames:
+    for tileName in config.tileNames:
         # We need this to check if objects in the catalog are actually in the footprint
-        areaMaskImg=pyfits.open(config.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (extName))
+        areaMaskImg=pyfits.open(config.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
         areaMask=areaMaskImg[0].data
         wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
         for row in forcedTab:
             objDict={}
             for key in list(forcedTab.keys()):
                 objDict[key]=row[key]
-            objDict['template']=photFilterLabel+"#"+extName
+            objDict['template']=photFilterLabel+"#"+tileName
             objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
             objDict['redshift']=row['redshift']
             if 'redshiftErr' in forcedTab.keys():
@@ -76,13 +76,13 @@ def addForcedPhotometry(forcedTab, config):
                     objDict['x']=x
                     objDict['y']=y
                     catalog.append(objDict)
-    imageDict[photFilterLabel+"#"+extName]['catalog']=catalog
-    photometry.measureFluxes(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir, unfilteredMapsDict = config.parDict['unfilteredMaps'])
+    imageDict[photFilterLabel+"#"+tileName]['catalog']=catalog
+    photometry.measureFluxes(imageDict, config.parDict['photFilter'], config.diagnosticsDir, unfilteredMapsDict = config.parDict['unfilteredMaps'])
     catalogs.mergeCatalogs(imageDict)
     
     # No cuts here, because if we're using this mode, the objects almost certainly weren't detected...
     catalogs.makeOptimalCatalog(imageDict, [])  
-    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photometryOptions'], config.diagnosticsDir)
+    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photFilter'], config.diagnosticsDir)
 
     # Make into an atpy Table
     # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
@@ -91,7 +91,7 @@ def addForcedPhotometry(forcedTab, config):
         if key.find("fixed_y_c_weight") != -1:
             wantedKeys.append(key)
     tab=atpy.Table()
-    for extName in config.extNames:
+    for tileName in config.tileNames:
         catalog=imageDict['optimalCatalog']
         for key in wantedKeys:
             arr=[]
@@ -129,10 +129,12 @@ if __name__ == '__main__':
     
     parDictFileName=args.configFileName
     catFileName=args.catFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False)
         
     massOptions=config.parDict['massOptions']
-    
+    if 'relativisticCorrection' not in massOptions.keys():
+        massOptions['relativisticCorrection']=True
+        
     forcedPhotometry=False
     
     # Load the nemo catalog and match against the z catalog
@@ -180,6 +182,9 @@ if __name__ == '__main__':
     # NOTE: this should be calculated for the fixed, fiducial cosmology used for object detection
     # NOTE: Q calculation is the only bit of this code that uses MPI - rank != 0 MPI jobs killed after fitQ
     tckQFitDict=signals.fitQ(config)
+    
+    # Dictionary by tile with frequency weights needed by relativistic corrections
+    fRelWeightsDict=signals.getFRelWeights(config)
     
     # Forced photometry (if enabled) - modifying table in place
     # NOTE: Move this up if/when we make it run under MPI
@@ -239,27 +244,19 @@ if __name__ == '__main__':
     tab.add_column(atpy.Column(np.zeros(len(tab)), "M200mUncorr_errMinus"))
     #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q"))
     #tab.add_column(atpy.Column(np.zeros(len(tab)), "Q_err"))
-    
-    # For fRel calc (multi-freq)
-    fRelKeysDict={}
-    for key in tab.keys():
-        if key.find("fixed_y_c_weight") != -1:
-            obsFreqGHz=float(key.split("_")[-1].split("GHz")[0].replace("p", "."))  
-            fRelKeysDict[key]=obsFreqGHz
-    if fRelKeysDict == {}:
-        print("... WARNING: no fixed_y_c_weight keys found in catalog - adding default ...")
-        tab.add_column(atpy.Column(np.ones(len(tab)), 'fixed_y_c_weight_148p0GHz'))
-        fRelKeysDict={'fixed_y_c_weight_148p0GHz': 148.0}
-    
+
+    if massOptions['relativisticCorrection'] == False:
+        relStr="no relativistic correction applied"
+    else:
+        relStr="relativistic correction applied"
+    print(">>> Estimating masses (%s) ..." % (relStr))
+        
     count=0
     for row in tab:
         count=count+1
-        extName=row['template'].split("#")[-1]
-        fRelWeightsDict={}
-        for key in fRelKeysDict:
-            fRelWeightsDict[fRelKeysDict[key]]=row[key]
+        tileName=row['template'].split("#")[-1]
             
-        print("... %d/%d %s (%.3f +/- %.3f) [fRelWeightsDict = %s] ..." % (count, len(tab), row['name'], row['redshift'], row['redshiftErr'], fRelWeightsDict))
+        print("... %d/%d %s (%.3f +/- %.3f) ..." % (count, len(tab), row['name'], row['redshift'], row['redshiftErr']))
 
         # Corrected for mass function steepness
         massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
@@ -268,9 +265,10 @@ if __name__ == '__main__':
                                           B0 = massOptions['B0'], 
                                           Mpivot = massOptions['Mpivot'], 
                                           sigma_int = massOptions['sigma_int'],
-                                          tckQFit = tckQFitDict[extName], mockSurvey = mockSurvey, 
+                                          tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                           applyMFDebiasCorrection = True,
-                                          fRelWeightsDict = fRelWeightsDict)
+                                          applyRelativisticCorrection = massOptions['relativisticCorrection'],
+                                          fRelWeightsDict = fRelWeightsDict[tileName])
         row['M500']=massDict['M500']
         row['M500_errPlus']=massDict['M500_errPlus']
         row['M500_errMinus']=massDict['M500_errMinus']
@@ -281,7 +279,7 @@ if __name__ == '__main__':
                                                 B0 = massOptions['B0'], 
                                                 Mpivot = massOptions['Mpivot'], 
                                                 sigma_int = massOptions['sigma_int'],
-                                                tckQFit = tckQFitDict[extName], mockSurvey = mockSurvey, 
+                                                tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                                 applyMFDebiasCorrection = False,
                                                 fRelWeightsDict = fRelWeightsDict)
         row['M500Uncorr']=unCorrMassDict['M500']
@@ -304,9 +302,7 @@ if __name__ == '__main__':
     # Tidy up and save
     # We delete some columns here to save duplicating in sourcery database
     #tab.remove_columns(['fixed_SNR', 'fixed_y_c', 'fixed_err_y_c'])
-    if os.path.exists(outFileName) == True:
-        os.remove(outFileName)
-    tab.write(outFileName)
+    tab.write(outFileName, overwrite = True)
     
     # Detect if testing a mock catalog, and write some stats on recovered masses
     if 'true_M500' in tab.keys():

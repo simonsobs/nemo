@@ -29,7 +29,7 @@ catalogCuts: ['SNR > 4.0']
 
 # Photometry options
 # use photFilter to choose which filter to include in the catalog as fixed filter scale measurement (fixed_delta_T_c, fixed_y_c etc.) 
-photometryOptions: {photFilter: 'Arnaud_M2e14_z0p4'}
+photFilter: 'Arnaud_M2e14_z0p4'
 
 # Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
 # The example below is for the Planck Pressure Profile (PPP)

@@ -102,7 +102,7 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
     
     """
     
-    # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names
+    # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names    
     templates=[]
     for key in imageDict['mapKeys']:
         if key != "mergedCatalog" and key != "optimalCatalog":
@@ -115,18 +115,15 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
     if len(allCatalogs) > 0:
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
-        mergedCatalog['SNR']=-99.
-        mergeRow=0
-        usedIndices=[]
         for row in allCatalogs:
             rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'], allCatalogs['decDeg']) 
             xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
-            xMatches=allCatalogs[xIndices]
-            xMatchIndex=np.argmax(xMatches['SNR'])
-            if xIndices[xMatchIndex] not in usedIndices:
-                mergedCatalog[mergeRow]=xMatches[xMatchIndex]
-                mergeRow=mergeRow+1
-                usedIndices=usedIndices+xIndices.tolist()
+            if len(xIndices) > 1:
+                xMatches=allCatalogs[xIndices]
+                xMatchIndex=np.argmax(xMatches['SNR'])
+                for index in xIndices:
+                    if index != xIndices[xMatchIndex]:
+                        mergedCatalog['SNR'][index]=-99
         mergedCatalog=mergedCatalog[mergedCatalog['SNR'] > 0]
         mergedCatalog.sort(['RADeg', 'decDeg'])
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
@@ -455,3 +452,96 @@ def removeDuplicates(tab):
     
     return keepTab, len(dupTab), dupTab['name']
     
+#------------------------------------------------------------------------------------------------------------
+def generateRandomSourcesCatalog(mapData, wcs, numSources):
+    """Generate a random source catalog (with amplitudes in deltaT uK), with random positions within the 
+    footprint of the given map (areas where pixel values == 0 are ignored). The distribution of source 
+    amplitudes is roughly similar to that seen in the 148 GHz ACT maps, but this routine should only be used
+    for tests - it is not a serious attempt at simulating the real extragalactic source population.
+    
+    Args:
+        mapData (:obj:`numpy.ndarray`): Map pixel-data, only used for determining valid area in which sources
+            may be randomly placed (pixel values == 0 are ignored).
+        wcs (:obj:`astWCS.WCS`): WCS corresponding to the map.
+        numSources (int): Number of random sources to put into the output catalog.
+    
+    Returns:
+        An astropy Table object containing the catalog.
+        
+    """
+    
+    deltaT=np.random.lognormal(np.log(600), 1.1, numSources)
+    ys, xs=np.where(mapData != 0)
+    ys=ys+np.random.uniform(0, 1, len(ys))
+    xs=xs+np.random.uniform(0, 1, len(xs))
+    indices=np.random.randint(0, len(ys), numSources)
+    coords=wcs.pix2wcs(xs[indices], ys[indices])
+    coords=np.array(coords)
+    tab=atpy.Table()
+    tab.add_column(atpy.Column(np.arange(0, numSources)+1, "name"))
+    tab.add_column(atpy.Column(coords[:, 0], "RADeg"))
+    tab.add_column(atpy.Column(coords[:, 1], "decDeg"))
+    tab.add_column(atpy.Column(deltaT, "deltaT_c"))
+    
+    return tab
+
+#------------------------------------------------------------------------------------------------------------
+def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
+    """Cross matches matchCatalog onto refCatalog for objects found within some angular radius 
+    (specified in arcmin).
+    
+    Args:
+        refCatalog (:obj:`astropy.table.Table`): The reference catalog.
+        matchCatalog (:obj:`astropy.table.Table`): The catalog to match onto the reference catalog.
+        radiusArcmin (float, optional): Cross-match radius in arcmin.
+    
+    Returns:
+        Cross-matched reference catalog, matchCatalog, and array of angular separation in degrees, for 
+        objects in common within the matching radius. The cross matched columns are sorted such that rows in
+        each correspond to the matched objects.
+    
+    """
+
+    inTab=refCatalog
+    outTab=matchCatalog
+    RAKey1, decKey1=getTableRADecKeys(inTab)
+    RAKey2, decKey2=getTableRADecKeys(outTab)
+    cat1=SkyCoord(ra = inTab[RAKey1].data, dec = inTab[decKey1].data, unit = 'deg')
+    xMatchRadiusDeg=radiusArcmin/60.
+    cat2=SkyCoord(ra = outTab[RAKey2].data, dec = outTab[decKey2].data, unit = 'deg')
+    xIndices, rDeg, sep3d = match_coordinates_sky(cat1, cat2, nthneighbor = 1)
+    mask=np.less(rDeg.value, xMatchRadiusDeg)  
+    matched_outTab=outTab[xIndices]
+    inTab=inTab[mask]
+    matched_outTab=matched_outTab[mask]
+    rDeg=rDeg.value[mask]
+    
+    return inTab, matched_outTab, rDeg
+
+#------------------------------------------------------------------------------------------------------------
+def getTableRADecKeys(tab):
+    """Returns the column names in the table in which RA, dec coords are stored, after trying a couple of 
+    variations.
+    
+    Args:
+        tab (:obj:`astropy.table.Table`): The table to search.
+        
+    Returns:
+        Name of RA column, name of dec. column
+    
+    """
+    RAKeysToTry=['ra', 'RADeg']
+    decKeysToTry=['dec', 'decDeg']
+    RAKey, decKey=None, None
+    for key in RAKeysToTry:
+        if key in tab.keys():
+            RAKey=key
+            break
+    for key in decKeysToTry:
+        if key in tab.keys():
+            decKey=key
+            break
+    if RAKey is None or decKey is None:
+        raise Exception("Couldn't identify RA, dec columns in the supplied table.")
+    
+    return RAKey, decKey

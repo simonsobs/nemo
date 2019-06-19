@@ -9,6 +9,8 @@ import os
 import sys
 import yaml
 import copy
+import astropy.io.fits as pyfits
+from astLib import astWCS
 import IPython
 from . import maps
 
@@ -68,25 +70,27 @@ def parseConfigFile(parDictFileName):
             parDict['mapFilters']=mapFiltersList
         # We always need RMSMap and freqWeightsMap to do any photometry
         # So we may as well force inclusion if they have not been explicitly given
-        if 'photometryOptions' in parDict.keys():
-            photometryOptions=parDict['photometryOptions']
-            if 'photFilter' in list(photometryOptions.keys()):
-                photFilter=photometryOptions['photFilter']
-                for filtDict in parDict['mapFilters']:
-                    if filtDict['label'] == photFilter:
-                        filtDict['params']['saveRMSMap']=True
-                        filtDict['params']['saveFreqWeightMap']=True
-                        filtDict['params']['saveFilter']=True
-        # extNames must be case insensitive in .yml file 
+        if 'photFilter' not in parDict.keys():
+            # This is to allow source finding folks to skip this option in .yml
+            # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
+            parDict['photFilter']=None
+        else:
+            photFilter=parDict['photFilter']
+            for filtDict in parDict['mapFilters']:
+                if filtDict['label'] == photFilter:
+                    filtDict['params']['saveRMSMap']=True
+                    filtDict['params']['saveFreqWeightMap']=True
+                    filtDict['params']['saveFilter']=True
+        # tileNames must be case insensitive in .yml file 
         # we force upper case here (because FITS will anyway)
         if 'tileDefinitions' in parDict.keys():
             for tileDef in parDict['tileDefinitions']:
-                tileDef['extName']=tileDef['extName'].upper()
-        if 'extNameList' in parDict.keys():
+                tileDef['tileName']=tileDef['tileName'].upper()
+        if 'tileNameList' in parDict.keys():
             newList=[]
-            for entry in parDict['extNameList']:
+            for entry in parDict['tileNameList']:
                 newList.append(entry.upper())
-            parDict['extNameList']=newList
+            parDict['tileNameList']=newList
         # Don't measure object shapes by default
         if 'measureShapes' not in parDict.keys():
             parDict['measureShapes']=False
@@ -96,10 +100,6 @@ def parseConfigFile(parDictFileName):
         # By default, undo the pixel window function
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True
-        # This is to allow source finding folks to skip this option in .yml
-        # (and avoid having 'fixed_' keywords in output (they have only one filter scale)
-        if 'photometryOptions' not in parDict.keys():
-            parDict['photometryOptions']={}
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
@@ -107,9 +107,9 @@ def parseConfigFile(parDictFileName):
         if 'tileDefinitions' in parDict.keys():
             checkList=[]
             for entry in parDict['tileDefinitions']:
-                if entry['extName'] in checkList:
-                    raise Exception("Duplicate extName '%s' in tileDefinitions - fix in config file" % (entry['extName']))
-                checkList.append(entry['extName'])
+                if entry['tileName'] in checkList:
+                    raise Exception("Duplicate tileName '%s' in tileDefinitions - fix in config file" % (entry['tileName']))
+                checkList.append(entry['tileName'])
     
     return parDict
 
@@ -124,20 +124,23 @@ class NemoConfig(object):
         diagnosticsDir (:obj:`str`): Path to the directory where miscellaneous diagnostic data (e.g., filter 
             kernel plots) will be written.
         unfilteredMapsDictList (:obj:`list`): List of dictionaries corresponding to maps needed.
-        extNames (:obj:`list`): List of map tiles (extension names) to operate on.
-        MPIEnabled (:obj:`bool`): If True, use MPI to divide `extNames` list among processes.
+        tileNames (:obj:`list`): List of map tiles (extension names) to operate on.
+        MPIEnabled (:obj:`bool`): If True, use MPI to divide `tileNames` list among processes.
         comm (:obj:`MPI.COMM_WORLD`): Used by MPI.
         rank (:obj:`int`): Used by MPI.
         size (:obj:`int`): Used by MPI.
     
     """
     
-    def __init__(self, configFileName, makeOutputDirs = True, MPIEnabled = False):
+    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, MPIEnabled = False, 
+                 verbose = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
             configFileName (:obj:`str`): Path to a nemo .yml configuration file.
             makeOutputDirs (:obj:`bool`): If True, create output directories (where maps, catalogs are stored).
+            setUpMaps (:obj: `bool`): If True, set-up data structures for handling maps (inc. breaking into 
+                tiles if wanted).
             MPIEnabled (:obj:`bool`): If True, use MPI to divide the map into tiles, distributed among processes.
                 This requires `tileDefinitions` and `tileNoiseRegions` to be given in the .yml config file.
     
@@ -147,6 +150,24 @@ class NemoConfig(object):
 
         self.parDict=parseConfigFile(configFileName)
         self.configFileName=configFileName
+        
+        # We want the original map WCS and shape (for using stitchMaps later)
+        try:
+            with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
+                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+                self.origShape=img[0].data.shape
+        except:
+            # We don't always need or want this... should we warn by default if not found?
+            self.origWCS=None
+            self.origShape=None
+            
+        # Downsampled WCS and shape for 'quicklook' stitched images
+        if 'makeQuickLookMaps' in self.parDict.keys() and self.parDict['makeQuickLookMaps'] == True:
+            self.quicklookScale=0.25
+            if self.origWCS is not None:
+                self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+            else:
+                if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail ...")
         
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
@@ -189,33 +210,43 @@ class NemoConfig(object):
             filtDict['params']['GNFWParams']=self.parDict['GNFWParams']
 
         # tileDeck file handling - either make one, or handle loading of one
-        # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
-        if self.rank == 0:
-            self.unfilteredMapsDictList, self.extNames=maps.makeTileDeck(self.parDict)
-            madeTileDeck=True
+        if setUpMaps == True:
+            # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+            if self.rank == 0:
+                self.unfilteredMapsDictList, self.tileNames=maps.makeTileDeck(self.parDict)
+                madeTileDeck=True
+            else:
+                madeTileDeck=None
+            if self.MPIEnabled == True:
+                madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
+                if self.rank != 0 and madeTileDeck == True:
+                    self.unfilteredMapsDictList, self.tileNames=maps.makeTileDeck(self.parDict)
+
+            # For when we want to test on only a subset of tiles
+            if 'tileNameList' in list(self.parDict.keys()):
+                newList=[]
+                for name in self.tileNames:
+                    if name in self.parDict['tileNameList']:
+                        newList.append(name)
+                if newList == []:
+                    raise Exception("tileNameList given in nemo config file but no extensions in images match")
+                self.tileNames=newList
         else:
-            madeTileDeck=None
-        if self.MPIEnabled == True:
-            madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
-            if self.rank != 0 and madeTileDeck == True:
-                self.unfilteredMapsDictList, self.extNames=maps.makeTileDeck(self.parDict)
+            # If we don't have maps, we would still want the list of tile names
+            from . import signals
+            QFitFileName=self.selFnDir+os.path.sep+"QFit.fits"
+            if os.path.exists(QFitFileName) == True:
+                tckQFitDict=signals.loadQ(QFitFileName)
+                self.tileNames=list(tckQFitDict.keys())
+            else:
+                raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))
 
-        # For when we want to test on only a subset of tiles
-        if 'extNameList' in list(self.parDict.keys()):
-            newList=[]
-            for name in self.extNames:
-                if name in self.parDict['extNameList']:
-                    newList.append(name)
-            if newList == []:
-                raise Exception("extNameList given in nemo config file but no extensions in images match")
-            self.extNames=newList
-
-        # MPI: just divide up tiles pointed at by extNames among processes
+        # MPI: just divide up tiles pointed at by tileNames among processes
         if self.MPIEnabled == True:
             # New - bit clunky but distributes more evenly
             rankExtNames={}
             rankCounter=0
-            for e in self.extNames:
+            for e in self.tileNames:
                 if rankCounter not in rankExtNames:
                     rankExtNames[rankCounter]=[]
                 rankExtNames[rankCounter].append(e)
@@ -223,12 +254,12 @@ class NemoConfig(object):
                 if rankCounter > self.size-1:
                     rankCounter=0
             if self.rank in rankExtNames.keys():
-                self.extNames=rankExtNames[self.rank]
+                self.tileNames=rankExtNames[self.rank]
             else:
-                self.extNames=[]
+                self.tileNames=[]
         
         # For debugging...
-        print(("... rank = %d [PID = %d]: extNames = %s" % (self.rank, os.getpid(), str(self.extNames))))
+        if verbose: print(("... rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
     def restoreConfig(self):

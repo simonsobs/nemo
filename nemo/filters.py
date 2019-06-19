@@ -2,8 +2,7 @@
 
 Filter classes are defined in this module, together with the `filterMaps` function that uses them.
 
-There are two main classes of filter: `MatchedFilter` and `RealSpaceMatchedFilter`. 
-`RealSpaceMatcherFilter` is the preferred one to use.
+There are two main classes of filter: `MatchedFilter` and `RealSpaceMatchedFilter`.
 
 New base classes can be derived from the overall base class: `MapFilter`.
 
@@ -53,7 +52,7 @@ import time
 import IPython
 
 #-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], rootOutDir = ".", verbose = True,
+def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], rootOutDir = ".", verbose = True,
                undoPixelWindow = True):
     """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
     can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
@@ -67,10 +66,11 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     
     """
     
-    # Storage, in case it doesn't already exist
+    # Storage, in case it doesn't already exist (these are created by NemoConfig in startUp.py anyway)
     filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
     diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    dirList=[filteredMapsDir, diagnosticsDir]
+    selFnDir=rootOutDir+os.path.sep+"selFn"
+    dirList=[filteredMapsDir, diagnosticsDir, selFnDir]
     for d in dirList:
         if os.path.exists(d) == False:
             os.makedirs(d)
@@ -79,9 +79,9 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     imageDict={}
     
     # For handling tileDeck style .fits files
-    imageDict['extNames']=extNames
+    imageDict['tileNames']=tileNames
     
-    # Since we're putting stuff like extNames in the top level, let's keep a separate list of mapDicts
+    # Since we're putting stuff like tileNames in the top level, let's keep a separate list of mapDicts
     imageDict['mapKeys']=[]
     
     # Make filtered maps for each filter
@@ -89,26 +89,26 @@ def filterMaps(unfilteredMapsDictList, filtersList, extNames = ['PRIMARY'], root
     for f in filtersList:
         
         # Iterate over all extensions (for tileDeck files)...
-        for extName in extNames:
+        for tileName in tileNames:
             
-            print("--> extName = %s ..." % (extName))
+            print("--> tileName = %s ..." % (tileName))
             
             # This is the label tracked in imageDict, catalog template column
             # Should NOT be fed in as filterClass label
-            label=f['label']+"#"+extName
+            label=f['label']+"#"+tileName
             
             filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
             SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
             signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
-            #transferFnFileName=filteredMapsDir+os.path.sep+"%s_transferFunction.fits" % (f['label'])
 
             if os.path.exists(filteredMapFileName) == False:
                 
                 print("... making filtered map %s ..." % (label)) 
                 filterClass=eval('%s' % (f['class']))
                 filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
-                                      extName = extName, 
-                                      diagnosticsDir = diagnosticsDir)
+                                      tileName = tileName, 
+                                      diagnosticsDir = diagnosticsDir,
+                                      selFnDir = selFnDir)
                 filteredMapDict=filterObj.buildAndApply()
                     
                 # Keywords we need for photometry later
@@ -157,8 +157,8 @@ class MapFilter(object):
     """Generic map filter base class. Defines common interface.
     
     """
-    def __init__(self, label, unfilteredMapsDictList, paramsDict, extName = 'PRIMARY', writeFilter = False, 
-                 forceRebuild = False, diagnosticsDir = None):
+    def __init__(self, label, unfilteredMapsDictList, paramsDict, tileName = 'PRIMARY', writeFilter = False, 
+                 forceRebuild = False, diagnosticsDir = None, selFnDir = None):
         """Initialises a MapFilter. unfilteredMapsDictList describes the input maps, paramsDict describes
         the filter options. The convention is that single frequency only filters (e.g. GaussianWienerFilter)
         only operate on the first map in the unfilteredMapDictList.
@@ -174,14 +174,15 @@ class MapFilter(object):
         
         # Set up storage if necessary, build this filter if not already stored
         self.diagnosticsDir=diagnosticsDir
-        self.extName=extName
-        self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.extName)
+        self.selFnDir=selFnDir
+        self.tileName=tileName
+        self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
         
-        # Prepare all the unfilteredMaps (in terms of cutting sections, adding noise etc.)
+        # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
         # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDeck files
         self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:           
-            mapDict=maps.preprocessMapDict(mapDict.copy(), extName = extName, diagnosticsDir = diagnosticsDir)
+            mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=mapDict['wcs']
         self.shape=mapDict['data'].shape
@@ -229,6 +230,7 @@ class MapFilter(object):
         
         # This is a default - will get modified (calculated) by buildAndApply
         self.signalNorm=1.0
+        self.fRelWeights={}
                
         
     def makeRadiansMap(self):
@@ -325,11 +327,15 @@ class MapFilter(object):
         plt.ylabel("Amplitude")
         plt.xlabel("$\\theta$ (arcmin)")
         for row, mapDict in zip(prof, self.unfilteredMapsDictList):
-            plt.plot(arcminRange, row, label = '%d GHz' % (mapDict['obsFreqGHz']))
+            if mapDict['obsFreqGHz'] is not None:
+                label = '%d GHz' % (mapDict['obsFreqGHz'])
+            elif mapDict['units'] == 'yc':
+                label = 'yc'
+            plt.plot(arcminRange, row, label = label)
         plt.xlim(0, 30.0)
         plt.ylim(prof.min(), prof.max()*1.1)
         plt.legend()
-        plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+"#"+self.extName+".png")
+        plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+"#"+self.tileName+".png")
         plt.close()
         
         # Save 2D realspace filter image too
@@ -342,6 +348,7 @@ class MapFilter(object):
         
         """
         
+        # Grid method
         #print "... making SN map ..."
         gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
         #gridSize=rIndex*3
@@ -380,6 +387,8 @@ class MapFilter(object):
                         #chunkRMS=astStats.biweightScale(chunkValues[goodAreaMask], 6.0)
                     else:
                         chunkRMS=0.
+                elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'percentile':
+                    chunkRMS=np.percentile(abs(chunkValues[goodAreaMask]), 68.3)
                 else:
                     # Default: 3-sigma clipped stdev
                     if np.not_equal(chunkValues, 0).sum() != 0:
@@ -398,8 +407,20 @@ class MapFilter(object):
                 
                 if chunkRMS > 0:
                     RMSMap[y0:y1, x0:x1]=chunkRMS
-                
+        
         return RMSMap
+    
+    
+    def loadFRelWeights(self):
+        """Reads frequency weights used for relativistic corrections from filter header.
+        
+        """
+        with pyfits.open(self.filterFileName) as img:
+            self.fRelWeights={}
+            for i in range(1, 10):
+                if 'RW%d_GHZ' % (i) in img[0].header.keys():
+                    freqGHz=img[0].header['RW%d_GHZ' % (i)]
+                    self.fRelWeights[freqGHz]=img[0].header['RW%d' % (i)]
     
 #------------------------------------------------------------------------------------------------------------
 class MatchedFilter(MapFilter):
@@ -410,7 +431,7 @@ class MatchedFilter(MapFilter):
     def buildAndApply(self):
         
         fMapsToFilter=[]
-        for mapDict in self.unfilteredMapsDictList: 
+        for mapDict in self.unfilteredMapsDictList:
             fMapsToFilter.append(enmap.fft(enmap.apod(mapDict['data'], self.apodPix)))
         fMapsToFilter=np.array(fMapsToFilter)
         
@@ -420,21 +441,12 @@ class MatchedFilter(MapFilter):
         psMask=self.unfilteredMapsDictList[0]['psMask']
             
         if os.path.exists(self.filterFileName) == False:
-            print(">>> Building filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Building filter %s#%s ..." % (self.label, self.tileName))
                         
             fMapsForNoise=[]
             for mapDict in self.unfilteredMapsDictList: 
                 d=mapDict['data']
-                if mapDict['weightsType'] == 'invVar':
-                    w=np.sqrt(mapDict['weights'])
-                    w=w/w.max()
-                elif mapDict['weightsType'] == 'hits':
-                    w=np.sqrt(mapDict['weights'])
-                    w=w/w.max()
-                    w=1/w
-                else:
-                    raise Exception("Didn't understand 'weightsType' - should be 'invVar' or 'hits'")
-                fMapsForNoise.append(enmap.fft(enmap.apod(d*w, self.apodPix)))
+                fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
             fMapsForNoise=np.array(fMapsForNoise)
         
             # Smoothing noise here is essential
@@ -454,7 +466,7 @@ class MatchedFilter(MapFilter):
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
-                    #astImages.saveFITS("test_%d_%d.fits" % (i,  j), fft.fftshift(NP), None)
+                    #astImages.saveFITS("test_%d_%d_%s.fits" % (i,  j, self.tileName), fft.fftshift(NP), None)
                     row.append(NP)
                 noiseCov.append(row)
             del fMapsForNoise
@@ -463,20 +475,23 @@ class MatchedFilter(MapFilter):
             # Signal frequency weighting
             w=[]
             for mapDict in self.unfilteredMapsDictList:
-                if self.params['outputUnits'] == 'yc':
-                    w.append(signals.fSZ(mapDict['obsFreqGHz']))
-                elif self.params['outputUnits'] == 'uK':
-                    w.append(1.0)
+                if mapDict['units'] != 'yc':
+                    if self.params['outputUnits'] == 'yc':
+                        w.append(signals.fSZ(mapDict['obsFreqGHz']))
+                    elif self.params['outputUnits'] == 'uK':
+                        # This is where variable spectral weighting for sources would be added...
+                        w.append(1.0)
+                    else:
+                        raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
                 else:
-                    raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+                    w.append(1.0)   # For tILe-C: there should only be one map if input units are yc anyway...
             w=np.array(w)
                 
             # Make FFTs of unit-normalised signal templates for each band
             signalMapsList=[]
             fSignalsArr=[]
             for mapDict in self.unfilteredMapsDictList:
-                signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
-                signalMap=signalMapDict['signalMap']
+                signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])
                 fSignal=enmap.fft(signalMap)
                 signalMapsList.append(signalMap)
                 fSignalsArr.append(fSignal)
@@ -492,26 +507,36 @@ class MatchedFilter(MapFilter):
                         continue
             del fSignalsArr
             del noiseCov
-            
+                        
             # Use a map with known input signal to figure out how much it has been rolled off by     
             if self.params['outputUnits'] == 'yc':
                 # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
                 signalMaps=[]
                 fSignalMaps=[]
                 y0=2e-4
-                tol=1e-6
                 for mapDict in self.unfilteredMapsDictList:
-                    deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
-                    signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
-                                                            deltaT0 = deltaT0)
-                    if abs(y0-signalMapDict['inputSignalProperties']['y0']) > tol:
-                        raise Exception("y0 mismatch between input and output returned by makeSignalTemplateMap")
-                    signalMaps.append(signalMapDict['signalMap'])
-                    fSignal=enmap.fft(signalMapDict['signalMap'])
+                    if mapDict['units'] == 'yc':    # For handling tILe-C maps
+                        signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], amplitude = y0)
+                    else:                           # The normal case
+                        deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                        signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], 
+                                                             amplitude = deltaT0)
+                    signalMaps.append(signalMap)
+                    fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)
                 signalMaps=np.array(signalMaps)
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
+                self.signalNorm=y0/filteredSignal.max()
+
+                # For relativistic corrections (see signals module)
+                totalSignal=filteredSignal.flatten()[np.argmax(filteredSignal)]
+                filteredSignalCube=np.real(enmap.ifft(fSignalMaps*self.filt, normalize = False))
+                self.fRelWeights={}
+                for filteredSignalPlane, mapDict in zip(filteredSignalCube, self.unfilteredMapsDictList):
+                    freqGHz=mapDict['obsFreqGHz']
+                    fRelWeight=filteredSignalPlane.flatten()[np.argmax(filteredSignal)]/totalSignal
+                    self.fRelWeights[freqGHz]=fRelWeight
                 del fSignalMaps
                 self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
@@ -521,9 +546,9 @@ class MatchedFilter(MapFilter):
                 signalMaps=[]
                 fSignalMaps=[]
                 for mapDict in self.unfilteredMapsDictList:
-                    signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'])
-                    signalMaps.append(signalMapDict['signalMap'])
-                    fSignal=enmap.fft(signalMapDict['signalMap'])
+                    signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])
+                    signalMaps.append(signalMap)
+                    fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)
                 signalMaps=np.array(signalMaps)
                 fSignalMaps=np.array(fSignalMaps)        
@@ -533,13 +558,13 @@ class MatchedFilter(MapFilter):
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         else:
-            print(">>> Loading cached filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Loading cached filter %s#%s ..." % (self.label, self.tileName))
             self.loadFilter()
         
         # Apply filter
         filteredMap=self.applyFilter(fMapsToFilter)
         del fMapsToFilter
-
+                
         # Units etc.
         if self.params['outputUnits'] == 'yc':
             mapUnits='yc'
@@ -554,7 +579,7 @@ class MatchedFilter(MapFilter):
         else:
             raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         
-        # Apply the point source mask here (before noise estimates etc.)
+        # Apply the point source mask here (before noise estimates etc.)        
         filteredMap=filteredMap*psMask
                 
         # Make noise and S/N maps
@@ -562,7 +587,11 @@ class MatchedFilter(MapFilter):
         validMask=np.greater(RMSMap, 0)
         SNMap=np.zeros(filteredMap.shape)+filteredMap
         SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
-                                                                
+        
+        # If we did a good job of subtracting / filling mask holes, we could apply mask after noise estimates
+        #filteredMap=filteredMap*psMask
+        #SNMap=SNMap*psMask
+        
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
@@ -583,19 +612,27 @@ class MatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (self.extName)
+        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (self.tileName)
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.extName)
+            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (self.label, self.tileName)
             astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
 
-        self.saveRealSpaceFilterProfile()   
+        try:
+            self.saveRealSpaceFilterProfile()   
+        except:
+            raise Exception("Error saving real space filter profile for filter '%s', tile '%s'" % (self.label, self.tileName))
         
         if 'saveFilter' in self.params and self.params['saveFilter'] == True:
             img=pyfits.PrimaryHDU()                                                                                                                                                              
-            img.header['SIGNORM']=self.signalNorm                                                                                                                                                
+            img.header['SIGNORM']=self.signalNorm
+            count=0
+            for key in list(self.fRelWeights.keys()):
+                count=count+1
+                img.header['RW%d_GHZ' % (count)]=key
+                img.header['RW%d' % (count)]=self.fRelWeights[key]
             img.data=self.filt                                                                                                                                                                      
             img.writeto(self.filterFileName, overwrite = True) 
             
@@ -611,7 +648,8 @@ class MatchedFilter(MapFilter):
         with pyfits.open(self.filterFileName) as img:
             self.filt=img[0].data
             self.signalNorm=img[0].header['SIGNORM']
-    
+        self.loadFRelWeights()
+        
 
     def reshapeFilter(self, shape):
         """Use linear interpolation to transform the filter to the given shape.
@@ -692,7 +730,7 @@ class RealSpaceMatchedFilter(MapFilter):
     
     Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
     
-    A map of the final area searched for clusters called 'areaMask.fits' is written in the diagnostics/ 
+    A map of the final area searched for clusters called 'areaMask.fits.gz' is written in the selFn/ 
     folder.
         
     """       
@@ -746,15 +784,17 @@ class RealSpaceMatchedFilter(MapFilter):
             kernelUnfilteredMapsDict['RADecSection']=RADecSection
             kernelUnfilteredMapsDictList.append(kernelUnfilteredMapsDict)
         kernelLabel="realSpaceKernel_%s" % (self.label)
-        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel+"#"+self.extName
-        if os.path.exists(matchedFilterDir) == False:
-            os.makedirs(matchedFilterDir)
-        if os.path.exists(matchedFilterDir+os.path.sep+'diagnostics') == False:
-            os.makedirs(matchedFilterDir+os.path.sep+'diagnostics')
+        matchedFilterDir=self.diagnosticsDir+os.path.sep+kernelLabel+"#"+self.tileName
+        diagnosticsDir=matchedFilterDir+os.path.sep+'diagnostics'
+        selFnDir=matchedFilterDir+os.path.sep+'selFn'
+        for d in [matchedFilterDir, diagnosticsDir, selFnDir]:
+            if os.path.exists(d) == False:
+                os.makedirs(d)
         matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
         matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
-                                         extName = mapDict['extName'],
-                                         diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics')
+                                         tileName = mapDict['tileName'],
+                                         diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics',
+                                         selFnDir = matchedFilterDir+os.path.sep+'selFn')
         filteredMapDict=matchedFilter.buildAndApply()   
         
         # Turn the matched filter into a smaller real space convolution kernel
@@ -813,23 +853,28 @@ class RealSpaceMatchedFilter(MapFilter):
         # NOTE: This is SZ-specific again and needs generalising
         signalMaps=[]
         for mapDict in self.unfilteredMapsDictList:
+            # This has been made more complicated because of tILe-C
             if self.params['outputUnits'] == 'yc':
                 y0=2e-4
-                deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                if mapDict['obsFreqGHz'] is not None:   
+                    # Normal case
+                    deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
+                    signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'],
+                                                         amplitude = deltaT0)
+                else:
+                    # tILe-C case
+                    signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], amplitude = y0)
             elif self.params['outputUnits'] == 'uK':
-                deltaT0=None
+                signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
-            signalMapDict=self.makeSignalTemplateMap(mapDict['beamFileName'], mapDict['obsFreqGHz'], 
-                                                     deltaT0 = deltaT0)
-            signalMaps.append(signalMapDict['signalMap'])
+            signalMaps.append(signalMap)
         signalMaps=np.array(signalMaps)
         
-        filteredSignal=self.applyFilter(signalMaps)
-
+        filteredSignal=self.applyFilter(signalMaps, calcFRelWeights = True)
         if self.params['outputUnits'] == 'yc':
             # Normalise such that peak value in filtered map == y0, taking out the effect of the beam
-            self.signalNorm=y0/filteredSignal.max()
+            self.signalNorm=y0/filteredSignal.max()            
         elif self.params['outputUnits'] == 'uK':
             self.signalNorm=1.0/filteredSignal.max()
         else:
@@ -843,11 +888,16 @@ class RealSpaceMatchedFilter(MapFilter):
         kernWCS.header['SIGNORM']=self.signalNorm
         kernWCS.header['APP_RA']=self.applyRACentre
         kernWCS.header['APP_DEC']=self.applyDecCentre
+        count=0
+        for key in list(self.fRelWeights.keys()):
+            count=count+1
+            kernWCS.header['RW%d_GHZ' % (count)]=key
+            kernWCS.header['RW%d' % (count)]=self.fRelWeights[key]
         astImages.saveFITS(self.filterFileName, self.kern2d, kernWCS)
         
         # Filter profile plot   
         # Save the stuff we plot first, in case we want to make a plot with multiple filters on later
-        np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s#%s.npz" % (self.label, self.extName), 
+        np.savez(self.diagnosticsDir+os.path.sep+"filterProf1D_%s#%s.npz" % (self.label, self.tileName), 
                  arcminRange = arcminRange, prof = prof, mask = mask, 
                  bckSubScaleArcmin = self.bckSubScaleArcmin)
         plotSettings.update_rcParams()
@@ -859,7 +909,11 @@ class RealSpaceMatchedFilter(MapFilter):
             tck=interpolate.splrep(arcminRange[mask], row[mask])
             plotRange=np.linspace(0, arcminRange[mask].max(), 1000)
             #plt.plot(arcminRange[mask], prof[mask])
-            plt.plot(plotRange, interpolate.splev(plotRange, tck), '-', label = '%d GHz' % (mapDict['obsFreqGHz']))
+            if mapDict['obsFreqGHz'] is not None:
+                label = '%d GHz' % (mapDict['obsFreqGHz'])
+            elif mapDict['units'] == 'yc':
+                label = 'yc'
+            plt.plot(plotRange, interpolate.splev(plotRange, tck), '-', label = label)
         plt.xlabel("$\\theta$ (arcmin)")
         plt.ylabel("Amplitude")
         plt.legend()
@@ -869,7 +923,7 @@ class RealSpaceMatchedFilter(MapFilter):
         if self.params['bckSub'] == True:
             plt.plot([self.bckSubScaleArcmin]*3, np.linspace(-1.2, 1.2, 3), 'k--')
         plt.ylim(-1.2, 0.2)
-        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s#%s.pdf" % (self.label, self.extName))
+        plt.savefig(self.diagnosticsDir+os.path.sep+"filterPlot1D_%s#%s.pdf" % (self.label, self.tileName))
         plt.close()
 
             
@@ -879,7 +933,7 @@ class RealSpaceMatchedFilter(MapFilter):
         psMask=self.unfilteredMapsDictList[0]['psMask']
             
         if os.path.exists(self.filterFileName) == False:
-            print(">>> Building filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Building filter %s#%s ..." % (self.label, self.tileName))
             
             # Noise region to use
             RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
@@ -895,7 +949,7 @@ class RealSpaceMatchedFilter(MapFilter):
             # Build kernel   
             self.buildKernel(RADecSection, RADeg = self.applyRACentre, decDeg = self.applyDecCentre)
         else:
-            print(">>> Loading cached filter %s#%s ..." % (self.label, self.extName))
+            print(">>> Loading cached filter %s#%s ..." % (self.label, self.tileName))
             self.loadFilter()
 
         # Apply kernel        
@@ -955,21 +1009,25 @@ class RealSpaceMatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.diagnosticsDir+os.path.sep+"areaMask#%s.fits" % (self.extName)
+        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (self.tileName)
         if os.path.exists(maskFileName) == False:
             astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.diagnosticsDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.extName)
+            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (self.label, self.tileName)
             astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
 
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}
 
     
-    def applyFilter(self, mapDataToFilter, doFFT = False):
+    def applyFilter(self, mapDataToFilter, calcFRelWeights = False):
         """Apply the kernel to the given map data (must be a cube - with each plane corresponding to a 
         frequency).
+        
+        NOTE: calcFRelWeights = True should ONLY be set if this routine is being applied to an ideal
+        signal map (when calculating signalNorm). This operation is being done in here to save 
+        complications / time from doing unnecessary convolution operations elsewhere.
         
         Returns:
             Filtered map (2d numpy array)
@@ -988,13 +1046,20 @@ class RealSpaceMatchedFilter(MapFilter):
             filteredMap=filteredMap+mapDataToFilter
         
         # Apply the kernel
-        #t0=time.time()
-        #print("... convolving map with kernel ...")
         for i in range(filteredMap.shape[0]):
             filteredMap[i]=ndimage.convolve(filteredMap[i], self.kern2d[i])
+        
+        # For relativistic corrections (see signals module)
+        if calcFRelWeights == True:
+            self.fRelWeights={}
+            maxIndex=np.argmax(filteredMap.sum(axis = 0))
+            totalSignal=filteredMap.sum(axis = 0).flatten()[maxIndex]
+            for filteredSignalPlane, mapDict in zip(filteredMap, self.unfilteredMapsDictList):
+                freqGHz=mapDict['obsFreqGHz']
+                fRelWeight=filteredSignalPlane.flatten()[maxIndex]/totalSignal
+                self.fRelWeights[freqGHz]=fRelWeight
+                
         filteredMap=filteredMap.sum(axis = 0)
-        t1=time.time()
-        #print("... took %.3f sec ..." % (t1-t0))
         
         # Apply the normalisation
         filteredMap=filteredMap*self.signalNorm
@@ -1008,17 +1073,17 @@ class BeamFilter(MapFilter):
         
     """
     
-    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz, deltaT0 = None):
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
         """Makes a beam model signal template map.
         
         """
         
-        signalMap, inputSignalProperties=signals.makeBeamModelSignalMap(np.degrees(self.radiansMap),
-                                                                        self.wcs, 
-                                                                        beamFileName,
-                                                                        deltaT0 = deltaT0)
+        signalMap=signals.makeBeamModelSignalMap(np.degrees(self.radiansMap),
+                                                            self.wcs, 
+                                                            beamFileName,
+                                                            amplitude = amplitude)
 
-        return {'signalMap': signalMap, 'inputSignalProperties': inputSignalProperties}
+        return signalMap
     
 #------------------------------------------------------------------------------------------------------------
 class ArnaudModelFilter(MapFilter):
@@ -1026,20 +1091,18 @@ class ArnaudModelFilter(MapFilter):
     
     """
     
-    def makeSignalTemplateMap(self, beamFileName, mapObsFreqGHz, deltaT0 = None):
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
         """Makes a model signal template map.
-        
-        Returns dictionary of {'signalMap', 'inputSignalProperties'}
-        
+                
         """
         
-        signalMap, modelDict=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
-                                                                mapObsFreqGHz, np.degrees(self.radiansMap),
-                                                                self.wcs, beamFileName, 
-                                                                GNFWParams = self.params['GNFWParams'],
-                                                                deltaT0 = deltaT0)
+        signalMap=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
+                                                   np.degrees(self.radiansMap),
+                                                   self.wcs, beamFileName, 
+                                                   GNFWParams = self.params['GNFWParams'],
+                                                   amplitude = amplitude)
         
-        return {'signalMap': signalMap, 'inputSignalProperties': modelDict}
+        return signalMap
                 
 #------------------------------------------------------------------------------------------------------------
 # Definitions of actual filters that can be used

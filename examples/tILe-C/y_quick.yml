@@ -7,15 +7,15 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "testsCache/weightedMap_4.fits",
-       weightsFileName: "testsCache/weightedInvVar_4.fits",
-       obsFreqGHz: 148.0, 'units': "uK",
-       beamFileName: "../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt",
-       RADecSection: [0.0, 40.0, -9.0, 0.0]}
+    - {mapFileName: "../maps/y-maps/release_v0.2.3/act_planck/tilec_deep56_comptony_map_deprojects_cmb_v0.2.3_act_planck.fits",
+       weightsFileName: null,
+       obsFreqGHz: null, 'units': "yc",
+       beamFileName: "../Beams/181222/mr3c_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb_181222.txt",
+       applyBeamConvolution: True}
 
 # Masks
-pointSourceMask: "../examples/equD56/pointSourceMask.fits.gz"
-surveyMask: "../examples/equD56/surveyMask.fits.gz"
+pointSourceMask: null
+surveyMask: "../maps/y-maps/release_v0.2.3/tilec_deep56_apodized_mask.fits"
 
 # Detection/catalog options
 # Set useInterpolator: True for sub-pixel flux and SNR measurements
@@ -51,7 +51,7 @@ massOptions: {tenToA0: 4.95e-5,
               sigma_int: 0.2,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "../examples/equD56/ACTPol_redshifts.fits"} 
+              redshiftCatalog: "MFMF-S16-MJH_redshifts.fits"} 
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
@@ -61,11 +61,18 @@ selFnOptions: {fixedSNRCut: 5.0,
 # Filter definitions
 mapFilters:
     - {label: "Arnaud_M2e14_z0p4",
-       class: "ArnaudModelMatchedFilter",
+       class: "ArnaudModelRealSpaceMatchedFilter",
        params: {M500MSun: 2.0e+14, 
                 z: 0.4,
                 noiseParams: {method: "dataMap",
+                              matchedFilterClass: 'ArnaudModelMatchedFilter',
+                              RADecSection: [32.3, 38.2, -7.5, -2.5],
+                              kernelMaxArcmin: 7.,
+                              symmetrize: True, 
                               noiseGridArcmin: 20.},
+                bckSub: True, 
+                saveHighPassMap: True,
+                saveRMSMap: True,
                 outputUnits: 'yc'}}
                 
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
@@ -76,3 +83,7 @@ numSkySims: 1
 # Set this to True to estimate contamination by running cluster finder over inverted maps
 # This is sensitive to how well point source masking is done
 estimateContaminationFromInvertedMaps: False
+    
+# Run position recovery test
+positionRecoveryTest: False
+

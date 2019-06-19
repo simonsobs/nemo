@@ -9,7 +9,9 @@ import sys
 import subprocess
 import shutil
 import numpy as np
-from pixell import utils, pointsrcs, enmap
+from nemo import catalogs
+from nemo import maps
+#from pixell import utils, pointsrcs, enmap
 from astLib import *
 import astropy.io.fits as pyfits
 import astropy.table as atpy
@@ -115,51 +117,71 @@ class NemoTests(object):
         self._run_command(["nemoMock", self.configFileName])
         
 
-    def inject_sources(self, outMapFileName = "sourceInjectedMap.fits", 
+    #def inject_sources_using_pixell(self, outMapFileName = "sourceInjectedMap.fits", 
+                       #catalogFileName = "inputSourcesCatalog.fits", numSources = 1000):
+        #"""Injects a bunch of point sources into a map, using a vaguely plausible amplitude distribution
+        #based on the sources found in the deep56 map.
+        
+        #"""
+        
+        #nsigma=5.0
+        #smul=1.0
+
+        #img=pyfits.open(self.inMapFileName)
+        #mapData=img[0].data
+        #if mapData.ndim > 2:
+            #mapData=mapData[0]
+        #wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+        #imap=enmap.read_map(self.inMapFileName)
+
+        ## Random fluxes (in delta T uK)
+        ## This is chosen to vaguely match that seen in deep56 f090
+        #I=np.random.lognormal(np.log(600), 1.1, numSources)
+        
+        ## Random positions
+        #ys, xs=np.where(mapData != 0)
+        #ys=ys+np.random.uniform(0, 1, len(ys))
+        #xs=xs+np.random.uniform(0, 1, len(xs))
+        #indices=np.random.randint(0, len(ys), numSources)
+        #coords=wcs.pix2wcs(xs[indices], ys[indices])
+        #coords=np.array(coords)
+        
+        #tab=atpy.Table()
+        #tab.add_column(atpy.Column(coords[:, 0], "ra"))
+        #tab.add_column(atpy.Column(coords[:, 1], "dec"))
+        #tab.add_column(atpy.Column(I, "I"))
+        
+        #if os.path.exists(catalogFileName) == True:
+            #os.remove(catalogFileName)
+        #tab.write(catalogFileName)
+        #srcs=pointsrcs.tab2recarray(tab)
+
+        #beam=pointsrcs.read_beam(self.beamFileName)
+        #beam[0]*=utils.degree
+        #srcparam=pointsrcs.src2param(srcs)
+
+        #omap=pointsrcs.sim_srcs(imap.shape, imap.wcs, srcparam, beam, imap, smul=smul, nsigma=nsigma, pixwin=True)
+        #enmap.write_map(outMapFileName, omap)
+
+
+    def inject_sources_using_nemo(self, outMapFileName = "sourceInjectedMap.fits", 
                        catalogFileName = "inputSourcesCatalog.fits", numSources = 1000):
         """Injects a bunch of point sources into a map, using a vaguely plausible amplitude distribution
         based on the sources found in the deep56 map.
         
         """
         
-        nsigma=5.0
-        smul=1.0
+        with pyfits.open(self.inMapFileName) as img:
+            mapData=img[0].data
+            if mapData.ndim > 2:
+                mapData=mapData[0]
+            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+        simCat=catalogs.generateRandomSourcesCatalog(mapData, wcs, numSources)
+        simCat.write(catalogFileName, overwrite = True)
+        #catalogs.catalog2DS9(simCat, catalogFileName.replace(".fits", ".reg"))
 
-        img=pyfits.open(self.inMapFileName)
-        mapData=img[0].data
-        if mapData.ndim > 2:
-            mapData=mapData[0]
-        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-        imap=enmap.read_map(self.inMapFileName)
-
-        # Random fluxes (in delta T uK)
-        # This is chosen to vaguely match that seen in deep56 f090
-        I=np.random.lognormal(np.log(600), 1.1, numSources)
-        
-        # Random positions
-        ys, xs=np.where(mapData != 0)
-        ys=ys+np.random.uniform(0, 1, len(ys))
-        xs=xs+np.random.uniform(0, 1, len(xs))
-        indices=np.random.randint(0, len(ys), numSources)
-        coords=wcs.pix2wcs(xs[indices], ys[indices])
-        coords=np.array(coords)
-        
-        tab=atpy.Table()
-        tab.add_column(atpy.Column(coords[:, 0], "ra"))
-        tab.add_column(atpy.Column(coords[:, 1], "dec"))
-        tab.add_column(atpy.Column(I, "I"))
-        
-        if os.path.exists(catalogFileName) == True:
-            os.remove(catalogFileName)
-        tab.write(catalogFileName)
-        srcs=pointsrcs.tab2recarray(tab)
-
-        beam=pointsrcs.read_beam(self.beamFileName)
-        beam[0]*=utils.degree
-        srcparam=pointsrcs.src2param(srcs)
-
-        omap=pointsrcs.sim_srcs(imap.shape, imap.wcs, srcparam, beam, imap, smul=smul, nsigma=nsigma, pixwin=True)
-        enmap.write_map(outMapFileName, omap)
+        modelMap=maps.makeModelImage(mapData.shape, wcs, simCat, self.beamFileName)
+        astImages.saveFITS(outMapFileName, modelMap+mapData, wcs)
         
         
     def cross_match(self, inCatalogFileName, outCatalogFileName, radiusArcmin = 2.5):
@@ -168,20 +190,8 @@ class NemoTests(object):
         """
         inTab=atpy.Table().read(inCatalogFileName)
         outTab=atpy.Table().read(outCatalogFileName)
-        RAKey1, decKey1=self.getRADecKeys(inTab)
-        RAKey2, decKey2=self.getRADecKeys(outTab)
-        cat1=SkyCoord(ra = inTab[RAKey1].data, dec = inTab[decKey1].data, unit = 'deg')
-        xMatchRadiusDeg=radiusArcmin/60.
-        cat2=SkyCoord(ra = outTab[RAKey2].data, dec = outTab[decKey2].data, unit = 'deg')
-        xIndices, rDeg, sep3d = match_coordinates_sky(cat1, cat2, nthneighbor = 1)
-        mask=np.less(rDeg.value, xMatchRadiusDeg)  
-        matched_outTab=outTab[xIndices]
-        inTab=inTab[mask]
-        matched_outTab=matched_outTab[mask]
-        rDeg=rDeg.value[mask]
-        self.inTab=inTab
-        self.outTab=matched_outTab
-        self.rDeg=rDeg
+        self.inTab, self.outTab, self.rDeg=catalogs.crossMatch(inTab, outTab, 
+                                                               radiusArcmin = radiusArcmin)
     
     
     def getRADecKeys(self, tab):
@@ -274,4 +284,5 @@ class NemoTests(object):
                                stderr=subprocess.STDOUT)
         if process.returncode != 0:
              print(process.stdout)
+             raise AssertionError("Return code of '%s' is non-zero." % (str(args)))
 

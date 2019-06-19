@@ -7,15 +7,57 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "maps/act+planck_day+night/TOnly_f150_daynight_all_map_mono.fits",
-       weightsFileName: "maps/act+planck_day+night/f150_daynight_all_div_mono.fits",
-       obsFreqGHz: 148.0,
-       units: 'uK',
-       beamFileName: "Beams/171226/beam_profile_171226_pa3_f150_s16_3_310_instant.txt"}
+#    - {mapFileName: "maps/Mar2019/TOnly_act_planck_f150_map_mono.fits",
+#       weightsFileName: "maps/Mar2019/act_planck_f150_div_mono.fits",
+#       obsFreqGHz: 145.3, units: 'uK',
+#       beamFileName: "Beams/181222/mr3c_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
+    - {mapFileName: "maps/Mar2019/TOnly_act_planck_f090_map_mono.fits",
+       weightsFileName: "maps/Mar2019/act_planck_f090_div_mono.fits",
+       obsFreqGHz: 94.1, units: 'uK',
+       beamFileName: "Beams/181222/mr3c_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
+#    - {mapFileName: "maps/planck/TOnly_planck_hybrid_217_2way_0_map.fits",
+#       weightsFileName: "maps/planck/TOnly_planck_hybrid_217_2way_0_ivar.fits",
+#       obsFreqGHz: 217.0, 'units': 'uK',
+#       beamFileName: "planckBeam/P217GaussianBeam.txt"}
 
 # Masks
-pointSourceMask: null
+pointSourceMask: null #'surveyAndPointSourceMask/pointSourceMask_full_all_multiDec.fits'
 surveyMask: null
+    
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 4.0
+minObjPix: 1
+findCenterOfMass: True
+useInterpolator: True
+rejectBorder: 0
+objIdent: 'ACT-S'
+longNames: False
+catalogCuts: ['SNR > 4.0']
+
+# Filter definitions:
+mapFilters:
+    - {label: "Beam",
+       class: "BeamRealSpaceMatchedFilter",
+       params: {noiseParams: {method: "max(dataMap,CMB)",
+                              matchedFilterClass: 'BeamMatchedFilter',
+                              RADecSection: "tileNoiseRegions",
+                              kernelMaxArcmin: 7.,
+                              symmetrize: False, 
+                              noiseGridArcmin: 20.,
+                              saveHighPassMap: False,
+                              saveRMSMap: False},
+                bckSub: True, 
+                outputUnits: 'uK'}}
+                
+# Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
+# Set numSkySims to number required - we need to average over many as results vary a fair bit
+estimateContaminationFromSkySim: False
+numSkySims: 10
+
+# Set this to True to estimate contamination by running cluster finder over inverted maps
+# This is sensitive to how well point source masking is done
+estimateContaminationFromInvertedMaps: False
 
 # tileDeck options - cut-up each map into smaller sections, store in a multi-extension .fits file
 makeTileDeck: True
@@ -23,6 +65,7 @@ tileOverlapDeg: 1.0
 
 # User-defined tiles
 # These will automatically be expanded by tileOverlapDeg, i.e., don't need to handle overlaps here
+tileDefLabel: "RealSpace"
 tileDefinitions:
     - {tileName: '0_0', RADecSection: [116.0, 86.0, -60.35, -50.35]}
     - {tileName: '0_1', RADecSection: [86.0, 56.0, -60.35, -50.35]}
@@ -122,34 +165,4 @@ tileNoiseRegions:
      'E6_2': [130.0, 109.0, -4.0, 7.6],     
      'E7_0': [179.9, 159.0, 8.6, 20.2],  
      'E7_3': [117.0, 107.0, 8.6, 20.2]}
-
-# Use this to test on only a particular set of tiles
-# i.e., all operations will only be performed on these tiles (respected by nemo, nemoMass, nemoSelFn)
-#tileNameList: ['5_1', '2_2', '3_1', '5_2']
-
-# Detection/catalog options
-# Set useInterpolator; True for sub-pixel flux and SNR measurements
-thresholdSigma: 4.0
-minObjPix: 1
-findCenterOfMass: True
-useInterpolator: True
-rejectBorder: 0
-objIdent: 'ACT-S'
-longNames: False
-catalogCuts: ['SNR > 4.0']
-
-# Filter definitions:
-mapFilters:
-    - {label: "Beam",
-       class: "BeamRealSpaceMatchedFilter",
-       params: {noiseParams: {method: "max(dataMap,CMB)",
-                              matchedFilterClass: 'BeamMatchedFilter',
-                              RADecSection: "tileNoiseRegions",
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.,
-                              saveHighPassMap: False,
-                              saveRMSMap: False},
-                bckSub: True, 
-                outputUnits: 'uK'}}
-
+    
