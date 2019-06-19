@@ -42,7 +42,7 @@ Nemo itself is written in Python (3.x), and requires the following additional mo
 * scipy (0.19.3)
 * matplotlib (2.1.1)
 * astLib (0.10.x + or git version: get it with `git clone http://git.code.sf.net/p/astlib/git astlib-git`)
-* [pixell](https://github.com/simonsobs/pixell/) (0.1.1 or git version)
+* [pixell](https://github.com/simonsobs/pixell/) (0.5.3 or git version)
 * Python Imaging Library (PIL or PILLOW - e.g., `sudo easy_install Pillow` on Mac)
 * astropy (3.0.5)
 * IPython (7.2.0)
