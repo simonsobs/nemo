@@ -854,30 +854,61 @@ def subtractBackground(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothSca
     return data
 
 #------------------------------------------------------------------------------------------------------------
-def convolveMapWithBeam(data, wcs, beamFileName, maxDistDegrees = 1.0):
-    """Convolves map given by data, wcs with the beam.
+def convolveMapWithBeam(data, wcs, beam, maxDistDegrees = 1.0):
+    """Convolves map defined by data, wcs with the beam.
     
-    maxDistDegrees sets the size of the convolution kernel.
+    Args:
+        data (:obj:`numpy.ndarray`): Map to convolve, as 2d array.
+        wcs (:obj:`astWCS.WCS`): WCS corresponding to data (i.e., the map).
+        beam (:obj:`BeamProfile` or str): Either a BeamProfile object, or a string that gives the path to a 
+            text file that describes the beam profile.
+        maxDistDegrees (float): Sets the size of the convolution kernel, for optimization purposes.
     
-    Returns map (numpy array)
+    Returns:
+        Beam-convolved map (numpy array).
     
     """
     
-    RADeg, decDeg=wcs.getCentreWCSCoords()
-    degreesMap=np.ones(data.shape, dtype = float)*1e6
+    if type(beam) == str:
+        beam=signals.BeamProfile(beamFileName = beam)
+
+    # Pad the beam kernel to odd number of pixels (so we know shift to apply)
+    # We're only really using WCS info here for the pixel scale at the centre of the map
+    if data.shape[0] % 2 == 0:
+        yPad=1
+    else:
+        yPad=0
+    if data.shape[1] % 2 == 0:
+        xPad=1
+    else:
+        xPad=0
+    degreesMap=np.ones([data.shape[0]+yPad, data.shape[1]+xPad], dtype = float)*1e6
+    RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2)+1, int(degreesMap.shape[0]/2)+1)
     degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 
                                                                    maxDistDegrees)
+    beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
+    if (yBounds[1]-yBounds[0]) > beamMap.shape[1] and (yBounds[1]-yBounds[0]) % 2 == 0:
+        yBounds[0]=yBounds[0]-1
+    if (xBounds[1]-xBounds[0]) > beamMap.shape[0] and (xBounds[1]-xBounds[0]) % 2 == 0:
+        xBounds[0]=xBounds[0]-1    
+    beamMap=beamMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]
+    beamMap=beamMap/np.sum(beamMap)
 
-    beamMap, sigDict=signals.makeBeamModelSignalMap(degreesMap, wcs, beamFileName)
-    ys, xs=np.where(degreesMap < maxDistDegrees)
-    yMin=ys.min()
-    yMax=ys.max()+1
-    xMin=xs.min()
-    xMax=xs.max()+1
-    beamMap=beamMap[yMin:yMax, xMin:xMax]
-    beamMap=beamMap/beamMap.sum()
+    # For testing for shift
+    # This shows we get (-1, -1) shift with scipy_convolve and odd-shaped kernel
+    #testMap=np.zeros([301, 301])
+    #yc1=151
+    #xc1=151
+    #testMap[yc1, xc1]=1.
+    #outMap=scipy_convolve(testMap, beamMap, mode = 'same')
+    #yc2, xc2=np.where(outMap == outMap.max())
+    #yc2=int(yc2)
+    #xc2=int(xc2)
+    #outMap=ndimage.shift(outMap, [yc1-yc2, xc1-xc2])
     
-    return scipy_convolve(data, beamMap, mode = 'same')
+    outMap=ndimage.shift(scipy_convolve(data, beamMap, mode = 'same'), [-1, -1])
+        
+    return outMap
 
 #-------------------------------------------------------------------------------------------------------------
 def smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 5.0/60.0):

@@ -65,12 +65,12 @@ def makeDegreesDistanceMap(np.ndarray[np.float64_t, ndim=2] degreesMap, wcs, RAD
     maxY=int(round(y0))+yDistPix
     if minX < 0:
         minX=0
-    if maxX >= X:
-        maxX=X-1
+    if maxX > X:
+        maxX=X
     if minY < 0:
         minY=0
-    if maxY >= Y:
-        maxY=Y-1
+    if maxY > Y:
+        maxY=Y
     for y in range(minY, maxY):
         for x in range(minX, maxX):
             yDeg=(y-y0)*yPixScale

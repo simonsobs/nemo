@@ -530,8 +530,8 @@ def getTableRADecKeys(tab):
         Name of RA column, name of dec. column
     
     """
-    RAKeysToTry=['ra', 'RADeg']
-    decKeysToTry=['dec', 'decDeg']
+    RAKeysToTry=['ra', 'RA', 'RADeg']
+    decKeysToTry=['dec', 'DEC', 'decDeg']
     RAKey, decKey=None, None
     for key in RAKeysToTry:
         if key in tab.keys():
