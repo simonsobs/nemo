@@ -10,12 +10,12 @@ unfilteredMaps:
     - {mapFileName: "../maps/y-maps/release_v0.2.3/act_planck/tilec_deep56_comptony_map_deprojects_cmb_v0.2.3_act_planck.fits",
        weightsFileName: null,
        obsFreqGHz: null, 'units': "yc",
-       beamFileName: "../Beams/181222/mr3c_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb_181222.txt",
+       beamFileName: "../Beams/181222/mr3c_s15_pa3_f090_nohwp_night_beam_profile_jitter_deep56_181222.txt",
        applyBeamConvolution: True}
 
 # Masks
 pointSourceMask: null
-surveyMask: "../maps/y-maps/release_v0.2.3/tilec_deep56_apodized_mask.fits"
+surveyMask: "../maps/y-maps/release_v0.2.3/tilec_deep56_surveyMask.fits"
 
 # Detection/catalog options
 # Set useInterpolator: True for sub-pixel flux and SNR measurements
@@ -51,7 +51,7 @@ massOptions: {tenToA0: 4.95e-5,
               sigma_int: 0.2,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "MFMF-S16-MJH_redshifts.fits"} 
+              redshiftCatalog: "y_quick_f090_redshifts.fits"} 
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
@@ -68,7 +68,7 @@ mapFilters:
                               matchedFilterClass: 'ArnaudModelMatchedFilter',
                               RADecSection: [32.3, 38.2, -7.5, -2.5],
                               kernelMaxArcmin: 7.,
-                              symmetrize: True, 
+                              symmetrize: False, 
                               noiseGridArcmin: 20.},
                 bckSub: True, 
                 saveHighPassMap: True,
