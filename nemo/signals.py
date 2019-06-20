@@ -241,11 +241,10 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
         nemo.filters.filterMaps).    
         
     """
-    
+
     # Making the 1d profile itself is the slowest part (~1 sec)
     signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
-    theta500Arcmin=signalDict['theta500Arcmin']
     
     # Make cluster map (unit-normalised profile)
     rDeg=np.linspace(0.0, maxSizeDeg, 5000)
@@ -255,32 +254,8 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
     r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
     profile2d=r2p(degreesMap)
     
-    if convolveWithBeam == True:
-        
-        # This is slow...
-        #signalMap=maps.convolveMapWithBeam(profile2d, wcs, beamFileName, maxDistDegrees = 1.0)        
-        
-        # This is fast(er)...
-        if type(beam) == str:
-            beam=BeamProfile(beamFileName = beam)        
-        profile1d_beam=interpolate.splev(rDeg, beam.tck, ext = 1) # ext = 1 sets out-of-range values to 0 rather than extrapolating beam
-        
-        ys, xs=np.where(degreesMap < maxSizeDeg)
-        yMin=ys.min()
-        yMax=ys.max()+1
-        xMin=xs.min()
-        xMax=xs.max()+1
-
-        r2p_beam=interpolate.interp1d(rDeg, profile1d_beam, bounds_error=False, fill_value=0.0)
-        profile2d_beam=r2p_beam(degreesMap)
-        #smoothedProfile2d_1=fft.fftshift(fft.ifft2(fft.fft2(profile2d)*fft.fft2(profile2d_beam))).real
-        smoothedProfile2d=np.zeros(degreesMap.shape)
-        smoothedProfile2d[yMin:yMax, xMin:xMax]=fft.fftshift(fft.ifft2(fft.fft2(profile2d[yMin:yMax, xMin:xMax])*fft.fft2(profile2d_beam[yMin:yMax, xMin:xMax]))).real
-        
-        normFactor=profile2d.sum()/smoothedProfile2d.sum()
-        smoothedProfile2d=smoothedProfile2d*normFactor
-        signalMap=smoothedProfile2d   
-        
+    if convolveWithBeam == True:        
+        signalMap=maps.convolveMapWithBeam(profile2d, wcs, beam, maxDistDegrees = maxSizeDeg)
     else:
         signalMap=profile2d
     
