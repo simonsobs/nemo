@@ -13,6 +13,7 @@ import time
 import astropy.table as atpy
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
+import astropy.io.fits as pyfits
 import IPython
 
 # For adding meta data to output
@@ -486,6 +487,63 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
+def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_y_c', 
+                        amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None):
+    """Generate a catalog of objects with random positions and amplitudes. This is for testing purposes - 
+    see, e.g., :meth:`maps.positionRecoveryTest`.
+    
+    Args:
+        config (:obj: `startup.NemoConfig`): Nemo configuration object.
+        numSourcesPerTile (int): Number of sources to insert into each tile.
+        amplitudeColumnName (str): Name of the column in the output catalog in which source (or cluster) 
+            amplitudes will be stored. Typically this should be "deltaT_c" for sources, and "fixed_y_c" for
+            clusters.
+        amplitudeRange (list): Range for the random amplitudes, in the form [minimum, maximum].
+        amplitudeDistribution (str): Either 'linear' or 'log'.
+        selFn (:obj: `SelFn`, optional): Nemo selection function object, used to access area masks and 
+            coordinates info. If not given, will be created using the info in the config. Providing this 
+            saves time, as the area mask files don't have to be read from disk.
+
+    Returns:
+        An astropy Table object containing the catalog.
+        
+    """
+    
+    if selFn is None:
+        selFn=completeness.SelFn(config.configFileName, config.selFnDir, 4.0, 
+                                 enableCompletenessCalc = False, setUpAreaMask = True)
+
+    RAs=[]
+    decs=[]
+    amps=[]
+    for tileName in config.tileNames:
+        mapData=selFn.areaMaskDict[tileName]
+        wcs=selFn.WCSDict[tileName]
+        if amplitudeDistribution == 'linear':
+            amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], numSourcesPerTile)
+        elif amplitudeDistribution == 'log':
+            amp=np.power(10, np.random.uniform(np.log10(amplitudeRange)[0], np.log10(amplitudeRange)[1], numSourcesPerTile))
+        else:
+            raise Exception("Must be either 'linear' or 'log'.")
+        ys, xs=np.where(mapData != 0)
+        ys=ys+np.random.uniform(0, 1, len(ys))
+        xs=xs+np.random.uniform(0, 1, len(xs))
+        indices=np.random.randint(0, len(ys), numSourcesPerTile)
+        coords=wcs.pix2wcs(xs[indices], ys[indices])
+        coords=np.array(coords)
+        RAs=RAs+coords[:, 0].tolist()
+        decs=decs+coords[:, 1].tolist()
+        amps=amps+amp.tolist()
+    
+    tab=atpy.Table()
+    tab.add_column(atpy.Column(np.arange(0, len(amps))+1, "name"))
+    tab.add_column(atpy.Column(RAs, "RADeg"))
+    tab.add_column(atpy.Column(decs, "decDeg"))
+    tab.add_column(atpy.Column(amps, amplitudeColumnName))
+
+    return tab
+
+#------------------------------------------------------------------------------------------------------------
 def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
     """Cross matches matchCatalog onto refCatalog for objects found within some angular radius 
     (specified in arcmin).
@@ -545,3 +603,30 @@ def getTableRADecKeys(tab):
         raise Exception("Couldn't identify RA, dec columns in the supplied table.")
     
     return RAKey, decKey
+
+#------------------------------------------------------------------------------------------------------------
+def getCatalogWithinImage(tab, shape, wcs):
+    """Returns the subset of the catalog with coordinates within the image defined by the given shape and wcs.
+    
+    Args:
+        tab (:obj:`astropy.table.Table`): Catalog, as an astropy Table object. Must have columns called 
+            'RADeg', 'decDeg' that contain object coordinates in decimal degrees.
+        shape (list): Shape of the array corresponding to the image / map.
+        wcs (:obj:`astWCS.WCS`): WCS of the image.
+    
+    Returns:
+        An astropy Table containing the subset of objects within the image.
+    
+    """
+    
+    xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
+    xyCoords=np.array(xyCoords, dtype = int)
+    mask=[]
+    for i in range(len(tab)):
+        x, y=xyCoords[i][0], xyCoords[i][1]
+        if x >= 0 and x < shape[1]-1 and y >= 0 and y < shape[0]-1:
+            mask.append(True)
+        else:
+            mask.append(False)
+    
+    return tab[mask]

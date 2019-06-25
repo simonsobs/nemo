@@ -203,8 +203,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     
     # Turn 1d profile into 2d
     r2p=interpolate.interp1d(beam.rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    profile2d=r2p(degreesMap)
-    signalMap=profile2d
+    signalMap=r2p(degreesMap)
                 
     return signalMap
     
@@ -252,12 +251,10 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
     if amplitude is not None:
         profile1d=profile1d*amplitude
     r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    profile2d=r2p(degreesMap)
+    signalMap=r2p(degreesMap)
     
     if convolveWithBeam == True:        
-        signalMap=maps.convolveMapWithBeam(profile2d, wcs, beam, maxDistDegrees = maxSizeDeg)
-    else:
-        signalMap=profile2d
+        signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
     
     return signalMap
 
