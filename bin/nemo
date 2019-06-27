@@ -126,16 +126,16 @@ if __name__ == '__main__':
             # (if we didn't run under MPI, already averaged)
             for k in list(avConTabDict.keys()):
                 fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, "_average")
-                if os.path.exists(fitsOutFileName) == True:
-                    os.remove(fitsOutFileName)
                 conTab=avConTabDict[k]
-                conTab.write(fitsOutFileName) 
+                conTab.write(fitsOutFileName, overwrite = True) 
     else:
         optimalCatalog=imageDict['optimalCatalog']
     
     # Plot tile-averaged position recovery test
     if posRecTable is not None:
-        maps.plotPositionRecovery(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average.pdf")
+        posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecovery_average.fits", overwrite = True) 
+        maps.plotPositionRecovery(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average",
+                                  percentilesToPlot = [50, 90])
         
     # Plot contamination together
     if conTabDict != {}:

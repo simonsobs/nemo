@@ -30,6 +30,7 @@ from . import signals
 from . import photometry
 from . import plotSettings
 from . import pipelines
+from . import completeness
 np.random.seed()
               
 #-------------------------------------------------------------------------------------------------------------
@@ -719,8 +720,10 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     # For position recovery tests
     if 'injectSources' in list(mapDict.keys()):
         # NOTE: Need to add varying GNFWParams here
-        modelMap=makeModelImage(data.shape, wcs, mapDict['injectSources'], mapDict['beamFileName'], 
-                                obsFreqGHz = mapDict['obsFreqGHz'], GNFWParams = 'default')
+        modelMap=makeModelImage(data.shape, wcs, mapDict['injectSources']['catalog'], 
+                                mapDict['beamFileName'], obsFreqGHz = mapDict['obsFreqGHz'], 
+                                GNFWParams = mapDict['injectSources']['GNFWParams'],
+                                override = mapDict['injectSources']['override'])
         modelMap[weights == 0]=0
         data=data+modelMap
 
@@ -736,16 +739,17 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         # This is fast enough if using small tiles and running in parallel...
         # If our masking/filling is effective enough, we may not need to mask so much here...     
         tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
-        xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
-        xyCoords=np.array(xyCoords, dtype = int)
-        mask=[]
-        for i in range(len(tab)):
-            x, y=xyCoords[i][0], xyCoords[i][1]
-            if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]-1:
-                mask.append(True)
-            else:
-                mask.append(False)
-        tab=tab[mask]
+        #xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
+        #xyCoords=np.array(xyCoords, dtype = int)
+        #mask=[]
+        #for i in range(len(tab)):
+            #x, y=xyCoords[i][0], xyCoords[i][1]
+            #if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]-1:
+                #mask.append(True)
+            #else:
+                #mask.append(False)
+        #tab=tab[mask]
+        tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
         # Variable sized holes: based on inspecting sources by deltaT in f150 maps
         tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
         tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
@@ -867,6 +871,11 @@ def convolveMapWithBeam(data, wcs, beam, maxDistDegrees = 1.0):
     Returns:
         Beam-convolved map (numpy array).
     
+    Note:
+        The pixel scale used to define the convolution kernel is evaluated at the central map pixel. So, 
+        this routine should only be used with either pixelisations where the scale is constant or on 
+        relatively small tiles.
+        
     """
     
     if type(beam) == str:
@@ -1212,7 +1221,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
-                   cosmoModel = None, applyPixelWindow = True):
+                   cosmoModel = None, applyPixelWindow = True, override = None):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1232,6 +1241,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         GNFWParams (str or dict, optional): Used only by cluster catalogs. If 'default', the Arnaud et al. 
             (2010) Universal Pressure Profile is assumed. Otherwise, a dictionary that specifies the profile
             parameters can be given here (see gnfw.py).
+        override (dict, optional): Used only by cluster catalogs. If a dictionary containing keys
+            {'M500', 'redshift'} is given, all objects in the model image are forced to have the 
+            corresponding angular size. Used by :meth:`positionRecoveryTest`.
         applyPixelWindow (bool, optional): If True, apply the pixel window function to the map.
             
     Returns:
@@ -1241,7 +1253,10 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     print(">>> Making model image ...")
     modelMap=np.zeros(shape, dtype = float)
-        
+    
+    # This works per-tile, so throw out objects that aren't in it
+    catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
+
     if cosmoModel is None:
         cosmoModel=signals.FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = signals.TCMB)
     
@@ -1252,34 +1267,53 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     # Map of distance(s) from objects - this will get updated in place (fast)
     degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
-
+    
     if 'fixed_y_c' in catalog.keys():
-        # Clusters - insert one at a time (different sizes etc.) - currently taking ~1.6 sec per object
-        count=0
-        for row in catalog:
-            count=count+1
-            print("... %d/%d ..." % (count, len(catalog)))
-            # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
-            if 'true_M500' in catalog.keys():
-                M500=row['true_M500']*1e14
-                z=row['redshift']
-                y0ToInsert=row['fixed_y_c']*1e-4
-            else:
-                if 'template' not in catalog.keys():
-                    raise Exception("No M500, z, or template column found in catalog.")
-                bits=row['template'].split("#")[0].split("_")
-                M500=float(bits[1][1:].replace("p", "."))
-                z=float(bits[2][1:].replace("p", "."))
-                y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
-            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+        # Clusters: for speed - assume all objects are the same shape
+        if override is not None:
+            fluxScaleMap=np.zeros(modelMap.shape)
+            for row in catalog:
+                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                            row['RADeg'], row['decDeg'], 
+                                                                            maxSizeDeg)
+                fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['fixed_y_c']*1e-4
+            theta500Arcmin=signals.calcTheta500Arcmin(override['redshift'], override['M500'], cosmoModel)
             maxSizeDeg=5*(theta500Arcmin/60)
-            degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                           row['RADeg'], row['decDeg'], 
-                                                                           maxSizeDeg)
-            modelMap=modelMap+signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
-                                                               GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True)
+            modelMap=signals.makeArnaudModelSignalMap(override['redshift'], override['M500'], degreesMap, 
+                                                      wcs, beam, GNFWParams = GNFWParams,
+                                                      maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+            modelMap=modelMap*fluxScaleMap
+            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+
+        # Clusters - insert one at a time (with different scales etc.) - currently taking ~1.6 sec per object
+        else:
+            count=0
+            for row in catalog:
+                count=count+1
+                print("... %d/%d ..." % (count, len(catalog)))
+                # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
+                if 'true_M500' in catalog.keys():
+                    M500=row['true_M500']*1e14
+                    z=row['redshift']
+                    y0ToInsert=row['fixed_y_c']*1e-4
+                else:
+                    if 'template' not in catalog.keys():
+                        raise Exception("No M500, z, or template column found in catalog.")
+                    bits=row['template'].split("#")[0].split("_")
+                    M500=float(bits[1][1:].replace("p", "."))
+                    z=float(bits[2][1:].replace("p", "."))
+                    y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+                theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+                maxSizeDeg=5*(theta500Arcmin/60)
+                degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
+                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                            row['RADeg'], row['decDeg'], 
+                                                                            maxSizeDeg)
+                modelMap=modelMap+signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
+                                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+
     else:
         # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
         fluxScaleMap=np.zeros(modelMap.shape)
@@ -1323,107 +1357,185 @@ def positionRecoveryTest(config, imageDict):
     
     simRootOutDir=config.diagnosticsDir+os.path.sep+"posRec_rank%d" % (config.rank)
     SNRKeys=['fixed_SNR']
-
-    print(">>> Position recovery test [rank = %d] ..." % (config.rank))
-    t0=time.time()
-
+    
     # We don't copy this, because it's complicated due to containing MPI-related things (comm)
     # So... we modify the config parameters in-place, and restore them before exiting this method
     simConfig=config
     
-    # NOTE: This block below should be handled when parsing the config file - fix/remove
-    # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-    if 'GNFWParams' not in list(simConfig.parDict.keys()):
-        simConfig.parDict['GNFWParams']='default'
-    for filtDict in simConfig.parDict['mapFilters']:
-        filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
-    
-    # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
-    # NOTE: As it stands, point-source only runs may not define photFilter - we need to handle that
-    # That should be obvious, as mapFilters will only have one entry
-    for filtDict in simConfig.parDict['mapFilters']:
-        if filtDict['label'] == simConfig.parDict['photFilter']:
-            break
-    simConfig.parDict['mapFilters']=[filtDict] 
-        
-    # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
-    # So, we only generate the catalog here
-    print("... generating mock catalog ...")
-    if filtDict['class'].find("ArnaudModel") != -1:
-        mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
-    elif filtDict['class'].find("BeamModel") != -1:
-        raise Exception("Haven't implemented generating mock source catalogs here yet")
-    else:
-        raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
-    for mapDict in simConfig.unfilteredMapsDictList:
-        mapDict['injectSources']=mockCatalog
-                
-    # NOTE: we need to zap ONLY specific maps for when we are running in parallel
-    for tileName in simConfig.tileNames:
-        mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
-        for m in mapFileNames:
-            os.remove(m)
+    # This should make it quicker to generate test catalogs (especially when using tiles)
+    selFn=completeness.SelFn(config.configFileName, config.selFnDir, 4.0, 
+                             enableCompletenessCalc = False, setUpAreaMask = True)
+            
+    print(">>> Position recovery test [rank = %d] ..." % (config.rank))
 
-    simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
-                                                     rootOutDir = simRootOutDir,
-                                                     copyFilters = True)
+    if 'posRecIterations' not in config.parDict.keys():
+        numIterations=1
+    else:
+        numIterations=config.parDict['posRecIterations']
     
-    # Cross match the output with the input catalog - how close were we?
-    recCatalog=simImageDict['optimalCatalog']
-    x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
+    # For clusters, we may want to run multiple scales
+    # We're using theta500Arcmin as the label here
+    filtDict=simConfig.parDict['mapFilters'][0]
+    if filtDict['class'].find("ArnaudModel") != -1:
+        if 'posRecModels' not in config.parDict.keys():
+            posRecModelList=[{'redshift': 0.4, 'M500': 2e14}]
+        else:
+            posRecModelList=config.parDict['posRecModels']
+        for posRecModel in posRecModelList:
+            label='%.2f' % (signals.calcTheta500Arcmin(posRecModel['redshift'], 
+                                                       posRecModel['M500'], signals.fiducialCosmoModel))
+            posRecModel['label']=label
+    else:
+        # Sources
+        posRecModelList=[{'label': 'pointSource'}]
+    #
+    if 'posRecSourcesPerTile' not in config.parDict.keys():
+        numSourcesPerTile=300
+    else:
+        numSourcesPerTile=config.parDict['posRecSourcesPerTile']
     
-    # It makes most sense to just record %-ile matching radii in bins
+    # Run each scale / model and then collect everything into one table afterwards
+    SNRDict={}
+    rArcminDict={}
+    for posRecModel in posRecModelList:
+        SNRDict[posRecModel['label']]=[]
+        rArcminDict[posRecModel['label']]=[]
+        for i in range(numIterations):        
+            print(">>> Position recovery test %d/%d [rank = %d] ..." % (i+1, numIterations, config.rank))
+                        
+            # NOTE: This block below should be handled when parsing the config file - fix/remove
+            # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+            if 'GNFWParams' not in list(simConfig.parDict.keys()):
+                simConfig.parDict['GNFWParams']='default'
+            for filtDict in simConfig.parDict['mapFilters']:
+                filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
+            
+            # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
+            # NOTE: As it stands, point-source only runs may not define photFilter - we need to handle that
+            # That should be obvious, as mapFilters will only have one entry
+            for filtDict in simConfig.parDict['mapFilters']:
+                if filtDict['label'] == simConfig.parDict['photFilter']:
+                    break
+            simConfig.parDict['mapFilters']=[filtDict] 
+                
+            # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
+            # So, we only generate the catalog here
+            print("... generating mock catalog ...")
+            if filtDict['class'].find("ArnaudModel") != -1:
+                # Quick test catalog - takes < 1 sec to generate
+                mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
+                                                         amplitudeColumnName = 'fixed_y_c', 
+                                                         amplitudeRange = [0.001, 1], 
+                                                         amplitudeDistribution = 'linear',
+                                                         selFn = selFn)
+                # Or... proper mock, but this takes ~24 sec for E-D56
+                #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
+                injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'], 
+                               'override': posRecModel}
+            elif filtDict['class'].find("BeamModel") != -1:
+                raise Exception("Haven't implemented generating mock source catalogs here yet")
+            else:
+                raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
+            for mapDict in simConfig.unfilteredMapsDictList:
+                mapDict['injectSources']=injectSources
+            
+            # NOTE: we need to zap ONLY specific maps for when we are running in parallel
+            for tileName in simConfig.tileNames:
+                mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
+                for m in mapFileNames:
+                    os.remove(m)
+
+            simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
+                                                            rootOutDir = simRootOutDir,
+                                                            copyFilters = True)
+
+            # Cross match the output with the input catalog - how close were we?
+            recCatalog=simImageDict['optimalCatalog']
+            x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)        
+            SNRDict[posRecModel['label']]=SNRDict[posRecModel['label']]+x_recCatalog['fixed_SNR'].tolist()
+            rArcminDict[posRecModel['label']]=rArcminDict[posRecModel['label']]+(rDeg*60).tolist()
+        SNRDict[posRecModel['label']]=np.array(SNRDict[posRecModel['label']])
+        rArcminDict[posRecModel['label']]=np.array(rArcminDict[posRecModel['label']])
+    
+    # S/N binning and percentiles to work with
     percentilesToCalc=[1, 5, 10, 16, 50, 84, 90, 95, 99]
-    SNRs=x_recCatalog['fixed_SNR']    
-    #binEdges=np.linspace(4.0, 20.0, (5*16)+1)  # 0.2 binning
     binEdges=np.linspace(4.0, 10.0, 13) 
     binCentres=(binEdges[:-1]+binEdges[1:])/2.
     percentileTable=atpy.Table()
     percentileTable.add_column(atpy.Column(binCentres, 'fixed_SNR'))
-    for p in percentilesToCalc:
-        vals=np.zeros(len(binCentres))
-        for i in range(len(binEdges)-1):
-            rArcmin=(rDeg*60)[np.logical_and(np.greater_equal(SNRs, binEdges[i]), np.less(SNRs, binEdges[i+1]))]
-            if len(rArcmin) > 0:
-                vals[i]=np.percentile(rArcmin, p)
-        percentileTable.add_column(atpy.Column(vals, 'rArcmin_%dpercent' % (p)))
+    for posRecModel in posRecModelList:
+        label=posRecModel['label']
+        for p in percentilesToCalc:
+            vals=np.zeros(len(binCentres))
+            for i in range(len(binEdges)-1):
+                bin_rArcmin=rArcminDict[label][np.logical_and(np.greater_equal(SNRDict[label], binEdges[i]), 
+                                                              np.less(SNRDict[label], binEdges[i+1]))]
+                if len(bin_rArcmin) > 0:
+                    vals[i]=np.percentile(bin_rArcmin, p)
+            percentileTable.add_column(atpy.Column(vals, '%s_rArcmin_%dpercent' % (label, p)))
     
     # Write out for debugging - we might not want to do this when tested...
     fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
     percentileTable.write(fitsOutFileName, overwrite = True)
 
-    plotFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.pdf" % (config.rank)   
-    plotPositionRecovery(percentileTable, plotFileName)
+    basePlotFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d" % (config.rank)   
+    plotPositionRecovery(percentileTable, basePlotFileName)
+
+    # Restore the original config parameters (which we overrode here)
+    config.restoreConfig()
     
     return percentileTable
 
 #------------------------------------------------------------------------------------------------------------
-def plotPositionRecovery(percentileTable, plotFileName, percentilesToPlot = [50]):
+def plotPositionRecovery(percentileTable, basePlotFileName, percentilesToPlot = [50, 90], 
+                         labelsToPlot = 'all'):
     """Plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using the contents
     of percentileTable (see positionRecoveryTest).
     
     Args:
         percentileTable (:obj:`astropy.table.Table`): Table of recovery percentiles as returned by 
             maps.positionRecoveryTest.
-        plotFileName (str): Path where the plot file will be written (if the extension is .pdf, both .pdf 
-            and .png versions of the plot will be written).
+        basePlotFileName (str): Path where the plot file will be written, with no extension (e.g.,
+            "diagnostics/positionRecovery". The percentile plotted and file extension will be appended to
+            this path, preceded by an underscore (e.g., "diagnostics/positionRecovery_50.pdf"). Both .pdf
+            and .png versions of the plot will be written.
         percentilesToPlot (list, optional): List of percentiles to plot (must be integers and present in the
-            column names for percentileTable).
-    
+            column names for percentileTable). Each percentile will be plotted in a separate file (e.g.,
+            "percentilePlot_50.pdf" for the 50% percentile, i.e., the median.)
+        labelsToPlot (list, optional): If the position recovery test was run for different models (e.g., 
+            clusters with different angular size, labelled according to theta500 in arcmin), specific 
+            models can be plotted. The default ('all') will plot all labels found in the table (these will 
+            be indicated in the figure legend).
+            
     """
+    
+    # Find labels
+    labels=[]
+    for key in percentileTable.keys():
+        if key not in ['fixed_SNR']:
+            label=key.split('_rArcmin')[0]
+            if label not in labels:
+                labels.append(label)
+                
+    if labelsToPlot != 'all':
+        labels=labelsToPlot
+                    
     plotSettings.update_rcParams()
-    plt.figure(figsize=(9,6.5))
-    ax=plt.axes([0.10, 0.11, 0.87, 0.87]) 
     for p in percentilesToPlot:
-        validMask=np.greater(percentileTable['rArcmin_%dpercent' % (p)], 0)
-        plt.plot(percentileTable['fixed_SNR'][validMask], percentileTable['rArcmin_%dpercent' % (p)][validMask], 
-                 '-', label = p)
-    plt.xlim(percentileTable['fixed_SNR'].min(), percentileTable['fixed_SNR'].max())
-    plt.ylim(0,)
-    plt.legend()
-    plt.xlabel("SNR$_{2.4}$")
-    plt.ylabel("Recovered Position Offset ($^\prime$)")
-    plt.savefig(plotFileName)
-    plt.savefig(plotFileName.replace(".pdf", ".png"))
-    plt.close()
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.12, 0.11, 0.87, 0.87]) 
+        for l in labels:
+            validMask=np.greater(percentileTable['%s_rArcmin_%dpercent' % (l, p)], 0)
+            plt.plot(percentileTable['fixed_SNR'][validMask], percentileTable['%s_rArcmin_%dpercent' % (l, p)][validMask], 
+                        '-', label = '%s' % (l))
+        plt.xlim(percentileTable['fixed_SNR'].min(), percentileTable['fixed_SNR'].max())
+        plt.ylim(0,)
+        if len(labels) > 1:
+            plt.legend()
+        plt.xlabel("SNR$_{2.4}$")
+        plt.ylabel("Recovered Position Offset ($^\prime$)")
+        plotFileName=basePlotFileName+"_%d.pdf" % (p)
+        plt.savefig(plotFileName)
+        plt.savefig(plotFileName.replace(".pdf", ".png"))
+        plt.close()
     

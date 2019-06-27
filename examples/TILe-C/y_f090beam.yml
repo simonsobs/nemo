@@ -7,22 +7,24 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "../maps/y-maps/release_v0.2.3/act_planck/tilec_deep56_comptony_map_deprojects_cmb_v0.2.3_act_planck.fits",
+    - {mapFileName: "../maps/y-maps/release_v0.2.3/act_planck/tilec_deep56_comptony_map_deprojects_nothing_v0.2.3_act_planck.fits",
        weightsFileName: null,
        obsFreqGHz: null, 'units': "yc",
+       #RADecSection: [358.6, 16.8, -6.0, 2.9], # small test
+       RADecSection: [351.2, 42.9, -7.6, 4.0],  # full footprint inside survey mask
        beamFileName: "../Beams/181222/mr3c_s15_pa3_f090_nohwp_night_beam_profile_jitter_deep56_181222.txt",
        applyBeamConvolution: True}
 
 # Masks
 pointSourceMask: null
-surveyMask: "../maps/y-maps/release_v0.2.3/tilec_deep56_surveyMask.fits"
+surveyMask: "../maps/y-maps/release_v0.2.3/tilec_deep56_surveyMask.fits.gz"
 
 # Detection/catalog options
 # Set useInterpolator: True for sub-pixel flux and SNR measurements
 thresholdSigma: 4.0
 minObjPix: 1
 rejectBorder: 0
-useInterpolator: False
+useInterpolator: True
 findCenterOfMass: True
 objIdent: 'ACT-CL'
 longNames: False
@@ -51,30 +53,33 @@ massOptions: {tenToA0: 4.95e-5,
               sigma_int: 0.2,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "y_quick_f090_redshifts.fits"} 
+              redshiftCatalog: "MFMF-S16-MJH_redshifts.fits"} 
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 selFnOptions: {fixedSNRCut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
 
-# Filter definitions
+# Filter definitions             
+allFilters: {class: "ArnaudModelMatchedFilter",
+             params: {noiseParams: {method: "dataMap",
+                                    noiseGridArcmin: 20.},
+                      outputUnits: 'yc'}}
+
+# mapFilters is a list of all the different filters to apply
+# (keys in mapFilters with the same name as those in allFilters take priority)
 mapFilters:
+    - {label: "Arnaud_M2e14_z0p1",
+       params: {M500MSun: 2.0e+14, z: 0.1}}
+    - {label: "Arnaud_M2e14_z0p2",
+       params: {M500MSun: 2.0e+14, z: 0.2}}
     - {label: "Arnaud_M2e14_z0p4",
-       class: "ArnaudModelRealSpaceMatchedFilter",
-       params: {M500MSun: 2.0e+14, 
-                z: 0.4,
-                noiseParams: {method: "dataMap",
-                              matchedFilterClass: 'ArnaudModelMatchedFilter',
-                              RADecSection: [32.3, 38.2, -7.5, -2.5],
-                              kernelMaxArcmin: 7.,
-                              symmetrize: False, 
-                              noiseGridArcmin: 20.},
-                bckSub: True, 
-                saveHighPassMap: True,
-                saveRMSMap: True,
-                outputUnits: 'yc'}}
-                
+       params: {M500MSun: 2.0e+14, z: 0.4}}
+    - {label: "Arnaud_M2e14_z0p8",
+       params: {M500MSun: 2.0e+14, z: 0.8}}
+    - {label: "Arnaud_M2e14_z1p2",
+       params: {M500MSun: 2.0e+14, z: 1.2}}
+    
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
 # Set numSkySims to number required - we need to average over many as results vary a fair bit
 estimateContaminationFromSkySim: False
@@ -86,4 +91,3 @@ estimateContaminationFromInvertedMaps: False
     
 # Run position recovery test
 positionRecoveryTest: False
-
