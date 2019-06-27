@@ -430,9 +430,10 @@ def fitQ(config):
                     amplitude=maps.convertToDeltaT(y0, obsFreqGHz)
                 else:                                   # tILe-C case
                     amplitude=y0
-                # NOTE: Q is to adjust for mismatched filter shape - should this have beam in it? This can...
+                # NOTE: Q is to adjust for mismatched filter shape
+                # Yes, this should have the beam in it (certainly for TILe-C)
                 signalMap=makeArnaudModelSignalMap(z, M500MSun, degreesMap, wcs, beamsDict[obsFreqGHz], 
-                                                   amplitude = amplitude, convolveWithBeam = False, 
+                                                   amplitude = amplitude, convolveWithBeam = True, 
                                                    GNFWParams = config.parDict['GNFWParams'])
                 if realSpace == True:
                     signalMaps.append(signalMap)
