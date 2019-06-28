@@ -271,9 +271,9 @@ def getFRelWeights(config):
     fRelWeightsFileName=config.selFnDir+os.path.sep+"fRelWeights.fits"
     if os.path.exists(fRelWeightsFileName) == False:
         fRelTab=atpy.Table()
-        fRelTab.add_column(atpy.Column(config.tileNames, 'tileName'))
-        for tileCount in range(len(config.tileNames)):
-            tileName=config.tileNames[tileCount]
+        fRelTab.add_column(atpy.Column(config.allTileNames, 'tileName'))
+        for tileCount in range(len(config.allTileNames)):
+            tileName=config.allTileNames[tileCount]
             filterFileName=config.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (config.parDict['photFilter'], tileName)
             with pyfits.open(filterFileName) as img:
                 for i in range(1, 10):
@@ -281,9 +281,9 @@ def getFRelWeights(config):
                         freqGHz=str(img[0].header['RW%d_GHZ' % (i)])
                         if freqGHz == '':
                             freqGHz='148.0'
-                            print(">>> WARNING: setting freqGHz = '%s' in getFRelWeights - this is okay if you're running on a tILe-C y-map" % (freqGHz))
+                            print(">>> WARNING: setting freqGHz = '%s' in getFRelWeights - this is okay if you're running on a TILe-C y-map" % (freqGHz))
                         if freqGHz not in fRelTab.keys():
-                            fRelTab.add_column(atpy.Column(np.zeros(len(config.tileNames)), freqGHz))
+                            fRelTab.add_column(atpy.Column(np.zeros(len(config.allTileNames)), freqGHz))
                         fRelTab[freqGHz][tileCount]=img[0].header['RW%d' % (i)]
         fRelTab.write(fRelWeightsFileName, overwrite = True)
     
@@ -428,7 +428,7 @@ def fitQ(config):
             for obsFreqGHz in list(beamsDict.keys()):
                 if mapDict['obsFreqGHz'] is not None:   # Normal case
                     amplitude=maps.convertToDeltaT(y0, obsFreqGHz)
-                else:                                   # tILe-C case
+                else:                                   # TILe-C case
                     amplitude=y0
                 # NOTE: Q is to adjust for mismatched filter shape
                 # Yes, this should have the beam in it (certainly for TILe-C)
