@@ -1,7 +1,7 @@
 .. _QuickStartPage:
 
 ======================================================
-Quickstart - Cluster Finding in the ACTPol E-D56 Field
+Quickstart: Cluster Finding in the ACTPol E-D56 Field
 ======================================================
 
 
