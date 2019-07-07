@@ -17,5 +17,4 @@ CRVAL2  =                  0.0 / [deg] Coordinate value at reference point
 LONPOLE =                  0.0 / [deg] Native longitude of celestial pole
 LATPOLE =                 90.0 / [deg] Native latitude of celestial pole
 RADESYS = 'ICRS'               / Equatorial coordinate system
-BUNIT   = 'yc      '
 END

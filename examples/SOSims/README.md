@@ -105,15 +105,43 @@ mass-limit map.
 The limits within the footprints of other surveys that intersect with the 
 filtered maps can be obtained by supplying survey mask files in the 
 `selFnFootprints` parameter in the configuration file (these are commented out
-in `MFMF_SOSim_3freq_small.yml`. 
+in `MFMF_SOSim_3freq_small.yml`). 
 
 # Running Nemo on large maps
 
 To do this, you will first need to output large area CAR maps using (for example)
 the `healpix2CAR.py` script with `template_AdvACT.txt`. You will then need to 
-use a config file that tells Nemo how to break the map up into tiles.
+use a config file that tells Nemo how to break the map up into tiles, such as
+the supplied `MFMF_SOSims_3freq_tiles.yml` (the tile definitions can be found at
+the bottom of this file). 
 
-Add an example slurm script too.
+Nemo runs in parallel over MPI, distributing tiles to different processor cores. 
+An automatic tiling algorithm will eventually be included in Nemo, but for now 
+you can find a script that generates the tile definitions that have already been
+included in `MFMF_SOSims_3freq_tiles.yml` in `autotiler.py`. This script makes 
+use of a "survey mask", which defines the region that Nemo will search for 
+clusters (or sources). 
+
+The script `createSurveyMask.py` generates the survey mask FITS image, taking as
+input a DS9 region file containing polygon-shaped regions (see 
+`surveyMask.reg`), and a plain-text file that defines the image header
+(`template_AdvACT.txt`). You can run this with:
+
+```
+python createSurveyMask.py template_AdvACT.txt surveyMask.reg
+```
+
+This writes the output survey mask to `surveyMask.fits.gz`. You will need this 
+file to run Nemo using the included `MFMF_SOSims_3freq_tiles.yml` configuration.
+
+You can run Nemo in parallel using, e.g.,
+```
+mpiexec --np $NUM_PROCESSES nemo MFMF_SOSim_3freq_tiles.yml -M
+```
+replacing `$NUM_PROCESSES` with the number of cores you want to run on. Nemo
+will divide up the tiles between processors as evenly as it can. The file 
+`slurm_nemo.sh` shows how Nemo can be run on a cluster that uses the 
+[Slurm](https://slurm.schedmd.com/overview.html) job scheduler.
 
 # Using the input simulation catalogs
 
