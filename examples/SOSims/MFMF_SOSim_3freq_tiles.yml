@@ -59,7 +59,7 @@ massOptions: {tenToA0: 4.95e-5,
               sigma_int: 0.2,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "MFMF-S16-MJH_redshifts.fits", 
+              redshiftCatalog: "redshifts.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 

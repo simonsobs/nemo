@@ -145,5 +145,27 @@ will divide up the tiles between processors as evenly as it can. The file
 
 # Using the input simulation catalogs
 
-Add stuff on how to use the WebSky catalogs here, running `nemoMass` with the given
-redshifts there, etc.. - to do.
+The halo catalog for the [WebSky](https://mocks.cita.utoronto.ca/index.php/WebSky_Extragalactic_CMB_Mocks) 
+simulations is 33 Gb in size. You can 
+obtain a smaller version (28 Mb; just containing halos more massive than 
+10<sup>14</sup> MSun), using
+```
+wget https://acru.ukzn.ac.za/~mjh/halos.fits https://acru.ukzn.ac.za/~mjh/halos.reg
+```
+(this fetches a DS9 region file as well). These were produced using `readWebSkyInputCatalog.py` (which is a 
+[modified version of the WebSky readhalos.py script](https://mocks.cita.utoronto.ca/data/websky/v0.0/readhalos.py)).
+
+The `nemoMass` script can be used to obtain mass estimates for cluster candidates, but
+requires a table of redshifts to match against (by object name - at least for the moment).
+To produce the `redshifts.fits` catalog referred to by the `MFMF_SOSims_3freq_tiles.yml`
+configuration file, you can run this,
+
+```
+python makeRedshiftsCatalog.py MFMF_SOSim_3freq_tiles/MFMF_SOSim_3freq_tiles_optimalCatalog.fits halos.fits 
+```
+
+You will then be able to run `nemoMass` with:
+```
+nemoMass MFMF_SOSim_3freq_tiles.yml
+```
+This particular script needs (re)-parallelizing to run on SO-sized catalogs.
