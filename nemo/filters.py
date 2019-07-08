@@ -484,7 +484,7 @@ class MatchedFilter(MapFilter):
                     else:
                         raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
                 else:
-                    w.append(1.0)   # For tILe-C: there should only be one map if input units are yc anyway...
+                    w.append(1.0)   # For TILe-C: there should only be one map if input units are yc anyway...
             w=np.array(w)
                 
             # Make FFTs of unit-normalised signal templates for each band
@@ -515,7 +515,7 @@ class MatchedFilter(MapFilter):
                 fSignalMaps=[]
                 y0=2e-4
                 for mapDict in self.unfilteredMapsDictList:
-                    if mapDict['units'] == 'yc':    # For handling tILe-C maps
+                    if mapDict['units'] == 'yc':    # For handling TILe-C maps
                         signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], amplitude = y0)
                     else:                           # The normal case
                         deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
@@ -853,7 +853,7 @@ class RealSpaceMatchedFilter(MapFilter):
         # NOTE: This is SZ-specific again and needs generalising
         signalMaps=[]
         for mapDict in self.unfilteredMapsDictList:
-            # This has been made more complicated because of tILe-C
+            # This has been made more complicated because of TILe-C
             if self.params['outputUnits'] == 'yc':
                 y0=2e-4
                 if mapDict['obsFreqGHz'] is not None:   
@@ -862,7 +862,7 @@ class RealSpaceMatchedFilter(MapFilter):
                     signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'],
                                                          amplitude = deltaT0)
                 else:
-                    # tILe-C case
+                    # TILe-C case
                     signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], amplitude = y0)
             elif self.params['outputUnits'] == 'uK':
                 signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])

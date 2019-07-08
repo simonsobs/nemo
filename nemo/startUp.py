@@ -241,6 +241,10 @@ class NemoConfig(object):
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))
 
+        # For convenience, keep the full list of tile names 
+        # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
+        self.allTileNames=self.tileNames.copy()
+        
         # MPI: just divide up tiles pointed at by tileNames among processes
         if self.MPIEnabled == True:
             # New - bit clunky but distributes more evenly
