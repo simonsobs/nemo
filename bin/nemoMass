@@ -32,8 +32,6 @@ import argparse
 import astropy.io.fits as pyfits
 import time
 import yaml
-import multiprocessing
-from functools import partial
 import IPython
 
 #------------------------------------------------------------------------------------------------------------
@@ -113,58 +111,63 @@ def addForcedPhotometry(forcedTab, config):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def calcMass(row, massOptions, tckQFitDict, fRelWeightsDict):
-    """Calculates masses cluster data in row (a dictionary). For use with multiprocessing.
+def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
+    """Calculates masses for cluster data in table.
     """
-    tileName=row['template'].split("#")[-1]
-            
-    print("... %s (%.3f +/- %.3f) ..." % (row['name'], row['redshift'], row['redshiftErr']))
+    
+    count=0
+    for row in tab:
+        count=count+1
+        print("... rank %d; %d/%d; %s (%.3f +/- %.3f) ..." % (config.rank, count, len(tab), row['name'], 
+                                                              row['redshift'], row['redshiftErr']))
 
-    # Corrected for mass function steepness
-    massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                        row['redshift'], row['redshiftErr'],
-                                        tenToA0 = massOptions['tenToA0'],
-                                        B0 = massOptions['B0'], 
-                                        Mpivot = massOptions['Mpivot'], 
-                                        sigma_int = massOptions['sigma_int'],
-                                        tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
-                                        applyMFDebiasCorrection = True,
-                                        applyRelativisticCorrection = massOptions['relativisticCorrection'],
-                                        fRelWeightsDict = fRelWeightsDict[tileName])
-    row['M500']=massDict['M500']
-    row['M500_errPlus']=massDict['M500_errPlus']
-    row['M500_errMinus']=massDict['M500_errMinus']
-    # Uncorrected for mass function steepness
-    unCorrMassDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+        tileName=row['template'].split("#")[-1]
+        
+        # Corrected for mass function steepness
+        massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                             row['redshift'], row['redshiftErr'],
                                             tenToA0 = massOptions['tenToA0'],
                                             B0 = massOptions['B0'], 
                                             Mpivot = massOptions['Mpivot'], 
                                             sigma_int = massOptions['sigma_int'],
                                             tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
-                                            applyMFDebiasCorrection = False,
-                                            fRelWeightsDict = fRelWeightsDict)
-    row['M500Uncorr']=unCorrMassDict['M500']
-    row['M500Uncorr_errPlus']=unCorrMassDict['M500_errPlus']
-    row['M500Uncorr_errMinus']=unCorrMassDict['M500_errMinus']
-    # Mass conversion
-    row['M200m']=signals.convertM500cToM200m(massDict['M500']*1e14, row['redshift'])/1e14
-    row['M200m_errPlus']=(row['M500_errPlus']/row['M500'])*row['M200m']
-    row['M200m_errMinus']=(row['M500_errMinus']/row['M500'])*row['M200m']
-    row['M200mUncorr']=signals.convertM500cToM200m(unCorrMassDict['M500']*1e14, row['redshift'])/1e14
-    row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
-    row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
-    # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
-    row['M500Cal']=massDict['M500']/massOptions['rescaleFactor']        
-    row['M500Cal_errPlus']=np.sqrt(np.power(row['M500_errPlus']/row['M500'], 2) + \
-                                    np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
-    row['M500Cal_errMinus']=np.sqrt(np.power(row['M500_errMinus']/row['M500'], 2) + \
-                                    np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
-    row['M200mCal']=signals.convertM500cToM200m(row['M500Cal']*1e14, row['redshift'])/1e14
-    row['M200mCal_errPlus']=(row['M500Cal_errPlus']/row['M500Cal'])*row['M200mCal']
-    row['M200mCal_errMinus']=(row['M500Cal_errMinus']/row['M500Cal'])*row['M200mCal']
+                                            applyMFDebiasCorrection = True,
+                                            applyRelativisticCorrection = massOptions['relativisticCorrection'],
+                                            fRelWeightsDict = fRelWeightsDict[tileName])
+        row['M500']=massDict['M500']
+        row['M500_errPlus']=massDict['M500_errPlus']
+        row['M500_errMinus']=massDict['M500_errMinus']
+        # Uncorrected for mass function steepness
+        unCorrMassDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+                                                row['redshift'], row['redshiftErr'],
+                                                tenToA0 = massOptions['tenToA0'],
+                                                B0 = massOptions['B0'], 
+                                                Mpivot = massOptions['Mpivot'], 
+                                                sigma_int = massOptions['sigma_int'],
+                                                tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
+                                                applyMFDebiasCorrection = False,
+                                                fRelWeightsDict = fRelWeightsDict)
+        row['M500Uncorr']=unCorrMassDict['M500']
+        row['M500Uncorr_errPlus']=unCorrMassDict['M500_errPlus']
+        row['M500Uncorr_errMinus']=unCorrMassDict['M500_errMinus']
+        # Mass conversion
+        row['M200m']=signals.convertM500cToM200m(massDict['M500']*1e14, row['redshift'])/1e14
+        row['M200m_errPlus']=(row['M500_errPlus']/row['M500'])*row['M200m']
+        row['M200m_errMinus']=(row['M500_errMinus']/row['M500'])*row['M200m']
+        row['M200mUncorr']=signals.convertM500cToM200m(unCorrMassDict['M500']*1e14, row['redshift'])/1e14
+        row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
+        row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
+        # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
+        row['M500Cal']=massDict['M500']/massOptions['rescaleFactor']        
+        row['M500Cal_errPlus']=np.sqrt(np.power(row['M500_errPlus']/row['M500'], 2) + \
+                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
+        row['M500Cal_errMinus']=np.sqrt(np.power(row['M500_errMinus']/row['M500'], 2) + \
+                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
+        row['M200mCal']=signals.convertM500cToM200m(row['M500Cal']*1e14, row['redshift'])/1e14
+        row['M200mCal_errPlus']=(row['M500Cal_errPlus']/row['M500Cal'])*row['M200mCal']
+        row['M200mCal_errMinus']=(row['M500Cal_errMinus']/row['M500Cal'])*row['M200mCal']
 
-    return row
+    return tab
 
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
@@ -295,14 +298,31 @@ if __name__ == '__main__':
         relStr="relativistic correction applied"
     print(">>> Estimating masses (%s) ..." % (relStr))
 
+    # Seems like multiprocessing doesn't work under slurm...   
+    # So use MPI instead: just divide up catalog among processes
     tab.add_column(atpy.Column(np.arange(len(tab)), "sortIndex"))
-    cat=catalogs.tabToCatalogList(tab)  
-    with multiprocessing.Pool(processes = multiprocessing.cpu_count()) as pool:
-        result=pool.map(partial(calcMass, massOptions = massOptions, tckQFitDict = tckQFitDict, 
-                                fRelWeightsDict = fRelWeightsDict), cat)
-    tab=catalogs.catalogListToTab(result, keysToWrite = cat[0].keys())
+    if config.MPIEnabled == True:
+        numRowsPerProcess=int(np.ceil(len(tab)/config.size))
+        startIndex=config.rank*numRowsPerProcess
+        endIndex=startIndex+numRowsPerProcess
+        if endIndex >= len(tab):
+            endIndex=len(tab)-1
+        tab=tab[startIndex:endIndex]
+        
+    tab=calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict)
+    
+    if config.MPIEnabled == True:
+        tabList=config.comm.gather(tab, root = 0)
+        if config.rank != 0:
+            assert tabList is None
+            print("... MPI rank %d finished ..." % (config.rank))
+            sys.exit()
+        else:
+            print("... gathering catalogs ...")
+            tab=atpy.vstack(tab)
+    
     tab.sort('sortIndex')
-    tab.remove_column('sortIndex')
+    tab.remove_column('sortIndex')               
     
     # Tidy up and save
     # We delete some columns here to save duplicating in sourcery database
