@@ -187,7 +187,7 @@ if __name__ == '__main__':
     
     parDictFileName=args.configFileName
     catFileName=args.catFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False)
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False, verbose = False)
         
     massOptions=config.parDict['massOptions']
     if 'relativisticCorrection' not in massOptions.keys():
@@ -305,8 +305,8 @@ if __name__ == '__main__':
         numRowsPerProcess=int(np.ceil(len(tab)/config.size))
         startIndex=config.rank*numRowsPerProcess
         endIndex=startIndex+numRowsPerProcess
-        if endIndex >= len(tab):
-            endIndex=len(tab)-1
+        if config.rank == config.size-1:
+            endIndex=len(tab)
         tab=tab[startIndex:endIndex]
         
     tab=calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict)
@@ -319,7 +319,7 @@ if __name__ == '__main__':
             sys.exit()
         else:
             print("... gathering catalogs ...")
-            tab=atpy.vstack(tab)
+            tab=atpy.vstack(tabList)
     
     tab.sort('sortIndex')
     tab.remove_column('sortIndex')               
