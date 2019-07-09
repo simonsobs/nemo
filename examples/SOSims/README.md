@@ -153,7 +153,8 @@ obtain a smaller version (28 Mb; just containing halos more massive than
 wget https://acru.ukzn.ac.za/~mjh/halos.fits https://acru.ukzn.ac.za/~mjh/halos.reg
 ```
 (this fetches a DS9 region file as well). These were produced using `readWebSkyInputCatalog.py` (which is a 
-[modified version of the WebSky readhalos.py script](https://mocks.cita.utoronto.ca/data/websky/v0.0/readhalos.py)).
+modified version of the WebSky [readhalos.py](https://mocks.cita.utoronto.ca/data/websky/v0.0/readhalos.py)
+script).
 
 The `nemoMass` script can be used to obtain mass estimates for cluster candidates, but
 requires a table of redshifts to match against (by object name - at least for the moment).
@@ -166,6 +167,13 @@ python makeRedshiftsCatalog.py MFMF_SOSim_3freq_tiles/MFMF_SOSim_3freq_tiles_opt
 
 You will then be able to run `nemoMass` with:
 ```
-nemoMass MFMF_SOSim_3freq_tiles.yml
+mpiexec --np $NUM_PROCESSES nemoMass MFMF_SOSim_3freq_tiles.yml -M
 ```
-This particular script needs (re)-parallelizing to run on SO-sized catalogs.
+again, replacing `$NUM_PROCESSES` with the number of cores you want to run on. The 
+`slurm_mass.sh` scripts shows to run this using [Slurm](https://slurm.schedmd.com/overview.html) 
+(this takes less than 3 minutes for a catalog of ~30,000 clusters with the settings given).
+
+Note `rescaleFactor` in `massOptions` in the `MFMF_SOSim_3freq_tiles.yml` configuration file
+has been set such that the "calibrated" masses produced by `nemoMass` (`M500Cal`, `M200mCal`) are on
+approximately the same scale as the WebSky halo catalog (the slope of the mass scaling
+relation in the simulations is slightly different though).

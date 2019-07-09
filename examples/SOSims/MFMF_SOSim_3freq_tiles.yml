@@ -57,8 +57,8 @@ massOptions: {tenToA0: 4.95e-5,
               B0: 0.08, 
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
-              rescaleFactor: 0.68, 
-              rescaleFactorErr: 0.11,
+              rescaleFactor: 0.63,      # Approx. matches WebSky scaling (slope seems different though)
+              rescaleFactorErr: 0.01,
               redshiftCatalog: "redshifts.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
