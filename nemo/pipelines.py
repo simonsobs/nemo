@@ -19,6 +19,7 @@ from . import photometry
 from . import catalogs
 from . import maps
 from . import signals
+from . import completeness
 from . import MockSurvey
 import IPython
 
@@ -104,7 +105,91 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])
         
     return imageDict
+
+
+#------------------------------------------------------------------------------------------------------------
+def makeSelFnCollection(config, mockSurvey):
+    """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
+    in the config file, plus the full survey mask), that contain information on noise levels, area covered, 
+    and completeness. 
     
+    Returns a dictionary (keys: 'full' - corresponding to whole survey, plus other keys named by footprint).
+    
+    """
+    
+    # Q varies across tiles
+    QFitFileName=config.selFnDir+os.path.sep+"QFit.fits"
+    if os.path.exists(QFitFileName) == True:
+        tckQFitDict=signals.loadQ(QFitFileName)
+    else:
+        raise Exception("could not find cached Q fit - run nemoMass first")
+        
+    # We only care about the filter used for fixed_ columns
+    photFilterLabel=config.parDict['photFilter']
+    for filterDict in config.parDict['mapFilters']:
+        if filterDict['label'] == photFilterLabel:
+            break
+
+    # We'll only calculate completeness for this given selection
+    SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
+
+    # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
+    if 'numDraws' not in config.parDict['selFnOptions'].keys():
+        config.parDict['selFnOptions']['numDraws']=2000000
+    if 'numIterations' not in config.parDict['selFnOptions'].keys():
+        config.parDict['selFnOptions']['numIterations']=100
+    
+    # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
+    footprintsList=[]
+    if 'selFnFootprints' in config.parDict.keys():
+        footprintsList=footprintsList+config.parDict['selFnFootprints']
+        
+    # Run the selection function calculation on each tile in turn
+    selFnCollection={'full': []}
+    for footprintDict in footprintsList:
+        if footprintDict['label'] not in selFnCollection.keys():
+            selFnCollection[footprintDict['label']]=[]
+            
+    for tileName in config.tileNames:
+        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
+        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
+                                           numDraws = config.parDict['selFnOptions']['numDraws'],
+                                           numIterations = config.parDict['selFnOptions']['numIterations'],
+                                           method = config.parDict['selFnOptions']['method'],
+                                           plotFileName = config.diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (tileName))
+        selFnDict={'tileName': tileName,
+                   'RMSTab': RMSTab,
+                   'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
+                   'compMz': compMz}
+        selFnCollection['full'].append(selFnDict)
+        
+        # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
+        # May as well do this bit here (in parallel) and assemble output later
+        for footprintDict in footprintsList:
+            completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
+            tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
+            if tileAreaDeg2 > 0:
+                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
+                                              footprintLabel = footprintDict['label'])
+                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
+                                                   numDraws = config.parDict['selFnOptions']['numDraws'],
+                                                   numIterations = config.parDict['selFnOptions']['numIterations'],
+                                                   method = config.parDict['selFnOptions']['method'])
+                selFnDict={'tileName': tileName,
+                           'RMSTab': RMSTab,
+                           'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
+                           'compMz': compMz}
+                selFnCollection[footprintDict['label']].append(selFnDict)
+            
+        # Optional mass-limit maps
+        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
+            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
+                                            config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
+                                            config.selFnDir) 
+    
+    return selFnCollection
+                
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, writeInfo = True, 
                            verbose = True):
@@ -154,9 +239,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     RMSMapDict={}
     for tileName in config.tileNames:
         # Need area covered 
-        areaImg=pyfits.open(config.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
-        areaMask=areaImg[0].data
-        wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+        areaMask, wcs=completeness.loadAreaMask(tileName, config.selFnDir)
         areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
 
         # Need RMS map to apply selection function

@@ -12,6 +12,7 @@ import os
 import datetime
 from nemo import *
 import nemo
+from nemo import MockSurvey
 import argparse
 import astropy
 import astropy.table as atpy
@@ -70,7 +71,23 @@ if __name__ == '__main__':
     # So we only feed one dictionary into the plotting routine (see below)
     for k in list(skySimConTabDict.keys()):
         conTabDict[k]=skySimConTabDict[k]
-        
+
+    # Moved calculation of selection function parts here as it's very quick in parallel
+    if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
+        # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
+        minMass=8e13
+        areaDeg2=400.0  # Don't care what value this has, as we'll sim up an arbitrary number of clusters anyway
+        zMin=0.0
+        zMax=2.0
+        H0=70.
+        Om0=0.30
+        Ob0=0.05
+        sigma_8=0.8
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
+        selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
+    else:
+        selFnCollection={}
+    
     # MPI: gather together and merge all of the catalogs from each process, and contamination test results
     # This needs tidying up...
     if config.MPIEnabled == True:
@@ -78,6 +95,8 @@ if __name__ == '__main__':
         posRecTableList=config.comm.gather(posRecTable, root = 0)
         conKeysList=list(conTabDict.keys())
         conTabDictList=config.comm.gather(conTabDict, root = 0)
+        if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
+            gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank != 0:
             assert optimalCatalogList is None
             print("... MPI rank %d finished ..." % (config.rank))
@@ -128,6 +147,16 @@ if __name__ == '__main__':
                 fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, "_average")
                 conTab=avConTabDict[k]
                 conTab.write(fitsOutFileName, overwrite = True) 
+            # Selection function bits
+            print("... gathering selection function results ...")
+            all_selFnCollection={'full': []}
+            for key in selFnCollection.keys():
+                if key not in all_selFnCollection.keys():
+                    all_selFnCollection[key]=[]
+            for selFnCollection in gathered_selFnCollections:
+                for key in all_selFnCollection.keys():
+                    all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
+            selFnCollection=all_selFnCollection
     else:
         optimalCatalog=imageDict['optimalCatalog']
     
@@ -170,10 +199,26 @@ if __name__ == '__main__':
                              config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
                              config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
 
-    # Cache file containing weights for relatvistic corrections
+    # Cache file containing weights for relativistic corrections
     # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do
-    # Needs full tileNames list though to make sense...
-    config.restoreConfig()
     signals.getFRelWeights(config)
-    
+
+    if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
+        # Survey completeness stats now all lumped together in one routine
+        # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
+        completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
+                                            additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
+        
+        # If we made mass limit maps...
+        # ... make cumulative area versus mass limit plot(s)
+        # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit
+        if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
+            print(">>> Making cumulative area plots and full survey mass limit plots ...")
+            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+                completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir) 
+                completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
+        
+        # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
+        completeness.tidyUp(config)
+        
     

@@ -279,18 +279,57 @@ class SelFn(object):
     
 #------------------------------------------------------------------------------------------------------------
 def loadAreaMask(tileName, selFnDir):
-    """Loads the survey area mask (i.e., after edge-trimming and point source masking, produced by nemo).
+    """Loads the survey area mask (i.e., after edge-trimming and point source masking, produced by nemo) for
+    the given tile.
     
     Returns map array, wcs
     
     """
     
-    areaImg=pyfits.open(selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
-    areaMap=areaImg[0].data
-    wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
-    areaImg.close()
-    
+    areaMap, wcs=_loadTile(tileName, selFnDir, "areaMask", extension = 'fits.gz')   
     return areaMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def loadRMSMap(tileName, selFnDir, photFilter):
+    """Loads the RMS map for the given tile.
+    
+    Returns map array, wcs
+    
+    """
+    
+    RMSMap, wcs=_loadTile(tileName, selFnDir, "RMSMap_%s" % (photFilter), extension = 'fits.gz')   
+    return RMSMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def loadIntersectionMask(tileName, selFnDir, footprint):
+    """Loads the intersection mask for the given tile and footprint.
+    
+    Returns map array, wcs
+    
+    """           
+            
+    intersectMask, wcs=_loadTile(tileName, selFnDir, "intersect_%s" % (footprint), extension = 'fits.gz')   
+    return intersectMask, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def _loadTile(tileName, baseDir, baseFileName, extension = 'fits'):
+    """Generic function to load a tile image from either a multi-extension FITS file, or a file with 
+    #tileName.fits type extension, whichever is found.
+        
+    Returns map array, wcs
+    
+    """
+    
+    # After tidyUp is run, this will be a MEF file... during first run, it won't be (written under MPI)
+    if os.path.exists(baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)):
+        fileName=baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)
+    else:
+        fileName=baseDir+os.path.sep+"%s.%s" % (baseFileName, extension)
+    with pyfits.open(fileName) as img:
+        data=img[tileName].data
+        wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
+    
+    return data, wcs
 
 #------------------------------------------------------------------------------------------------------------
 def getTileTotalAreaDeg2(tileName, selFnDir, masksList = [], footprintLabel = None):
@@ -328,58 +367,65 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
     Returns intersectionMask as array (1 = valid area, 0 = otherwise)
     
     """
-        
+    
+    # After tidyUp has run, there will be intersection mask MEF files
+    intersectFileName=selFnDir+os.path.sep+"intersect_%s.fits.gz" % (label)
+    if os.path.exists(intersectFileName):
+        intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
+        return intersectMask
+    
+    # Otherwise, we may have a per-tile intersection mask
+    intersectFileName=selFnDir+os.path.sep+"intersect_%s#%s.fits.gz" % (label, tileName)
+    if os.path.exists(intersectFileName):
+        intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
+        return intersectMask
+
+    # Otherwise... make it
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
-    
-    intersectFileName=selFnDir+os.path.sep+"intersect_%s#%s.fits.gz" % (label, tileName)
-    if os.path.exists(intersectFileName) == True:
-        with pyfits.open(intersectFileName) as intersectImg:
-            intersectMask=intersectImg[0].data
-    else:
-        if masksList == []:
-            raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
-        print("... creating %s intersection mask (%s) ..." % (label, tileName))         
-        intersectMask=np.zeros(areaMap.shape)
+    if masksList == []:
+        raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
+    print("... creating %s intersection mask (%s) ..." % (label, tileName))         
+    intersectMask=np.zeros(areaMap.shape)
+    outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
+    outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
+    outRA=outRACoords[:, 0]
+    outDec=outDecCoords[:, 1]
+    RAToX=interpolate.interp1d(outRA, np.arange(intersectMask.shape[1]), fill_value = 'extrapolate')
+    DecToY=interpolate.interp1d(outDec, np.arange(intersectMask.shape[0]), fill_value = 'extrapolate')
+    for fileName in masksList:
+        with pyfits.open(fileName) as maskImg:
+            for hdu in maskImg:
+                if type(hdu) == pyfits.ImageHDU:
+                    break
+            maskWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
+            maskData=hdu.data
+        # From sourcery tileDir stuff
+        RAc, decc=wcs.getCentreWCSCoords()
+        xc, yc=maskWCS.wcs2pix(RAc, decc)
+        xc, yc=int(xc), int(yc)
+        xIn=np.arange(maskData.shape[1])
+        yIn=np.arange(maskData.shape[0])
+        inRACoords=np.array(maskWCS.pix2wcs(xIn, [yc]*len(xIn)))
+        inDecCoords=np.array(maskWCS.pix2wcs([xc]*len(yIn), yIn))
+        inRA=inRACoords[:, 0]
+        inDec=inDecCoords[:, 1]
+        RAToX=interpolate.interp1d(inRA, xIn, fill_value = 'extrapolate')
+        DecToY=interpolate.interp1d(inDec, yIn, fill_value = 'extrapolate')
         outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
         outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
         outRA=outRACoords[:, 0]
         outDec=outDecCoords[:, 1]
-        RAToX=interpolate.interp1d(outRA, np.arange(intersectMask.shape[1]), fill_value = 'extrapolate')
-        DecToY=interpolate.interp1d(outDec, np.arange(intersectMask.shape[0]), fill_value = 'extrapolate')
-        for fileName in masksList:
-            with pyfits.open(fileName) as maskImg:
-                for hdu in maskImg:
-                    if type(hdu) == pyfits.ImageHDU:
-                        break
-                maskWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
-                maskData=hdu.data
-            # From sourcery tileDir stuff
-            RAc, decc=wcs.getCentreWCSCoords()
-            xc, yc=maskWCS.wcs2pix(RAc, decc)
-            xc, yc=int(xc), int(yc)
-            xIn=np.arange(maskData.shape[1])
-            yIn=np.arange(maskData.shape[0])
-            inRACoords=np.array(maskWCS.pix2wcs(xIn, [yc]*len(xIn)))
-            inDecCoords=np.array(maskWCS.pix2wcs([xc]*len(yIn), yIn))
-            inRA=inRACoords[:, 0]
-            inDec=inDecCoords[:, 1]
-            RAToX=interpolate.interp1d(inRA, xIn, fill_value = 'extrapolate')
-            DecToY=interpolate.interp1d(inDec, yIn, fill_value = 'extrapolate')
-            outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
-            outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
-            outRA=outRACoords[:, 0]
-            outDec=outDecCoords[:, 1]
-            xIn=np.array(RAToX(outRA), dtype = int)
-            yIn=np.array(DecToY(outDec), dtype = int)
-            xMask=np.logical_and(xIn >= 0, xIn < maskData.shape[1])
-            yMask=np.logical_and(yIn >= 0, yIn < maskData.shape[0])
-            xOut=np.arange(intersectMask.shape[1])
-            yOut=np.arange(intersectMask.shape[0])
-            for i in yOut[yMask]:
-                intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
-        intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
-        astImages.saveFITS(intersectFileName, intersectMask, wcs)
+        xIn=np.array(RAToX(outRA), dtype = int)
+        yIn=np.array(DecToY(outDec), dtype = int)
+        xMask=np.logical_and(xIn >= 0, xIn < maskData.shape[1])
+        yMask=np.logical_and(yIn >= 0, yIn < maskData.shape[0])
+        xOut=np.arange(intersectMask.shape[1])
+        yOut=np.arange(intersectMask.shape[0])
+        for i in yOut[yMask]:
+            intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
+    intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
+    astImages.saveFITS(intersectFileName, intersectMask, wcs)
         
     return intersectMask
 
@@ -399,23 +445,28 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     
     """
     
-    # This can probably be sped up, but takes ~200 sec for a ~1000 sq deg tile, so we cache
+    # After tidyUp has run, we may have one global RMS table with an extra tileName column we can use
+    RMSTabFileName=selFnDir+os.path.sep+"RMSTab.fits"
+    if footprintLabel is not None:
+        RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+    if os.path.exists(RMSTabFileName):
+        tab=atpy.Table().read(RMSTabFileName)
+        return tab[np.where(tab['tileName'] == tileName)]
+    
+    # Otherwise, we may have a per-tile RMS table
     RMSTabFileName=selFnDir+os.path.sep+"RMSTab_%s.fits" % (tileName)
     if footprintLabel != None:
         RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
-        
     if os.path.exists(RMSTabFileName) == True:
         return atpy.Table().read(RMSTabFileName)
-    
+        
     # We can't make the RMSTab without access to stuff in the diagnostics dir
     # So this bit allows us to skip missing RMSTabs for footprints with no overlap (see SelFn)
-    if diagnosticsDir == None:
+    if diagnosticsDir is None:
         return None
 
     print(("... making %s ..." % (RMSTabFileName)))
-    RMSImg=pyfits.open(selFnDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits.gz" % (tileName))
-    RMSMap=RMSImg[0].data
-
+    RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
     
@@ -715,9 +766,13 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
     """
         
     # Get the stuff we need...
-    RMSImg=pyfits.open(selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName))
-    RMSMap=RMSImg[0].data
-    wcs=astWCS.WCS(RMSImg[0].header, mode = 'pyfits')
+    if os.path.exists(selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName)):
+        fileName=selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName)
+    else:
+        fileName=selFnDir+os.path.sep+"RMSMap_%s.fits.gz" % (photFilterLabel)
+    with pyfits.open(fileName) as RMSImg:
+        RMSMap=RMSImg[0].data
+        wcs=astWCS.WCS(RMSImg[0].header, mode = 'pyfits')
     RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir)
     
     # Downsampling for speed? 
@@ -785,9 +840,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
     for tileName in tileNames:
         with pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits.gz" % (str(z).replace(".", "p"), tileName)) as massLimImg:
             massLimMap=massLimImg[0].data
-        with pyfits.open(selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName)) as areaImg:
-            areaMap=areaImg[0].data
-            wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+        areaMap, wcs=loadAreaMask(tileName, selFnDir)
         areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
         limits=np.unique(massLimMap).tolist()
         if limits[0] == 0:
@@ -889,3 +942,61 @@ def makeFullSurveyMassLimitMapPlot(z, config):
             plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
             plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
             plt.close()
+
+#------------------------------------------------------------------------------------------------------------
+def tidyUp(config):
+    """Tidy up the selFn directory - making MEF files etc. and deleting individual tile files.
+    
+    """
+
+    # Make MEFs
+    MEFsToBuild=["areaMask", "RMSMap_%s" % (config.parDict['photFilter'])]
+    if 'selFnFootprints' in config.parDict.keys():
+        for footprintDict in config.parDict['selFnFootprints']:
+            MEFsToBuild.append("intersect_%s" % footprintDict['label'])
+    for MEFBaseName in MEFsToBuild:  
+        outFileName=config.selFnDir+os.path.sep+MEFBaseName+".fits.gz"
+        newImg=pyfits.HDUList()
+        filesToRemove=[]
+        for tileName in config.allTileNames:
+            fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits.gz"
+            if os.path.exists(fileName):
+                with pyfits.open(fileName) as img:
+                    hdu=pyfits.ImageHDU(data = img[0].data, header = img[0].header, name = tileName)
+                filesToRemove.append(fileName)
+                newImg.append(hdu)
+        if len(newImg) > 0:
+            newImg.writeto(outFileName, overwrite = True)
+            for f in filesToRemove:
+                os.remove(f)
+            
+    # Combine RMSTab files (we can downsample further later if needed)
+    # We add a column for the tileName just in case want to select on this later
+    footprints=['']
+    if 'selFnFootprints' in config.parDict.keys():
+        for footprintDict in config.parDict['selFnFootprints']:
+            footprints.append(footprintDict['label'])
+    for footprint in footprints:
+        if footprint != "":
+            label="_"+footprint
+        else:
+            label=""
+        outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
+        tabList=[]
+        filesToRemove=[]
+        for tileName in config.allTileNames:
+            fileName=config.selFnDir+os.path.sep+"RMSTab_"+tileName+label+".fits"
+            if os.path.exists(fileName):
+                tileTab=atpy.Table().read(fileName)
+                tileTab.add_column(atpy.Column([tileName]*len(tileTab), "tileName"))
+                tabList.append(tileTab)
+                filesToRemove.append(fileName)
+        if len(tabList) > 0:
+            tab=atpy.vstack(tabList)
+            tab.sort('y0RMS')
+            tab.write(outFileName, overwrite = True)
+            for f in filesToRemove:
+                os.remove(f)
+
+        
+    

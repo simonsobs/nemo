@@ -89,18 +89,18 @@ frequencies (at the time of writing, more ringing is seen when including the
 
 # Extracting the survey mass limit
 
-The `nemoSelFn` script can be used to obtain estimates of the 90% mass 
-completeness threshold at some signal-to-noise level (typically S/N > 5). This 
-is subject to the assumed scaling relation parameters defined in the Nemo 
-configuration file. You can run this with:
+If the `calcSelFn` parameter set to True in the Nemo configuration file, the
+main `nemo` script will calculate and output estimates of the 90% mass 
+completeness threshold at some user-set signal-to-noise level (e.g., S/N > 5). 
+You will find various plots related to the survey completeness as a 
+function of redshift under `MFMF_SOSim_3freq_small/diagnostics/`, including a
+mass-limit map. These estimates are subject to the assumed scaling relation 
+parameters defined in the configuration file. If necessary, you can re-run 
+this part using the `nemoSelFn` script:
     
 ```
 nemoSelFn MFMF_SOSim_3freq_small.yml
 ```
-
-This script produces various plots related to the survey completeness as a 
-function of redshift under `MFMF_SOSim_3freq_small/diagnostics/`, including a
-mass-limit map.
 
 The limits within the footprints of other surveys that intersect with the 
 filtered maps can be obtained by supplying survey mask files in the 

@@ -16,6 +16,7 @@ from scipy import ndimage
 from scipy import interpolate
 from . import catalogs
 from . import maps
+from . import completeness
 import sys
 import IPython
 np.random.seed()
@@ -55,8 +56,7 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         # Load area mask
         tileName=key.split("#")[-1]
         if selFnDir != None:
-            img=pyfits.open(selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
-            areaMask=img[0].data
+            areaMask, wcs=completeness.loadAreaMask(tileName, selFnDir)
         else:
             areaMask=None
         

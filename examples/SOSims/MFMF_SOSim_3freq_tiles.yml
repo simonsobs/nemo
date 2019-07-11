@@ -63,9 +63,10 @@ massOptions: {tenToA0: 4.95e-5,
               forcedPhotometry: False, 
               Q: 'fit'}
 
-# Selection function options - only used by the nemoSelFn script
+# Selection function options
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
+calcSelFn: True
 selFnOptions: {fixedSNRCut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
                
