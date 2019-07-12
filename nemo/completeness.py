@@ -976,6 +976,10 @@ def tidyUp(config):
     if 'selFnFootprints' in config.parDict.keys():
         for footprintDict in config.parDict['selFnFootprints']:
             footprints.append(footprintDict['label'])
+    strLen=0
+    for tileName in config.allTileNames:
+        if len(tileName) > strLen:
+            strLen=len(tileName)
     for footprint in footprints:
         if footprint != "":
             label="_"+footprint
@@ -988,7 +992,8 @@ def tidyUp(config):
             fileName=config.selFnDir+os.path.sep+"RMSTab_"+tileName+label+".fits"
             if os.path.exists(fileName):
                 tileTab=atpy.Table().read(fileName)
-                tileTab.add_column(atpy.Column([tileName]*len(tileTab), "tileName"))
+                tileTab.add_column(atpy.Column(np.array([tileName]*len(tileTab), dtype = '<U%d' % (strLen)), 
+                                               "tileName"))
                 tabList.append(tileTab)
                 filesToRemove.append(fileName)
         if len(tabList) > 0:
