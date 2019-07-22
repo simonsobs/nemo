@@ -281,8 +281,10 @@ def makeTileDeck(parDict):
                             count=0
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             while clip['data'].shape[0] % 2 != 0:
-                                clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1+ddec*count)
+                                clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0-ddec*count, dec1)
                                 count=count+1
+                                if count > 100:
+                                    raise Exception("Triggered stupid bug in makeTileDeck... this should be fixed properly")
                             # Old
                             #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))

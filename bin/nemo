@@ -148,15 +148,16 @@ if __name__ == '__main__':
                 conTab=avConTabDict[k]
                 conTab.write(fitsOutFileName, overwrite = True) 
             # Selection function bits
-            print("... gathering selection function results ...")
-            all_selFnCollection={'full': []}
-            for key in selFnCollection.keys():
-                if key not in all_selFnCollection.keys():
-                    all_selFnCollection[key]=[]
-            for selFnCollection in gathered_selFnCollections:
-                for key in all_selFnCollection.keys():
-                    all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
-            selFnCollection=all_selFnCollection
+            if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
+                print("... gathering selection function results ...")
+                all_selFnCollection={'full': []}
+                for key in selFnCollection.keys():
+                    if key not in all_selFnCollection.keys():
+                        all_selFnCollection[key]=[]
+                for selFnCollection in gathered_selFnCollections:
+                    for key in all_selFnCollection.keys():
+                        all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
+                selFnCollection=all_selFnCollection
     else:
         optimalCatalog=imageDict['optimalCatalog']
     
