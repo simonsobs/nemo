@@ -26,6 +26,10 @@ from astLib import *
 import time
 
 #------------------------------------------------------------------------------------------------------------
+# Stop colossus writing cache files (not MPI friendly)
+cosmology.settings.PERSISTENCE=''
+
+#------------------------------------------------------------------------------------------------------------
 class MockSurvey(object):
     
     def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = 0.01, enableDrawSample = False):
