@@ -51,10 +51,21 @@ if __name__ == '__main__':
     footprintLabel=args.footprint
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
+    t0=time.time()
     selFn=completeness.SelFn(parDictFileName, selFnDir, SNRCut, footprintLabel = footprintLabel)
+    t1=time.time()
+    print("... took %.3f sec ..." % (t1-t0))
     
     # If we want to play with scaling relation also
     scalingRelationDict=selFn.scalingRelationDict
+
+    # Default parameters    
+    t0=time.time()
+    H0, Om0, Ob0, sigma_8 = 70.0, 0.30, 0.05, 0.80    
+    printNumClusters(H0, Om0, Ob0, sigma_8, scalingRelationDict = scalingRelationDict)
+    t1=time.time()
+    print("... iteration took %.3f sec ..." % (t1-t0))
+    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test0", "test0_Mz.pdf")
     
     # A complete iteration of changing cosmological parameters    
     t0=time.time()

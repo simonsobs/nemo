@@ -12,13 +12,14 @@ import IPython
 import astropy.table as atpy
 import pylab as plt
 import subprocess
-import hmf
-from hmf import cosmo
 from astropy.cosmology import FlatLambdaCDM
+from colossus.cosmology import cosmology
+from colossus.lss import mass_function
 from . import signals
 from . import catalogs
 import pickle
 from scipy import interpolate
+from scipy import integrate
 from scipy.interpolate import InterpolatedUnivariateSpline as _spline
 from scipy import stats
 from astLib import *
@@ -40,36 +41,20 @@ class MockSurvey(object):
 
         zRange=np.arange(zMin, zMax+zStep, zStep)
         areaSr=np.radians(np.sqrt(areaDeg2))**2
-                
-        # Globally change hmf's cosmology - at least, according to the docs...
-        # NOTE: for astropy 2.0+ need to actually set Tcmb0 here as it defaults to zero
-        # Here we use the value from Fixsen (2009): http://adsabs.harvard.edu/abs/2009ApJ...707..916F
-        self.cosmoModel=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = signals.TCMB)
-        cosmo.Cosmology(cosmo_model = self.cosmoModel)
-        
-        # For drawSample, we use astLib routines (a few times faster than cosmo_model)
-        # This is just to make sure we used the same parameters
-        # H0, OmegaM0, OmegaL0 used for E(z), theta500 calcs in Q
-        astCalc.H0=H0
-        astCalc.OMEGA_M0=Om0
-        astCalc.OMEGA_L0=1.0-Om0
-        
-        self.minMass=minMass
-        
-        # It's much faster to generate one mass function and then update its parameters (e.g., z)
-        # NOTE: Mmin etc. are log10 MSun h^-1; dndm is h^4 MSun^-1 Mpc^-3
-        # Internally, it's better to stick with how hmf does this, i.e., use these units
-        # Externally, we still give  inputs without h^-1
-        # NOTE: default was dlog10m = 0.01; cranking resolution to 0.001 makes a difference, but beyond that converges
-        self.mf=hmf.MassFunction(z = zRange[0], dlog10m=0.01, Mmin = 13., Mmax = 16., delta_wrt = 'crit', delta_h = 500.0,
-                                 sigma_8 = sigma_8, cosmo_model = self.cosmoModel)#, force_flat = True, cut_fit = False)
-            
-        self.log10M=np.log10(self.mf.m/self.mf.cosmo.h)
         self.areaSr=areaSr
         self.areaDeg2=areaDeg2
         self.zBinEdges=zRange
         self.z=(zRange[:-1]+zRange[1:])/2.
-
+        
+        params={'flat': True, 'H0': H0, 'Om0': Om0, 'Ob0': Ob0, 'sigma8': sigma_8, 'ns': 0.95}
+        self.cosmoModel=cosmology.setCosmology('nemo', params)
+        self.cosmoModel.checkForChangedCosmology()
+        
+        self.log10M=np.arange(13, 16, 0.01)
+        self.M=np.power(10, self.log10M)*self.cosmoModel.h
+        self.mdef='500c'
+        self.model='tinker08'
+        
         self.enableDrawSample=enableDrawSample
         self.update(H0, Om0, Ob0, sigma_8)
         
@@ -78,32 +63,24 @@ class MockSurvey(object):
         """Recalculate cluster counts if cosmological parameters updated.
                 
         """
-        # We're using both astLib and astropy... 
-        # astLib is used for E(z) etc. in completeness where it's quicker
-        # We're also keeping track inside MockSurvey itself just for convenience
-        # NOTE: Working on switching all cosmology over to astropy for consistency with hmf - remove when done
+
         self.H0=H0
         self.Om0=Om0
         self.Ob0=Ob0
         self.sigma_8=sigma_8
-        astCalc.H0=H0
-        astCalc.OMEGA_M0=Om0
-        astCalc.OMEGA_L0=1.0-Om0
-        try:
-            self.cosmoModel=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = signals.TCMB)
-            #cosmo.Cosmology(cosmo_model = self.cosmoModel) # Makes no difference...
-            self.mf.update(cosmo_model = self.cosmoModel, sigma_8 = sigma_8)
-        except:
-            raise Exception("failed to update mf when H0 = %.3f Om0 = %.3f Ob0 = %.3f sigma_8 = %.3f" % (H0, Om0, Ob0, sigma_8))
+
+        params={'flat': True, 'H0': H0, 'Om0': Om0, 'Ob0': Ob0, 'sigma8': sigma_8, 'ns': 0.95}
+        self.cosmoModel=cosmology.setCosmology('nemo', params)
+        self.cosmoModel.checkForChangedCosmology()
+        
         self._doClusterCount()
 
         # For quick Q, fRel calc (these are in MockSurvey rather than SelFn as used by drawSample)
         self.theta500Splines=[]
         self.fRelSplines=[]
-        self.Ez=self.cosmoModel.efunc(self.z)
-        self.DAz=self.cosmoModel.angular_diameter_distance(self.z).value
-        self.criticalDensity=self.cosmoModel.critical_density(self.z).value
-        self.criticalDensity=(self.criticalDensity*np.power(signals.Mpc_in_cm, 3))/signals.MSun_in_g
+        self.Ez=self.cosmoModel.Ez(self.z)  
+        self.DAz=self.cosmoModel.angularDiameterDistance(self.z)/self.cosmoModel.h 
+        self.criticalDensity=(self.cosmoModel.rho_c(self.z)*np.power(1000, 3))*np.power(self.cosmoModel.h, 2)
         for k in range(len(self.z)):
             zk=self.z[k]
             interpLim_minLog10M=self.log10M.min()
@@ -122,12 +99,11 @@ class MockSurvey(object):
             tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
             self.theta500Splines.append(tckLog10MToTheta500)
             self.fRelSplines.append(tckLog10MToFRel)
-            
+        
         # Stuff to enable us to draw mock samples (see drawSample)
         # Interpolators here need to be updated each time we change cosmology
         if self.enableDrawSample == True:
 
-            # Now using hmf.sample style...
             # For drawing from overall z distribution
             zSum=self.clusterCount.sum(axis = 1)
             pz=np.cumsum(zSum)/self.numClusters
@@ -138,21 +114,48 @@ class MockSurvey(object):
             # And we may as well have E(z), DA on the z grid also
             self.log10MRollers=[]
             for i in range(len(self.z)):
-                #print("updating z = %.2f" % (self.z[i]))
-                self.mf.update(z = self.z[i])
-                mask=self.mf.ngtm > 0
-                # NOTE: / h here to match what we do in cluster count (also ensures we don't need to worry about little h in draw sample)
-                self.log10MRollers.append(_spline((self.mf.ngtm[mask] / self.mf.ngtm[0])[::-1], np.log10(self.mf.m[mask][::-1]/self.mf.cosmo.h), k=3))
-        
+                ngtm=self._cumulativeNumberDensity(self.z[i])
+                mask=ngtm > 0
+                self.log10MRollers.append(_spline((ngtm[mask] / ngtm[0])[::-1], np.log10(self.M[mask][::-1]/self.cosmoModel.h), k=3))
 
+    
+    def _cumulativeNumberDensity(self, z):
+        """Returns N > M (per cubic Mpc), using Colossus routines.
+        
+        """
+    
+        dndlnM=mass_function.massFunction(self.M/self.cosmoModel.h, z, mdef = self.mdef, 
+                                          model = self.model, q_out = 'dndlnM')
+        dndM=dndlnM/self.M
+        ngtm=integrate.cumtrapz(dndlnM[::-1], np.log(self.M/self.cosmoModel.h), initial = 0)[::-1]
+        
+        MUpper=np.arange(np.log(self.M[-1]), np.log(10**18), np.log(self.M[1])-np.log(self.M[0]))
+        extrapolator=_spline(np.log(self.M), np.log(dndlnM), k=1)
+        MF_extr=extrapolator(MUpper)
+        intUpper=integrate.simps(np.exp(MF_extr), dx=MUpper[2] - MUpper[1], even='first')
+        ngtm=ngtm+intUpper*self.cosmoModel.h
+    
+        return ngtm
+    
+    
+    def _comovingVolume(self, z):
+        """Returns co-moving volume in Mpc^3 (all sky) to some redshift z, using Colossus routines (taking
+        care of the fact that Colossus returns all distances in Mpc/h).
+        
+        NOTE: Assumes flat cosmology
+        
+        """
+        return (4/3)*np.pi*np.power(self.cosmoModel.comovingDistance(0, z)/self.cosmoModel.h, 3)
+
+        
     def _doClusterCount(self):
         """Updates cluster count etc. after mass function object is updated.
         
         """
-        
-        mf=self.mf
+
         zRange=self.zBinEdges
-            
+        self.M=np.power(10, self.log10M)*self.cosmoModel.h
+        
         # Number density by z and total cluster count (in redshift shells)
         # Can use to make P(m, z) plane
         numberDensity=[]
@@ -162,14 +165,13 @@ class MockSurvey(object):
             zShellMin=zRange[i]
             zShellMax=zRange[i+1]
             zShellMid=(zShellMax+zShellMin)/2.  
-            mf.update(z = zShellMid)
-            try:
-                n=hmf.integrate_hmf.hmf_integral_gtm(mf.m/mf.cosmo.h, mf.dndm*(mf.cosmo.h**4))  # Need to account for h^-1 in mass, h^4 in dndm
-            except:
-                raise Exception("Integrating hmf mass function probably failed due to mf.update using cosmo_model without Tcmb0 given?")
-            n=abs(np.gradient(n))# Above is cumulative integral (n > m), need this for actual number count 
+            dndlnM=mass_function.massFunction(self.M/self.cosmoModel.h, zShellMid, mdef = self.mdef, 
+                                              model = self.model, q_out = 'dndlnM')
+            dndM=dndlnM/self.M
+            # NOTE: this differs from hmf by several % at the high-mass end (binning or interpolation?)
+            n=(dndM*self.cosmoModel.h**4)*np.gradient(self.M/self.cosmoModel.h)
             numberDensity.append(n)
-            shellVolumeMpc3=mf.cosmo.comoving_volume(zShellMax).value-mf.cosmo.comoving_volume(zShellMin).value
+            shellVolumeMpc3=self._comovingVolume(zShellMax)-self._comovingVolume(zShellMin)
             shellVolumeMpc3=shellVolumeMpc3*(self.areaSr/(4*np.pi))
             totalVolumeMpc3=totalVolumeMpc3+shellVolumeMpc3
             clusterCount.append(n*shellVolumeMpc3)
@@ -180,7 +182,7 @@ class MockSurvey(object):
         self.clusterCount=clusterCount
         self.numClusters=np.sum(clusterCount)
         self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
-        
+
 
     def calcNumClustersExpected(self, M500Limit = 0.1, zMin = 0.0, zMax = 2.0, selFn = None):
         """Calculate the number of clusters expected above a given mass limit. If selFn is not None, apply
@@ -198,7 +200,7 @@ class MockSurvey(object):
             numClusters=self.clusterCount
         
         zMask=np.logical_and(np.greater(self.z, zMin), np.less(self.z, zMax))
-        mMask=np.greater(self.mf.m/self.mf.cosmo.h, M500Limit*1e14)
+        mMask=np.greater(self.M/self.cosmoModel.h, M500Limit*1e14)
         
         return numClusters[:, mMask][zMask].sum()
         
@@ -207,10 +209,8 @@ class MockSurvey(object):
         """Returns P(log10M) at given z, which corresponds to self.log10M.
         
         """
-
-        self.mf.update(z = z)
-        numberDensity=hmf.integrate_hmf.hmf_integral_gtm(self.mf.m, self.mf.dndm)
-        PLog10M=numberDensity/np.trapz(numberDensity, self.mf.m)
+        numberDensity=self._cumulativeNumberDensity(z)
+        PLog10M=numberDensity/np.trapz(numberDensity, self.M)
 
         return PLog10M
 

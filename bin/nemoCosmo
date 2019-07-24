@@ -23,7 +23,6 @@ from astLib import *
 from scipy import stats
 from scipy import interpolate
 from scipy.special import factorial
-from nemo import SelFn
 from nemo import completeness
 from nemo import signals
 import argparse
@@ -35,7 +34,7 @@ import IPython
 
 # Extreme debugging (better for multiprocessing stuff to crash where we can see it)
 import warnings
-warnings.filterwarnings("error")
+#warnings.filterwarnings("error")
 mpl=multiprocessing.log_to_stderr()
 mpl.setLevel(logging.INFO)
     
@@ -58,7 +57,11 @@ def lnprob(parameters):
     #print(processName, "start step: ", H0, Om0, sigma_8, lp)
     
     t0=time.time()
-    selFn.update(H0, Om0, Ob0, sigma_8)
+    # This can fail if wander outside parameter space where mass function is defined
+    try:
+        selFn.update(H0, Om0, Ob0, sigma_8)
+    except:
+        return -np.inf
     t1=time.time()
     
     # Apply completeness only to predicted counts (selection is already applied to observed)

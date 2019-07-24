@@ -596,7 +596,8 @@ def calcFRel(z, M500, cosmoModel, obsFreqGHz = 148.0):
     # Using Arnaud et al. (2005) M-T to get temperature
     A=3.84e14
     B=1.71
-    TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)
+    #TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)   # HMF/Astropy
+    TkeV=5.*np.power(((cosmoModel.Ez(z)*M500)/A), 1/B)   # Colossus
     TKelvin=TkeV*((1000*e)/kB)
 
     # Itoh et al. (1998) eqns. 2.25 - 2.30
@@ -722,7 +723,7 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B
     function. The approach followed is described in H13, Section 3.2.
     
     Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
-    (in turn using the hmf module). Supplying mockSurvey is no longer optional (and handles setting the 
+    (in turn using the Colossus module). Supplying mockSurvey is no longer optional (and handles setting the 
     cosmology anyway when initialised or updated).
     
     tckQFit is a set of spline knots, as returned by fitQ.

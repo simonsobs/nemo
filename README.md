@@ -48,7 +48,7 @@ Nemo itself is written in Python (3.x), and requires the following additional mo
 * IPython (7.2.0)
 * Cython (0.24.1)
 * PyYAML (3.12)
-* hmf (3.0.6)
+* Colossus (1.2.9)
 * mpi4py (3.0.0)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 

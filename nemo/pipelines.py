@@ -237,15 +237,13 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     mockSurveyDict={}
     wcsDict={}
     RMSMapDict={}
+    # Need RMS map to apply selection function
+    RMSImg=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s.fits.gz" % (photFilterLabel))
     for tileName in config.tileNames:
         # Need area covered 
         areaMask, wcs=completeness.loadAreaMask(tileName, config.selFnDir)
         areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
-
-        # Need RMS map to apply selection function
-        RMSImg=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName))
-        RMSMap=RMSImg[0].data
-    
+        RMSMap=RMSImg[tileName].data
         # For a mock, we could vary the input cosmology...
         minMass=5e13
         zMin=0.0
@@ -254,11 +252,11 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
         Om0=0.30
         Ob0=0.05
         sigma_8=0.8
-        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
-        
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)      
         mockSurveyDict[tileName]=mockSurvey
         RMSMapDict[tileName]=RMSMap
         wcsDict[tileName]=wcs
+    RMSImg.close()
     
     t1=time.time()
     if verbose: print("... took %.3f sec ..." % (t1-t0))

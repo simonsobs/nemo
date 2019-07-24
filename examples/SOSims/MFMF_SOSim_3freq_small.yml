@@ -60,11 +60,11 @@ massOptions: {tenToA0: 4.95e-5,
               relativisticCorrection: False,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "MF-MultiScale-Hybrid-MJH_redshifts_20180814.fits", 
+              redshiftCatalog: "redshifts.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
-# Selection function options
+# Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
 calcSelFn: True
