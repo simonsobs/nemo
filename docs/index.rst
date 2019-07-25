@@ -14,6 +14,7 @@ nemo - a Sunyaev-Zel'dovich effect galaxy cluster and source finder
    usage
    quickstart
    sosims
+   selfn
    tilec
    scripts
    inputs

@@ -239,7 +239,10 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     RMSMapDict={}
     # Need RMS map to apply selection function
     RMSImg=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s.fits.gz" % (photFilterLabel))
+    count=0
     for tileName in config.tileNames:
+        count=count+1
+        print("... %s (%d/%d) ..." % (tileName, count, len(config.tileNames)))
         # Need area covered 
         areaMask, wcs=completeness.loadAreaMask(tileName, config.selFnDir)
         areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
