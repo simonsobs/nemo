@@ -191,8 +191,8 @@ if __name__ == '__main__':
     # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
     if 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
         # RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure) 
-        maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits.gz", 
-                         config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits.gz", 
+        maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits", 
+                         config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits", 
                          config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
         # S/N maps at reference filter scale
         if config.parDict['photFilter'] is not None:
@@ -216,7 +216,7 @@ if __name__ == '__main__':
         if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
             print(">>> Making cumulative area plots and full survey mass limit plots ...")
             for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir) 
+                completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir, config.allTileNames) 
                 completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
         
         # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made

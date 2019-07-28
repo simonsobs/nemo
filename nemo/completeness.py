@@ -286,7 +286,7 @@ def loadAreaMask(tileName, selFnDir):
     
     """
     
-    areaMap, wcs=_loadTile(tileName, selFnDir, "areaMask", extension = 'fits.gz')   
+    areaMap, wcs=_loadTile(tileName, selFnDir, "areaMask", extension = 'fits')   
     return areaMap, wcs
 
 #------------------------------------------------------------------------------------------------------------
@@ -297,8 +297,20 @@ def loadRMSMap(tileName, selFnDir, photFilter):
     
     """
     
-    RMSMap, wcs=_loadTile(tileName, selFnDir, "RMSMap_%s" % (photFilter), extension = 'fits.gz')   
+    RMSMap, wcs=_loadTile(tileName, selFnDir, "RMSMap_%s" % (photFilter), extension = 'fits')   
     return RMSMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def loadMassLimitMap(tileName, diagnosticsDir, z):
+    """Loads the mass limit map for the given tile at the given z.
+    
+    Returns map array, wcs
+    
+    """
+    
+    massLimMap, wcs=_loadTile(tileName, diagnosticsDir, "massLimitMap_z%s" % (str(z).replace(".", "p")), 
+                              extension = 'fits')   
+    return massLimMap, wcs
 
 #------------------------------------------------------------------------------------------------------------
 def loadIntersectionMask(tileName, selFnDir, footprint):
@@ -308,7 +320,7 @@ def loadIntersectionMask(tileName, selFnDir, footprint):
     
     """           
             
-    intersectMask, wcs=_loadTile(tileName, selFnDir, "intersect_%s" % (footprint), extension = 'fits.gz')   
+    intersectMask, wcs=_loadTile(tileName, selFnDir, "intersect_%s" % (footprint), extension = 'fits')   
     return intersectMask, wcs
 
 #------------------------------------------------------------------------------------------------------------
@@ -326,6 +338,9 @@ def _loadTile(tileName, baseDir, baseFileName, extension = 'fits'):
     else:
         fileName=baseDir+os.path.sep+"%s.%s" % (baseFileName, extension)
     with pyfits.open(fileName) as img:
+        # Handling compressed images when we're not actually using tiles
+        if img[tileName].data is None and tileName == 'PRIMARY':
+            tileName='COMPRESSED_IMAGE'
         data=img[tileName].data
         wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
     
@@ -369,13 +384,13 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
     """
     
     # After tidyUp has run, there will be intersection mask MEF files
-    intersectFileName=selFnDir+os.path.sep+"intersect_%s.fits.gz" % (label)
+    intersectFileName=selFnDir+os.path.sep+"intersect_%s.fits" % (label)
     if os.path.exists(intersectFileName):
         intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
         return intersectMask
     
     # Otherwise, we may have a per-tile intersection mask
-    intersectFileName=selFnDir+os.path.sep+"intersect_%s#%s.fits.gz" % (label, tileName)
+    intersectFileName=selFnDir+os.path.sep+"intersect_%s#%s.fits" % (label, tileName)
     if os.path.exists(intersectFileName):
         intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
         return intersectMask
@@ -425,7 +440,7 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         for i in yOut[yMask]:
             intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
     intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
-    astImages.saveFITS(intersectFileName, intersectMask, wcs)
+    maps.saveFITS(intersectFileName, intersectMask, wcs, compressed = True)
         
     return intersectMask
 
@@ -469,7 +484,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
-    
+
     if footprintLabel != None:  
         intersectMask=makeIntersectionMask(tileName, selFnDir, footprintLabel)
         areaMapSqDeg=areaMapSqDeg*intersectMask        
@@ -581,9 +596,9 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
         makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, diagnosticsDir+os.path.sep+"completeness90Percent_%s%s.pdf" % (footprintLabel, additionalLabel), title = "footprint: %s" % (footprintLabel))
         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-        print("... total survey area (after masking) = %.3f sq deg" % (np.sum(tileAreas)))
-        print("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun" % (massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
-        print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete))
+        print("... total survey area (after masking) = %.1f sq deg" % (np.sum(tileAreas)))
+        print("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
+        print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (averageMassLimit_90Complete))
 
 #------------------------------------------------------------------------------------------------------------
 def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
@@ -765,14 +780,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
     
     """
         
-    # Get the stuff we need...
-    if os.path.exists(selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName)):
-        fileName=selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName)
-    else:
-        fileName=selFnDir+os.path.sep+"RMSMap_%s.fits.gz" % (photFilterLabel)
-    with pyfits.open(fileName) as RMSImg:
-        RMSMap=RMSImg[0].data
-        wcs=astWCS.WCS(RMSImg[0].header, mode = 'pyfits')
+    RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir)
     
     # Downsampling for speed? 
@@ -780,7 +788,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
     #RMSTab=downsampleRMSTab(RMSTab)
     
     # Fill in blocks in map for each RMS value
-    outFileName=diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits.gz" % (str(z).replace(".", "p"), tileName)
+    outFileName=diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), tileName)
     if os.path.exists(outFileName) == False:
         massLimMap=np.zeros(RMSMap.shape)
         count=0
@@ -794,7 +802,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
         t1=time.time()
         mask=np.not_equal(massLimMap, 0)
         massLimMap[mask]=np.power(10, massLimMap[mask])/1e14
-        astImages.saveFITS(outFileName, massLimMap, wcs)
+        maps.saveFITS(outFileName, massLimMap, wcs, compressed = True)
         
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title = None):
@@ -823,23 +831,16 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     plt.close()   
     
 #------------------------------------------------------------------------------------------------------------
-def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
+def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     """Make a cumulative plot of 90%-completeness mass limit versus survey area, at the given redshift.
     
     """
-
-    fileList=glob.glob(diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits.gz" % (str(z).replace(".", "p")))
-    tileNames=[]
-    for f in fileList:
-        tileNames.append(f.split("#")[-1].split(".fits")[0])
-    tileNames.sort()
     
     # NOTE: We can avoid this if we add 'areaDeg2' column to selFn_mapFitTab_*.fits tables
     allLimits=[]
     allAreas=[]
     for tileName in tileNames:
-        with pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits.gz" % (str(z).replace(".", "p"), tileName)) as massLimImg:
-            massLimMap=massLimImg[0].data
+        massLimMap, wcs=loadMassLimitMap(tileName, diagnosticsDir, z)
         areaMap, wcs=loadAreaMask(tileName, selFnDir)
         areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
         limits=np.unique(massLimMap).tolist()
@@ -875,7 +876,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
     labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
     plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
-    plt.xlim(0, 15.0)
+    plt.xlim(0,)
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.pdf" % (str(z).replace(".", "p")))
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.png" % (str(z).replace(".", "p")))
@@ -892,7 +893,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
     labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
     plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
-    plt.xlim(0.0, 5.0)
+    plt.xlim(0,)
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.pdf" % (str(z).replace(".", "p")))
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.png" % (str(z).replace(".", "p")))
@@ -905,22 +906,23 @@ def makeFullSurveyMassLimitMapPlot(z, config):
         
     """
     
-    outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
     if 'makeQuickLookMaps' not in config.parDict.keys():
         config.quicklookScale=0.25
         config.quicklookShape, config.quicklookWCS=maps.shrinkWCS(config.origShape, config.origWCS, config.quicklookScale)
-    
-    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits.gz" % (str(z).replace(".", "p")), 
+
+    outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
+    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")), 
                      outFileName, config.quicklookWCS, config.quicklookShape, 
                      fluxRescale = config.quicklookScale)
 
     # Make plot
     if os.path.exists(outFileName) == True:
         with pyfits.open(outFileName) as img:
-            reproj=np.nan_to_num(img[0].data)
-            #reproj=np.ma.masked_where(reproj == np.nan, reproj)
-            reproj=np.ma.masked_where(reproj <1e-6, reproj)
-            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            for hdu in img:
+                if hdu.shape is not ():
+                    reproj=np.nan_to_num(hdu.data)
+                    reproj=np.ma.masked_where(reproj <1e-6, reproj)
+                    wcs=astWCS.WCS(hdu.header, mode = 'pyfits')
             plotSettings.update_rcParams()
             fontSize=20.0
             figSize=(16, 5.7)
@@ -955,18 +957,26 @@ def tidyUp(config):
         for footprintDict in config.parDict['selFnFootprints']:
             MEFsToBuild.append("intersect_%s" % footprintDict['label'])
     for MEFBaseName in MEFsToBuild:  
-        outFileName=config.selFnDir+os.path.sep+MEFBaseName+".fits.gz"
+        outFileName=config.selFnDir+os.path.sep+MEFBaseName+".fits"
         newImg=pyfits.HDUList()
         filesToRemove=[]
         for tileName in config.allTileNames:
-            fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits.gz"
+            fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits"
             if os.path.exists(fileName):
                 with pyfits.open(fileName) as img:
-                    hdu=pyfits.ImageHDU(data = img[0].data, header = img[0].header, name = tileName)
+                    # Handling compressed images when we're not actually using tiles
+                    if img[tileName].data is None and tileName == 'PRIMARY':
+                        tileName='COMPRESSED_IMAGE'
+                    hdu=pyfits.CompImageHDU(np.array(img[tileName].data, dtype = float), img[tileName].header, name = tileName)
                 filesToRemove.append(fileName)
                 newImg.append(hdu)
         if len(newImg) > 0:
-            newImg.writeto(outFileName, overwrite = True)
+            try:
+                newImg.writeto(outFileName, overwrite = True)
+            except:
+                print("argh")
+                IPython.embed()
+                sys.exit()
             for f in filesToRemove:
                 os.remove(f)
             

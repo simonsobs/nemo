@@ -425,8 +425,11 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
         count=count+1
         #print("... %d/%d ..." % (count, len(inFiles)))
         with pyfits.open(f) as img:
-            d=img[0].data
-            inWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+            for hdu in img:
+                if hdu.shape is not ():
+                    d=hdu.data
+                    inWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
+                    break
         xIn=np.arange(d.shape[1])
         yIn=np.arange(d.shape[0])
         inRACoords=np.array(inWCS.pix2wcs(xIn, [0]*len(xIn)))
@@ -437,7 +440,7 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
         yOut=np.array(DecToY(inDec), dtype = int)
         for i in range(len(yOut)):
             outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
-    astImages.saveFITS(outFileName, outData*fluxRescale, outWCS)
+    saveFITS(outFileName, outData*fluxRescale, outWCS, compressed = True)
 
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
@@ -1540,4 +1543,35 @@ def plotPositionRecovery(percentileTable, basePlotFileName, percentilesToPlot = 
         plt.savefig(plotFileName)
         plt.savefig(plotFileName.replace(".pdf", ".png"))
         plt.close()
+
+#---------------------------------------------------------------------------------------------------
+def saveFITS(outputFileName, mapData, wcs, compressed = False):
+    """Writes a map (2d image array) to a new .fits file.
     
+    Args:
+        outputFileName (str): Filename of output FITS image.
+        mapData (:obj:`np.ndarray`): Map data array
+        wcs (:obj:`astWCS.WCS`): Map WCS object
+        compressed (bool): If True, writes a compressed image
+    
+    """
+    
+    if os.path.exists(outputFileName):
+        os.remove(outputFileName)
+    
+    if compressed == False:
+        if wcs is not None:
+            hdu=pyfits.PrimaryHDU(mapData, wcs.header)
+        else:
+            hdu=pyfits.PrimaryHDU(mapData, None)
+    
+    if compressed == True:
+        if wcs is not None:
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), wcs.header)
+        else:
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), None)
+            
+    newImg=pyfits.HDUList()
+    newImg.append(hdu)
+    newImg.writeto(outputFileName)
+    newImg.close()

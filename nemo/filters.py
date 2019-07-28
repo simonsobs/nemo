@@ -612,13 +612,13 @@ class MatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (self.tileName)
+        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
         if os.path.exists(maskFileName) == False:
-            astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
+            maps.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs, compressed = True)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (self.label, self.tileName)
-            astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
+            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
+            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
 
         try:
             self.saveRealSpaceFilterProfile()   
@@ -730,7 +730,7 @@ class RealSpaceMatchedFilter(MapFilter):
     
     Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
     
-    A map of the final area searched for clusters called 'areaMask.fits.gz' is written in the selFn/ 
+    A map of the final area searched for clusters called 'areaMask.fits' is written in the selFn/ 
     folder.
         
     """       
@@ -1009,13 +1009,13 @@ class RealSpaceMatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (self.tileName)
+        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
         if os.path.exists(maskFileName) == False:
-            astImages.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs)
+            maps.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs, compressed = True)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (self.label, self.tileName)
-            astImages.saveFITS(RMSFileName, RMSMap, self.wcs)
+            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
+            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
 
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
                 'SNMap': SNMap, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}

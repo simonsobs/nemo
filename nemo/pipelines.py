@@ -230,38 +230,35 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     # We need an assumed scaling relation for mock observations
     scalingRelationDict=config.parDict['massOptions']
     
-    # Set-up MockSurvey objects to be used to generate multiple mocks here
-    # The reason for doing this is that enableDrawSample = True makes this very slow for 3000 mass bins...
-    if verbose: print(">>> Setting up mock surveys dictionary ...")
-    t0=time.time()
-    mockSurveyDict={}
+    if verbose: print(">>> Setting up mock surveys dictionary ...")       
     wcsDict={}
-    RMSMapDict={}
-    # Need RMS map to apply selection function
-    RMSImg=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s.fits.gz" % (photFilterLabel))
+    RMSMap=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilterLabel))
     count=0
+    totalAreaDeg2=0
+    RMSMapDict={}
     for tileName in config.tileNames:
         count=count+1
         print("... %s (%d/%d) ..." % (tileName, count, len(config.tileNames)))
+        t0=time.time()
         # Need area covered 
-        areaMask, wcs=completeness.loadAreaMask(tileName, config.selFnDir)
-        areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
-        RMSMap=RMSImg[tileName].data
-        # For a mock, we could vary the input cosmology...
-        minMass=5e13
-        zMin=0.0
-        zMax=2.0
-        H0=70.
-        Om0=0.30
-        Ob0=0.05
-        sigma_8=0.8
-        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)      
-        mockSurveyDict[tileName]=mockSurvey
-        RMSMapDict[tileName]=RMSMap
-        wcsDict[tileName]=wcs
-    RMSImg.close()
-    
-    t1=time.time()
+        areaMask, wcsDict[tileName]=completeness.loadAreaMask(tileName, config.selFnDir)
+        areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcsDict[tileName])).sum()/(60**2)
+        totalAreaDeg2=totalAreaDeg2+areaDeg2
+        RMSMapDict[tileName], wcs=completeness.loadRMSMap(tileName, config.selFnDir, photFilterLabel)
+        t1=time.time()
+        print("... %.3f sec" % (t1-t0))
+    RMSMap.close()
+   
+    # We're now using one MockSurvey object for the whole survey
+    # For a mock, we could vary the input cosmology...
+    minMass=5e13
+    zMin=0.0
+    zMax=2.0
+    H0=70.
+    Om0=0.30
+    Ob0=0.05
+    sigma_8=0.8
+    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
     if verbose: print("... took %.3f sec ..." % (t1-t0))
     
     if verbose: print(">>> Making mock catalogs ...")
@@ -270,12 +267,12 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
         mockTabsList=[]
         for tileName in config.tileNames:
             t0=time.time()
-            mockTab=mockSurveyDict[tileName].drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
-                                                       photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
-                                                       SNRLimit = thresholdSigma, applySNRCut = True, 
-                                                       applyPoissonScatter = applyPoissonScatter, 
-                                                       applyIntrinsicScatter = applyIntrinsicScatter,
-                                                       applyNoiseScatter = applyNoiseScatter)
+            mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
+                                          photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
+                                          SNRLimit = thresholdSigma, applySNRCut = True, 
+                                          applyPoissonScatter = applyPoissonScatter, 
+                                          applyIntrinsicScatter = applyIntrinsicScatter,
+                                          applyNoiseScatter = applyNoiseScatter)
             t1=time.time()
             mockTabsList.append(mockTab)
             if verbose: print("... making mock catalog %d for tileName = %s took %.3f sec ..." % (i+1, tileName, t1-t0))
