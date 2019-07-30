@@ -976,12 +976,7 @@ def tidyUp(config):
                 filesToRemove.append(fileName)
                 newImg.append(hdu)
         if len(newImg) > 0:
-            try:
-                newImg.writeto(outFileName, overwrite = True)
-            except:
-                print("argh")
-                IPython.embed()
-                sys.exit()
+            newImg.writeto(outFileName, overwrite = True)
             for f in filesToRemove:
                 os.remove(f)
             
