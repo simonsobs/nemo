@@ -63,13 +63,7 @@ class SelFn(object):
 
         self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
         parDict=startUp.parseConfigFile(parDictFileName)
-        self.tileNames=self.tckQFitDict.keys()
-        
-        # ignoreMPI gives us the complete list of tileNames, regardless of how this parameter is set in the config file
-        #config=startUp.NemoConfig(parDictFileName, makeOutputDirs = False, ignoreMPI = True)
-        #parDict=config.parDict
-        #self.tileNames=config.tileNames
-        
+                
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
             if 'selFnFootprints' not in parDict.keys():
@@ -95,23 +89,32 @@ class SelFn(object):
             self.WCSDict=None
             self.areaMaskDict=None
         
-        # Tile-weighted average noise and area will not change... we'll just re-calculate fitTab and put in place here
-        # Takes around 20 sec
-        self.selFnDictList=[]
-        self.totalAreaDeg2=0.0
-        for tileName in self.tileNames:
-            RMSTab=getRMSTab(tileName, self.photFilterLabel, self.selFnDir, footprintLabel = self.footprintLabel)
-            if type(RMSTab) == atpy.Table:
-                tileAreaDeg2=RMSTab['areaDeg2'].sum()
-                if tileAreaDeg2 > 0:
-                    if downsampleRMS == True:
-                        RMSTab=downsampleRMSTab(RMSTab)
-                    selFnDict={'tileName': tileName,
-                            'RMSTab': RMSTab,
-                            'tileAreaDeg2': tileAreaDeg2}
-                    self.selFnDictList.append(selFnDict)
-                    self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
+        # We should be able to do everything (except clustering) with this
+        # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
+        RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
+        if footprintLabel is not None:
+            RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (RMSTabFileName))
+        self.RMSTab=atpy.Table().read(RMSTabFileName)
+        self.RMSDict={}
+        tileNames=self.tckQFitDict.keys()
+        self.tileNames=[]
+        for tileName in tileNames:
+            tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
+            if downsampleRMS == True and len(tileTab) > 0:
+                tileTab=downsampleRMSTab(tileTab) 
+            if len(tileTab) > 0:    # We may have some blank tiles...
+                self.RMSDict[tileName]=tileTab
+                self.tileNames.append(tileName)
+        self.totalAreaDeg2=self.RMSTab['areaDeg2'].sum()
         
+        # For weighting - arrays where entries correspond with tileNames list
+        tileAreas=[]    
+        for tileName in self.tileNames:
+            areaDeg2=self.RMSTab[self.RMSTab['tileName'] == tileName]['areaDeg2'].sum()
+            tileAreas.append(areaDeg2)
+        self.tileAreas=np.array(tileAreas)
+        self.fracArea=self.tileAreas/self.totalAreaDeg2
+
         # Set initial fiducial cosmology - can be overridden using update function
         if enableCompletenessCalc == True:
             minMass=5e13
@@ -231,24 +234,21 @@ class SelFn(object):
         (yes, this is a bit circular)
         
         """
-        
-        if scalingRelationDict != None:
+
+        if scalingRelationDict is not None:
             self.scalingRelationDict=scalingRelationDict
         
         self.mockSurvey.update(H0, Om0, Ob0, sigma_8)
         
-        tileAreas=[]
         compMzCube=[]
-        for selFnDict in self.selFnDictList:
-            tileAreas.append(selFnDict['tileAreaDeg2'])
-            selFnDict['compMz']=calcCompleteness(selFnDict['RMSTab'], self.SNRCut, selFnDict['tileName'], self.mockSurvey, 
-                                                            self.scalingRelationDict, self.tckQFitDict)
-            compMzCube.append(selFnDict['compMz'])
-        tileAreas=np.array(tileAreas)
-        fracArea=tileAreas/self.totalAreaDeg2
+        for tileName in self.RMSDict.keys():
+            compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName, 
+                                               self.mockSurvey, self.scalingRelationDict, self.tckQFitDict))
+            if np.any(np.isnan(compMzCube[-1])) == True:
+                raise Exception("NaNs in compMz for tile '%s'" % (tileName))
         compMzCube=np.array(compMzCube)
-        self.compMz=np.average(compMzCube, axis = 0, weights = fracArea)
-                    
+        self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+        
 
     def projectCatalogToMz(self, tab):
         """Project a catalog (as astropy Table) into the (log10 M500, z) grid. Takes into account the uncertainties
@@ -500,10 +500,12 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     RMSTab=atpy.Table()
     RMSTab.add_column(atpy.Column(tileArea, 'areaDeg2'))
     RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
-    # Sanity check
+    # Sanity checks - these should be impossible but we have seen...
     tol=1e-3
     if abs(RMSTab['areaDeg2'].sum()-areaMapSqDeg.sum()) > tol:
         raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))
+    if np.less(RMSTab['areaDeg2'], 0).sum() > 0:
+        raise Exception("Negative area in tile '%s'" % (tileName))
     RMSTab.write(RMSTabFileName)
 
     return RMSTab
@@ -516,14 +518,13 @@ def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
     
     """
     
-    stepSize=0.001*1e-4
     binEdges=np.arange(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max()+stepSize, stepSize)
     y0Binned=[]
     tileAreaBinned=[]
     binMins=[]
     binMaxs=[]
     for i in range(len(binEdges)-1):
-        mask=np.logical_and(RMSTab['y0RMS'] > binEdges[i], RMSTab['y0RMS'] <= binEdges[i+1])
+        mask=np.logical_and(RMSTab['y0RMS'] >= binEdges[i], RMSTab['y0RMS'] < binEdges[i+1])
         if mask.sum() > 0:
             y0Binned.append(np.average(RMSTab['y0RMS'][mask], weights = RMSTab['areaDeg2'][mask]))
             tileAreaBinned.append(np.sum(RMSTab['areaDeg2'][mask]))
@@ -684,7 +685,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     
     """
         
-    if z != None:
+    if z is not None:
         zIndex=np.argmin(abs(mockSurvey.z-z))
         zRange=mockSurvey.z[zIndex:zIndex+1]
     else:
@@ -761,7 +762,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     else:
         raise Exception("calcCompleteness only has 'fast', and 'Monte Carlo' methods available")
             
-    if plotFileName != None:
+    if plotFileName is not None:
         # Calculate 90% completeness as function of z
         zBinEdges=np.arange(0.05, 2.1, 0.1)
         zBinCentres=(zBinEdges[:-1]+zBinEdges[1:])/2.
