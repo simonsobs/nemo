@@ -230,24 +230,45 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     # We need an assumed scaling relation for mock observations
     scalingRelationDict=config.parDict['massOptions']
     
-    if verbose: print(">>> Setting up mock surveys dictionary ...")       
+    if verbose: print(">>> Setting up mock surveys dictionary ...")
+    # NOTE: Sanity check is possible here: area in RMSTab should equal area from areaMask.fits
+    # If it isn't, there is a problem...
+    # Also, we're skipping the individual tile-loading routines here for speed
+    checkAreaConsistency=False
     wcsDict={}
     RMSMap=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilterLabel))
+    RMSTab=atpy.Table().read(config.selFnDir+os.path.sep+"RMSTab.fits")
     count=0
     totalAreaDeg2=0
     RMSMapDict={}
+    if checkAreaConsistency == True:
+        areaMap=pyfits.open(config.selFnDir+os.path.sep+"areaMask.fits")
+    t0=time.time()
     for tileName in config.tileNames:
         count=count+1
-        print("... %s (%d/%d) ..." % (tileName, count, len(config.tileNames)))
-        t0=time.time()
-        # Need area covered 
-        areaMask, wcsDict[tileName]=completeness.loadAreaMask(tileName, config.selFnDir)
-        areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcsDict[tileName])).sum()/(60**2)
+        #if verbose: print("... %s (%d/%d) ..." % (tileName, count, len(config.tileNames)))
+        # HACK: We should fix this properly, but for non-tiled maps...
+        if tileName == 'PRIMARY':
+            RMSMapDict[tileName]=RMSMap['COMPRESSED_IMAGE'].data
+            wcsDict[tileName]=astWCS.WCS(RMSMap['COMPRESSED_IMAGE'].header, mode = 'pyfits')
+        else:
+            RMSMapDict[tileName]=RMSMap[tileName].data
+            wcsDict[tileName]=astWCS.WCS(RMSMap[tileName].header, mode = 'pyfits')
+        # Area from RMS table
+        areaDeg2=RMSTab[RMSTab['tileName'] == tileName]['areaDeg2'].sum()
         totalAreaDeg2=totalAreaDeg2+areaDeg2
-        RMSMapDict[tileName], wcs=completeness.loadRMSMap(tileName, config.selFnDir, photFilterLabel)
-        t1=time.time()
-        print("... %.3f sec" % (t1-t0))
+        # Area from map (slower)
+        if checkAreaConsistency == True:
+            areaMask, wcsDict[tileName]=completeness.loadAreaMask(tileName, config.selFnDir)
+            areaMask=areaMap[tileName].data
+            map_areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcsDict[tileName])).sum()/(60**2)
+            if abs(map_areaDeg2-areaDeg2) > 1e-4:
+                raise Exception("Area from areaMask.fits doesn't agree with area from RMSTab.fits")
     RMSMap.close()
+    if checkAreaConsistency == True:
+        areaMap.close()
+    t1=time.time()
+    if verbose: print("... took %.3f sec ..." % (t1-t0))
    
     # We're now using one MockSurvey object for the whole survey
     # For a mock, we could vary the input cosmology...
@@ -259,26 +280,24 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     Ob0=0.05
     sigma_8=0.8
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
-    if verbose: print("... took %.3f sec ..." % (t1-t0))
     
     if verbose: print(">>> Making mock catalogs ...")
     catList=[]
     for i in range(numMocksToMake):       
         mockTabsList=[]
+        t0=time.time()
         for tileName in config.tileNames:
-            t0=time.time()
             mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
                                           photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
                                           SNRLimit = thresholdSigma, applySNRCut = True, 
                                           applyPoissonScatter = applyPoissonScatter, 
                                           applyIntrinsicScatter = applyIntrinsicScatter,
                                           applyNoiseScatter = applyNoiseScatter)
-            t1=time.time()
             mockTabsList.append(mockTab)
-            if verbose: print("... making mock catalog %d for tileName = %s took %.3f sec ..." % (i+1, tileName, t1-t0))
-            
         tab=atpy.vstack(mockTabsList)
         catList.append(tab)
+        t1=time.time()
+        if verbose: print("... making mock catalog %d took %.3f sec ..." % (i+1, t1-t0))
         
         # Write catalog and .reg file
         if writeCatalogs == True:
