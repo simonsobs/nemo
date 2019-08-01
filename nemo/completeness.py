@@ -500,7 +500,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     RMSTab=atpy.Table()
     RMSTab.add_column(atpy.Column(tileArea, 'areaDeg2'))
     RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
-    # Sanity checks - these should be impossible but we have seen...
+    # Sanity checks - these should be impossible but we have seen (e.g., when messed up masks)
     tol=1e-3
     if abs(RMSTab['areaDeg2'].sum()-areaMapSqDeg.sum()) > tol:
         raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))

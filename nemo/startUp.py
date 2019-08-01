@@ -160,7 +160,7 @@ class NemoConfig(object):
             # We don't always need or want this... should we warn by default if not found?
             self.origWCS=None
             self.origShape=None
-            
+                
         # Downsampled WCS and shape for 'quicklook' stitched images
         if 'makeQuickLookMaps' in self.parDict.keys() and self.parDict['makeQuickLookMaps'] == True:
             self.quicklookScale=0.25
@@ -176,11 +176,20 @@ class NemoConfig(object):
         self.MPIEnabled=MPIEnabled
         if self.MPIEnabled == True:
             from mpi4py import MPI
+            # This is needed to get MPI to abort if one process crashes (due to mpi4py error handling)
+            # If this part is disabled, we get nice exceptions, but the program will never finish if a process dies
+            # Here we get the error message at least but not the traceback before MPI Aborts
+            sys_excepthook=sys.excepthook
+            def mpi_excepthook(v, t, tb):
+                sys_excepthook(v, t, tb)
+                print("Exception: %s" % (t.args[0]))
+                MPI.COMM_WORLD.Abort(1)
+            sys.excepthook=mpi_excepthook
             self.comm=MPI.COMM_WORLD
             self.size=self.comm.Get_size()
             self.rank=self.comm.Get_rank()
             if self.size == 1:
-                raise Exception("if you want to use MPI, run with e.g., mpiexec --np 4 nemo ...")
+                raise Exception("If you want to use MPI, run with e.g., mpiexec -np 4 nemo configFile.yml -M")
         else:
             self.rank=0
             self.comm=None
@@ -240,7 +249,7 @@ class NemoConfig(object):
                 self.tileNames=list(tckQFitDict.keys())
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))
-
+                
         # For convenience, keep the full list of tile names 
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
         self.allTileNames=self.tileNames.copy()
@@ -261,7 +270,14 @@ class NemoConfig(object):
                 self.tileNames=rankExtNames[self.rank]
             else:
                 self.tileNames=[]
-        
+
+        # Check any mask files are valid (e.g., -ve values can cause things like -ve area if not caught)
+        if self.rank == 0:
+            maskKeys=['surveyMask', 'pointSourceMask']
+            for key in maskKeys:
+                if key in self.parDict.keys() and self.parDict[key] is not None:
+                    maps.checkMask(self.parDict[key])
+                
         # For debugging...
         if verbose: print(("... rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   

@@ -388,7 +388,22 @@ def shrinkWCS(origShape, origWCS, scaleFactor):
     scaledWCS.updateFromHeader()
     
     return scaledShape, scaledWCS
+
+#-------------------------------------------------------------------------------------------------------------
+def checkMask(fileName):
+    """Checks whether a mask contains negative values (invalid) and throws an exception if this is the case.
+    
+    Args:
+        fileName (str): Name of the .fits format mask file to check
         
+    """
+    
+    with pyfits.open(fileName) as img:
+        for hdu in img:
+            if hdu.data is not None:
+                if np.less(hdu.data, 0).sum() > 0:
+                    raise Exception("Mask file '%s' contains negative values - please fix your mask." % (fileName))
+    
 #-------------------------------------------------------------------------------------------------------------
 def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
     """Fast routine for stitching map tiles back together. Since this uses interpolation, you probably don't 

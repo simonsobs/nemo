@@ -39,8 +39,8 @@ if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoMock")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
-                        want to use this, run using something like: mpiexec --np 4 nemoMock ...""", 
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
+                        want to use this, run with e.g., mpiexec -np 4 nemoMock configFile.yml -M""", 
                         default = False)
     args = parser.parse_args()
     
@@ -54,6 +54,6 @@ if __name__ == '__main__':
 
     # Remove this once we re-jig for MPI
     if config.MPIEnabled == True and numMocksToMake > 1:
-        raise Exception("nemoMock needs to be adapted for MPI if making multiple mocks - not done yet")
+        raise Exception("NemoMock needs to be adapted for MPI if making multiple mocks - not done yet.")
 
     pipelines.makeMockClusterCatalog(config, numMocksToMake = numMocksToMake, writeCatalogs = True, verbose = True)
