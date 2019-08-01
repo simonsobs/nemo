@@ -287,6 +287,9 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
         mockTabsList=[]
         t0=time.time()
         for tileName in config.tileNames:
+            # It's possible (depending on tiling) that blank tiles were included - so skip
+            if RMSMapDict[tileName].sum() == 0:
+                continue
             mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
                                           photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
                                           SNRLimit = thresholdSigma, applySNRCut = True, 

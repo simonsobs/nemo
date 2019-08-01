@@ -510,7 +510,7 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
     """
     
     if selFn is None:
-        selFn=completeness.SelFn(config.configFileName, config.selFnDir, 4.0, 
+        selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName, 
                                  enableCompletenessCalc = False, setUpAreaMask = True)
 
     RAs=[]

@@ -36,29 +36,32 @@ def printNumClusters(H0, Om0, Ob0, sigma_8, scalingRelationDict = None):
 if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("selFnExample.py")
-    parser.add_argument("configFileName", help="""A .yml configuration file.""")
     parser.add_argument("selFnDir", help="""Directory containing files needed for computing the selection 
                         function.""")
+    parser.add_argument("-c", "--config", dest = "configFileName", help="""A .yml configuration file. If
+                        this is not given, the config.yml file in selFnDir will be used.""",
+                        default = None)
     parser.add_argument("-f", "--footprint", dest = "footprint", help="""Footprint to use, e.g., DES,
                         HSC, KiDS (default: full).""", default = None)
     parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="""Use only clusters with fixed_SNR > 
                         this value.""", default = 5.0, type = float)
+    parser.add_argument("-z", "--z-step", dest = "zStep", help="""Redshift bin width (default: 0.1).""", 
+                        default = 0.1, type = float)
     args = parser.parse_args()
     
-    parDictFileName=args.configFileName
+    configFileName=args.configFileName
     selFnDir=args.selFnDir
     SNRCut=args.SNRCut
+    zStep=args.zStep
     footprintLabel=args.footprint
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
-    t0=time.time()
-    selFn=completeness.SelFn(parDictFileName, selFnDir, SNRCut, footprintLabel = footprintLabel)
-    t1=time.time()
-    print("... took %.3f sec ..." % (t1-t0))
-    
+    selFn=completeness.SelFn(selFnDir, SNRCut, configFileName = configFileName, 
+                             footprintLabel = footprintLabel, zStep = zStep)
+
     # If we want to play with scaling relation also
     scalingRelationDict=selFn.scalingRelationDict
-
+    
     # Default parameters    
     t0=time.time()
     H0, Om0, Ob0, sigma_8 = 70.0, 0.30, 0.05, 0.80    
@@ -90,4 +93,5 @@ if __name__ == '__main__':
     printNumClusters(H0, Om0, Ob0, sigma_8, scalingRelationDict = scalingRelationDict)
     t1=time.time()
     print("... iteration took %.3f sec ..." % (t1-t0))
-    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test3", "test3_Mz.pdf")    
+    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test3", "test3_Mz.pdf")
+    

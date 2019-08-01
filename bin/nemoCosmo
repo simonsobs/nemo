@@ -178,7 +178,7 @@ if __name__ == '__main__':
                         walker.""", default = 50, type = int)
     args = parser.parse_args()
     
-    parDictFileName=args.configFileName
+    configFileName=args.configFileName
     tabFileName=args.catalogFileName
     selFnDir=args.selFnDir
     nsteps=args.numStepsPerWalker
@@ -196,7 +196,7 @@ if __name__ == '__main__':
         raise Exception("no 'redshift' column in catalog")
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
-    selFn=completeness.SelFn(parDictFileName, selFnDir, SNRCut, zStep = 0.1)
+    selFn=completeness.SelFn(selFnDir, SNRCut, configFileName = configFileName, zStep = 0.1)
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
 
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)

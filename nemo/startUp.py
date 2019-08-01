@@ -272,7 +272,7 @@ class NemoConfig(object):
                 self.tileNames=[]
 
         # Check any mask files are valid (e.g., -ve values can cause things like -ve area if not caught)
-        if self.rank == 0:
+        if self.rank == 0 and setUpMaps == True:
             maskKeys=['surveyMask', 'pointSourceMask']
             for key in maskKeys:
                 if key in self.parDict.keys() and self.parDict[key] is not None:

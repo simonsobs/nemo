@@ -265,7 +265,7 @@ class MockSurvey(object):
         #print("WARNING: np.random.seed set to fixed value in drawSample - you don't want this if not testing!")
         #np.random.seed(100)
                 
-        if z == None:
+        if z is None:
             zRange=self.z
         else:
             # Pick the nearest z on the grid

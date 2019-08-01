@@ -28,6 +28,7 @@ import types
 import pickle
 import astropy.io.fits as pyfits
 import time
+import shutil
 import IPython
 plt.matplotlib.interactive(False)
 
@@ -38,7 +39,7 @@ plt.matplotlib.interactive(False)
 #------------------------------------------------------------------------------------------------------------
 class SelFn(object):
         
-    def __init__(self, parDictFileName, selFnDir, SNRCut, footprintLabel = None, zStep = 0.01, 
+    def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
                  enableDrawSample = False, downsampleRMS = True, applyMFDebiasCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True):
         """Initialise a SelFn object.
@@ -60,9 +61,14 @@ class SelFn(object):
         self.downsampleRMS=downsampleRMS
         self.applyMFDebiasCorrection=applyMFDebiasCorrection
         self.selFnDir=selFnDir
+        self.zStep=zStep
 
         self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
-        parDict=startUp.parseConfigFile(parDictFileName)
+        if configFileName is None:
+            configFileName=self.selFnDir+os.path.sep+"config.yml"
+            if os.path.exists(configFileName) == False:
+                raise Exception("No config .yml file found in selFnDir and no other location given.")
+        parDict=startUp.parseConfigFile(configFileName)
                 
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
@@ -93,7 +99,7 @@ class SelFn(object):
         # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
         RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
         if footprintLabel is not None:
-            RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (RMSTabFileName))
+            RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
         self.RMSTab=atpy.Table().read(RMSTabFileName)
         self.RMSDict={}
         tileNames=self.tckQFitDict.keys()
@@ -124,7 +130,8 @@ class SelFn(object):
             Om0=0.30
             Ob0=0.05
             sigma_8=0.8
-            self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = zStep, enableDrawSample = enableDrawSample)
+            self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, 
+                                                  zStep = self.zStep, enableDrawSample = enableDrawSample)
             # An initial run...
             self.update(H0, Om0, Ob0, sigma_8)
 
@@ -505,7 +512,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     if abs(RMSTab['areaDeg2'].sum()-areaMapSqDeg.sum()) > tol:
         raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))
     if np.less(RMSTab['areaDeg2'], 0).sum() > 0:
-        raise Exception("Negative area in tile '%s'" % (tileName))
+        raise Exception("Negative area in tile '%s' - check your survey mask (and delete/remake tileDeck files if necessary)." % (tileName))
     RMSTab.write(RMSTabFileName)
 
     return RMSTab
@@ -954,7 +961,11 @@ def makeFullSurveyMassLimitMapPlot(z, config):
 def tidyUp(config):
     """Tidy up the selFn directory - making MEF files etc. and deleting individual tile files.
     
+    We also copy the configuration file into the selFn dir to make things easier for distribution/end users.
+    
     """
+    
+    shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
     # Make MEFs
     MEFsToBuild=["areaMask", "RMSMap_%s" % (config.parDict['photFilter'])]
