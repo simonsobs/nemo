@@ -83,46 +83,46 @@ class SelFn(object):
         
         # We only care about the filter used for fixed_ columns
         self.photFilterLabel=['photFilter']
-        
         self.scalingRelationDict=parDict['massOptions']
-        
+
         # Load area masks
         if setUpAreaMask == True:
             # Takes around 20 sec
+            self.tileNames=self.tckQFitDict.keys()
             self._setUpAreaMask()
         else:
             self.tileTab=None
             self.WCSDict=None
             self.areaMaskDict=None
-        
-        # We should be able to do everything (except clustering) with this
-        # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
-        RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
-        if footprintLabel is not None:
-            RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
-        self.RMSTab=atpy.Table().read(RMSTabFileName)
-        self.RMSDict={}
-        tileNames=self.tckQFitDict.keys()
-        self.tileNames=[]
-        for tileName in tileNames:
-            tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
-            if downsampleRMS == True and len(tileTab) > 0:
-                tileTab=downsampleRMSTab(tileTab) 
-            if len(tileTab) > 0:    # We may have some blank tiles...
-                self.RMSDict[tileName]=tileTab
-                self.tileNames.append(tileName)
-        self.totalAreaDeg2=self.RMSTab['areaDeg2'].sum()
-        
-        # For weighting - arrays where entries correspond with tileNames list
-        tileAreas=[]    
-        for tileName in self.tileNames:
-            areaDeg2=self.RMSTab[self.RMSTab['tileName'] == tileName]['areaDeg2'].sum()
-            tileAreas.append(areaDeg2)
-        self.tileAreas=np.array(tileAreas)
-        self.fracArea=self.tileAreas/self.totalAreaDeg2
-
-        # Set initial fiducial cosmology - can be overridden using update function
+                        
         if enableCompletenessCalc == True:
+            # We should be able to do everything (except clustering) with this
+            # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
+            RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
+            if footprintLabel is not None:
+                RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+            self.RMSTab=atpy.Table().read(RMSTabFileName)
+            self.RMSDict={}
+            tileNames=self.tckQFitDict.keys()
+            self.tileNames=[]
+            for tileName in tileNames:
+                tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
+                if downsampleRMS == True and len(tileTab) > 0:
+                    tileTab=downsampleRMSTab(tileTab) 
+                if len(tileTab) > 0:    # We may have some blank tiles...
+                    self.RMSDict[tileName]=tileTab
+                    self.tileNames.append(tileName)
+            self.totalAreaDeg2=self.RMSTab['areaDeg2'].sum()
+            
+            # For weighting - arrays where entries correspond with tileNames list
+            tileAreas=[]    
+            for tileName in self.tileNames:
+                areaDeg2=self.RMSTab[self.RMSTab['tileName'] == tileName]['areaDeg2'].sum()
+                tileAreas.append(areaDeg2)
+            self.tileAreas=np.array(tileAreas)
+            self.fracArea=self.tileAreas/self.totalAreaDeg2
+            
+            # Initial cosmology set-up
             minMass=5e13
             zMin=0.0
             zMax=2.0
@@ -132,7 +132,6 @@ class SelFn(object):
             sigma_8=0.8
             self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, 
                                                   zStep = self.zStep, enableDrawSample = enableDrawSample)
-            # An initial run...
             self.update(H0, Om0, Ob0, sigma_8)
 
 

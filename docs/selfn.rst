@@ -53,14 +53,15 @@ These mock catalogs were generated using the ``nemoMock`` script.
 
 You can run ``nemoCosmo`` like this::
 
-    nemoCosmo MFMF_SOSim_3freq_small.yml MFMF_SOSim_3freq_small/mocks/mockCatalog_1.fits MFMF_SOSim_3freq_small/selFn 100 10
+    nemoCosmo MFMF_SOSim_3freq_small/selFn/config.yml MFMF_SOSim_3freq_small/mocks/mockCatalog_1.fits MFMF_SOSim_3freq_small/selFn 100 10
     
-The last two numbers here give the number of steps per walker (100 in this case) and the number
-of walkers (10), used by the `emcee <https://emcee.readthedocs.io/en/stable/>`_ MCMC package. 
-By default ``nemoCosmo`` will run in parallel using Python's multiprocessing - but other 
-options are available, including a serial mode (use ``nemoCosmo -h`` to see the available options).
-For this example, you will find output (a corner plot and the chains) under the 
-``cosmo_mockCatalog_1_5.00/`` directory after ``nemoCosmo`` completes its run.
+The last two numbers here give the number of steps per walker (100 in this case for testing; 
+2000 would be more reasonable) and the number of walkers (10), used by the 
+`emcee <https://emcee.readthedocs.io/en/stable/>`_ MCMC package. By default ``nemoCosmo`` will
+run in parallel using Python's multiprocessing - but other options are available, including a serial
+mode (use ``nemoCosmo -h`` to see the available options). For this example, you will find output
+(a corner plot and the chains) under the ``cosmo_mockCatalog_1_5.00/`` directory after
+``nemoCosmo`` completes its run.
 
 If you want to run on a "real" rather than mock catalog, the ``nemoCosmo`` script understands the 
 format made by the ``nemoMass`` script. Note that although these catalogs contain mass estimates computed by 
