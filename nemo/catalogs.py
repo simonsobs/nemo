@@ -518,6 +518,8 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
     amps=[]
     for tileName in config.tileNames:
         mapData=selFn.areaMaskDict[tileName]
+        if mapData.sum() == 0:  # Skip any empty/blank tile
+            continue
         wcs=selFn.WCSDict[tileName]
         if amplitudeDistribution == 'linear':
             amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], numSourcesPerTile)
