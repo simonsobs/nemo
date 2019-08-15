@@ -179,12 +179,11 @@ if __name__ == '__main__':
     #assert(numDuplicatesFound == 0)
 
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])           
-    catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName, constraintsList = ["SNR > 0.0"])
-    catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"), constraintsList = ["SNR > 0.0"])
+    catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName)
+    catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"))
             
     addInfo=[{'key': 'SNR', 'fmt': '%.1f'}]
     catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
-                         constraintsList = ["SNR > 0.0"], \
                          addInfo = addInfo, color = "cyan") 
         
     # Stitch together map tiles - these are 'quicklook' images (downsampled by factor 4 in resolution)

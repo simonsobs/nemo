@@ -409,6 +409,9 @@ def writeCatalog(catalog, outFileName, constraintsList = []):
     
     """
 
+    # Deal with any blank catalogs (e.g., in blank tiles - not that we would want such things...)
+    if type(catalog) == list and len(catalog) == 0:
+        return None
     cutCatalog=selectFromCatalog(catalog, constraintsList)
     if outFileName.split(".")[-1] == 'csv':
         cutCatalog.write(outFileName, format = 'ascii.csv', delimiter = '\t', overwrite = True)
