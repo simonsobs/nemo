@@ -1473,12 +1473,13 @@ def positionRecoveryTest(config, imageDict):
 
                 # Cross match the output with the input catalog - how close were we?
                 recCatalog=simImageDict['optimalCatalog']
-                try:
-                    x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
-                except:
-                    raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(simConfig.tileNames), len(mockCatalog), len(recCatalog)))
-                SNRDict[posRecModel['label']]=SNRDict[posRecModel['label']]+x_recCatalog['fixed_SNR'].tolist()
-                rArcminDict[posRecModel['label']]=rArcminDict[posRecModel['label']]+(rDeg*60).tolist()
+                if len(recCatalog) > 0:
+                    try:
+                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
+                    except:
+                        raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(simConfig.tileNames), len(mockCatalog), len(recCatalog)))
+                    SNRDict[posRecModel['label']]=SNRDict[posRecModel['label']]+x_recCatalog['fixed_SNR'].tolist()
+                    rArcminDict[posRecModel['label']]=rArcminDict[posRecModel['label']]+(rDeg*60).tolist()
         SNRDict[posRecModel['label']]=np.array(SNRDict[posRecModel['label']])
         rArcminDict[posRecModel['label']]=np.array(rArcminDict[posRecModel['label']])
     
