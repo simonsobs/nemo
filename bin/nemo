@@ -33,7 +33,7 @@ if __name__ == '__main__':
     parser=argparse.ArgumentParser("nemo")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
-                        want to use this, run with e.g., mpiexec -np 4 nemoSelFn configFile.yml -M""", 
+                        want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true", 
                         help="""Disable strict exception handling (applies under MPI only, i.e., must be

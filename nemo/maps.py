@@ -190,7 +190,7 @@ def makeTileDeck(parDict):
             outFileNames=[]
             mapTypeList=[]
             for f in fileNameKeys:
-                if f in list(mapDict.keys()) and mapDict[f] != None:
+                if f in list(mapDict.keys()) and mapDict[f] is not None:
                     inFileNames.append(mapDict[f])
                     mapDir, mapFileName=os.path.split(mapDict[f])
                     if mapDir != '':
@@ -199,16 +199,12 @@ def makeTileDeck(parDict):
                         mapDirStr=''
                     outFileNames.append(mapDirStr+"tileDeck_%s_" % (tileDeckFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
-                if f == 'surveyMask' and mapDict[f] == None:
-                    inFileNames.append(None)
-                    outFileNames.append(outFileNames[0].replace(".fits", "_surveyMask.fits"))
-                    mapTypeList.append(f)
 
             allFilesMade=True
             for f in outFileNames:
                 if os.path.exists(f) == False:
                     allFilesMade=False
-            
+                            
             if allFilesMade == True:
                 # We need the extension names only here...
                 img=pyfits.open(outFileNames[0])
