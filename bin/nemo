@@ -35,10 +35,22 @@ if __name__ == '__main__':
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemoSelFn configFile.yml -M""", 
                         default = False)
+    parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true", 
+                        help="""Disable strict exception handling (applies under MPI only, i.e., must be
+                        used with the -M switch). If you use this option, you will get the full traceback
+                        when a Python Exception is triggered, but the code may not terminate. This is due
+                        to the Exception handling in mpi4py.""", 
+                        default = False)
     args=parser.parse_args()
     
+    if args.noStrictMPIExceptions == True:
+        strictMPIExceptions=False
+    else:
+        strictMPIExceptions=True
+    
     parDictFileName=args.configFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, 
+                              strictMPIExceptions = strictMPIExceptions)
     
     imageDict=pipelines.filterMapsAndMakeCatalogs(config)
 

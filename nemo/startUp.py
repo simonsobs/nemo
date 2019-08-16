@@ -134,16 +134,23 @@ class NemoConfig(object):
     """
     
     def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, MPIEnabled = False, 
-                 verbose = True):
+                 verbose = True, strictMPIExceptions = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
             configFileName (:obj:`str`): Path to a nemo .yml configuration file.
             makeOutputDirs (:obj:`bool`): If True, create output directories (where maps, catalogs are stored).
-            setUpMaps (:obj: `bool`): If True, set-up data structures for handling maps (inc. breaking into 
+            setUpMaps (:obj:`bool`): If True, set-up data structures for handling maps (inc. breaking into 
                 tiles if wanted).
             MPIEnabled (:obj:`bool`): If True, use MPI to divide the map into tiles, distributed among processes.
                 This requires `tileDefinitions` and `tileNoiseRegions` to be given in the .yml config file.
+            strictMPIExceptions (:obj:`bool`): If True, MPI will abort if an Exception is encountered
+                (the downside is that you will not get the full traceback, but at least you will not waste
+                CPU cycles). If False, MPI probably will not abort if an Exception is encountered, but you 
+                will get the full traceback (the downside is your MPI job may never complete). These options 
+                are a compromise due to how mpi4py handles MPI errors (the default handling for mpi4py 
+                corresponds to strictMPIExceptions = False).
+            verbose (:obj:`bool`): If True, print some info to the terminal while we set-up the config file.
     
         """
 
@@ -180,12 +187,13 @@ class NemoConfig(object):
             # This is needed to get MPI to abort if one process crashes (due to mpi4py error handling)
             # If this part is disabled, we get nice exceptions, but the program will never finish if a process dies
             # Here we get the error message at least but not the traceback before MPI Aborts
-            sys_excepthook=sys.excepthook
-            def mpi_excepthook(v, t, tb):
-                sys_excepthook(v, t, tb)
-                print("Exception: %s" % (t.args[0]))
-                MPI.COMM_WORLD.Abort(1)
-            sys.excepthook=mpi_excepthook
+            if strictMPIExceptions == True:
+                sys_excepthook=sys.excepthook
+                def mpi_excepthook(v, t, tb):
+                    sys_excepthook(v, t, tb)
+                    print("Exception: %s" % (t.args[0]))
+                    MPI.COMM_WORLD.Abort(1)
+                sys.excepthook=mpi_excepthook
             self.comm=MPI.COMM_WORLD
             self.size=self.comm.Get_size()
             self.rank=self.comm.Get_rank()
