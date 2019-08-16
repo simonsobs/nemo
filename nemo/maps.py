@@ -54,6 +54,91 @@ def convertToDeltaT(mapData, obsFrequencyGHz = 148):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
+def autotiler(surveyMaskPath, targetTileWidth, targetTileHeight):
+    """Given a survey mask (where values > 0 indicate valid area, and 0 indicates area to be ignored), 
+    figure out an optimal tiling strategy to accommodate tiles of the given dimensions. The survey mask need
+    not be contiguous (e.g., AdvACT and SO maps, using the default pixelization, can be segmented into three
+    or more different regions).
+    
+    Args:
+        surveyMaskPath (str): Path to the survey mask (.fits image).
+        targetTileWidth (float): Desired tile width, in degrees (RA direction for CAR).
+        targetTileHeight (float): Desired tile height, in degrees (dec direction for CAR).
+    
+    Returns:
+        Dictionary list defining tiles in same format as config file.
+    
+    Note:
+        While this routine will try to match the target file sizes, it may not match exactly. Also,
+        makeTileDeck will expand tiles by a user-specified amount such that they overlap.
+    
+    """
+
+    with pyfits.open(surveyMaskPath) as img:    
+        # Just in case RICE-compressed or similar
+        if img[0].data is None:
+            segMap=img['COMPRESSED_IMAGE'].data
+        else:
+            segMap=img[0].data
+        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+
+    segMap, numObjects=ndimage.label(np.greater(segMap, 0))
+    fieldIDs=np.arange(1, numObjects+1)
+
+    tileList=[]
+    for f in fieldIDs:
+        ys, xs=np.where(segMap == f)
+        if len(ys) < 100:  # In case of stray individual pixels (e.g., combined with extended sources mask)
+            continue
+        yMin=ys.min()
+        yMax=ys.max()
+        xc=int((xs.min()+xs.max())/2)
+        RAc, decMin=wcs.pix2wcs(xc, yMin)
+        RAc, decMax=wcs.pix2wcs(xc, yMax)
+        
+        numRows=int((decMax-decMin)/targetTileHeight)
+        tileHeight=np.ceil(((decMax-decMin)/numRows)*100)/100
+        assert(tileHeight < 10)
+        
+        for i in range(numRows):
+            decBottom=decMin+i*tileHeight
+            decTop=decMin+(i+1)*tileHeight
+            xc, yBottom=wcs.wcs2pix(RAc, decBottom)
+            xc, yTop=wcs.wcs2pix(RAc, decTop)
+            yBottom=int(yBottom)
+            yTop=int(yTop)
+            yc=int((yTop+yBottom)/2)
+            
+            strip=segMap[yBottom:yTop]
+            ys, xs=np.where(strip == f)
+            xMin=xs.min()
+            xMax=xs.max()
+            stripWidthDeg=(xMax-xMin)*wcs.getXPixelSizeDeg()
+            RAMax, decc=wcs.pix2wcs(xMin, yc)
+            RAMin, decc=wcs.pix2wcs(xMax, yc)
+            numCols=int(stripWidthDeg/targetTileWidth)
+            tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
+            #assert(tileWidth < targetTileWidth*1.1)
+        
+            stretchFactor=1/np.cos(np.radians(decTop)) 
+            numCols=int(stripWidthDeg/(targetTileWidth*stretchFactor))
+            for j in range(numCols):
+                tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
+                RALeft=RAMax-j*tileWidth
+                RARight=RAMax-(j+1)*tileWidth
+                if RALeft < 0:
+                    RALeft=RALeft+360
+                if RARight < 0:
+                    RARight=RARight+360
+                # HACK: Edge-of-map handling
+                if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
+                    RARight=180.01
+                tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
+                                'RADecSection': [RARight, RALeft, decBottom, decTop]})
+    
+    return tileList
+    
+#-------------------------------------------------------------------------------------------------------------
 def makeTileDeck(parDict):
     """Makes a tileDeck multi-extension .fits file, if the needed parameters are given in parDict, or
     will handle setting up such a file if given directly in unfilteredMapsDictList in parDict (and the .par
@@ -91,21 +176,13 @@ def makeTileDeck(parDict):
     else:
         tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
-                        
-            # Added an option to define tiles in the .par file... otherwise, we will do the automatic tiling
-            if 'tileDefinitions' in list(parDict.keys()):
-                if 'tileDefLabel' in list(parDict.keys()):
-                    tileDefLabel=parDict['tileDefLabel']
-                else:
-                    tileDefLabel='userDefined'
-                tileDeckFileNameLabel="%s_%.1f" % (tileDefLabel, parDict['tileOverlapDeg'])
-                defineTilesAutomatically=False
+                 
+            if 'tileDefLabel' in list(parDict.keys()):
+                tileDefLabel=parDict['tileDefLabel']
             else:
-                tileDeckFileNameLabel="%dx%d_%.1f" % (parDict['numHorizontalTiles'],
-                                                      parDict['numVerticalTiles'], 
-                                                      parDict['tileOverlapDeg'])
-                defineTilesAutomatically=True
-            
+                tileDefLabel='userDefined'
+            tileDeckFileNameLabel="%s_%.1f" % (tileDefLabel, parDict['tileOverlapDeg'])
+                    
             # Figure out what the input / output files will be called
             # NOTE: we always need to make a survey mask if none exists, as used to zap over regions, so that gets special treatment
             fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
@@ -143,86 +220,37 @@ def makeTileDeck(parDict):
                         if ext.name not in tileNames:
                             raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             else:
-                
+                                
                 # Whether we make tiles automatically or not, we need the WCS from somewhere...
-                if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] != None:
-                    wht=pyfits.open(mapDict['surveyMask'])
-                    print(">>> Using survey mask to determine tiling ...")
+                if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
+                    wcsPath=mapDict['surveyMask']
                 else:
-                    wht=pyfits.open(mapDict['weightsFileName'])
-                    print(">>> Using weight map to determine tiling ...")
-                wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
-                tileOverlapDeg=parDict['tileOverlapDeg']
-   
-                if defineTilesAutomatically == True:
-                    
-                    if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] == None:
-                        print("... WARNING: same tiling not guaranteed across multiple frequencies ...")
-                    
-                    # NOTE: here we look at surveyMask first to determine where to put down tiles
-                    # since this will ensure algorithm uses same tiles for multi-freq data
-                    # Otherwise, we use the wht image (but then can't guarantee f090 and f150 have same tiles)
-                    deckWht=pyfits.HDUList()
-                    whtData=wht[0].data
-                    mapWidth=whtData.shape[1]
-                    mapHeight=whtData.shape[0]
-
-                    # Figure out where edges are
-                    edges={}
-                    for y in range(mapHeight):
-                        xIndices=np.where(whtData[y] != 0)[0]
-                        if len(xIndices) > 0:
-                            xMin=xIndices.min()
-                            xMax=xIndices.max()
-                            edges[y]=[xMin, xMax]
-                    
-                    # Starting from bottom left, work our way around the map adding tiles, ignoring blank regions
-                    numHorizontalTiles=parDict['numHorizontalTiles']
-                    numVerticalTiles=parDict['numVerticalTiles']
-                    ys=list(edges.keys())
-                    ys.sort()
-                    ys=np.array(ys)
-                    coordsList=[]
-                    tileNames=[]
-                    tileHeightPix=int(np.ceil((ys.max()-ys.min())/float(numVerticalTiles)))
-                    for i in range(numVerticalTiles):
-                        yMin=ys.min()+i*tileHeightPix
-                        yMax=ys.min()+(i+1)*tileHeightPix
-                        keys=np.arange(yMin, yMax)
-                        minXMin=1e6
-                        maxXMax=0
-                        for k in keys:
-                            if k in list(edges.keys()):
-                                xMin, xMax=edges[k]
-                                if xMin < minXMin:
-                                    minXMin=xMin
-                                if xMax > maxXMax:
-                                    maxXMax=xMax
-                        tileWidthPix=int(np.ceil(maxXMax-minXMin)/float(numHorizontalTiles))
-                        for j in range(numHorizontalTiles):
-                            xMin=minXMin+j*tileWidthPix
-                            xMax=minXMin+(j+1)*tileWidthPix
-                            coordsList.append([xMin, xMax, yMin, yMax])
-                            tileNames.append("%d_%d" % (j, i))
-                    
-                    # Not sure if this will actually tidy up...
-                    wht.close()
-                    del whtData
+                    wcsPath=mapDict['weightsFileName']
+                wcs=astWCS.WCS(wcsPath)
                 
-                else:
-                    # Use user-defined tiles - this is a bit of a faff, to avoid re-writing below bit where we make the tiles...
-                    tileNames=[]
-                    coordsList=[]
-                    for tileDict in parDict['tileDefinitions']:
-                        ra0, ra1, dec0, dec1=tileDict['RADecSection']
-                        x0, y0=wcs.wcs2pix(ra0, dec0)
-                        x1, y1=wcs.wcs2pix(ra1, dec1)
-                        xMin=min([x0, x1])
-                        xMax=max([x0, x1])
-                        yMin=min([y0, y1])
-                        yMax=max([y0, y1])
-                        coordsList.append([xMin, xMax, yMin, yMax])
-                        tileNames.append(tileDict['tileName'])   
+                # Added an option to define tiles in the .config file... otherwise, we will do the automatic tiling
+                if type(parDict['tileDefinitions']) == dict:
+                    print(">>> Using autotiler ...")
+                    if 'surveyMask' not in mapDict.keys():
+                        raise Exception("Need to specify a survey mask in the config file to use automatic tiling.")
+                    parDict['tileDefinitions']=autotiler(mapDict['surveyMask'], 
+                                                         parDict['tileDefinitions']['targetTileWidthDeg'],
+                                                         parDict['tileDefinitions']['targetTileHeightDeg'])
+                    print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
+                    
+                # Extract tile definitions (may have been inserted above by autotiler)
+                tileNames=[]
+                coordsList=[]
+                for tileDict in parDict['tileDefinitions']:
+                    ra0, ra1, dec0, dec1=tileDict['RADecSection']
+                    x0, y0=wcs.wcs2pix(ra0, dec0)
+                    x1, y1=wcs.wcs2pix(ra1, dec1)
+                    xMin=min([x0, x1])
+                    xMax=max([x0, x1])
+                    yMin=min([y0, y1])
+                    yMax=max([y0, y1])
+                    coordsList.append([xMin, xMax, yMin, yMax])
+                    tileNames.append(tileDict['tileName'])   
                 
                 # Output a .reg file for debugging (pixel coords)
                 outFile=open(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
@@ -232,25 +260,24 @@ def makeTileDeck(parDict):
                 for c, name in zip(coordsList, tileNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
-                #print("check tiles")
-                #sys.exit()
                 
                 # Make tiles
                 # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
                 # Since we would only use such an option with tileDeck files, this should be okay
                 # Although since we do this by modifying headers, would need to remake tileDeck files each time adjusted in .par file
                 # NOTE: now treating surveyMask as special, and zapping overlap regions there (simplify selection function stuff later)
+                tileOverlapDeg=parDict['tileOverlapDeg']
                 for mapType, inMapFileName, outMapFileName in zip(mapTypeList, inFileNames, outFileNames):
                     if os.path.exists(outMapFileName) == False:
                         print(">>> Writing tileDeck file %s ..." % (outMapFileName))
                         deckImg=pyfits.HDUList()
                         # Special handling for case where surveyMask = None in the .par file (tidy later...)
-                        if mapType == 'surveyMask' and inMapFileName == None:
-                            img=pyfits.open(inFileNames[0])
-                            mapData=np.ones(img[0].data.shape)
+                        if mapType == 'surveyMask' and inMapFileName is None:
+                            with pyfits.open(inFileNames[0]) as img:
+                                mapData=np.ones(img[0].data.shape)
                         else:
-                            img=pyfits.open(inMapFileName)
-                            mapData=img[0].data
+                            with pyfits.open(inMapFileName) as img:
+                                mapData=img[0].data
 
                         # Deal with Sigurd's maps which have T, Q, U as one 3d array
                         # If anyone wants to find polarized sources, this will need changing...

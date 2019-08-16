@@ -145,6 +145,7 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
                                                 sigma_int = massOptions['sigma_int'],
                                                 tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                                 applyMFDebiasCorrection = False,
+                                                applyRelativisticCorrection = massOptions['relativisticCorrection'],
                                                 fRelWeightsDict = fRelWeightsDict)
         row['M500Uncorr']=unCorrMassDict['M500']
         row['M500Uncorr_errPlus']=unCorrMassDict['M500_errPlus']

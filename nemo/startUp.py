@@ -84,8 +84,9 @@ def parseConfigFile(parDictFileName):
         # tileNames must be case insensitive in .yml file 
         # we force upper case here (because FITS will anyway)
         if 'tileDefinitions' in parDict.keys():
-            for tileDef in parDict['tileDefinitions']:
-                tileDef['tileName']=tileDef['tileName'].upper()
+            if type(parDict['tileDefinitions']) == list:
+                for tileDef in parDict['tileDefinitions']:
+                    tileDef['tileName']=tileDef['tileName'].upper()
         if 'tileNameList' in parDict.keys():
             newList=[]
             for entry in parDict['tileNameList']:
@@ -104,7 +105,7 @@ def parseConfigFile(parDictFileName):
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
         # Sanity check of tile definitions
-        if 'tileDefinitions' in parDict.keys():
+        if 'tileDefinitions' in parDict.keys() and type(parDict['tileDefinitions']) == list:
             checkList=[]
             for entry in parDict['tileDefinitions']:
                 if entry['tileName'] in checkList:
