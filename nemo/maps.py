@@ -74,6 +74,9 @@ def autotiler(surveyMaskPath, targetTileWidth, targetTileHeight):
     
     """
 
+    if surveyMaskPath is None:
+        raise Exception("You need to set surveyMask in .yml config file to point to a .fits image for autotiler to work.")
+    
     with pyfits.open(surveyMaskPath) as img:    
         # Just in case RICE-compressed or similar
         if img[0].data is None:
@@ -780,46 +783,39 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
         # This is fast enough if using small tiles and running in parallel...
-        # If our masking/filling is effective enough, we may not need to mask so much here...     
-        tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
-        #xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
-        #xyCoords=np.array(xyCoords, dtype = int)
-        #mask=[]
-        #for i in range(len(tab)):
-            #x, y=xyCoords[i][0], xyCoords[i][1]
-            #if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]-1:
-                #mask.append(True)
-            #else:
-                #mask.append(False)
-        #tab=tab[mask]
-        tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-        # Variable sized holes: based on inspecting sources by deltaT in f150 maps
-        tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
-        tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 50000)]=8.0
-        tab['rArcmin'][tab['deltaT_c'] >= 50000]=10.0
+        # If our masking/filling is effective enough, we may not need to mask so much here...
+        if type(mapDict['maskPointSourcesFromCatalog']) is not list:
+            mapDict['maskPointSourcesFromCatalog']=[mapDict['maskPointSourcesFromCatalog']]
         psMask=np.ones(data.shape)
-        for row in tab:
-            rArcminMap=np.ones(data.shape, dtype = float)*1e6
-            rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                           row['RADeg'], row['decDeg'], 
-                                                                           row['rArcmin']/60.)
-            rArcminMap=rArcminMap*60
-            psMask[rArcminMap < row['rArcmin']]=0
-        # Fill holes with smoothed map + white noise
-        pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-        bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
-        if mapDict['weightsType'] =='invVar':
-            rms=np.zeros(weights.shape)
-            rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
-        else:
-            raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
-        data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
-        #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
+        for catalogPath in mapDict['maskPointSourcesFromCatalog']:
+            tab=atpy.Table().read(catalogPath)
+            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+            # Variable sized holes: based on inspecting sources by deltaT in f150 maps
+            tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
+            tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
+            tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
+            for row in tab:
+                rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                            row['RADeg'], row['decDeg'], 
+                                                                            row['rArcmin']/60.)
+                rArcminMap=rArcminMap*60
+                psMask[rArcminMap < row['rArcmin']]=0
+            # Fill holes with smoothed map + white noise
+            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+            bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
+            if mapDict['weightsType'] =='invVar':
+                rms=np.zeros(weights.shape)
+                rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
+            else:
+                raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
+            data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+            #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
     
     # Add the map data to the dict
     mapDict['data']=data
