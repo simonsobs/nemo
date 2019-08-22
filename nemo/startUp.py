@@ -216,10 +216,18 @@ class NemoConfig(object):
         self.mocksDir=self.rootOutDir+os.path.sep+"mocks"
         self.selFnDir=self.rootOutDir+os.path.sep+"selFn"
         dirList=[self.rootOutDir, self.filteredMapsDir, self.mocksDir, self.selFnDir]
+        madeOutputDirs=None
         if self.rank == 0 and makeOutputDirs == True:
             for d in dirList:
                 if os.path.exists(d) == False:
                     os.makedirs(d)
+            madeOutputDirs=True
+        # This serves two purposes:
+        # 1. Makes sure comms are running
+        # 2. Avoids a race to make directories before filtered maps start coming in
+        if self.MPIEnabled == True:
+            madeOutputDirs=self.comm.bcast(madeOutputDirs, root = 0)
+            assert(madeOutputDirs == True)
 
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
         if 'GNFWParams' not in list(self.parDict.keys()):
