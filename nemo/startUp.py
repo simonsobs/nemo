@@ -220,11 +220,11 @@ class NemoConfig(object):
         if self.rank == 0 and makeOutputDirs == True:
             for d in dirList:
                 if os.path.exists(d) == False:
-                    os.makedirs(d)
+                    os.makedirs(d, exist_ok = True)
             madeOutputDirs=True
         # This serves two purposes:
         # 1. Makes sure comms are running
-        # 2. Avoids a race to make directories before filtered maps start coming in
+        # 2. Avoids (well, not quite) a race to make directories before filtered maps start coming in
         if self.MPIEnabled == True:
             madeOutputDirs=self.comm.bcast(madeOutputDirs, root = 0)
             assert(madeOutputDirs == True)

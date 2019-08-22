@@ -73,7 +73,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
     dirList=[filteredMapsDir, diagnosticsDir, selFnDir]
     for d in dirList:
         if os.path.exists(d) == False:
-            os.makedirs(d)
+            os.makedirs(d, exist_ok = True)
             
     # Dictionary to keep track of images we're going to make
     imageDict={}
@@ -789,7 +789,7 @@ class RealSpaceMatchedFilter(MapFilter):
         selFnDir=matchedFilterDir+os.path.sep+'selFn'
         for d in [matchedFilterDir, diagnosticsDir, selFnDir]:
             if os.path.exists(d) == False:
-                os.makedirs(d)
+                os.makedirs(d, exist_ok = True)
         matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
         matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
                                          tileName = mapDict['tileName'],

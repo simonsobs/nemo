@@ -61,7 +61,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             dirList.append(kernelCopyDestDir)
         for d in dirList:
             if os.path.exists(d) == False:
-                os.makedirs(d)
+                os.makedirs(d, exist_ok = True)
         if copyFilters == True:
             for tileName in config.tileNames:
                 fileNames=glob.glob(config.diagnosticsDir+os.path.sep+"filter*#%s*.fits" % (tileName))
