@@ -237,9 +237,7 @@ if __name__ == '__main__':
                 forcedPhotometry=True
 
     # Q function (filter mismatch) options
-    # NOTE: this should be calculated for the fixed, fiducial cosmology used for object detection
-    # NOTE: Q calculation is the only bit of this code that uses MPI - rank != 0 MPI jobs killed after fitQ
-    tckQFitDict=signals.fitQ(config)
+    tckQFitDict=signals.loadQ(config)
     
     # Dictionary by tile with frequency weights needed by relativistic corrections
     fRelWeightsDict=signals.getFRelWeights(config)

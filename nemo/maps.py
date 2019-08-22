@@ -1403,7 +1403,8 @@ def positionRecoveryTest(config, imageDict):
     
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
-                             enableCompletenessCalc = False, setUpAreaMask = True)
+                             enableCompletenessCalc = False, setUpAreaMask = True,
+                             tileNames = config.tileNames)
             
     print(">>> Position recovery test [rank = %d] ..." % (config.rank))
 

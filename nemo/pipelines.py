@@ -118,11 +118,7 @@ def makeSelFnCollection(config, mockSurvey):
     """
     
     # Q varies across tiles
-    QFitFileName=config.selFnDir+os.path.sep+"QFit.fits"
-    if os.path.exists(QFitFileName) == True:
-        tckQFitDict=signals.loadQ(QFitFileName)
-    else:
-        raise Exception("could not find cached Q fit - run nemoMass first")
+    tckQFitDict=signals.loadQ(config)
         
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -216,7 +212,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     if verbose: print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
     
     # Q varies across tiles
-    tckQFitDict=signals.fitQ(config)
+    tckQFitDict=signals.loadQ(config)
     
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']

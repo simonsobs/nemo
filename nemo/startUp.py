@@ -262,7 +262,7 @@ class NemoConfig(object):
             from . import signals
             QFitFileName=self.selFnDir+os.path.sep+"QFit.fits"
             if os.path.exists(QFitFileName) == True:
-                tckQFitDict=signals.loadQ(QFitFileName)
+                tckQFitDict=signals.loadQ(config)
                 self.tileNames=list(tckQFitDict.keys())
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))

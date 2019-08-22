@@ -40,8 +40,8 @@ plt.matplotlib.interactive(False)
 class SelFn(object):
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
-                 enableDrawSample = False, downsampleRMS = True, applyMFDebiasCorrection = True,
-                 setUpAreaMask = False, enableCompletenessCalc = True):
+                 tileNames = None, enableDrawSample = False, downsampleRMS = True, 
+                 applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True):
         """Initialise a SelFn object.
         
         This is a class that uses the output from nemoSelFn to re-calculate the selection function
@@ -63,7 +63,7 @@ class SelFn(object):
         self.selFnDir=selFnDir
         self.zStep=zStep
 
-        self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
+        self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
         if configFileName is None:
             configFileName=self.selFnDir+os.path.sep+"config.yml"
             if os.path.exists(configFileName) == False:
@@ -966,6 +966,13 @@ def tidyUp(config):
     
     shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
+    # Combine Q fits
+    signals.makeCombinedQTable(config)
+    for tileName in config.allTileNames:
+        QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
+        if os.path.exists(QFileName):
+            os.remove(QFileName)
+    
     # Make MEFs
     MEFsToBuild=["areaMask", "RMSMap_%s" % (config.parDict['photFilter'])]
     if 'selFnFootprints' in config.parDict.keys():
@@ -1022,6 +1029,11 @@ def tidyUp(config):
             tab.write(outFileName, overwrite = True)
             for f in filesToRemove:
                 os.remove(f)
-
-        
+    
+    # Write a table of tile areas for those that want it
+    with open(config.selFnDir+os.path.sep+"tileAreas.txt", "w") as outFile:
+        outFile.write("#tileName areaDeg2\n")
+        for tileName in config.allTileNames:
+            tileAreaDeg2=getTileTotalAreaDeg2(tileName, config.selFnDir)
+            outFile.write("%s %.6f\n" % (tileName, tileAreaDeg2))
     

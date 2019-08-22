@@ -187,8 +187,8 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                 colorString=obj['color']
             else:
                 colorString=color
-            outFile.write("%s;point(%.6f,%.6f) # point=boxcircle color={%s} text={%s%s}\n" \
-                        % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, obj[idKeyToUse], infoString))
+            outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
+                        % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
 
 #------------------------------------------------------------------------------------------------------------
 def makeACTName(RADeg, decDeg, prefix = 'ACT-CL'):

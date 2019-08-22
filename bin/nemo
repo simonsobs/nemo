@@ -58,7 +58,8 @@ if __name__ == '__main__':
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
     # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
-        tckQFitDict=signals.fitQ(config)
+        if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
+            signals.fitQ(config)
         
     # Optional position recovery test (how well do we recovery positions as fn. of S/N?)
     if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:

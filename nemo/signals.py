@@ -308,22 +308,18 @@ def loadFRelWeights(fRelWeightsFileName):
 
 #------------------------------------------------------------------------------------------------------------
 def fitQ(config):
-    """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot in the diagnosticDir
-    and the (theta, Q) array under selFnDir.
+    """Calculates the filter mismatch function Q on a grid of scale sizes (given in terms of theta500 in 
+    arcmin), for each tile in the map. The results are initially cached (with a separate .fits table for each
+    tile) under the selFn directory, before being combined into a single file at the end of a nemo run.
+    Use GNFWParams (in config.parDict) if you want to specify a different cluster profile shape.
     
-    Needs a startUp.NemoConfig object.
+    Args:
+        config (:obj:`startUp.NemoConfig`): A NemoConfig object.
+    
+    Note:
+        See :ref:`loadQ` for how to load in the output of this routine.
         
-    Use GNFWParams (in config.parDict) to specify a different shape.
-    
-    The calculation will be done in parallel, if MPIEnabled = True, and comm and rank are given, and tileNames 
-    is different for each rank. This is only needed for the first run of this routine by the nemoMass script.
-            
     """
-
-    outFileName=config.selFnDir+os.path.sep+"QFit.fits"
-    if os.path.exists(outFileName) == True:
-        print(">>> Loading previously cached Q fit ...")
-        return loadQ(outFileName)
         
     if config.parDict['GNFWParams'] == 'default':
         GNFWParams=gnfw._default_params
@@ -369,13 +365,14 @@ def fitQ(config):
     MRange=MRange+MRange_wanted
     zRange=zRange+zRange_wanted.tolist()
     
-    # Q calc - results for all tiles stored in one file    
-    # Do each tile in turn
-    rank_QTabDict={}
-    print(">>> Fitting for Q ...")
+    # Here we save the fit for each tile separately... 
+    # completeness.tidyUp will put them into one file at the end of a nemo run
     for tileName in config.tileNames:        
-        
-        print("... %s ..." % (tileName))
+        tileQTabFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
+        if os.path.exists(tileQTabFileName) == True:
+            print("... already done Q fit for tile %s ..." % (tileName))
+            continue
+        print("... fitting Q in tile %s ..." % (tileName))
 
         # Load reference scale filter
         foundFilt=False
@@ -465,7 +462,8 @@ def fitQ(config):
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
         QTab.sort('theta500Arcmin')
-        rank_QTabDict[tileName]=QTab
+        QTab.write(tileQTabFileName, overwrite = True)
+        #rank_QTabDict[tileName]=QTab
                     
         # Fit with spline
         tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
@@ -491,37 +489,23 @@ def fitQ(config):
         plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (tileName))
         plt.close()
         print("... Q fit finished [tileName = %s, rank = %d] ..." % (tileName, config.rank))
-            
-    if config.MPIEnabled == True:
-        gathered_QTabDicts=config.comm.gather(rank_QTabDict, root = 0)
-        if config.rank == 0:
-            print("... gathering QTabDicts ...")
-            QTabDict={}
-            for tabDict in gathered_QTabDicts:
-                for key in tabDict:
-                    QTabDict[key]=tabDict[key]
-            combinedQTab=makeCombinedQTable(QTabDict, outFileName)
-        else:
-            combinedQTab=None
-        combinedQTab=config.comm.bcast(combinedQTab, root = 0)
-    else:
-        QTabDict=rank_QTabDict
-        combinedQTab=makeCombinedQTable(QTabDict, outFileName)
-        
-    tckDict={}
-    for key in combinedQTab.keys():
-        if key != 'theta500Arcmin':
-            tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
-    
-    return tckDict
 
 #------------------------------------------------------------------------------------------------------------
-def makeCombinedQTable(QTabDict, outFileName):
+def makeCombinedQTable(config):
     """Writes dictionary of tables (containing individual tile Q fits) as a single .fits table.
     
     Returns combined Q astropy table object
     
     """
+
+    outFileName=config.selFnDir+os.path.sep+"QFit.fits"    
+    if os.path.exists(outFileName) == True:
+        return atpy.Table().read(outFileName)
+        
+    QTabDict={}
+    for tileName in config.allTileNames:
+        QTabDict[tileName]=atpy.Table().read(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
+    
     combinedQTab=atpy.Table()
     for tabKey in list(QTabDict.keys()):
         for colKey in QTabDict[tabKey].keys():
@@ -535,17 +519,41 @@ def makeCombinedQTable(QTabDict, outFileName):
     return combinedQTab
 
 #------------------------------------------------------------------------------------------------------------
-def loadQ(combinedQTabFileName):
-    """Loads tckQFitDict from given path.
+def loadQ(source, tileNames = None):
+    """Load the filter mismatch function Q as a dictionary of spline fits.
     
+    Args:
+        source (NemoConfig or str): Either the path to a .fits table (containing Q fits for all tiles - this
+            is normally selFn/QFit.fits), or a NemoConfig object (from which the path and tiles to use will
+            be inferred).
+        tileNames (optional, list): A list of tiles for which the Q function will be extracted. If 
+            source is a NemoConfig object, this should be set to None.
+    
+    Returns:
+        A dictionary (with tile names as keys), containing spline knots for the Q function for each tile.
+        
     """
-    
-    combinedQTab=atpy.Table().read(combinedQTabFileName)
-    tckDict={}
-    for key in combinedQTab.keys():
-        if key != 'theta500Arcmin':
-            tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
 
+    if type(source) == str:
+        combinedQTabFileName=source
+    else:
+        # We should add a check to confirm this is actually a NemoConfig object
+        combinedQTabFileName=source.selFnDir+os.path.sep+"QFit.fits"
+        tileNames=source.tileNames
+        
+    tckDict={}    
+    if os.path.exists(combinedQTabFileName) == True:
+        combinedQTab=atpy.Table().read(combinedQTabFileName)
+        for key in combinedQTab.keys():
+            if key != 'theta500Arcmin':
+                tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
+    else:
+        if tileNames is None:
+            raise Exception("If source does not point to a complete QFit.fits file, you need to supply tileNames.")
+        for tileName in tileNames:
+            tab=atpy.Table().read(combinedQTabFileName.replace(".fits", "#%s.fits" % (tileName)))
+            tckDict[tileName]=interpolate.splrep(tab['theta500Arcmin'], tab['Q'])
+           
     return tckDict
 
 #------------------------------------------------------------------------------------------------------------
