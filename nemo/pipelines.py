@@ -187,8 +187,8 @@ def makeSelFnCollection(config, mockSurvey):
     return selFnCollection
                 
 #------------------------------------------------------------------------------------------------------------
-def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, writeInfo = True, 
-                           verbose = True):
+def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True, 
+                           writeInfo = True, verbose = True):
     """Generate a mock cluster catalog using the given nemo config.
     
     Returns:
@@ -196,6 +196,10 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     
     """
     
+    # Having changed nemoMock interface, we may need to make output dir
+    if os.path.exists(config.mocksDir) == False:
+        os.makedirs(config.mocksDir, exist_ok = True)
+        
     # Noise sources in mocks
     if 'applyPoissonScatter' in config.parDict.keys():
         applyPoissonScatter=config.parDict['applyPoissonScatter']
@@ -310,7 +314,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
             catalogs.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 
                                     addInfo = addInfo, color = "cyan") 
             
-    if 'combineMocks' in config.parDict.keys() and config.parDict['combineMocks'] == True:
+    if combineMocks == True:
         tab=None
         for i in range(numMocksToMake):
             mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.fits" % (i+1)

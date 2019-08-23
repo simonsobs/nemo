@@ -231,7 +231,8 @@ if __name__ == '__main__':
                 completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir, config.allTileNames) 
                 completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
         
-        # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
-        completeness.tidyUp(config)
+    # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
+    # This also puts Q fits into one file - so we need to run this regardless
+    completeness.tidyUp(config)
         
     

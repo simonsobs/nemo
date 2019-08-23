@@ -96,6 +96,8 @@ class NemoTests(object):
         
         """
         self.configFileName=configFileName
+        self.selFnDir=configFileName.replace(".yml", "")+os.path.sep+"selFn"
+        self.mocksDir=configFileName.replace(".yml", "")+os.path.sep+"mocks"
         
         
     def run_nemo(self):
@@ -114,7 +116,7 @@ class NemoTests(object):
 
 
     def run_nemo_mock(self):
-        self._run_command(["nemoMock", self.configFileName])
+        self._run_command(["nemoMock", self.selFnDr, self.mocksDir])
         
 
     #def inject_sources_using_pixell(self, outMapFileName = "sourceInjectedMap.fits", 

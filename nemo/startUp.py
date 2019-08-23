@@ -133,17 +133,21 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, MPIEnabled = False, 
-                 verbose = True, strictMPIExceptions = True):
+    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, selFnDir = None, 
+                 MPIEnabled = False, verbose = True, strictMPIExceptions = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
             configFileName (:obj:`str`): Path to a nemo .yml configuration file.
-            makeOutputDirs (:obj:`bool`): If True, create output directories (where maps, catalogs are stored).
-            setUpMaps (:obj:`bool`): If True, set-up data structures for handling maps (inc. breaking into 
-                tiles if wanted).
-            MPIEnabled (:obj:`bool`): If True, use MPI to divide the map into tiles, distributed among processes.
-                This requires `tileDefinitions` and `tileNoiseRegions` to be given in the .yml config file.
+            makeOutputDirs (:obj:`bool`, optional): If True, create output directories (where maps, 
+                catalogs are stored).
+            setUpMaps (:obj:`bool`, optional): If True, set-up data structures for handling maps 
+                (inc. breaking into tiles if wanted).
+            selFnDir (:obj:`str`, optional): Path to the selFn directory (use to override the 
+                default location).
+            MPIEnabled (:obj:`bool`, optional): If True, use MPI to divide the map into tiles, 
+                distributed among processes. This requires `tileDefinitions` and `tileNoiseRegions` 
+                to be given in the .yml config file.
             strictMPIExceptions (:obj:`bool`): If True, MPI will abort if an Exception is encountered
                 (the downside is that you will not get the full traceback, but at least you will not waste
                 CPU cycles). If False, MPI probably will not abort if an Exception is encountered, but you 
@@ -225,9 +229,13 @@ class NemoConfig(object):
         # This serves two purposes:
         # 1. Makes sure comms are running
         # 2. Avoids (well, not quite) a race to make directories before filtered maps start coming in
-        if self.MPIEnabled == True:
+        if self.MPIEnabled == True and makeOutputDirs == True:
             madeOutputDirs=self.comm.bcast(madeOutputDirs, root = 0)
             assert(madeOutputDirs == True)
+        
+        # Optional override of selFn directory location
+        if selFnDir is not None:
+            self.selFnDir=selFnDir
 
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
         if 'GNFWParams' not in list(self.parDict.keys()):
@@ -262,7 +270,7 @@ class NemoConfig(object):
             from . import signals
             QFitFileName=self.selFnDir+os.path.sep+"QFit.fits"
             if os.path.exists(QFitFileName) == True:
-                tckQFitDict=signals.loadQ(config)
+                tckQFitDict=signals.loadQ(QFitFileName)
                 self.tileNames=list(tckQFitDict.keys())
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))

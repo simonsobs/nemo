@@ -55,7 +55,7 @@ massOptions: {tenToA0: 4.95e-5,
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
-calcSelFn: True
+calcSelFn: False
 selFnOptions: {fixedSNRCut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
 

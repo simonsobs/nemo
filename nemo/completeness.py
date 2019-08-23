@@ -967,11 +967,12 @@ def tidyUp(config):
     shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
     # Combine Q fits
-    signals.makeCombinedQTable(config)
-    for tileName in config.allTileNames:
-        QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
-        if os.path.exists(QFileName):
-            os.remove(QFileName)
+    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
+        signals.makeCombinedQTable(config)
+        for tileName in config.allTileNames:
+            QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
+            if os.path.exists(QFileName):
+                os.remove(QFileName)
     
     # Make MEFs
     MEFsToBuild=["areaMask", "RMSMap_%s" % (config.parDict['photFilter'])]

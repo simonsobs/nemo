@@ -134,7 +134,8 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
-                RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", writeNemoInfo = True, coordSys = 'fk5'):
+                RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
+                writeNemoInfo = True, coordSys = 'fk5'):
     """Converts a catalog containing object dictionaries into a DS9 region file. 
     
     Args:
@@ -187,6 +188,8 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                 colorString=obj['color']
             else:
                 colorString=color
+            if showNames == True:
+                infoString=obj[idKeyToUse]+infoString
             outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
                         % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
 

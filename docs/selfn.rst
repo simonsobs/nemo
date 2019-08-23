@@ -76,7 +76,7 @@ Tiled Maps
 Nemo breaks up large maps into tiles. At the moment, the time needed to run the selection 
 function routines scales with the number of tiles - 540 in the case of the 
 ``MFMF_SOSim_3freq_tiles.yml`` configuration. So, while you can run the ``selFnExample.py``
-and ``nemoCosmo`` scripts on the ``MFMF_SOSim_3freq_tiles.yml`` configuration, it will be very
+and ``nemoCosmo`` scripts on the ``MFMF_SOSim_3freq_tiles.yml`` configuration, it will be
 slow - this is being worked on.
 
 You can find an archive containing the catalogs and selection function files for a full run
