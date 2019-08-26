@@ -1,35 +1,43 @@
-# Running nemo on AdvACT maps
+# Running Nemo on AdvACT maps
 
-In this directory you will find example .yml config files that show how to 
-run nemo in "tileDeck" mode - i.e., splitting a very large map into
-tiles and then (optionally) running nemo in parallel using MPI. Given
-that this is work in progress, no example maps or beam files are 
-provided - check the ACTPol wiki for where to find such things.
+The [examples/AdvACT](https://github.com/simonsobs/nemo/tree/master/examples/AdvACT)
+directory contains config files used for the AdvACT cluster 
+search. There are two sets of files - one for night-time only
+data taken up to 2016 (these have S16 in the file names) and
+one for data taken up to 2018 (these have S18 in the file names).
+In the examples that follow here, we will refer only to the S16 
+files, but note that the set-up for both sets of maps is identical.
 
-For a quick tutorial on how to run `nemo`, see 
-[examples/equD56/README.md](../equD56/README.md) first. The key difference 
-between the AdvACT .yml files in this directory and the equD56 example are 
-the "tileDeck" options. These are documented in the .yml files themselves, 
-but the key parameters are:
+AdvACT has produced maps that cover most of the southern sky. To
+search this large area efficiently, Nemo breaks up these maps into
+tiles, which can be distributed to multiple processor cores using
+MPI. The tiling procedure is controlled with the parameters listed
+under 'tileDeck options' in each of the `.yml` config files. In the
+current configuration, an automated procedure is used to divide the
+maps up into 280 approximately 10 x 5 degree tiles.
+The `.sh` files in this directory are batch job submission scripts
+for the Slurm workload manager (as used on [Hippo](https://www.acru.ukzn.ac.za/~hippo/)). 
+The `S16Pipeline.py` and  `S18Pipeline.py` scripts show how to submit 
+both the point source and cluster searches as dependent jobs.
 
-* `makeTileDeck` - set to True for any of the other tileDeck options to be
-  used (otherwise nemo will not split the map into tiles).
-* `tileDefinitions` - a dictionary list that defines the names of the tiles, and
-  the corresponding RA, dec range covered.
-* `tileNoiseRegions` - a dictionary that defines the regions used for 
-  estimating the noise in RealSpaceMatchedFilter. Hence, `RADecSection` in 
-  `noiseParams` in the filter definitions is set to `tileNoiseRegions` for
-  these to be used.
-* `extNameList` - this can be used to select a particular set of tiles only,
-  most useful for testing purposes. To see this in action, see
-  `MF_AdvACT_multiScale_tileDeck_hybrid_quick.yml`.
+For the AdvACT cluster search, we use the map itself as the noise
+term in the matched filter constructed by Nemo (since the map itself
+is not dominated by signal from clusters). However, powerful point
+sources in the map can lead to ringing when the filter is applied.
+So, these sources must be detected and masked before performing the
+cluster search. In the current set-up, two passes of point source 
+finding are performed. In the first pass (`PS_S16_f150_auto_pass1.yml`),
+a catalog of 10-sigma sources is produced. These are then masked
+(the holes are filled with a smoothed version of the map plus white
+noise) and a second round of point source finding
+(`PS_S16_f150_auto_pass2.yml`) is used to detect all sources down to
+5-sigma. Both the point source searches are conducted on 150 GHz maps
+only.
 
-Additionally, if `useMPI: True` is found in the .yml file, the `nemo` 
-scripts should be launched with `mpirun`, e.g.,
-
-```
-mpirun --np 16 nemo MF_AdvACT_multiScale_tileDeck_hybrid.yml
-```
-
-The `*.sh` files in this directory are the batch files used for running 
-the code on [hippo](https://www.acru.ukzn.ac.za/~hippo/) using `slurm`.
+The cluster search (`MFMF_S16_auto.yml`) uses a multi-frequency matched
+filter (e.g., Melin et al. 2006), modelling the cluster signal as a 
+set of Universal Pressure Profiles with various different scales. 
+Here, both sets of point source  catalogs are used to define a mask
+before constructing the filter. Again, the holes in the mask are 
+filled to ensure that the noise term in the matched filter is well 
+behaved when Fourier transformed.
