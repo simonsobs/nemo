@@ -200,10 +200,21 @@ if __name__ == '__main__':
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(massOptions['redshiftCatalog'])
-        # Remove any freq weight columns from redshift tab before we start
-        for key in zTab.keys():
-            if key.find("fixed_y_c_weight") != -1:
-                zTab.remove_column(key)
+        # Sanity check/clean z table
+        # We're matching on name alone before, so keep only one row with unique name
+        keepIndices=[]
+        gotClusters=[]
+        for row in zTab:
+            matched=np.where(row['name'] == zTab['name'])
+            if row['name'] not in gotClusters:
+                if len(np.unique(zTab[matched]['redshift'])) != 1 and config.rank == 0:
+                    print("... WARNING: Found redshifts %s for cluster %s - adopted z = %.3f" 
+                        % (str(zTab['redshift'][matched].tolist()), row['name'], row['redshift']))
+                keepIndices.append(matched[0][0])
+                gotClusters.append(row['name'])
+        zTab=zTab[keepIndices]
+        assert(len(np.unique(zTab['name'])) == len(zTab))
+        # Now join...
         tab=atpy.join(nemoTab, zTab, 'name')
         colsToRemove=[]
         for k in list(tab.keys()):

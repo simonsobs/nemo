@@ -55,10 +55,10 @@ massOptions: {tenToA0: 4.95e-5,
               B0: 0.08, 
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
-              relativisticCorrection: False,
+              relativisticCorrection: True,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "MF-MultiScale-Hybrid-MJH_redshifts_20180814.fits", 
+              redshiftCatalog: "AdvACT_redshifts_20190827.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
