@@ -202,6 +202,12 @@ if __name__ == '__main__':
         zTab=atpy.Table().read(massOptions['redshiftCatalog'])
         # Sanity check/clean z table
         # We're matching on name alone before, so keep only one row with unique name
+        wantedColumns=['name', 'RADeg', 'decDeg', 'redshift', 'redshiftErr']
+        colsToRemove=[]
+        for key in zTab.keys():
+            if key not in wantedColumns:
+                colsToRemove.append(key)
+        zTab.remove_columns(colsToRemove)
         keepIndices=[]
         gotClusters=[]
         for row in zTab:
@@ -228,7 +234,7 @@ if __name__ == '__main__':
                 tab.rename_column(k+"_1", k)
         colsToRemove=[]
         for k in list(tab.keys()):
-            if k not in colsToKeep and k.find('fixed_y_c_weight') == -1:
+            if k not in colsToKeep:
                 colsToRemove.append(k)
         tab.remove_columns(colsToRemove)
         outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")

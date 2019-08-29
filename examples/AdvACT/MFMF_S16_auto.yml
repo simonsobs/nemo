@@ -58,7 +58,7 @@ massOptions: {tenToA0: 4.95e-5,
               relativisticCorrection: True,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "AdvACT_redshifts_20190827.fits", 
+              redshiftCatalog: "AdvACT_redshifts.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
