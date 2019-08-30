@@ -106,7 +106,6 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         
     return imageDict
 
-
 #------------------------------------------------------------------------------------------------------------
 def makeSelFnCollection(config, mockSurvey):
     """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints

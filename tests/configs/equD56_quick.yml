@@ -10,7 +10,8 @@ unfilteredMaps:
     - {mapFileName: "testsCache/weightedMap_4.fits",
        weightsFileName: "testsCache/weightedInvVar_4.fits",
        obsFreqGHz: 148.0, 'units': "uK",
-       beamFileName: "../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"}
+       beamFileName: "../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt",
+       RADecSection: [0.0, 40.0, -9.0, 0.0]}
 
 # Masks
 pointSourceMask: "../examples/equD56/pointSourceMask.fits.gz"

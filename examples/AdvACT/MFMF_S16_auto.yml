@@ -83,8 +83,10 @@ selFnFootprints:
 allFilters: {class: "ArnaudModelMatchedFilter",
              params: {noiseParams: {method: "dataMap",
                                     noiseGridArcmin: 40.},
-                      saveHighPassMap: False,
+                      saveFilteredMaps: False,
                       saveRMSMap: False,
+                      savePlots: False,
+                      saveDS9Regions: False,
                       outputUnits: 'yc',
                       edgeTrimArcmin: 0.0}
             }
@@ -103,7 +105,9 @@ mapFilters:
     - {label: "Arnaud_M1e14_z0p4",
        params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
-       params: {M500MSun: 2.0e+14, z: 0.4}}
+       params: {M500MSun: 2.0e+14, z: 0.4,
+                saveFilteredMaps: True,
+                savePlots: True}}
     - {label: "Arnaud_M4e14_z0p4",
        params: {M500MSun: 4.0e+14, z: 0.4}}
     - {label: "Arnaud_M8e14_z0p4",

@@ -402,13 +402,12 @@ def fitQ(config):
         # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
         # NOTE: 5 deg is too small for the largest very low-z clusters: it's better to add a z cut and ignore those
         # NOTE: 5 deg fell over (ringing) for tiles_v2 RE6_10_0, but 10 deg worked fine
-        with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (tileName)) as img:
-            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-            extMap=img[0].data
-            RADeg, decDeg=wcs.getCentreWCSCoords()                
-            clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 10.0)
-            wcs=clipDict['wcs']
-            extMap=clipDict['data']
+        extMap=np.zeros(filterObj.shape)
+        wcs=filterObj.wcs
+        RADeg, decDeg=wcs.getCentreWCSCoords()                
+        clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, 10.0)
+        wcs=clipDict['wcs']
+        extMap=clipDict['data']
         
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed

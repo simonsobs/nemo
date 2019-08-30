@@ -99,8 +99,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
             
             filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
             SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
-            signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
-
+            #signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
             if os.path.exists(filteredMapFileName) == False:
                 
                 print("... making filtered map %s ..." % (label)) 
@@ -128,21 +127,27 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
                     filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
                 # Write maps
-                astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-                astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
+                if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
+                    astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                    astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
 
             else:
                 print("... filtered map %s already made ..." % (label)) 
             
-            # Add file names to imageDict
             if label not in imageDict:
                 imageDict[label]={}
-            imageDict[label]['filteredMap']=filteredMapFileName
-            imageDict[label]['SNMap']=SNMapFileName
-            imageDict[label]['signalMap']=signalMapFileName
+            imageDict[label]['filteredMap']=filteredMapDict['data']
+            imageDict[label]['SNMap']=filteredMapDict['SNMap']
+            #imageDict[label]['signalMap']=signalMapFileName
+            imageDict[label]['wcs']=filteredMapDict['wcs']
             
             # Track e.g. reference filter scale with this key
             imageDict[label]['template']=f['label']
+            
+            # Do we later want to write DS9 regions for every map?
+            if 'saveDS9Regions' in filterObj.params and filterObj.params['saveDS9Regions'] == True:
+                DS9RegionsPath=filteredMapsDir+os.path.sep+"%s_filteredMap.reg"  % (label)
+                imageDict[label]['DS9RegionsPath']=DS9RegionsPath
             
             # Track which keys have filtered maps that we might want to iterate over
             imageDict['mapKeys'].append(label)
@@ -620,11 +625,9 @@ class MatchedFilter(MapFilter):
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
             maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
 
-        try:
-            self.saveRealSpaceFilterProfile()   
-        except:
-            raise Exception("Error saving real space filter profile for filter '%s', tile '%s'" % (self.label, self.tileName))
-        
+        if 'savePlots' in self.params and self.params['savePlots'] == True:
+            self.saveRealSpaceFilterProfile()
+                
         if 'saveFilter' in self.params and self.params['saveFilter'] == True:
             img=pyfits.PrimaryHDU()                                                                                                                                                              
             img.header['SIGNORM']=self.signalNorm

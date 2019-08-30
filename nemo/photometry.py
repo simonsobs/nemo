@@ -20,18 +20,15 @@ from . import completeness
 import sys
 import IPython
 np.random.seed()
-
+                
 #------------------------------------------------------------------------------------------------------------
-def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                findCenterOfMass = True, makeDS9Regions = True, writeSegmentationMap = False, 
+def findObjects(imageDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
+                findCenterOfMass = True, writeSegmentationMap = False, 
                 selFnDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
                 verbose = True, useInterpolator = True, measureShapes = False):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
-    
-    SNMap == 'file' means that the SNMap will be loaded from disk, SNMap == 'array' means it is a np
-    array already in memory.
-    
+        
     Throw out objects within rejectBorder pixels of edge of frame if rejectBorder != None
     
     Set invertMap == True to do a test of estimating fraction of spurious sources
@@ -55,18 +52,18 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         
         # Load area mask
         tileName=key.split("#")[-1]
-        if selFnDir != None:
+        if selFnDir is not None:
             areaMask, wcs=completeness.loadAreaMask(tileName, selFnDir)
         else:
             areaMask=None
         
-        if SNMap == 'file':
-            img=pyfits.open(imageDict[key]['SNMap'])
-            wcs=astWCS.WCS(imageDict[key]['SNMap'])
-            data=img[0].data
-        elif SNMap == 'array':
+        if type(imageDict[key]['SNMap']) == np.ndarray:
             data=imageDict[key]['SNMap']
             wcs=imageDict[key]['wcs']
+        else:
+            with pyfits.open(imageDict[key]['SNMap']) as img:
+                wcs=astWCS.WCS(imageDict[key]['SNMap'])
+                data=img[0].data
 
         # This is for checking contamination
         if invertMap == True:
@@ -86,10 +83,8 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         # Get object positions, number of pixels etc.
         objIDs=np.unique(segmentationMap)
         if findCenterOfMass == True:
-           print("... working with center of mass method ...")
            objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
         else:
-           print("... working with maximum position method ...")
            objPositions=ndimage.maximum_position(data, labels = segmentationMap, index = objIDs)
 
         objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
@@ -202,12 +197,12 @@ def findObjects(imageDict, SNMap = 'file', threshold = 3.0, minObjPix = 3, rejec
         # From here on, catalogs should be astropy Table objects...
         if len(catalog) > 0:
             catalog=catalogs.catalogListToTab(catalog)
-            if makeDS9Regions == True:
-                catalogs.catalog2DS9(catalog, imageDict[key]['filteredMap'].replace(".fits", ".reg"))
+            if 'DS9RegionsPath' in imageDict[key].keys():
+                catalogs.catalog2DS9(catalog, imageDict[key]['DS9RegionsPath'])
         imageDict[key]['catalog']=catalog
 
 #------------------------------------------------------------------------------------------------------------
-def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = False, prefix = '', 
+def getSNValues(imageDict, useInterpolator = True, invertMap = False, prefix = '', 
                 template = None):
     """Measures SNR values in maps at catalog positions.
     
@@ -237,16 +232,14 @@ def getSNValues(imageDict, SNMap = 'file', useInterpolator = True, invertMap = F
                     templateKey=k
             if templateKey == None:
                 raise Exception("didn't find templateKey")
-        
-        if SNMap == 'file':
-            img=pyfits.open(imageDict[templateKey]['SNMap'])
-            wcs=astWCS.WCS(imageDict[templateKey]['SNMap'])
-            data=img[0].data
-        elif SNMap == 'array':
+
+        if type(imageDict[templateKey]['SNMap']) == np.ndarray:
             data=imageDict[templateKey]['SNMap']
             wcs=imageDict[templateKey]['wcs']
         else:
-            raise Exception("Didn't understand SNMap value '%s'" % (str(SNMap)))
+            with pyfits.open(imageDict[templateKey]['SNMap']) as img:
+                wcs=astWCS.WCS(imageDict[templateKey]['SNMap'])
+                data=img[0].data
 
         # This is for checking contamination
         if invertMap == True:
@@ -288,18 +281,20 @@ def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True,
 
     # Adds fixed_SNR values to catalogs for all maps
     if photFilter is not None:
-        getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, 
-                    useInterpolator = useInterpolator)
+        getSNValues(imageDict, prefix = 'fixed_', template = photFilter, useInterpolator = useInterpolator)
 
     for key in imageDict['mapKeys']:
         
-        print("--> Map: %s ..." % (imageDict[key]['filteredMap']))
         catalog=imageDict[key]['catalog']        
-        
-        img=pyfits.open(imageDict[key]['filteredMap'])
-        wcs=astWCS.WCS(imageDict[key]['filteredMap'])
-        mapData=img[0].data
 
+        if type(imageDict[key]['filteredMap']) == np.ndarray:
+            mapData=imageDict[key]['filteredMap']
+            wcs=imageDict[key]['wcs']
+        else:
+            with pyfits.open(imageDict[key]['filteredMap']) as img:
+                wcs=astWCS.WCS(imageDict[key]['filteredMap'])
+                mapData=img[0].data
+                
         mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
         
         # These keywords would only be written if output units 'uK' (point source finding)
@@ -326,8 +321,9 @@ def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True,
         prefixList=['']
         tileName=key.split("#")[-1]
         if photFilter is not None:
-            photImg=pyfits.open(imageDict[photFilter+"#"+tileName]['filteredMap'])
-            photMapData=photImg[0].data
+            #photImg=pyfits.open(imageDict[photFilter+"#"+tileName]['filteredMap'])
+            #photMapData=photImg[0].data
+            photMapData=imageDict[photFilter+"#"+tileName]['filteredMap']
             mapDataList.append(photMapData)
             prefixList.append('fixed_')
             if useInterpolator == True:
