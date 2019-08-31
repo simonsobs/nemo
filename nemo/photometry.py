@@ -321,9 +321,11 @@ def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True,
         prefixList=['']
         tileName=key.split("#")[-1]
         if photFilter is not None:
-            #photImg=pyfits.open(imageDict[photFilter+"#"+tileName]['filteredMap'])
-            #photMapData=photImg[0].data
-            photMapData=imageDict[photFilter+"#"+tileName]['filteredMap']
+            if type(imageDict[photFilter+"#"+tileName]['filteredMap']) == np.ndarray:
+                photMapData=imageDict[photFilter+"#"+tileName]['filteredMap']
+            else:
+                with pyfits.open(imageDict[photFilter+"#"+tileName]['filteredMap']) as img:
+                    photMapData=img[0].data
             mapDataList.append(photMapData)
             prefixList.append('fixed_')
             if useInterpolator == True:

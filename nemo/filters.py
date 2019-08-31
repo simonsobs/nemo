@@ -96,18 +96,19 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
             # This is the label tracked in imageDict, catalog template column
             # Should NOT be fed in as filterClass label
             label=f['label']+"#"+tileName
+            if label not in imageDict:
+                imageDict[label]={}
             
             filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
             SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
-            #signalMapFileName=diagnosticsDir+os.path.sep+"%s_signalMap.fits" % (label)
+            filterClass=eval('%s' % (f['class']))
+            filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
+                                    tileName = tileName, 
+                                    diagnosticsDir = diagnosticsDir,
+                                    selFnDir = selFnDir)
             if os.path.exists(filteredMapFileName) == False:
                 
                 print("... making filtered map %s ..." % (label)) 
-                filterClass=eval('%s' % (f['class']))
-                filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
-                                      tileName = tileName, 
-                                      diagnosticsDir = diagnosticsDir,
-                                      selFnDir = selFnDir)
                 filteredMapDict=filterObj.buildAndApply()
                     
                 # Keywords we need for photometry later
@@ -131,15 +132,14 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
                     astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
                     astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
 
+                imageDict[label]['filteredMap']=filteredMapDict['data']
+                imageDict[label]['SNMap']=filteredMapDict['SNMap']
+                imageDict[label]['wcs']=filteredMapDict['wcs']
+                
             else:
                 print("... filtered map %s already made ..." % (label)) 
-            
-            if label not in imageDict:
-                imageDict[label]={}
-            imageDict[label]['filteredMap']=filteredMapDict['data']
-            imageDict[label]['SNMap']=filteredMapDict['SNMap']
-            #imageDict[label]['signalMap']=signalMapFileName
-            imageDict[label]['wcs']=filteredMapDict['wcs']
+                imageDict[label]['filteredMap']=filteredMapFileName
+                imageDict[label]['SNMap']=SNMapFileName
             
             # Track e.g. reference filter scale with this key
             imageDict[label]['template']=f['label']
