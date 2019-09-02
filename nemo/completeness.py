@@ -990,10 +990,14 @@ def tidyUp(config):
             fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits"
             if os.path.exists(fileName):
                 with pyfits.open(fileName) as img:
-                    # Handling compressed images when we're not actually using tiles
-                    if img[tileName].data is None and tileName == 'PRIMARY':
-                        tileName='COMPRESSED_IMAGE'
-                    hdu=pyfits.CompImageHDU(np.array(img[tileName].data, dtype = float), img[tileName].header, name = tileName)
+                    if tileName not in img:
+                        extName=0
+                    else:
+                        extName=tileName
+                    if 'COMPRESSED_IMAGE' in img:
+                        extName='COMPRESSED_IMAGE'                                          
+                    hdu=pyfits.CompImageHDU(np.array(img[extName].data, dtype = float), img[extName].header, name = tileName)
+                    data=img[extName].data
                 filesToRemove.append(fileName)
                 newImg.append(hdu)
         if len(newImg) > 0:
