@@ -126,15 +126,18 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
                     filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
                     filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
-                # Write maps
-                if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
-                    astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-                    astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
-
-                imageDict[label]['filteredMap']=filteredMapDict['data']
-                imageDict[label]['SNMap']=filteredMapDict['SNMap']
-                imageDict[label]['wcs']=filteredMapDict['wcs']
-                
+                # If we can hold all in memory...
+                #if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
+                    #astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                    #astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
+                #imageDict[label]['filteredMap']=filteredMapDict['data']
+                #imageDict[label]['SNMap']=filteredMapDict['SNMap']
+                #imageDict[label]['wcs']=filteredMapDict['wcs']
+                # If we can't... (uncomment this or the above)
+                astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])   
+                imageDict[label]['filteredMap']=filteredMapFileName
+                imageDict[label]['SNMap']=SNMapFileName
             else:
                 print("... filtered map %s already made ..." % (label)) 
                 imageDict[label]['filteredMap']=filteredMapFileName
