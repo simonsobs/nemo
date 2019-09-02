@@ -274,7 +274,7 @@ class NemoConfig(object):
                 self.tileNames=list(tckQFitDict.keys())
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))
-                
+        
         # For convenience, keep the full list of tile names 
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
         self.allTileNames=self.tileNames.copy()

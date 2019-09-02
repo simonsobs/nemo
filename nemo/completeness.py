@@ -344,11 +344,14 @@ def _loadTile(tileName, baseDir, baseFileName, extension = 'fits'):
     else:
         fileName=baseDir+os.path.sep+"%s.%s" % (baseFileName, extension)
     with pyfits.open(fileName) as img:
-        # Handling compressed images when we're not actually using tiles
-        if img[tileName].data is None and tileName == 'PRIMARY':
-            tileName='COMPRESSED_IMAGE'
-        data=img[tileName].data
-        wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
+        if tileName not in img:
+            extName=0
+        else:
+            extName=tileName
+        if 'COMPRESSED_IMAGE' in img:
+            extName='COMPRESSED_IMAGE'
+        data=img[extName].data
+        wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
     
     return data, wcs
 

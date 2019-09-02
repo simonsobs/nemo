@@ -91,7 +91,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
         # Iterate over all extensions (for tileDeck files)...
         for tileName in tileNames:
             
-            print("--> tileName = %s ..." % (tileName))
+            if verbose == True: print(">>> Making filtered map - tileName = %s ..." % (tileName))
             
             # This is the label tracked in imageDict, catalog template column
             # Should NOT be fed in as filterClass label
@@ -101,14 +101,14 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
             
             filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
             SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
-            filterClass=eval('%s' % (f['class']))
-            filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
-                                    tileName = tileName, 
-                                    diagnosticsDir = diagnosticsDir,
-                                    selFnDir = selFnDir)
             if os.path.exists(filteredMapFileName) == False:
                 
                 print("... making filtered map %s ..." % (label)) 
+                filterClass=eval('%s' % (f['class']))
+                filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
+                                        tileName = tileName, 
+                                        diagnosticsDir = diagnosticsDir,
+                                        selFnDir = selFnDir)
                 filteredMapDict=filterObj.buildAndApply()
                     
                 # Keywords we need for photometry later
@@ -122,7 +122,6 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
                 # We only need to do this for maps of signal (cancels in S/N map)
                 # We do this once because it does take some time... and then we can forget about if e.g. stacking or doing forced photometry later
                 if undoPixelWindow == True:
-                    print("... undoing pixel window function ...")
                     mask=np.equal(filteredMapDict['data'], 0)
                     filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
                     filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
@@ -145,7 +144,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
             imageDict[label]['template']=f['label']
             
             # Do we later want to write DS9 regions for every map?
-            if 'saveDS9Regions' in filterObj.params and filterObj.params['saveDS9Regions'] == True:
+            if 'saveDS9Regions' in f['params'] and f['params']['saveDS9Regions'] == True:
                 DS9RegionsPath=filteredMapsDir+os.path.sep+"%s_filteredMap.reg"  % (label)
                 imageDict[label]['DS9RegionsPath']=DS9RegionsPath
             
