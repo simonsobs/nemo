@@ -243,18 +243,18 @@ class NemoConfig(object):
         for filtDict in self.parDict['mapFilters']:
             filtDict['params']['GNFWParams']=self.parDict['GNFWParams']
 
-        # tileDeck file handling - either make one, or handle loading of one
+        # tileDir file handling - either make one, or handle loading of one
         if setUpMaps == True:
-            # MPI: if the tileDeck doesn't exist, only one process makes it - the others wait until it is done
+            # MPI: if the tileDir doesn't exist, only one process makes it - the others wait until it is done
             if self.rank == 0:
-                self.unfilteredMapsDictList, self.tileNames=maps.makeTileDeck(self.parDict)
-                madeTileDeck=True
+                self.unfilteredMapsDictList, self.tileNames=maps.makeTileDir(self.parDict)
+                madeTileDir=True
             else:
-                madeTileDeck=None
+                madeTileDir=None
             if self.MPIEnabled == True:
-                madeTileDeck=self.comm.bcast(madeTileDeck, root = 0)
-                if self.rank != 0 and madeTileDeck == True:
-                    self.unfilteredMapsDictList, self.tileNames=maps.makeTileDeck(self.parDict)
+                madeTileDir=self.comm.bcast(madeTileDir, root = 0)
+                if self.rank != 0 and madeTileDir == True:
+                    self.unfilteredMapsDictList, self.tileNames=maps.makeTileDir(self.parDict)
 
             # For when we want to test on only a subset of tiles
             if 'tileNameList' in list(self.parDict.keys()):
@@ -302,7 +302,12 @@ class NemoConfig(object):
             for key in maskKeys:
                 if key in self.parDict.keys() and self.parDict[key] is not None:
                     maps.checkMask(self.parDict[key])
-                
+        
+        # We're now writing maps per tile into their own dir (friendlier for Lustre)
+        for tileName in self.tileNames:
+            for d in [self.diagnosticsDir, self.filteredMapsDir]:
+                os.makedirs(d+os.path.sep+tileName, exist_ok = True)
+        
         # For debugging...
         if verbose: print(("... rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   

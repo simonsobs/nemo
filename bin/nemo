@@ -184,7 +184,7 @@ if __name__ == '__main__':
     if conTabDict != {}:
         maps.plotContamination(conTabDict, config.diagnosticsDir)           
     
-    # Strip out duplicates (this is necessary when run in tileDeck mode under MPI)
+    # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
     if len(optimalCatalog) > 0:
         optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
     # We can do this twice as a sanity check... not necessary if we add a proper test elsewhere
@@ -208,7 +208,7 @@ if __name__ == '__main__':
                          config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
         # S/N maps at reference filter scale
         if config.parDict['photFilter'] is not None:
-            maps.stitchTiles(config.filteredMapsDir+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
+            maps.stitchTiles(config.filteredMapsDir+os.path.sep+"*"+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
                              config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
                              config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
 

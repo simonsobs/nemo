@@ -274,7 +274,7 @@ def getFRelWeights(config):
         fRelTab.add_column(atpy.Column(config.allTileNames, 'tileName'))
         for tileCount in range(len(config.allTileNames)):
             tileName=config.allTileNames[tileCount]
-            filterFileName=config.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (config.parDict['photFilter'], tileName)
+            filterFileName=config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"filter_%s#%s.fits" % (config.parDict['photFilter'], tileName)
             with pyfits.open(filterFileName) as img:
                 for i in range(1, 10):
                     if 'RW%d_GHZ' % (i) in img[0].header.keys():
@@ -484,8 +484,8 @@ def fitQ(config):
         plt.semilogx()
         plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
         plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
-        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (tileName))
-        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (tileName))
+        plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.pdf" % (tileName))
+        plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.png" % (tileName))
         plt.close()
         print("... Q fit finished [tileName = %s, rank = %d] ..." % (tileName, config.rank))
 

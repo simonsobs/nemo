@@ -74,11 +74,11 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
     for d in dirList:
         if os.path.exists(d) == False:
             os.makedirs(d, exist_ok = True)
-            
+                
     # Dictionary to keep track of images we're going to make
     imageDict={}
     
-    # For handling tileDeck style .fits files
+    # For handling tileDir style .fits files
     imageDict['tileNames']=tileNames
     
     # Since we're putting stuff like tileNames in the top level, let's keep a separate list of mapDicts
@@ -88,7 +88,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
     if verbose == True: print(">>> Making filtered maps and S/N maps ...")
     for f in filtersList:
         
-        # Iterate over all extensions (for tileDeck files)...
+        # Iterate over all extensions (for tileDir files)...
         for tileName in tileNames:
             
             if verbose == True: print(">>> Making filtered map - tileName = %s ..." % (tileName))
@@ -99,8 +99,8 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
             if label not in imageDict:
                 imageDict[label]={}
             
-            filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
-            SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
+            filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
+            SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
             if os.path.exists(filteredMapFileName) == False:
                 
                 print("... making filtered map %s ..." % (label)) 
@@ -148,7 +148,7 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
             
             # Do we later want to write DS9 regions for every map?
             if 'saveDS9Regions' in f['params'] and f['params']['saveDS9Regions'] == True:
-                DS9RegionsPath=filteredMapsDir+os.path.sep+"%s_filteredMap.reg"  % (label)
+                DS9RegionsPath=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.reg"  % (label)
                 imageDict[label]['DS9RegionsPath']=DS9RegionsPath
             
             # Track which keys have filtered maps that we might want to iterate over
@@ -180,13 +180,14 @@ class MapFilter(object):
         self.params=paramsDict
         
         # Set up storage if necessary, build this filter if not already stored
-        self.diagnosticsDir=diagnosticsDir
+        # Now have per-tile directories (friendlier for Lustre)
+        self.diagnosticsDir=diagnosticsDir+os.path.sep+tileName
         self.selFnDir=selFnDir
         self.tileName=tileName
         self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
         
         # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
-        # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDeck files
+        # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDir files
         self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:           
             mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
@@ -945,7 +946,7 @@ class RealSpaceMatchedFilter(MapFilter):
             if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
                 RADecSection=[self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
                             self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
-                print("... taking noise region from tileDeck image header: %s ..." % (RADecSection))
+                print("... taking noise region from tileDir image header: %s ..." % (RADecSection))
             else:
                 RADecSection=self.params['noiseParams']['RADecSection']
             self.applyDecCentre=(decMax+decMin)/2.

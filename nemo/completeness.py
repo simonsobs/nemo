@@ -514,7 +514,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     if abs(RMSTab['areaDeg2'].sum()-areaMapSqDeg.sum()) > tol:
         raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))
     if np.less(RMSTab['areaDeg2'], 0).sum() > 0:
-        raise Exception("Negative area in tile '%s' - check your survey mask (and delete/remake tileDeck files if necessary)." % (tileName))
+        raise Exception("Negative area in tile '%s' - check your survey mask (and delete/remake tileDir files if necessary)." % (tileName))
     RMSTab.write(RMSTabFileName)
 
     return RMSTab
@@ -802,7 +802,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
     #RMSTab=downsampleRMSTab(RMSTab)
     
     # Fill in blocks in map for each RMS value
-    outFileName=diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), tileName)
+    outFileName=diagnosticsDir+os.path.sep+tileName+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), tileName)
     if os.path.exists(outFileName) == False:
         massLimMap=np.zeros(RMSMap.shape)
         count=0
@@ -854,7 +854,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     allLimits=[]
     allAreas=[]
     for tileName in tileNames:
-        massLimMap, wcs=loadMassLimitMap(tileName, diagnosticsDir, z)
+        massLimMap, wcs=loadMassLimitMap(tileName, diagnosticsDir+os.path.sep+tileName, z)
         areaMap, wcs=loadAreaMask(tileName, selFnDir)
         areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
         limits=np.unique(massLimMap).tolist()
@@ -925,7 +925,7 @@ def makeFullSurveyMassLimitMapPlot(z, config):
         config.quicklookShape, config.quicklookWCS=maps.shrinkWCS(config.origShape, config.origWCS, config.quicklookScale)
 
     outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
-    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")), 
+    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"*"+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")), 
                      outFileName, config.quicklookWCS, config.quicklookShape, 
                      fluxRescale = config.quicklookScale)
 
