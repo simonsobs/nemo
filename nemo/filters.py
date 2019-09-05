@@ -1,22 +1,17 @@
 """
 
-Filter classes are defined in this module, together with the `filterMaps` function that uses them.
+This module defines several filter classes, together with a function that uses them to filter maps.
 
-There are two main classes of filter: `MatchedFilter` and `RealSpaceMatchedFilter`.
+There are two main classes of filter: :obj:`MatchedFilter` and :obj:`RealSpaceMatchedFilter`.
 
-New base classes can be derived from the overall base class: `MapFilter`.
+New base classes can be derived from the overall base class :obj:`MapFilter`. There are also 
+base classes corresponding to filters with different signal templates (:obj:`BeamFilter`,
+:obj:`ArnaudModelFilter`). The actual filters that can be used are derived from these, e.g.:
 
-There are also base classes corresponding to filters with different signal templates: 
-e.g., `BeamFilter`, `ArnaudModelFilter`.
-
-The actual filters that can be used are derived from these, e.g.:
-
-* `BeamMatchedFilter`
-* `ArnaudModelMatchedFilter`
-* `BeamRealSpaceMatchedFilter`
-* `ArnaudModelRealSpaceMatchedFilter`
-
-etc.
+* :obj:`BeamMatchedFilter`
+* :obj:`ArnaudModelMatchedFilter`
+* :obj:`BeamRealSpaceMatchedFilter`
+* :obj:`ArnaudModelRealSpaceMatchedFilter`
 
 """
 

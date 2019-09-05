@@ -1,6 +1,6 @@
 """
 
-This module contains tools for handling catalogs, which for us are (generally) astropy Table objects.
+This module contains tools for handling catalogs, which are (usually) astropy Table objects.
 
 """
 

@@ -1,6 +1,6 @@
 """
 
-Tools for calculating completeness of cluster samples.
+This module contains tools for calculating the completeness of cluster samples.
 
 """
 

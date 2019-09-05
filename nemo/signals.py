@@ -317,7 +317,7 @@ def fitQ(config):
         config (:obj:`startUp.NemoConfig`): A NemoConfig object.
     
     Note:
-        See :ref:`loadQ` for how to load in the output of this routine.
+        See :obj:`loadQ` for how to load in the output of this routine.
         
     """
         
