@@ -397,8 +397,9 @@ class MockSurvey(object):
         tab.add_column(atpy.Column(measured_y0s/y0Noise, 'fixed_SNR'))
         tab.add_column(atpy.Column(zs, 'redshift'))
         tab.add_column(atpy.Column(zErrs, 'redshiftErr'))
-        if photFilterLabel != None and tileName != None:
-            tab.add_column(atpy.Column([photFilterLabel+"#"+tileName]*len(tab), 'template'))
+        if photFilterLabel is not None and tileName is not None:
+            tab.add_column(atpy.Column([photFilterLabel]*len(tab), 'template'))
+            tab.add_column(atpy.Column([tileName]*len(tab), 'tileName'))
                 
         # Apply selection?
         if applySNRCut == True:

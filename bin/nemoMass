@@ -61,7 +61,8 @@ def addForcedPhotometry(forcedTab, config):
             objDict={}
             for key in list(forcedTab.keys()):
                 objDict[key]=row[key]
-            objDict['template']=photFilterLabel+"#"+tileName
+            objDict['template']=photFilterLabel
+            objDict['tileName']=tileName
             objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
             objDict['redshift']=row['redshift']
             if 'redshiftErr' in forcedTab.keys():
@@ -120,7 +121,7 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
         print("... rank %d; %d/%d; %s (%.3f +/- %.3f) ..." % (config.rank, count, len(tab), row['name'], 
                                                               row['redshift'], row['redshiftErr']))
 
-        tileName=row['template'].split("#")[-1]
+        tileName=row['tileName']
         
         # Corrected for mass function steepness
         massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
@@ -228,7 +229,7 @@ if __name__ == '__main__':
                 colsToRemove.append(k)
         tab.remove_columns(colsToRemove)
         # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
-        colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
+        colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template', 'tileName']
         for k in colsToKeep:
             if k+"_1" in list(tab.keys()):
                 tab.rename_column(k+"_1", k)
@@ -311,7 +312,7 @@ if __name__ == '__main__':
         relStr="no relativistic correction applied"
     else:
         relStr="relativistic correction applied"
-    print(">>> Estimating masses (%s) ..." % (relStr))
+    if config.rank == 0: print(">>> Estimating masses (%s) ..." % (relStr))
 
     # Seems like multiprocessing doesn't work under slurm...   
     # So use MPI instead: just divide up catalog among processes

@@ -22,10 +22,9 @@ import IPython
 np.random.seed()
                 
 #------------------------------------------------------------------------------------------------------------
-def findObjects(imageDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                findCenterOfMass = True, writeSegmentationMap = False, 
-                selFnDir = None, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
-                verbose = True, useInterpolator = True, measureShapes = False):
+def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
+                findCenterOfMass = True, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
+                verbose = True, useInterpolator = True, measureShapes = False, DS9RegionsPath = None):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
         
@@ -37,174 +36,149 @@ def findObjects(imageDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10,
     automating finding of extended sources).
     
     """
-    
-    if verbose == True:
-        print(">>> Finding objects ...")
-    
-    if rejectBorder == None:
+           
+    if rejectBorder is None:
         rejectBorder=0
-                  
-    # Do search on each filtered map separately
-    for key in imageDict['mapKeys']:
-        
-        if verbose == True:
-            print("... searching %s ..." % (key))
-        
-        # Load area mask
-        tileName=key.split("#")[-1]
-        if selFnDir is not None:
-            areaMask, wcs=completeness.loadAreaMask(tileName, selFnDir)
-        else:
-            areaMask=None
-        
-        if type(imageDict[key]['SNMap']) == np.ndarray:
-            data=imageDict[key]['SNMap']
-            wcs=imageDict[key]['wcs']
-        else:
-            with pyfits.open(imageDict[key]['SNMap']) as img:
-                wcs=astWCS.WCS(imageDict[key]['SNMap'])
-                data=img[0].data
 
-        # This is for checking contamination
-        if invertMap == True:
-            data=data*-1
-            
-        # Thresholding to identify significant pixels
-        sigPix=np.array(np.greater(data, threshold), dtype=int)
-        sigPixMask=np.equal(sigPix, 1)
+    data=filteredMapDict['SNMap']
+    areaMask=filteredMapDict['surveyMask']
+    wcs=filteredMapDict['wcs']
+    
+    # This is for checking contamination
+    if invertMap == True:
+        data=data*-1
         
-        # Fast, simple segmentation - don't know about deblending, but doubt that's a problem for us
-        segmentationMap, numObjects=ndimage.label(sigPix)
-        if writeSegmentationMap == True:
-            segMapFileName=imageDict[key]['SNMap'].replace("SNMap", "segmentationMap")
-            astImages.saveFITS(segMapFileName, segmentationMap, wcs)
-            imageDict[key]['segmentationMap']=segMapFileName
-        
-        # Get object positions, number of pixels etc.
-        objIDs=np.unique(segmentationMap)
-        if findCenterOfMass == True:
-           objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
-        else:
-           objPositions=ndimage.maximum_position(data, labels = segmentationMap, index = objIDs)
+    # Thresholding to identify significant pixels
+    sigPix=np.array(np.greater(data, threshold), dtype=int)
+    sigPixMask=np.equal(sigPix, 1)
+    
+    # Fast, simple segmentation - don't know about deblending, but doubt that's a problem for us
+    segmentationMap, numObjects=ndimage.label(sigPix)
+    
+    # Get object positions, number of pixels etc.
+    objIDs=np.unique(segmentationMap)
+    if findCenterOfMass == True:
+        objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
+    else:
+        objPositions=ndimage.maximum_position(data, labels = segmentationMap, index = objIDs)
 
-        objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
+    objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
 
-        # In the past this had problems - Simone using happily in his fork though, so now optional
-        if useInterpolator == True:
-            mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
-                                                            np.arange(data.shape[1]), 
-                                                            data, kx = 3, ky = 3)
-        else:
-            print("... not using sub-pixel interpolation for SNRs ...")
-                                                        
-        # Border around edge where we might throw stuff out just to cut down contamination
-        if type(areaMask) == np.ndarray and areaMask.sum() > 0:
-            minX=np.where(areaMask > 0)[1].min()
-            maxX=np.where(areaMask > 0)[1].max()
-            minY=np.where(areaMask > 0)[0].min()
-            maxY=np.where(areaMask > 0)[0].max()
-        else:
-            minX=0
-            maxX=segmentationMap.shape[1]-1
-            minY=0
-            maxY=segmentationMap.shape[0]-1
-        minX=minX+rejectBorder
-        maxX=maxX-rejectBorder
-        minY=minY+rejectBorder
-        maxY=maxY-rejectBorder       
-        
-        # Build catalog - initially as a list of dictionaries, then converted to astropy Table
-        catalog=[]
-        idNumCount=1
-        for i in range(len(objIDs)):
-            if type(objNumPix) != float and objNumPix[i] > minObjPix:
-                objDict={}
-                objDict['id']=idNumCount
-                objDict['x']=objPositions[i][1]
-                objDict['y']=objPositions[i][0]
-                objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
-                if objDict['RADeg'] < 0:
-                    objDict['RADeg']=360.0+objDict['RADeg']
-                galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
-                objDict['galacticLatDeg']=galLat
-                if longNames == False:
-                    objDict['name']=catalogs.makeACTName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)
-                else:
-                    objDict['name']=catalogs.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
-                objDict['numSigPix']=objNumPix[i]
-                objDict['template']=key
-                if useInterpolator == True:
-                    objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
-                else:
-                    objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
-                # Optional SExtractor style shape measurements                
-                if measureShapes == True:
-                    doubleCheck=False
-                    if objDict['numSigPix'] > 9:
-                        mask=np.equal(segmentationMap, objIDs[i])
-                        ys, xs=np.where(segmentationMap == objIDs[i])
-                        yMin=ys.min()
-                        xMin=xs.min()
-                        yMax=ys.max()
-                        xMax=xs.max()
-                        # Centres (1st order moments) - cx2, cy2 here to avoid overwriting whatever catalog cx, cy is (see above)
-                        xs=xs-xMin
-                        ys=ys-yMin
-                        cx2=(xs*data[mask]).sum()/data[mask].sum()
-                        cy2=(ys*data[mask]).sum()/data[mask].sum()
-                        # Spread (2nd order moments)
-                        x2=(((xs**2)*data[mask]).sum()/data[mask].sum())-cx2**2
-                        y2=(((ys**2)*data[mask]).sum()/data[mask].sum())-cy2**2
-                        xy=(((xs*ys)*data[mask]).sum()/data[mask].sum())-cx2*cy2
-                        # A, B, theta from above - correct theta has same sign as xy (see SExtractor manual) 
-                        theta=np.degrees(np.arctan(2*(xy/(x2-y2)))/2.0)
-                        if xy > 0 and theta < 0:
-                            theta=theta+90
-                        elif xy < 0 and theta > 0:
-                            theta=theta-90
-                        if theta > 0 and xy > 0:
-                            doubleCheck=True
-                        if theta < 0 and xy < 0:
-                            doubleCheck=True
-                        if doubleCheck == True:
-                            A=np.sqrt((x2+y2)/2.0 + np.sqrt( ((x2-y2)/2)**2 + xy**2))
-                            B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
-                            # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
-                            # Shape measurement is okay though - so just scale A, B to match segMap area
-                            segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
-                            curArea=A*B*np.pi
-                            scaleFactor=np.sqrt(segArea/curArea)
-                            A=A*scaleFactor
-                            B=B*scaleFactor  
-                            ecc=np.sqrt(1-B**2/A**2)
-                            objDict['ellipse_PA']=theta
-                            objDict['ellipse_A']=A
-                            objDict['ellipse_B']=B
-                            objDict['ellipse_x0']=cx2+xMin
-                            objDict['ellipse_y0']=cy2+yMin
-                            objDict['ellipse_e']=ecc
-                    if objDict['numSigPix'] <= 9 or doubleCheck == False:
-                        objDict['ellipse_PA']=-99
-                        objDict['ellipse_A']=-99
-                        objDict['ellipse_B']=-99
-                        objDict['ellipse_x0']=-99
-                        objDict['ellipse_y0']=-99
-                        objDict['ellipse_e']=-99
-                # Add to catalog (masks now applied before we get here so no need to check)
-                catalog.append(objDict)
-                idNumCount=idNumCount+1     
-        
-        # From here on, catalogs should be astropy Table objects...
-        if len(catalog) > 0:
-            catalog=catalogs.catalogListToTab(catalog)
-            if 'DS9RegionsPath' in imageDict[key].keys():
-                catalogs.catalog2DS9(catalog, imageDict[key]['DS9RegionsPath'])
-        imageDict[key]['catalog']=catalog
+    # In the past this had problems - Simone using happily in his fork though, so now optional
+    if useInterpolator == True:
+        mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
+                                                        np.arange(data.shape[1]), 
+                                                        data, kx = 3, ky = 3)
+                                                    
+    # Border around edge where we might throw stuff out just to cut down contamination
+    if type(areaMask) == np.ndarray and areaMask.sum() > 0:
+        minX=np.where(areaMask > 0)[1].min()
+        maxX=np.where(areaMask > 0)[1].max()
+        minY=np.where(areaMask > 0)[0].min()
+        maxY=np.where(areaMask > 0)[0].max()
+    else:
+        minX=0
+        maxX=segmentationMap.shape[1]-1
+        minY=0
+        maxY=segmentationMap.shape[0]-1
+    minX=minX+rejectBorder
+    maxX=maxX-rejectBorder
+    minY=minY+rejectBorder
+    maxY=maxY-rejectBorder       
+    
+    # Build catalog - initially as a list of dictionaries, then converted to astropy Table
+    catalog=[]
+    idNumCount=1
+    for i in range(len(objIDs)):
+        if type(objNumPix) != float and objNumPix[i] > minObjPix:
+            objDict={}
+            objDict['id']=idNumCount
+            objDict['x']=objPositions[i][1]
+            objDict['y']=objPositions[i][0]
+            objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
+            if objDict['RADeg'] < 0:
+                objDict['RADeg']=360.0+objDict['RADeg']
+            galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
+            objDict['galacticLatDeg']=galLat
+            if longNames == False:
+                objDict['name']=catalogs.makeACTName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)
+            else:
+                objDict['name']=catalogs.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
+            objDict['numSigPix']=objNumPix[i]
+            objDict['template']=filteredMapDict['label']
+            objDict['tileName']=filteredMapDict['tileName']
+            if useInterpolator == True:
+                objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
+            else:
+                objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+            # Optional SExtractor style shape measurements                
+            if measureShapes == True:
+                doubleCheck=False
+                if objDict['numSigPix'] > 9:
+                    mask=np.equal(segmentationMap, objIDs[i])
+                    ys, xs=np.where(segmentationMap == objIDs[i])
+                    yMin=ys.min()
+                    xMin=xs.min()
+                    yMax=ys.max()
+                    xMax=xs.max()
+                    # Centres (1st order moments) - cx2, cy2 here to avoid overwriting whatever catalog cx, cy is (see above)
+                    xs=xs-xMin
+                    ys=ys-yMin
+                    cx2=(xs*data[mask]).sum()/data[mask].sum()
+                    cy2=(ys*data[mask]).sum()/data[mask].sum()
+                    # Spread (2nd order moments)
+                    x2=(((xs**2)*data[mask]).sum()/data[mask].sum())-cx2**2
+                    y2=(((ys**2)*data[mask]).sum()/data[mask].sum())-cy2**2
+                    xy=(((xs*ys)*data[mask]).sum()/data[mask].sum())-cx2*cy2
+                    # A, B, theta from above - correct theta has same sign as xy (see SExtractor manual) 
+                    theta=np.degrees(np.arctan(2*(xy/(x2-y2)))/2.0)
+                    if xy > 0 and theta < 0:
+                        theta=theta+90
+                    elif xy < 0 and theta > 0:
+                        theta=theta-90
+                    if theta > 0 and xy > 0:
+                        doubleCheck=True
+                    if theta < 0 and xy < 0:
+                        doubleCheck=True
+                    if doubleCheck == True:
+                        A=np.sqrt((x2+y2)/2.0 + np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                        B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
+                        # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
+                        # Shape measurement is okay though - so just scale A, B to match segMap area
+                        segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
+                        curArea=A*B*np.pi
+                        scaleFactor=np.sqrt(segArea/curArea)
+                        A=A*scaleFactor
+                        B=B*scaleFactor  
+                        ecc=np.sqrt(1-B**2/A**2)
+                        objDict['ellipse_PA']=theta
+                        objDict['ellipse_A']=A
+                        objDict['ellipse_B']=B
+                        objDict['ellipse_x0']=cx2+xMin
+                        objDict['ellipse_y0']=cy2+yMin
+                        objDict['ellipse_e']=ecc
+                if objDict['numSigPix'] <= 9 or doubleCheck == False:
+                    objDict['ellipse_PA']=-99
+                    objDict['ellipse_A']=-99
+                    objDict['ellipse_B']=-99
+                    objDict['ellipse_x0']=-99
+                    objDict['ellipse_y0']=-99
+                    objDict['ellipse_e']=-99
+            # Add to catalog (masks now applied before we get here so no need to check)
+            catalog.append(objDict)
+            idNumCount=idNumCount+1     
+    
+    # From here on, catalogs should be astropy Table objects...
+    if len(catalog) > 0:
+        catalog=catalogs.catalogListToTab(catalog)
+        if DS9RegionsPath is not None:
+            catalogs.catalog2DS9(catalog, DS9RegionsPath)
+
+    return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def getSNValues(imageDict, useInterpolator = True, invertMap = False, prefix = '', 
-                template = None):
-    """Measures SNR values in maps at catalog positions.
+def getSNRValues(catalog, SNMap, wcs, useInterpolator = True, invertMap = False, prefix = ''):
+    """Measures SNR values in given map at catalog positions.
     
     Set invertMap == True, to do a test for estimating the spurious source fraction
     
@@ -215,56 +189,28 @@ def getSNValues(imageDict, useInterpolator = True, invertMap = False, prefix = '
     
     """
             
-    print(">>> Getting %sSNR values ..." % (prefix))
+    # This is for checking contamination
+    if invertMap == True:
+        SNMap=SNMap*-1
+        
+    # In the past this had problems - Simone using happily in his fork though, so now optional
+    if useInterpolator == True:
+        mapInterpolator=interpolate.RectBivariateSpline(np.arange(SNMap.shape[0]), 
+                                                        np.arange(SNMap.shape[1]), 
+                                                        SNMap, kx = 3, ky = 3)
     
-    # Do search on each filtered map separately
-    for key in imageDict['mapKeys']:
-        
-        print("... searching %s ..." % (key))
-        
-        if template == None:
-            templateKey=key
-        else:
-            templateKey=None
-            for k in imageDict['mapKeys']:
-                # Match the reference filter name and the tileName
-                if k.split("#")[0] == template and k.split("#")[-1] == key.split("#")[-1]:
-                    templateKey=k
-            if templateKey == None:
-                raise Exception("didn't find templateKey")
-
-        if type(imageDict[templateKey]['SNMap']) == np.ndarray:
-            data=imageDict[templateKey]['SNMap']
-            wcs=imageDict[templateKey]['wcs']
-        else:
-            with pyfits.open(imageDict[templateKey]['SNMap']) as img:
-                wcs=astWCS.WCS(imageDict[templateKey]['SNMap'])
-                data=img[0].data
-
-        # This is for checking contamination
-        if invertMap == True:
-            data=data*-1
-            
-        # In the past this had problems - Simone using happily in his fork though, so now optional
-        if useInterpolator == True:
-            mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
-                                                            np.arange(data.shape[1]), 
-                                                            data, kx = 3, ky = 3)
-        else:
-            print("... not using sub-pixel interpolation for SNRs ...")
-        
-        if len(imageDict[key]['catalog']) > 0:
-            imageDict[key]['catalog'].add_column(atpy.Column(np.zeros(len(imageDict[key]['catalog'])), prefix+'SNR'))
-        for obj in imageDict[key]['catalog']:
-            x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
-            if int(x) > 0 and int(x) < data.shape[1] and int(y) > 0 and int(y) < data.shape[0]:
-                if useInterpolator == True:
-                    obj[prefix+'SNR']=mapInterpolator(y, x)[0][0]
-                else:
-                    obj[prefix+'SNR']=data[int(round(y)), int(round(x))] # read directly off of S/N map
-       
+    if len(catalog) > 0:
+        catalog.add_column(atpy.Column(np.zeros(len(catalog)), prefix+'SNR'))
+    for obj in catalog:
+        x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
+        if int(x) > 0 and int(x) < SNMap.shape[1] and int(y) > 0 and int(y) < SNMap.shape[0]:
+            if useInterpolator == True:
+                obj[prefix+'SNR']=mapInterpolator(y, x)[0][0]
+            else:
+                obj[prefix+'SNR']=SNMap[int(round(y)), int(round(x))] # read directly off of S/N map
+           
 #------------------------------------------------------------------------------------------------------------
-def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True, unfilteredMapsDict = None):
+def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict = None, useInterpolator = True):
     """Add flux measurements to each catalog pointed to in the imageDict. Measured in 'outputUnits' 
     specified in the filter definition in the .par file (and written to the image header as 'BUNIT').
     
@@ -276,108 +222,85 @@ def measureFluxes(imageDict, photFilter, diagnosticsDir, useInterpolator = True,
     (fixed_delta_T_c, fixed_y_c etc.). Set to None if you don't want these.
 
     """
+        
+    mapData=filteredMapDict['data']
+    wcs=filteredMapDict['wcs']         
+    mapUnits=wcs.header['BUNIT']
     
-    print(">>> Doing photometry ...")
-
     # Adds fixed_SNR values to catalogs for all maps
-    if photFilter is not None:
-        getSNValues(imageDict, prefix = 'fixed_', template = photFilter, useInterpolator = useInterpolator)
-
-    for key in imageDict['mapKeys']:
-        
-        catalog=imageDict[key]['catalog']        
-
-        if type(imageDict[key]['filteredMap']) == np.ndarray:
-            mapData=imageDict[key]['filteredMap']
-            wcs=imageDict[key]['wcs']
-        else:
-            with pyfits.open(imageDict[key]['filteredMap']) as img:
-                wcs=astWCS.WCS(imageDict[key]['filteredMap'])
-                mapData=img[0].data
-                
-        mapUnits=wcs.header['BUNIT']                # could be 'yc' or 'Jy/beam'
-        
-        # These keywords would only be written if output units 'uK' (point source finding)
-        # This also relies on the beam solid angle being in the header of the beam .txt file
-        if 'BEAMNSR' in wcs.header.keys():
-            beamSolidAngle_nsr=wcs.header['BEAMNSR']
-            obsFreqGHz=wcs.header['FREQGHZ']
-            reportJyFluxes=True
-        else:
-            reportJyFluxes=False
-        
-        # In the past this had problems - Simone using happily in his fork though, so now optional
+    if photFilteredMapDict is not None:
+        getSNRValues(catalog, photFilteredMapDict['SNMap'], wcs, prefix = 'fixed_', 
+                     useInterpolator = useInterpolator)
+    
+    # These keywords would only be written if output units 'uK' (point source finding)
+    # This also relies on the beam solid angle being in the header of the beam .txt file
+    if 'BEAMNSR' in wcs.header.keys():
+        beamSolidAngle_nsr=wcs.header['BEAMNSR']
+        obsFreqGHz=wcs.header['FREQGHZ']
+        reportJyFluxes=True
+    else:
+        reportJyFluxes=False
+    
+    # In the past this had problems - Simone using happily in his fork though, so now optional
+    if useInterpolator == True:
+        mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
+                                                        np.arange(mapData.shape[1]), 
+                                                        mapData, kx = 3, ky = 3)
+    else:
+        mapInterpolator=None
+    
+    # Add fixed filter scale maps
+    mapDataList=[mapData]
+    interpolatorList=[mapInterpolator]
+    prefixList=['']
+    if photFilteredMapDict is not None:
+        photMapData=photFilteredMapDict['data']
+        mapDataList.append(photMapData)
+        prefixList.append('fixed_')
         if useInterpolator == True:
-            mapInterpolator=interpolate.RectBivariateSpline(np.arange(mapData.shape[0]), 
-                                                            np.arange(mapData.shape[1]), 
-                                                            mapData, kx = 3, ky = 3)
+            photMapInterpolator=interpolate.RectBivariateSpline(np.arange(photMapData.shape[0]), 
+                                                                np.arange(photMapData.shape[1]), 
+                                                                photMapData, kx = 3, ky = 3)
         else:
-            print("... not using sub-pixel interpolation for fluxes ...")
-            mapInterpolator=None
-        
-        # Add fixed filter scale maps
-        mapDataList=[mapData]
-        interpolatorList=[mapInterpolator]
-        prefixList=['']
-        tileName=key.split("#")[-1]
-        if photFilter is not None:
-            if type(imageDict[photFilter+"#"+tileName]['filteredMap']) == np.ndarray:
-                photMapData=imageDict[photFilter+"#"+tileName]['filteredMap']
-            else:
-                with pyfits.open(imageDict[photFilter+"#"+tileName]['filteredMap']) as img:
-                    photMapData=img[0].data
-            mapDataList.append(photMapData)
-            prefixList.append('fixed_')
+            photMapInterpolator=None
+        interpolatorList.append(photMapInterpolator)
+
+    keysToAdd=['deltaT_c', 'err_deltaT_c']
+    if mapUnits == 'yc':
+        keysToAdd=keysToAdd+['y_c', 'err_y_c']
+    elif mapUnits == 'uK':
+        keysToAdd=keysToAdd+['fluxJy', 'err_fluxJy']        
+    for prefix in prefixList:
+        for k in keysToAdd:
+            if len(catalog) > 0:
+                catalog.add_column(atpy.Column(np.zeros(len(catalog)), prefix+k))
+
+    for obj in catalog:
+        x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
+        for data, prefix, interpolator in zip(mapDataList, prefixList, interpolatorList):
+            # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
+            # 2018: Simone seems to now be using this happily, so now optional
             if useInterpolator == True:
-                photMapInterpolator=interpolate.RectBivariateSpline(np.arange(photMapData.shape[0]), 
-                                                                    np.arange(photMapData.shape[1]), 
-                                                                    photMapData, kx = 3, ky = 3)
+                mapValue=interpolator(y, x)[0][0]
             else:
-                photMapInterpolator=None
-            interpolatorList.append(photMapInterpolator)
-
-        keysToAdd=['deltaT_c', 'err_deltaT_c']
-        if mapUnits == 'yc':
-            keysToAdd=keysToAdd+['y_c', 'err_y_c']
-        elif mapUnits == 'uK':
-            keysToAdd=keysToAdd+['fluxJy', 'err_fluxJy']        
-        for prefix in prefixList:
-            for k in keysToAdd:
-                if len(catalog) > 0:
-                    catalog.add_column(atpy.Column(np.zeros(len(catalog)), prefix+k))
-
-        for obj in catalog:
-                        
-            if key == obj['template']:
-                x, y=wcs.wcs2pix(obj['RADeg'], obj['decDeg'])
-                for data, prefix, interpolator in zip(mapDataList, prefixList, interpolatorList):
-                    # NOTE: We might want to avoid 2d interpolation here because that was found not to be robust elsewhere
-                    # 2018: Simone seems to now be using this happily, so now optional
-                    if useInterpolator == True:
-                        mapValue=interpolator(y, x)[0][0]
-                    else:
-                        mapValue=data[int(round(y)), int(round(x))]
-                    # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
-                    if mapUnits == 'yc':
-                        yc=mapValue
-                        deltaTc=maps.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
-                        obj[prefix+'y_c']=yc/1e-4                            # So that same units as H13 in output catalogs
-                        obj[prefix+'err_y_c']=obj[prefix+'y_c']/obj[prefix+'SNR']
-                        obj[prefix+'deltaT_c']=deltaTc
-                        obj[prefix+'err_deltaT_c']=abs(deltaTc/obj[prefix+'SNR'])
-                    elif mapUnits == 'Y500':
-                        print("add photometry.measureFluxes() for Y500")
-                        IPython.embed()
-                        sys.exit()
-                    elif mapUnits == 'uK':
-                        # For this, we want deltaTc to be source amplitude
-                        deltaTc=mapValue
-                        obj[prefix+'deltaT_c']=deltaTc
-                        obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']                        
-                        if reportJyFluxes == True:
-                            obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
-                            obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
-
+                mapValue=data[int(round(y)), int(round(x))]
+            # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
+            if mapUnits == 'yc':
+                yc=mapValue
+                deltaTc=maps.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
+                obj[prefix+'y_c']=yc/1e-4                            # So that same units as H13 in output catalogs
+                obj[prefix+'err_y_c']=obj[prefix+'y_c']/obj[prefix+'SNR']
+                obj[prefix+'deltaT_c']=deltaTc
+                obj[prefix+'err_deltaT_c']=abs(deltaTc/obj[prefix+'SNR'])
+            elif mapUnits == 'uK':
+                # For this, we want deltaTc to be source amplitude
+                deltaTc=mapValue
+                obj[prefix+'deltaT_c']=deltaTc
+                obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']                        
+                if reportJyFluxes == True:
+                    obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                    obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+    
 #------------------------------------------------------------------------------------------------------------
 def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
     """Add relative weighting by frequency for each object in the optimal catalog, extracted from the 

@@ -25,7 +25,7 @@ import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                              invertMap = False):
+                              invertMap = False, verbose = True):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -43,7 +43,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             :meth:maps.estimateContaminationFromInvertedMaps).
     
     Returns:
-        A dictionary containing filtered maps and catalogs.
+        Optimal catalog (keeps the highest S/N detection when filtering at multiple scales).
     
     Note:
         See bin/nemo for how this pipeline is applied to real data, and maps.estimateContaminationFromSkySim
@@ -69,42 +69,85 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                     shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
     else:
         rootOutDir=config.rootOutDir
+    
+    # We re-sort the filters list here - in case we have photFilter defined
+    photFilter=config.parDict['photFilter']
+    filtersList=[]
+    if photFilter is not None:
+        for f in config.parDict['mapFilters']:
+            if f['label'] == photFilter:
+                filtersList.append(f)
+    for f in config.parDict['mapFilters']:
+        if photFilter is not None:
+            if f['label'] == photFilter:
+                continue
+        filtersList.append(f)
+    if photFilter is not None:
+        assert(filtersList[0]['label'] == photFilter)
+    photFilteredMapDict=None
+    
+    # Make filtered maps for each filter and tile
+    catalogDict={}
+    for tileName in config.tileNames:
+        # Now have per-tile directories (friendlier for Lustre)
+        tileFilteredMapsDir=config.filteredMapsDir+os.path.sep+tileName
+        tileDiagnosticsDir=config.diagnosticsDir+os.path.sep+tileName
+        for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
+            if os.path.exists(d) == False:
+                os.makedirs(d, exist_ok = True)
+        if verbose == True: print(">>> Making filtered maps - tileName = %s ..." % (tileName))
+        # We could load the unfiltered map only once here?
+        # We could also cache 'dataMap' noise as it will always be the same
+        for f in filtersList:
+
+            label=f['label']+"#"+tileName            
+            catalogDict[label]={}
+            if 'saveDS9Regions' in f['params'] and f['params']['saveDS9Regions'] == True:
+                DS9RegionsPath=config.filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.reg"  % (label)
+            else:
+                DS9RegionsPath=None
+                
+            filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName, 
+                                               filteredMapsDir = tileFilteredMapsDir,
+                                               diagnosticsDir = tileDiagnosticsDir, selFnDir = config.selFnDir, 
+                                               verbose = True, undoPixelWindow = True)
             
-    imageDict=filters.filterMaps(config.unfilteredMapsDictList, config.parDict['mapFilters'], 
-                                 tileNames = config.tileNames, rootOutDir = rootOutDir,
-                                 undoPixelWindow = config.parDict['undoPixelWindow'])
-    
-    # Find objects in filtered maps
-    photometry.findObjects(imageDict, threshold = config.parDict['thresholdSigma'], 
-                           minObjPix = config.parDict['minObjPix'], 
-                           findCenterOfMass = config.parDict['findCenterOfMass'], 
-                           rejectBorder = config.parDict['rejectBorder'], 
-                           selFnDir = config.selFnDir, objIdent = config.parDict['objIdent'], 
-                           longNames = config.parDict['longNames'],
-                           useInterpolator = config.parDict['useInterpolator'], 
-                           measureShapes = config.parDict['measureShapes'],
-                           invertMap = invertMap)
-    
-    # Measure fluxes
-    if measureFluxes == True:
-        photometry.measureFluxes(imageDict, config.parDict['photFilter'], config.diagnosticsDir, 
-                                 unfilteredMapsDict = config.parDict['unfilteredMaps'],
-                                 useInterpolator = config.parDict['useInterpolator'])
-    else:
-        # Get S/N only - if the reference (fixed) filter scale has been given
-        # This is (probably) only used by maps.estimateContaminationFromInvertedMaps
-        if 'photFilter' in list(config.parDict.keys()):
-            photFilter=config.parDict['photFilter']
-        else:
-            photFilter=None
-        if photFilter != None:
-            photometry.getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, 
-                                   invertMap = invertMap)
-                    
+            if f['label'] == photFilter:
+                photFilteredMapDict={}
+                photFilteredMapDict['SNMap']=filteredMapDict['SNMap']
+                photFilteredMapDict['data']=filteredMapDict['data']
+            
+            catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
+                                           minObjPix = config.parDict['minObjPix'], 
+                                           findCenterOfMass = config.parDict['findCenterOfMass'], 
+                                           rejectBorder = config.parDict['rejectBorder'], 
+                                           objIdent = config.parDict['objIdent'], 
+                                           longNames = config.parDict['longNames'],
+                                           useInterpolator = config.parDict['useInterpolator'], 
+                                           measureShapes = config.parDict['measureShapes'],
+                                           invertMap = invertMap,
+                                           DS9RegionsPath = DS9RegionsPath)
+            
+            if measureFluxes == True:
+                photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,
+                                         photFilteredMapDict = photFilteredMapDict,
+                                         useInterpolator = config.parDict['useInterpolator'])
+
+            else:
+                # Get S/N only - if the reference (fixed) filter scale has been given
+                # This is (probably) only used by maps.estimateContaminationFromInvertedMaps
+                if photFilter is not None:
+                    photometry.getSNRValues(catalog, photFilteredMapDict['SNMap'], 
+                                            filteredMapDict['wcs'], prefix = 'fixed_', 
+                                            useInterpolator = config.parDict['useInterpolator'],
+                                            invertMap = invertMap)
+            
+            catalogDict[label]['catalog']=catalog
+
     # Merged/optimal catalogs
-    catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])
-        
-    return imageDict
+    optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
+    
+    return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------
 def makeSelFnCollection(config, mockSurvey):

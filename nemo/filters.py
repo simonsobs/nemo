@@ -42,13 +42,14 @@ from . import photometry
 from . import catalogs
 from . import plotSettings
 from . import gnfw
+from . import completeness
 import astropy.table as atpy
 import time
 import IPython
 
 #-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], rootOutDir = ".", verbose = True,
-               undoPixelWindow = True):
+def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
+               selFnDir = '.', verbose = True, undoPixelWindow = True):
     """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
     can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
     even if multifrequency (a change from previous behaviour).
@@ -56,104 +57,63 @@ def filterMaps(unfilteredMapsDictList, filtersList, tileNames = ['PRIMARY'], roo
     Filtered maps are written to rootOutDir/filteredMaps
     Filters, if stored, are written to rootOutDir/filters
     
-    Returns a dictionary containing a map of filtered maps to keys in filterDict. We'll use this dictionary
-    for keeping track of catalogs etc. subsequently.
+    Returns a dictionary containing the filtered map and S/N map etc.
     
     """
-    
-    # Storage, in case it doesn't already exist (these are created by NemoConfig in startUp.py anyway)
-    filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
-    diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
-    selFnDir=rootOutDir+os.path.sep+"selFn"
-    dirList=[filteredMapsDir, diagnosticsDir, selFnDir]
-    for d in dirList:
-        if os.path.exists(d) == False:
-            os.makedirs(d, exist_ok = True)
-                
-    # Dictionary to keep track of images we're going to make
-    imageDict={}
-    
-    # For handling tileDir style .fits files
-    imageDict['tileNames']=tileNames
-    
-    # Since we're putting stuff like tileNames in the top level, let's keep a separate list of mapDicts
-    imageDict['mapKeys']=[]
-    
-    # Make filtered maps for each filter
-    if verbose == True: print(">>> Making filtered maps and S/N maps ...")
-    for f in filtersList:
         
-        # Iterate over all extensions (for tileDir files)...
-        for tileName in tileNames:
+    f=filterParams
+    label=f['label']+"#"+tileName
+    filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
+    SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
+    if os.path.exists(filteredMapFileName) == False:
+        
+        print("... making filtered map %s ..." % (label))
+        filterClass=eval('%s' % (f['class']))
+        filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], tileName = tileName, 
+                              diagnosticsDir = diagnosticsDir, selFnDir = selFnDir)
+        filteredMapDict=filterObj.buildAndApply()
             
-            if verbose == True: print(">>> Making filtered map - tileName = %s ..." % (tileName))
-            
-            # This is the label tracked in imageDict, catalog template column
-            # Should NOT be fed in as filterClass label
-            label=f['label']+"#"+tileName
-            if label not in imageDict:
-                imageDict[label]={}
-            
-            filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
-            SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
-            if os.path.exists(filteredMapFileName) == False:
-                
-                print("... making filtered map %s ..." % (label)) 
-                filterClass=eval('%s' % (f['class']))
-                filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], \
-                                        tileName = tileName, 
-                                        diagnosticsDir = diagnosticsDir,
-                                        selFnDir = selFnDir)
-                filteredMapDict=filterObj.buildAndApply()
-                    
-                # Keywords we need for photometry later
-                filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
-                if 'beamSolidAngle_nsr' in filteredMapDict.keys() and filteredMapDict['beamSolidAngle_nsr'] > 0:
-                    filteredMapDict['wcs'].header['BEAMNSR']=filteredMapDict['beamSolidAngle_nsr']
-                    filteredMapDict['wcs'].header['FREQGHZ']=filteredMapDict['obsFreqGHz']
-                filteredMapDict['wcs'].updateFromHeader()
-                                           
-                # Undo pixel window function using Sigurd's FFT method (takes into account variable pixel scale etc.)
-                # We only need to do this for maps of signal (cancels in S/N map)
-                # We do this once because it does take some time... and then we can forget about if e.g. stacking or doing forced photometry later
-                if undoPixelWindow == True:
-                    mask=np.equal(filteredMapDict['data'], 0)
-                    filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
-                    filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
+        # Keywords we need for photometry later
+        filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
+        if 'beamSolidAngle_nsr' in filteredMapDict.keys() and filteredMapDict['beamSolidAngle_nsr'] > 0:
+            filteredMapDict['wcs'].header['BEAMNSR']=filteredMapDict['beamSolidAngle_nsr']
+            filteredMapDict['wcs'].header['FREQGHZ']=filteredMapDict['obsFreqGHz']
+        filteredMapDict['wcs'].updateFromHeader()
+                                    
+        # Undo pixel window function using Sigurd's FFT method (takes into account variable pixel scale etc.)
+        # We only need to do this for maps of signal (cancels in S/N map)
+        # We do this once because it does take some time... 
+        # ... and then we can forget about if e.g. stacking or doing forced photometry later
+        if undoPixelWindow == True:
+            mask=np.equal(filteredMapDict['data'], 0)
+            filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+            filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
-                # If we can hold all in memory...
-                #if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
-                    #astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-                    #astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
-                #imageDict[label]['filteredMap']=filteredMapDict['data']
-                #imageDict[label]['SNMap']=filteredMapDict['SNMap']
-                #imageDict[label]['wcs']=filteredMapDict['wcs']
-                # If we can't... (uncomment this or the above)
-                astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-                astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])   
-                imageDict[label]['filteredMap']=filteredMapFileName
-                imageDict[label]['SNMap']=SNMapFileName
-            else:
-                print("... filtered map %s already made ..." % (label)) 
-                imageDict[label]['filteredMap']=filteredMapFileName
-                imageDict[label]['SNMap']=SNMapFileName
-            
-            # Track e.g. reference filter scale with this key
-            imageDict[label]['template']=f['label']
-            
-            # Do we later want to write DS9 regions for every map?
-            if 'saveDS9Regions' in f['params'] and f['params']['saveDS9Regions'] == True:
-                DS9RegionsPath=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.reg"  % (label)
-                imageDict[label]['DS9RegionsPath']=DS9RegionsPath
-            
-            # Track which keys have filtered maps that we might want to iterate over
-            imageDict['mapKeys'].append(label)
-            
-            # May be handy to keep track of for plotting etc. later
-            imageDict[label]['unfilteredMapsDictList']=unfilteredMapsDictList  
-            
-    return imageDict
+        if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
+            astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+            astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
+        # Uncomment for quicker testing/re-runs...
+        #astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+        #astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])   
 
+    else:
+        print("... loading cached map %s ..." % (filteredMapFileName))
+        filteredMapDict={}
+        with pyfits.open(filteredMapFileName) as img:
+            filteredMapDict['data']=img[0].data
+            filteredMapDict['wcs']=astWCS.WCS(img[0].header, mode = 'pyfits')
+            filteredMapDict['mapUnits']=filteredMapDict['wcs'].header['BUNIT']
+            if 'BEAMNSR' in filteredMapDict['wcs'].header.keys():
+                filteredMapDict['beamSolidAngle_nsr']=filteredMapDict['wcs'].header['BEAMNSR']
+                filteredMapDict['obsFreqGHz']=filteredMapDict['wcs'].header['FREQGHZ']
+        with pyfits.open(SNMapFileName) as img:
+            filteredMapDict['SNMap']=img[0].data
+        filteredMapDict['surveyMask'], wcs=completeness.loadAreaMask(tileName, selFnDir)
+        filteredMapDict['label']=f['label']
+        filteredMapDict['tileName']=tileName
+    
+    return filteredMapDict
+    
 #------------------------------------------------------------------------------------------------------------
 class MapFilter(object):
     """Generic map filter base class. Defines common interface.
@@ -174,9 +134,7 @@ class MapFilter(object):
         self.label=label
         self.params=paramsDict
         
-        # Set up storage if necessary, build this filter if not already stored
-        # Now have per-tile directories (friendlier for Lustre)
-        self.diagnosticsDir=diagnosticsDir+os.path.sep+tileName
+        self.diagnosticsDir=diagnosticsDir
         self.selFnDir=selFnDir
         self.tileName=tileName
         self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
@@ -444,7 +402,6 @@ class MatchedFilter(MapFilter):
         psMask=self.unfilteredMapsDictList[0]['psMask']
             
         if os.path.exists(self.filterFileName) == False:
-            print(">>> Building filter %s#%s ..." % (self.label, self.tileName))
                         
             fMapsForNoise=[]
             for mapDict in self.unfilteredMapsDictList: 
@@ -561,7 +518,6 @@ class MatchedFilter(MapFilter):
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         else:
-            print(">>> Loading cached filter %s#%s ..." % (self.label, self.tileName))
             self.loadFilter()
         
         # Apply filter
@@ -616,8 +572,9 @@ class MatchedFilter(MapFilter):
         RMSMap=RMSMap*surveyMask
 
         maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
+        surveyMask=np.array(surveyMask, dtype = int)
         if os.path.exists(maskFileName) == False:
-            maps.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs, compressed = True)
+            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
@@ -639,7 +596,8 @@ class MatchedFilter(MapFilter):
             
         # NOTE: What to do about frequency here? Generalise for non-SZ
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
-                'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}
+                'surveyMask': surveyMask, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr,
+                'label': self.label, 'tileName': self.tileName}
 
 
     def loadFilter(self):
@@ -769,7 +727,7 @@ class RealSpaceMatchedFilter(MapFilter):
             return self.loadFilter()
         
         wcs=self.wcs
-
+        
         # Build the matched-filter kernel in a small section of the map
         # Apply the same difference of Gaussians high pass filter here
         # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
@@ -934,14 +892,12 @@ class RealSpaceMatchedFilter(MapFilter):
         psMask=self.unfilteredMapsDictList[0]['psMask']
             
         if os.path.exists(self.filterFileName) == False:
-            print(">>> Building filter %s#%s ..." % (self.label, self.tileName))
             
             # Noise region to use
             RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
             if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
                 RADecSection=[self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
                             self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
-                print("... taking noise region from tileDir image header: %s ..." % (RADecSection))
             else:
                 RADecSection=self.params['noiseParams']['RADecSection']
             self.applyDecCentre=(decMax+decMin)/2.
@@ -950,19 +906,14 @@ class RealSpaceMatchedFilter(MapFilter):
             # Build kernel   
             self.buildKernel(RADecSection, RADeg = self.applyRACentre, decDeg = self.applyDecCentre)
         else:
-            print(">>> Loading cached filter %s#%s ..." % (self.label, self.tileName))
             self.loadFilter()
 
         # Apply kernel        
-        t0=time.time()
         mapDataToFilter=[]
         for mapDict in self.unfilteredMapsDictList:
             mapDataToFilter.append(mapDict['data'])
         mapDataToFilter=np.array(mapDataToFilter)
-        print("... convolving map with kernel ...")
         filteredMap=self.applyFilter(mapDataToFilter)
-        t1=time.time()
-        print("... took %.3f sec ..." % (t1-t0))
                                                 
         # Apply the point source mask here (before noise estimates etc.)
         filteredMap=filteredMap*psMask
@@ -1011,15 +962,17 @@ class RealSpaceMatchedFilter(MapFilter):
         RMSMap=RMSMap*surveyMask
 
         maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
+        surveyMask=np.array(surveyMask, dtype = int)
         if os.path.exists(maskFileName) == False:
-            maps.saveFITS(maskFileName, np.array(surveyMask, dtype = int), self.wcs, compressed = True)
+            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
             maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
 
-        return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz,
-                'SNMap': SNMap, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr}
+        return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
+                'surveyMask': surveyMask, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr,
+                'label': self.label, 'tileName': self.tileName}
 
     
     def applyFilter(self, mapDataToFilter, calcFRelWeights = False):

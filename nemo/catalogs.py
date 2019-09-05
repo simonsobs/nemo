@@ -30,8 +30,8 @@ COLUMN_NAMES    = ['name',
                    'decDeg', 
                    'SNR', 
                    'numSigPix', 
-                   'fractionMapsDetected', 
                    'template', 
+                   'tileName',
                    'galacticLatDeg',
                    'deltaT_c',
                    'err_deltaT_c',
@@ -55,7 +55,7 @@ COLUMN_FORMATS  = ['%s',
                    '%.6f',
                    '%.1f',
                    '%d',
-                   '%.2f',
+                   '%s',
                    '%s',
                    '%.6f',
                    '%.3f',
@@ -73,13 +73,13 @@ COLUMN_FORMATS  = ['%s',
                    '%.3f',
                    '%.3f',
                    '%.3f',
-                   '%.3f'
+                   '%.3f',
                    ]
 
 columnsToAdd=[]
 formatsToAdd=[]
 for k in COLUMN_NAMES:
-    if k not in ['name', 'RADeg', 'decDeg', 'galacticLatDeg', 'fractionMapsDetected', 'numSigPix']:
+    if k in ['y_c', 'err_y_c', 'deltaT_c', 'err_deltaT_c']:
         i=COLUMN_NAMES.index(k)
         formatsToAdd.append(COLUMN_FORMATS[i])
         columnsToAdd.append("fixed_"+k)
@@ -87,15 +87,16 @@ COLUMN_NAMES=COLUMN_NAMES+columnsToAdd
 COLUMN_FORMATS=COLUMN_FORMATS+formatsToAdd
         
 if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
-    raise exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
+    raise Exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
         
 #------------------------------------------------------------------------------------------------------------
-def makeOptimalCatalog(imageDict, constraintsList = []):
+def makeOptimalCatalog(catalogDict, constraintsList = []):
     """Identifies common objects between catalogs in the imageDict and creates a master catalog with
     one entry per object, keeping only the highest S/N detection details.
     
     Args:
-        imageDict: dictionary containing filtered maps and associated object catalogs
+        catalogDict (dict): Dictionary where each key corresponds to a catalog of objects extracted from a 
+            map, labeled 
         constraintsList: an optional list of constraints (for format, see selectFromCatalog)
         
     Returns:
@@ -103,16 +104,10 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
     
     """
     
-    # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names    
-    templates=[]
-    for key in imageDict['mapKeys']:
-        if key != "mergedCatalog" and key != "optimalCatalog":
-            templates.append(key)
-
     allCatalogs=[]
-    for temp in templates:
-        if len(imageDict[temp]['catalog']) > 0:
-            allCatalogs.append(imageDict[temp]['catalog'])
+    for key in catalogDict.keys():
+        if len(catalogDict[key]['catalog']) > 0:
+            allCatalogs.append(catalogDict[key]['catalog'])
     if len(allCatalogs) > 0:
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
@@ -130,7 +125,8 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
         mergedCatalog=[]
-    imageDict['optimalCatalog']=mergedCatalog   
+    
+    return mergedCatalog
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
@@ -364,12 +360,6 @@ def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
     """
     
     availKeys=list(catalogList[0].keys())
-    
-    # A fudge: we don't know what names y_c_weight keys will have in advance, so they aren't already given
-    for key in availKeys:
-        if key.find("fixed_y_c_weight") != -1 and key not in keysToWrite:
-            keysToWrite.append(key)
-    
     tab=atpy.Table()
     for key in keysToWrite:
         if key in availKeys:

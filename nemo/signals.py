@@ -384,7 +384,8 @@ def fitQ(config):
             raise Exception("couldn't find filter that matches photFilter")
         filterClass=eval('filters.%s' % (filt['class']))
         filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
-                              tileName = tileName, diagnosticsDir = config.diagnosticsDir)
+                              tileName = tileName, 
+                              diagnosticsDir = config.diagnosticsDir+os.path.sep+tileName)
         filterObj.loadFilter()
         
         # Real space kernel or Fourier space filter?

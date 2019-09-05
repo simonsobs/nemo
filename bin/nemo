@@ -52,7 +52,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, 
                               strictMPIExceptions = strictMPIExceptions)
     
-    imageDict=pipelines.filterMapsAndMakeCatalogs(config)
+    optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
 
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     # MPI: gather together and merge all of the catalogs from each process, and contamination test results
     # This needs tidying up...
     if config.MPIEnabled == True:
-        optimalCatalogList=config.comm.gather(imageDict['optimalCatalog'], root = 0)
+        optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
         posRecTableList=config.comm.gather(posRecTable, root = 0)
         conKeysList=list(conTabDict.keys())
         conTabDictList=config.comm.gather(conTabDict, root = 0)
@@ -171,8 +171,6 @@ if __name__ == '__main__':
                     for key in all_selFnCollection.keys():
                         all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
                 selFnCollection=all_selFnCollection
-    else:
-        optimalCatalog=imageDict['optimalCatalog']
     
     # Plot tile-averaged position recovery test
     if posRecTable is not None:
