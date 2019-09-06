@@ -7,7 +7,6 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-unfilteredMaps:
     - {mapFileName: "maps/Mar2019/TOnly_act_planck_f150_prelim_map_mono.fits",
        weightsFileName: "maps/Mar2019/act_planck_f150_prelim_div_mono.fits",
        obsFreqGHz: 145.3, units: 'uK',
@@ -49,8 +48,8 @@ positionRecoveryTest: False
 posRecIterations: 1
 posRecSourcesPerTile: 100
 
-# tileDeck options - cut-up each map into smaller sections, store in a multi-extension .fits file
-makeTileDeck: True
+# tileDir options - cut-up each map into smaller sections
+makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'

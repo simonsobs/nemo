@@ -146,8 +146,8 @@ posRecModels:
     - {redshift: 0.2, M500: 2.0e+14}
     - {redshift: 0.1, M500: 2.0e+14}
 
-# tileDeck options - cut-up each map into smaller sections, store in a multi-extension .fits file
-makeTileDeck: True
+# tileDir options - cut-up each map into smaller sections
+makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'

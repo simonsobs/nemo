@@ -11,6 +11,7 @@ import yaml
 import copy
 import astropy.io.fits as pyfits
 from astLib import astWCS
+import time
 import IPython
 from . import maps
 
@@ -157,34 +158,6 @@ class NemoConfig(object):
             verbose (:obj:`bool`): If True, print some info to the terminal while we set-up the config file.
     
         """
-
-        print(">>> Running .yml config file: %s" % (configFileName))
-
-        self.parDict=parseConfigFile(configFileName)
-        self.configFileName=configFileName
-        
-        # We want the original map WCS and shape (for using stitchMaps later)
-        try:
-            with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
-                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
-                self.origShape=img[0].data.shape
-        except:
-            # We don't always need or want this... should we warn by default if not found?
-            self.origWCS=None
-            self.origShape=None
-                
-        # Downsampled WCS and shape for 'quicklook' stitched images
-        if 'makeQuickLookMaps' in self.parDict.keys() and self.parDict['makeQuickLookMaps'] == True:
-            self.quicklookScale=0.25
-            if self.origWCS is not None:
-                self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
-            else:
-                if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail ...")
-        
-        # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
-        # restore them (e.g., if running source-free sims).
-        self._origParDict=copy.deepcopy(self.parDict)
-                    
         self.MPIEnabled=MPIEnabled
         if self.MPIEnabled == True:
             from mpi4py import MPI
@@ -207,7 +180,36 @@ class NemoConfig(object):
             self.rank=0
             self.comm=None
             self.size=1
+
+        time.sleep(self.rank*0.5) # Staggers this initial bit
             
+        print(">>> Running .yml config file: %s [rank = %d]" % (configFileName, self.rank))
+
+        self.parDict=parseConfigFile(configFileName)
+        self.configFileName=configFileName
+            
+        # We want the original map WCS and shape (for using stitchMaps later)
+        try:
+            with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
+                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+                self.origShape=img[0].data.shape
+        except:
+            # We don't always need or want this... should we warn by default if not found?
+            self.origWCS=None
+            self.origShape=None
+                
+        # Downsampled WCS and shape for 'quicklook' stitched images
+        if 'makeQuickLookMaps' in self.parDict.keys() and self.parDict['makeQuickLookMaps'] == True:
+            self.quicklookScale=0.25
+            if self.origWCS is not None:
+                self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+            else:
+                if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail ...")
+        
+        # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
+        # restore them (e.g., if running source-free sims).
+        self._origParDict=copy.deepcopy(self.parDict)
+                                
         # Output dirs
         if 'outputDir' in list(self.parDict.keys()):
             self.rootOutDir=parDict['outDir']
@@ -217,9 +219,8 @@ class NemoConfig(object):
             self.rootOutDir=configFileName.replace(".yml", "")
         self.filteredMapsDir=self.rootOutDir+os.path.sep+"filteredMaps"
         self.diagnosticsDir=self.rootOutDir+os.path.sep+"diagnostics"
-        self.mocksDir=self.rootOutDir+os.path.sep+"mocks"
         self.selFnDir=self.rootOutDir+os.path.sep+"selFn"
-        dirList=[self.rootOutDir, self.filteredMapsDir, self.mocksDir, self.selFnDir]
+        dirList=[self.rootOutDir, self.diagnosticsDir, self.filteredMapsDir, self.selFnDir]
         madeOutputDirs=None
         if self.rank == 0 and makeOutputDirs == True:
             for d in dirList:
@@ -229,9 +230,9 @@ class NemoConfig(object):
         # This serves two purposes:
         # 1. Makes sure comms are running
         # 2. Avoids (well, not quite) a race to make directories before filtered maps start coming in
-        if self.MPIEnabled == True and makeOutputDirs == True:
-            madeOutputDirs=self.comm.bcast(madeOutputDirs, root = 0)
-            assert(madeOutputDirs == True)
+        #if self.MPIEnabled == True and makeOutputDirs == True:
+            #madeOutputDirs=self.comm.bcast(madeOutputDirs, root = 0)
+            #assert(madeOutputDirs == True)
         
         # Optional override of selFn directory location
         if selFnDir is not None:
