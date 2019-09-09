@@ -55,10 +55,11 @@ if __name__ == '__main__':
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
     if os.path.exists(optimalCatalogFileName) == False:
         optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
+        print("... rank = %d; optimalCatalog type = " % (config.rank), type(optimalCatalog))
         if config.MPIEnabled == True:
             optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
             if config.rank == 0:
-                print("... gathering catalogs ...")
+                print("... gathered catalogs ...")
                 toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
                 for collectedTab in optimalCatalogList:
                     if type(collectedTab) == astropy.table.table.Table:
@@ -125,9 +126,9 @@ if __name__ == '__main__':
         mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
         selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
         if config.MPIEnabled == True:
-            print("... gathering selection function results ...")
             gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
             if config.rank == 0:
+                print("... gathered selection function results ...")
                 all_selFnCollection={'full': []}
                 for key in selFnCollection.keys():
                     if key not in all_selFnCollection.keys():
