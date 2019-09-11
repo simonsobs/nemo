@@ -181,10 +181,6 @@ class NemoConfig(object):
             self.comm=None
             self.size=1
 
-        time.sleep(self.rank*0.5) # Staggers this initial bit
-            
-        print(">>> Running .yml config file: %s [rank = %d]" % (configFileName, self.rank))
-
         self.parDict=parseConfigFile(configFileName)
         self.configFileName=configFileName
             

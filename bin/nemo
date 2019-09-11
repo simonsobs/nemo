@@ -55,8 +55,9 @@ if __name__ == '__main__':
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
     if os.path.exists(optimalCatalogFileName) == False:
         optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
-        print("... rank = %d; optimalCatalog type = " % (config.rank), type(optimalCatalog))
+        #print("... rank = %d; catalog length = %d" % (config.rank, len(optimalCatalog)))
         if config.MPIEnabled == True:
+            config.comm.barrier()
             optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
             if config.rank == 0:
                 print("... gathered catalogs ...")
@@ -68,9 +69,6 @@ if __name__ == '__main__':
                 # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
                 if len(optimalCatalog) > 0:
                     optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
-                # We can do this twice as a sanity check... not necessary if we add a proper test elsewhere
-                #optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
-                #assert(numDuplicatesFound == 0)
         if config.rank == 0:
             catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName)
             catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"))
@@ -126,6 +124,7 @@ if __name__ == '__main__':
         mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
         selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
         if config.MPIEnabled == True:
+            config.comm.barrier()
             gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
             if config.rank == 0:
                 print("... gathered selection function results ...")
@@ -241,7 +240,6 @@ if __name__ == '__main__':
             # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
             completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
                                                 additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
-            
             # If we made mass limit maps...
             # ... make cumulative area versus mass limit plot(s)
             # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit

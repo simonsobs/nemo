@@ -5,4 +5,4 @@
 #SBATCH --time=23:59:00
 
 source ~/.bashrc
-time mpiexec nemo MFMF_S16_auto.yml -M -n
+time mpiexec nemo MFMF_S16_auto.yml -M
