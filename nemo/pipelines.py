@@ -25,7 +25,7 @@ import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                              invertMap = False, verbose = True):
+                              invertMap = False, verbose = True, useCachedMaps = True):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -54,21 +54,25 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     # If running on sims (source-free or with injected sources), this ensures we use the same kernels for 
     # filtering the sim maps as was used on the real data, by copying kernels to the sims dir. The kernels 
     # will then be loaded automatically when filterMaps is called. Yes, this is a bit clunky...
-    if rootOutDir != None:
-        dirList=[rootOutDir]
-        if copyFilters == True:
-            kernelCopyDestDir=rootOutDir+os.path.sep+"diagnostics"
-            dirList.append(kernelCopyDestDir)
+    if rootOutDir is not None:
+        filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
+        diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
+        dirList=[rootOutDir, filteredMapsDir, diagnosticsDir]
         for d in dirList:
             if os.path.exists(d) == False:
                 os.makedirs(d, exist_ok = True)
         if copyFilters == True:
             for tileName in config.tileNames:
-                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+"filter*#%s*.fits" % (tileName))
+                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"filter*#%s*.fits" % (tileName))
+                kernelCopyDestDir=diagnosticsDir+os.path.sep+tileName
+                if os.path.exists(kernelCopyDestDir) == False:
+                    os.makedirs(kernelCopyDestDir, exist_ok = True)
                 for f in fileNames:
                     shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
     else:
         rootOutDir=config.rootOutDir
+        filteredMapsDir=config.filteredMapsDir
+        diagnosticsDir=config.diagnosticsDir
     
     # We re-sort the filters list here - in case we have photFilter defined
     photFilter=config.parDict['photFilter']
@@ -90,8 +94,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     catalogDict={}
     for tileName in config.tileNames:
         # Now have per-tile directories (friendlier for Lustre)
-        tileFilteredMapsDir=config.filteredMapsDir+os.path.sep+tileName
-        tileDiagnosticsDir=config.diagnosticsDir+os.path.sep+tileName
+        tileFilteredMapsDir=filteredMapsDir+os.path.sep+tileName
+        tileDiagnosticsDir=diagnosticsDir+os.path.sep+tileName
         for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
             if os.path.exists(d) == False:
                 os.makedirs(d, exist_ok = True)
@@ -110,7 +114,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName, 
                                                filteredMapsDir = tileFilteredMapsDir,
                                                diagnosticsDir = tileDiagnosticsDir, selFnDir = config.selFnDir, 
-                                               verbose = True, undoPixelWindow = True)
+                                               verbose = True, undoPixelWindow = True,
+                                               useCachedMaps = useCachedMaps)
             
             if f['label'] == photFilter:
                 photFilteredMapDict={}

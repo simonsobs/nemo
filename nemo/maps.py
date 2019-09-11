@@ -1328,7 +1328,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     """
     
-    print(">>> Making model image ...")
     modelMap=np.zeros(shape, dtype = float)
     
     # This works per-tile, so throw out objects that aren't in it
@@ -1415,7 +1414,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryTest(config, imageDict):
+def positionRecoveryTest(config):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
     offset with respect to the true location as a function of S/N (for the fixed reference scale only).
     
@@ -1423,9 +1422,6 @@ def positionRecoveryTest(config, imageDict):
     
     Args:
         config (:obj:`startUp.NemoConfig`): Nemo configuration object.
-        imageDict (:obj:`dict`): A dictionary containing the output filtered maps and catalogs from running 
-        on the real data (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be 
-        modified.
     
     Returns:
         An astropy Table containing percentiles of offset distribution in fixed_SNR bins.
@@ -1443,7 +1439,7 @@ def positionRecoveryTest(config, imageDict):
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
                              enableCompletenessCalc = False, setUpAreaMask = True,
                              tileNames = config.tileNames)
-            
+    
     print(">>> Position recovery test [rank = %d] ..." % (config.rank))
 
     if 'posRecIterations' not in config.parDict.keys():
@@ -1488,6 +1484,12 @@ def positionRecoveryTest(config, imageDict):
             for filtDict in simConfig.parDict['mapFilters']:
                 filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
             
+            # We don't want to save/cache position recovery test maps
+            for filtDict in simConfig.parDict['mapFilters']:
+                keysToFalsify=['saveFilteredMaps', 'savePlots']
+                for key in keysToFalsify:
+                    filtDict['params'][key]=False
+            
             # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
             # NOTE: As it stands, point-source only runs may not define photFilter - we need to handle that
             # That should be obvious, as mapFilters will only have one entry
@@ -1525,12 +1527,8 @@ def positionRecoveryTest(config, imageDict):
 
             # Ideally we shouldn't have blank tiles... but if we do, skip
             if len(mockCatalog) > 0:
-                simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
-                                                                rootOutDir = simRootOutDir,
-                                                                copyFilters = True)
-
-                # Cross match the output with the input catalog - how close were we?
-                recCatalog=simImageDict['optimalCatalog']
+                recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
+                                                               copyFilters = True, useCachedMaps = False)
                 if len(recCatalog) > 0:
                     try:
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)

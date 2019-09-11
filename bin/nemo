@@ -85,12 +85,32 @@ if __name__ == '__main__':
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
 
-    # This all needs re-doing
-    ## Optional position recovery test (how well do we recovery positions as fn. of S/N?)
-    #if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
-        #posRecTable=maps.positionRecoveryTest(config, imageDict)
-    #else:
-        #posRecTable=None
+    # Optional position recovery test (how well do we recovery positions as fn. of S/N?)
+    if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
+        posRecTable=maps.positionRecoveryTest(config)
+        if config.MPIEnabled == True:
+            config.comm.barrier()
+            posRecTableList=config.comm.gather(posRecTable, root = 0)
+            if config.rank == 0:
+                print("... gathered position recovery test results ...")
+                toAverage=[]
+                for posRecTable in posRecTableList:
+                    if type(posRecTable) == astropy.table.table.Table:
+                        toAverage.append(posRecTable)
+                if len(toAverage) > 0:
+                    avTable=atpy.Table()
+                    for key in toAverage[0].keys():
+                        avTable.add_column(atpy.Column(np.zeros(len(toAverage[0])), key))
+                    for tab in toAverage:
+                        for key in tab.keys():
+                            avTable[key]=avTable[key]+tab[key]
+                    for key in avTable.keys():
+                        avTable[key]=avTable[key]/len(toAverage)
+                    posRecTable=avTable
+                else:
+                    posRecTable=None
+    else:
+        posRecTable=None
             
     ## Estimate of contamination from running cluster finding over inverted map
     #if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
@@ -138,81 +158,15 @@ if __name__ == '__main__':
                 selFnCollection=all_selFnCollection
     else:
         selFnCollection={}
-    
-    #if config.MPIEnabled == True:
-        #conKeysList=list(conTabDict.keys())
-        #conTabDictList=config.comm.gather(conTabDict, root = 0)
-        #if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
-            #gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
-        #if config.rank != 0:
-            #assert optimalCatalogList is None
-            #print("... MPI rank %d finished ..." % (config.rank))
-        #else:
-            #print("... gathering catalogs ...")
-            #toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
-            #for collectedTab in optimalCatalogList:
-                #if type(collectedTab) == astropy.table.table.Table:
-                    #toStack.append(collectedTab)
-            #optimalCatalog=atpy.vstack(toStack)
-            #print("... gathering position recovery tests ...")
-            #toAverage=[]
-            #for posRecTable in posRecTableList:
-                #if type(posRecTable) == astropy.table.table.Table:
-                    #toAverage.append(posRecTable)
-            #if len(toAverage) > 0:
-                #posRecTable=atpy.vstack(toAverage)
-                #for key in posRecTable.keys():
-                    #posRecTable[key]=posRecTable[key]/len(toAverage)
-            #else:
-                #posRecTable=None
-            #print("... gathering and averaging contamination estimates ...")
-            #avConTabDict={}
-            #for k in conKeysList:
-                #tabList=[]
-                #avTab=None
-                #tabCount=0
-                #for tabDict in conTabDictList:
-                    #tab=tabDict[k]
-                    #if type(avTab) == type(None):
-                        #avTab=atpy.Table()
-                        #for colName in list(tab.keys()):
-                            #avTab.add_column(atpy.Column(np.zeros(len(tab)), colName))
-                    #for colName in list(avTab.keys()):
-                        #avTab[colName]=avTab[colName]+tab[colName]
-                    #tabCount=tabCount+1
-                #for colName in list(avTab.keys()):
-                    #avTab[colName]=avTab[colName]/float(tabCount)
-                #mask=np.greater(avTab['cumSumSimCandidates'], 0)
-                #avTab['cumContamination']=atpy.Column(np.zeros(len(avTab)), 'cumContamination')
-                #avTab['cumContamination'][mask]=avTab['cumSumSimCandidates'][mask]/avTab['cumSumRealCandidates'][mask]
-                #avConTabDict[k]=avTab
-            #conTabDictList=avConTabDict
-            ## And write average as .fits table(s)
-            ## (if we didn't run under MPI, already averaged)
-            #for k in list(avConTabDict.keys()):
-                #fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, "_average")
-                #conTab=avConTabDict[k]
-                #conTab.write(fitsOutFileName, overwrite = True) 
-            ## Selection function bits
-            #if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
-                #print("... gathering selection function results ...")
-                #all_selFnCollection={'full': []}
-                #for key in selFnCollection.keys():
-                    #if key not in all_selFnCollection.keys():
-                        #all_selFnCollection[key]=[]
-                #for selFnCollection in gathered_selFnCollections:
-                    #for key in all_selFnCollection.keys():
-                        #all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
-                #selFnCollection=all_selFnCollection
-    
+        
     # Tidying up etc.
     if config.rank == 0:
         
-        ## Plot tile-averaged position recovery test
-        #if posRecTable is not None:
-            #posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecovery_average.fits", overwrite = True) 
-            #maps.plotPositionRecovery(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average",
-                                    #percentilesToPlot = [50, 90])
+        # Plot tile-averaged position recovery test
+        if posRecTable is not None:
+            posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecovery_average.fits", overwrite = True) 
+            maps.plotPositionRecovery(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average",
+                                      percentilesToPlot = [50, 90])
             
         ## Plot contamination together
         #if conTabDict != {}:

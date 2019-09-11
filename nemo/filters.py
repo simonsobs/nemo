@@ -49,7 +49,7 @@ import IPython
 
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
-               selFnDir = '.', verbose = True, undoPixelWindow = True):
+               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True):
     """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
     can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
     even if multifrequency (a change from previous behaviour).
@@ -65,7 +65,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
     label=f['label']+"#"+tileName
     filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
     SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
-    if os.path.exists(filteredMapFileName) == False:
+    if os.path.exists(filteredMapFileName) == False or useCachedMaps == False:
         
         print("... making filtered map %s ..." % (label))
         filterClass=eval('%s' % (f['class']))
