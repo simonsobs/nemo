@@ -208,7 +208,7 @@ class NemoConfig(object):
                                 
         # Output dirs
         if 'outputDir' in list(self.parDict.keys()):
-            self.rootOutDir=parDict['outDir']
+            self.rootOutDir=self.parDict['outputDir']
         else:
             if configFileName.find(".yml") == -1:
                 raise Exception("File must have .yml extension")

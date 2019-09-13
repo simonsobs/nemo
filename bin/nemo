@@ -76,7 +76,7 @@ if __name__ == '__main__':
             catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                                  addInfo = addInfo, color = "cyan")
     else:
-        print("... already made catalog %s ..." % (optimalCatalogFileName))
+        if config.rank == 0: print("... already made catalog %s ..." % (optimalCatalogFileName))
             
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)

@@ -4,15 +4,17 @@
 
 import os
 import glob
-from distutils.core import setup
-from distutils.extension import Extension
+from setuptools import setup
+from setuptools import Extension
+#from distutils.core import setup
+#from distutils.extension import Extension
 from Cython.Distutils import build_ext
 import numpy
 #import popen2
 
 setup(name='nemo',
-      version="git",
-      url=None,
+      version="1.0.dev0",
+      url="https://acru.ukzn.ac.za/~mjh/nemo",
       author='Matt Hilton',
       author_email='hiltonm@ukzn.ac.za',
       classifiers=[],
@@ -22,5 +24,18 @@ setup(name='nemo',
       package_data={'nemo': ['data/*']},
       scripts=['bin/nemo', 'bin/nemoMass', 'bin/nemoSelFn', 'bin/nemoMock', 'bin/nemoCatalogCheck', 'bin/nemoCosmo'],
       cmdclass={'build_ext': build_ext},
-      ext_modules=[Extension("nemoCython", ["nemo/nemoCython.pyx"], include_dirs=[numpy.get_include()])]
+      ext_modules=[Extension("nemoCython", ["nemo/nemoCython.pyx"], include_dirs=[numpy.get_include()])],
+      install_requires=["astropy >= 3.2",
+                        "numpy >= 1.10",
+                        "matplotlib >= 2.0",
+                        "astLib >= 0.10",
+                        "pixell >= 0.5",
+                        "scipy >= 1.0",
+                        "pillow",
+                        "IPython",
+                        "cython",
+                        "PyYAML",
+                        "colossus",
+                        "mpi4py",
+                        "colorcet >= 1.0"]
 )
