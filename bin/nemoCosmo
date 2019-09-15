@@ -29,7 +29,7 @@ import argparse
 import emcee
 import multiprocessing, logging
 import time
-import IPython
+#import IPython
 
 # Extreme debugging (better for multiprocessing stuff to crash where we can see it)
 import warnings

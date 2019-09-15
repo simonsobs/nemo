@@ -23,7 +23,7 @@ import pylab
 import pickle
 import types
 import yaml
-import IPython
+#import IPython
 pylab.matplotlib.interactive(False)
 plotSettings.update_rcParams()
 

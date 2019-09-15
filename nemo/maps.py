@@ -22,7 +22,7 @@ import nemoCython
 import time
 import shutil
 import copy
-import IPython
+#import IPython
 from pixell import enmap
 import nemo
 from . import catalogs

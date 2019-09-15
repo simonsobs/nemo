@@ -18,7 +18,7 @@ from . import catalogs
 from . import maps
 from . import completeness
 import sys
-import IPython
+#import IPython
 np.random.seed()
                 
 #------------------------------------------------------------------------------------------------------------

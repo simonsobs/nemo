@@ -21,7 +21,7 @@ from . import maps
 from . import signals
 from . import completeness
 from . import MockSurvey
-import IPython
+#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 

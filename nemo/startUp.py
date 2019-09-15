@@ -12,7 +12,7 @@ import copy
 import astropy.io.fits as pyfits
 from astLib import astWCS
 import time
-import IPython
+#import IPython
 from . import maps
 
 #------------------------------------------------------------------------------------------------------------

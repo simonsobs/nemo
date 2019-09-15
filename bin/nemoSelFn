@@ -31,7 +31,7 @@ import pickle
 import astropy.io.fits as pyfits
 import time
 import yaml
-import IPython
+#import IPython
 plt.matplotlib.interactive(False)
 
 # If want to catch warnings as errors...

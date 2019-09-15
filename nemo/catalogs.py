@@ -14,7 +14,7 @@ import astropy.table as atpy
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
 import astropy.io.fits as pyfits
-import IPython
+#import IPython
 
 # For adding meta data to output
 import datetime

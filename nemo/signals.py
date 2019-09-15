@@ -35,7 +35,7 @@ import nemo
 import glob
 import shutil
 import yaml
-import IPython
+#import IPython
 np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------

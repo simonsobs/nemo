@@ -29,7 +29,7 @@ import pickle
 import astropy.io.fits as pyfits
 import time
 import shutil
-import IPython
+#import IPython
 plt.matplotlib.interactive(False)
 
 # If want to catch warnings as errors...
@@ -69,7 +69,12 @@ class SelFn(object):
             if os.path.exists(configFileName) == False:
                 raise Exception("No config .yml file found in selFnDir and no other location given.")
         parDict=startUp.parseConfigFile(configFileName)
-                
+        
+        if tileNames == None:
+            self.tileNames=self.tckQFitDict.keys()
+        else:
+            self.tileNames=tileNames
+            
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
             if 'selFnFootprints' not in parDict.keys():
@@ -87,8 +92,6 @@ class SelFn(object):
 
         # Load area masks
         if setUpAreaMask == True:
-            # Takes around 20 sec
-            self.tileNames=self.tckQFitDict.keys()
             self._setUpAreaMask()
         else:
             self.tileTab=None
@@ -103,15 +106,15 @@ class SelFn(object):
                 RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
             self.RMSTab=atpy.Table().read(RMSTabFileName)
             self.RMSDict={}
-            tileNames=self.tckQFitDict.keys()
-            self.tileNames=[]
-            for tileName in tileNames:
+            tileNames=[]
+            for tileName in self.tileNames:
                 tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
                 if downsampleRMS == True and len(tileTab) > 0:
                     tileTab=downsampleRMSTab(tileTab) 
                 if len(tileTab) > 0:    # We may have some blank tiles...
                     self.RMSDict[tileName]=tileTab
-                    self.tileNames.append(tileName)
+                    tileNames.append(tileName)
+            self.tileNames=tileNames
             self.totalAreaDeg2=self.RMSTab['areaDeg2'].sum()
             
             # For weighting - arrays where entries correspond with tileNames list

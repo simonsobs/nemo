@@ -8,7 +8,7 @@ selection function calculations.
 import os
 import sys
 import numpy as np
-import IPython
+#import IPython
 import astropy.table as atpy
 import pylab as plt
 import subprocess

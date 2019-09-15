@@ -45,7 +45,7 @@ from . import gnfw
 from . import completeness
 import astropy.table as atpy
 import time
-import IPython
+#import IPython
 
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 

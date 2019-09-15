@@ -33,7 +33,7 @@ import argparse
 import astropy.io.fits as pyfits
 import time
 import yaml
-import IPython
+#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def addForcedPhotometry(forcedTab, config):
