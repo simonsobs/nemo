@@ -292,11 +292,19 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     t0=time.time()
     for tileName in config.tileNames:
         count=count+1
-        #if verbose: print("... %s (%d/%d) ..." % (tileName, count, len(config.tileNames)))
-        # HACK: We should fix this properly, but for non-tiled maps...
         if tileName == 'PRIMARY':
-            RMSMapDict[tileName]=RMSMap['COMPRESSED_IMAGE'].data
-            wcsDict[tileName]=astWCS.WCS(RMSMap['COMPRESSED_IMAGE'].header, mode = 'pyfits')
+            if tileName in RMSMap:
+                extName=tileName
+                data=RMSMap[extName].data
+            else:
+                data=None
+            if data is None:
+                for extName in RMSMap:
+                    data=RMSMap[extName].data
+                    if data is not None:
+                        break
+            RMSMapDict[tileName]=RMSMap[extName].data
+            wcsDict[tileName]=astWCS.WCS(RMSMap[extName].header, mode = 'pyfits')
         else:
             RMSMapDict[tileName]=RMSMap[tileName].data
             wcsDict[tileName]=astWCS.WCS(RMSMap[tileName].header, mode = 'pyfits')

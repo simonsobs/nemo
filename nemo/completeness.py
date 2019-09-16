@@ -272,7 +272,7 @@ class SelFn(object):
                                        self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']
 
         for row in tab:
-            tileName=row['template'].split("#")[-1]
+            tileName=row['tileName']
             z=row['redshift']
             zErr=row['redshiftErr']
             y0=row['fixed_y_c']*1e-4

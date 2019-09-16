@@ -84,7 +84,7 @@ selFnOptions: {fixedSNRCut: 5.0,
 # (these can be overridden by keys with the same name in mapFilters)
 allFilters: {class: "ArnaudModelMatchedFilter",
              params: {noiseParams: {method: "dataMap",
-                                    noiseGridArcmin: 20.},
+                                    noiseGridArcmin: 40.},
                       outputUnits: 'yc',
                       edgeTrimArcmin: 0.0}
             }
