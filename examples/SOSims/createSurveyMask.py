@@ -24,7 +24,7 @@ header=pyfits.header.Header.fromtextfile(args.headerTemplate)
 wcs=astWCS.WCS(header, mode = 'pyfits')
 shape=(header['NAXIS2'], header['NAXIS1'])
 
-outFileName=args.regionFile.replace(".reg", ".fits.gz")
+outFileName=args.regionFile.replace(".reg", ".fits")
 
 with open(args.regionFile) as inFile:
     lines=inFile.readlines()

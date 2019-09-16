@@ -7,15 +7,15 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "TOnly_la225_CAR.fits",
+    - {mapFileName: "TOnly_la225_small_CAR.fits",
        weightsFileName: null,
        obsFreqGHz: 225.0, units: 'uK',
        beamFileName: "beam_gaussian_la225.txt"}
-    - {mapFileName: "TOnly_la145_CAR.fits",
+    - {mapFileName: "TOnly_la145_small_CAR.fits",
        weightsFileName: null,
        obsFreqGHz: 145.3, units: 'uK',
        beamFileName: "beam_gaussian_la145.txt"}
-    - {mapFileName: "TOnly_la093_CAR.fits",
+    - {mapFileName: "TOnly_la093_small_CAR.fits",
        weightsFileName: null,
        obsFreqGHz: 94.1, units: 'uK',
        beamFileName: "beam_gaussian_la093.txt"}
@@ -57,7 +57,7 @@ massOptions: {tenToA0: 4.95e-5,
               B0: 0.08, 
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
-              relativisticCorrection: False,
+              relativisticCorrection: True,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
               redshiftCatalog: "redshifts.fits", 
@@ -103,7 +103,9 @@ mapFilters:
     #- {label: "Arnaud_M1e14_z0p4",
        #params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
-       params: {M500MSun: 2.0e+14, z: 0.4}}
+       params: {M500MSun: 2.0e+14, z: 0.4,
+                saveFilteredMaps: True,
+                savePlots: True}}
     #- {label: "Arnaud_M4e14_z0p4",
        #params: {M500MSun: 4.0e+14, z: 0.4}}
     #- {label: "Arnaud_M8e14_z0p4",
