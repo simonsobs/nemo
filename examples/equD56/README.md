@@ -155,15 +155,19 @@ You can generate mock cluster catalogs using the output from nemo
 by using the `nemoMock` script:
 
 ```
-nemoMock equD56.yml
+nemoMock equD56/selFn mocks
 ```
 
-The `makeMockCatalogs` and `combineMocks` parameters control the number
-of catalogs to make and whether or not to stitch them all together to
-form one giant catalog (which may be useful for some applications). For
-this example, 10 mock catalogs would be made (taking ~1 minute), 
-stored under `equD56/mocks/`. The mocks assume a fixed cosmology and 
-the mass scaling relation parameters given in the `massOptions` 
-dictionary - so for the Arnaud et al. (2010) based scaling relation, 
+In this example, mock catalogs will be written into the `mocks` 
+directory. You can use the `-N` switch or set the `makeMockCatalogs`
+parameter in the config file to control the number of catalogs to 
+be made. You can use the `-C` switch or set the `combineMocks`
+config file parameter to True if you want to stitch all of the 
+generated mocks together to form one giant oversampled catalog 
+(be useful for some applications).
+
+Mock catalogs assume the fixed cosmology and mass scaling relation 
+parameters given in the `massOptions` dictionary in the config 
+file - so for the Arnaud et al. (2010) based scaling relation, 
 the number of clusters in the mocks will be larger than what is 
 observed in reality.

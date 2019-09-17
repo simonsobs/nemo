@@ -19,12 +19,13 @@ from . import photometry
 from . import catalogs
 from . import maps
 from . import signals
+from . import completeness
 from . import MockSurvey
-import IPython
+#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                              invertMap = False):
+                              invertMap = False, verbose = True, useCachedMaps = True):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -42,7 +43,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             :meth:maps.estimateContaminationFromInvertedMaps).
     
     Returns:
-        A dictionary containing filtered maps and catalogs.
+        Optimal catalog (keeps the highest S/N detection when filtering at multiple scales).
     
     Note:
         See bin/nemo for how this pipeline is applied to real data, and maps.estimateContaminationFromSkySim
@@ -53,61 +54,187 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     # If running on sims (source-free or with injected sources), this ensures we use the same kernels for 
     # filtering the sim maps as was used on the real data, by copying kernels to the sims dir. The kernels 
     # will then be loaded automatically when filterMaps is called. Yes, this is a bit clunky...
-    if rootOutDir != None:
-        dirList=[rootOutDir]
-        if copyFilters == True:
-            kernelCopyDestDir=rootOutDir+os.path.sep+"diagnostics"
-            dirList.append(kernelCopyDestDir)
+    if rootOutDir is not None:
+        filteredMapsDir=rootOutDir+os.path.sep+"filteredMaps"
+        diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
+        dirList=[rootOutDir, filteredMapsDir, diagnosticsDir]
         for d in dirList:
             if os.path.exists(d) == False:
-                os.makedirs(d)
+                os.makedirs(d, exist_ok = True)
         if copyFilters == True:
             for tileName in config.tileNames:
-                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+"filter*#%s*.fits" % (tileName))
+                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"filter*#%s*.fits" % (tileName))
+                kernelCopyDestDir=diagnosticsDir+os.path.sep+tileName
+                if os.path.exists(kernelCopyDestDir) == False:
+                    os.makedirs(kernelCopyDestDir, exist_ok = True)
                 for f in fileNames:
                     shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
     else:
         rootOutDir=config.rootOutDir
+        filteredMapsDir=config.filteredMapsDir
+        diagnosticsDir=config.diagnosticsDir
+    
+    # We re-sort the filters list here - in case we have photFilter defined
+    photFilter=config.parDict['photFilter']
+    filtersList=[]
+    if photFilter is not None:
+        for f in config.parDict['mapFilters']:
+            if f['label'] == photFilter:
+                filtersList.append(f)
+    for f in config.parDict['mapFilters']:
+        if photFilter is not None:
+            if f['label'] == photFilter:
+                continue
+        filtersList.append(f)
+    if photFilter is not None:
+        assert(filtersList[0]['label'] == photFilter)
+    photFilteredMapDict=None
+    
+    # Make filtered maps for each filter and tile
+    catalogDict={}
+    for tileName in config.tileNames:
+        # Now have per-tile directories (friendlier for Lustre)
+        tileFilteredMapsDir=filteredMapsDir+os.path.sep+tileName
+        tileDiagnosticsDir=diagnosticsDir+os.path.sep+tileName
+        for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
+            if os.path.exists(d) == False:
+                os.makedirs(d, exist_ok = True)
+        if verbose == True: print(">>> Making filtered maps - tileName = %s ..." % (tileName))
+        # We could load the unfiltered map only once here?
+        # We could also cache 'dataMap' noise as it will always be the same
+        for f in filtersList:
+
+            label=f['label']+"#"+tileName            
+            catalogDict[label]={}
+            if 'saveDS9Regions' in f['params'] and f['params']['saveDS9Regions'] == True:
+                DS9RegionsPath=config.filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.reg"  % (label)
+            else:
+                DS9RegionsPath=None
+                
+            filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName, 
+                                               filteredMapsDir = tileFilteredMapsDir,
+                                               diagnosticsDir = tileDiagnosticsDir, selFnDir = config.selFnDir, 
+                                               verbose = True, undoPixelWindow = True,
+                                               useCachedMaps = useCachedMaps)
             
-    imageDict=filters.filterMaps(config.unfilteredMapsDictList, config.parDict['mapFilters'], 
-                                 tileNames = config.tileNames, rootOutDir = rootOutDir,
-                                 undoPixelWindow = config.parDict['undoPixelWindow'])
-    
-    # Find objects in filtered maps
-    photometry.findObjects(imageDict, threshold = config.parDict['thresholdSigma'], 
-                           minObjPix = config.parDict['minObjPix'], 
-                           findCenterOfMass = config.parDict['findCenterOfMass'], 
-                           rejectBorder = config.parDict['rejectBorder'], 
-                           selFnDir = config.selFnDir, objIdent = config.parDict['objIdent'], 
-                           longNames = config.parDict['longNames'],
-                           useInterpolator = config.parDict['useInterpolator'], 
-                           measureShapes = config.parDict['measureShapes'],
-                           invertMap = invertMap)
-    
-    # Measure fluxes
-    if measureFluxes == True:
-        photometry.measureFluxes(imageDict, config.parDict['photFilter'], config.diagnosticsDir, 
-                                 unfilteredMapsDict = config.parDict['unfilteredMaps'],
-                                 useInterpolator = config.parDict['useInterpolator'])
-    else:
-        # Get S/N only - if the reference (fixed) filter scale has been given
-        # This is (probably) only used by maps.estimateContaminationFromInvertedMaps
-        if 'photFilter' in list(config.parDict.keys()):
-            photFilter=config.parDict['photFilter']
-        else:
-            photFilter=None
-        if photFilter != None:
-            photometry.getSNValues(imageDict, SNMap = 'file', prefix = 'fixed_', template = photFilter, 
-                                   invertMap = invertMap)
-                    
+            if f['label'] == photFilter:
+                photFilteredMapDict={}
+                photFilteredMapDict['SNMap']=filteredMapDict['SNMap']
+                photFilteredMapDict['data']=filteredMapDict['data']
+            
+            catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
+                                           minObjPix = config.parDict['minObjPix'], 
+                                           findCenterOfMass = config.parDict['findCenterOfMass'], 
+                                           rejectBorder = config.parDict['rejectBorder'], 
+                                           objIdent = config.parDict['objIdent'], 
+                                           longNames = config.parDict['longNames'],
+                                           useInterpolator = config.parDict['useInterpolator'], 
+                                           measureShapes = config.parDict['measureShapes'],
+                                           invertMap = invertMap,
+                                           DS9RegionsPath = DS9RegionsPath)
+            
+            if measureFluxes == True:
+                photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,
+                                         photFilteredMapDict = photFilteredMapDict,
+                                         useInterpolator = config.parDict['useInterpolator'])
+
+            else:
+                # Get S/N only - if the reference (fixed) filter scale has been given
+                # This is (probably) only used by maps.estimateContaminationFromInvertedMaps
+                if photFilter is not None:
+                    photometry.getSNRValues(catalog, photFilteredMapDict['SNMap'], 
+                                            filteredMapDict['wcs'], prefix = 'fixed_', 
+                                            useInterpolator = config.parDict['useInterpolator'],
+                                            invertMap = invertMap)
+            
+            catalogDict[label]['catalog']=catalog
+
     # Merged/optimal catalogs
-    catalogs.makeOptimalCatalog(imageDict, constraintsList = config.parDict['catalogCuts'])
-        
-    return imageDict
+    optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
     
+    return optimalCatalog
+
 #------------------------------------------------------------------------------------------------------------
-def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, writeInfo = True, 
-                           verbose = True):
+def makeSelFnCollection(config, mockSurvey):
+    """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
+    in the config file, plus the full survey mask), that contain information on noise levels, area covered, 
+    and completeness. 
+    
+    Returns a dictionary (keys: 'full' - corresponding to whole survey, plus other keys named by footprint).
+    
+    """
+    
+    # Q varies across tiles
+    tckQFitDict=signals.loadQ(config)
+        
+    # We only care about the filter used for fixed_ columns
+    photFilterLabel=config.parDict['photFilter']
+    for filterDict in config.parDict['mapFilters']:
+        if filterDict['label'] == photFilterLabel:
+            break
+
+    # We'll only calculate completeness for this given selection
+    SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
+
+    # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
+    if 'numDraws' not in config.parDict['selFnOptions'].keys():
+        config.parDict['selFnOptions']['numDraws']=2000000
+    if 'numIterations' not in config.parDict['selFnOptions'].keys():
+        config.parDict['selFnOptions']['numIterations']=100
+    
+    # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
+    footprintsList=[]
+    if 'selFnFootprints' in config.parDict.keys():
+        footprintsList=footprintsList+config.parDict['selFnFootprints']
+        
+    # Run the selection function calculation on each tile in turn
+    selFnCollection={'full': []}
+    for footprintDict in footprintsList:
+        if footprintDict['label'] not in selFnCollection.keys():
+            selFnCollection[footprintDict['label']]=[]
+            
+    for tileName in config.tileNames:
+        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
+        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
+                                           numDraws = config.parDict['selFnOptions']['numDraws'],
+                                           numIterations = config.parDict['selFnOptions']['numIterations'],
+                                           method = config.parDict['selFnOptions']['method'])
+        selFnDict={'tileName': tileName,
+                   'RMSTab': RMSTab,
+                   'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
+                   'compMz': compMz}
+        selFnCollection['full'].append(selFnDict)
+        
+        # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
+        # May as well do this bit here (in parallel) and assemble output later
+        for footprintDict in footprintsList:
+            completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
+            tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
+            if tileAreaDeg2 > 0:
+                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
+                                              footprintLabel = footprintDict['label'])
+                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
+                                                   numDraws = config.parDict['selFnOptions']['numDraws'],
+                                                   numIterations = config.parDict['selFnOptions']['numIterations'],
+                                                   method = config.parDict['selFnOptions']['method'])
+                selFnDict={'tileName': tileName,
+                           'RMSTab': RMSTab,
+                           'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
+                           'compMz': compMz}
+                selFnCollection[footprintDict['label']].append(selFnDict)
+            
+        # Optional mass-limit maps
+        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
+            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
+                                            config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
+                                            config.selFnDir) 
+    
+    return selFnCollection
+                
+#------------------------------------------------------------------------------------------------------------
+def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True, 
+                           writeInfo = True, verbose = True):
     """Generate a mock cluster catalog using the given nemo config.
     
     Returns:
@@ -115,6 +242,10 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     
     """
     
+    # Having changed nemoMock interface, we may need to make output dir
+    if os.path.exists(config.mocksDir) == False:
+        os.makedirs(config.mocksDir, exist_ok = True)
+        
     # Noise sources in mocks
     if 'applyPoissonScatter' in config.parDict.keys():
         applyPoissonScatter=config.parDict['applyPoissonScatter']
@@ -131,7 +262,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     if verbose: print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
     
     # Q varies across tiles
-    tckQFitDict=signals.fitQ(config)
+    tckQFitDict=signals.loadQ(config)
     
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -145,59 +276,85 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
     # We need an assumed scaling relation for mock observations
     scalingRelationDict=config.parDict['massOptions']
     
-    # Set-up MockSurvey objects to be used to generate multiple mocks here
-    # The reason for doing this is that enableDrawSample = True makes this very slow for 3000 mass bins...
     if verbose: print(">>> Setting up mock surveys dictionary ...")
-    t0=time.time()
-    mockSurveyDict={}
+    # NOTE: Sanity check is possible here: area in RMSTab should equal area from areaMask.fits
+    # If it isn't, there is a problem...
+    # Also, we're skipping the individual tile-loading routines here for speed
+    checkAreaConsistency=False
     wcsDict={}
+    RMSMap=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilterLabel))
+    RMSTab=atpy.Table().read(config.selFnDir+os.path.sep+"RMSTab.fits")
+    count=0
+    totalAreaDeg2=0
     RMSMapDict={}
+    if checkAreaConsistency == True:
+        areaMap=pyfits.open(config.selFnDir+os.path.sep+"areaMask.fits")
+    t0=time.time()
     for tileName in config.tileNames:
-        # Need area covered 
-        areaImg=pyfits.open(config.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
-        areaMask=areaImg[0].data
-        wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
-        areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcs)).sum()/(60**2)
-
-        # Need RMS map to apply selection function
-        RMSImg=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName))
-        RMSMap=RMSImg[0].data
-    
-        # For a mock, we could vary the input cosmology...
-        minMass=5e13
-        zMin=0.0
-        zMax=2.0
-        H0=70.
-        Om0=0.30
-        Ob0=0.05
-        sigma_8=0.8
-        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
-        
-        mockSurveyDict[tileName]=mockSurvey
-        RMSMapDict[tileName]=RMSMap
-        wcsDict[tileName]=wcs
-    
+        count=count+1
+        if tileName == 'PRIMARY':
+            if tileName in RMSMap:
+                extName=tileName
+                data=RMSMap[extName].data
+            else:
+                data=None
+            if data is None:
+                for extName in RMSMap:
+                    data=RMSMap[extName].data
+                    if data is not None:
+                        break
+            RMSMapDict[tileName]=RMSMap[extName].data
+            wcsDict[tileName]=astWCS.WCS(RMSMap[extName].header, mode = 'pyfits')
+        else:
+            RMSMapDict[tileName]=RMSMap[tileName].data
+            wcsDict[tileName]=astWCS.WCS(RMSMap[tileName].header, mode = 'pyfits')
+        # Area from RMS table
+        areaDeg2=RMSTab[RMSTab['tileName'] == tileName]['areaDeg2'].sum()
+        totalAreaDeg2=totalAreaDeg2+areaDeg2
+        # Area from map (slower)
+        if checkAreaConsistency == True:
+            areaMask, wcsDict[tileName]=completeness.loadAreaMask(tileName, config.selFnDir)
+            areaMask=areaMap[tileName].data
+            map_areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcsDict[tileName])).sum()/(60**2)
+            if abs(map_areaDeg2-areaDeg2) > 1e-4:
+                raise Exception("Area from areaMask.fits doesn't agree with area from RMSTab.fits")
+    RMSMap.close()
+    if checkAreaConsistency == True:
+        areaMap.close()
     t1=time.time()
     if verbose: print("... took %.3f sec ..." % (t1-t0))
+   
+    # We're now using one MockSurvey object for the whole survey
+    # For a mock, we could vary the input cosmology...
+    minMass=5e13
+    zMin=0.0
+    zMax=2.0
+    H0=70.
+    Om0=0.30
+    Ob0=0.05
+    sigma_8=0.8
+    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
     
     if verbose: print(">>> Making mock catalogs ...")
     catList=[]
     for i in range(numMocksToMake):       
         mockTabsList=[]
+        t0=time.time()
         for tileName in config.tileNames:
-            t0=time.time()
-            mockTab=mockSurveyDict[tileName].drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
-                                                       photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
-                                                       SNRLimit = thresholdSigma, applySNRCut = True, 
-                                                       applyPoissonScatter = applyPoissonScatter, 
-                                                       applyIntrinsicScatter = applyIntrinsicScatter,
-                                                       applyNoiseScatter = applyNoiseScatter)
-            t1=time.time()
+            # It's possible (depending on tiling) that blank tiles were included - so skip
+            if RMSMapDict[tileName].sum() == 0:
+                continue
+            mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
+                                          photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
+                                          SNRLimit = thresholdSigma, applySNRCut = True, 
+                                          applyPoissonScatter = applyPoissonScatter, 
+                                          applyIntrinsicScatter = applyIntrinsicScatter,
+                                          applyNoiseScatter = applyNoiseScatter)
             mockTabsList.append(mockTab)
-            if verbose: print("... making mock catalog %d for tileName = %s took %.3f sec ..." % (i+1, tileName, t1-t0))
-            
         tab=atpy.vstack(mockTabsList)
         catList.append(tab)
+        t1=time.time()
+        if verbose: print("... making mock catalog %d took %.3f sec ..." % (i+1, t1-t0))
         
         # Write catalog and .reg file
         if writeCatalogs == True:
@@ -211,7 +368,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, writeCatalogs = True, wri
             catalogs.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 
                                     addInfo = addInfo, color = "cyan") 
             
-    if 'combineMocks' in config.parDict.keys() and config.parDict['combineMocks'] == True:
+    if combineMocks == True:
         tab=None
         for i in range(numMocksToMake):
             mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.fits" % (i+1)

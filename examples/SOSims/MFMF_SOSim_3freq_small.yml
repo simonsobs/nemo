@@ -7,15 +7,15 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "TOnly_la225_CAR.fits",
+    - {mapFileName: "TOnly_la225_small_CAR.fits",
        weightsFileName: null,
        obsFreqGHz: 225.0, units: 'uK',
        beamFileName: "beam_gaussian_la225.txt"}
-    - {mapFileName: "TOnly_la145_CAR.fits",
+    - {mapFileName: "TOnly_la145_small_CAR.fits",
        weightsFileName: null,
        obsFreqGHz: 145.3, units: 'uK',
        beamFileName: "beam_gaussian_la145.txt"}
-    - {mapFileName: "TOnly_la093_CAR.fits",
+    - {mapFileName: "TOnly_la093_small_CAR.fits",
        weightsFileName: null,
        obsFreqGHz: 94.1, units: 'uK',
        beamFileName: "beam_gaussian_la093.txt"}
@@ -57,16 +57,17 @@ massOptions: {tenToA0: 4.95e-5,
               B0: 0.08, 
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
-              relativisticCorrection: False,
+              relativisticCorrection: True,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "MF-MultiScale-Hybrid-MJH_redshifts_20180814.fits", 
+              redshiftCatalog: "redshifts.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
 # Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
+calcSelFn: True
 selFnOptions: {fixedSNRCut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
                
@@ -83,7 +84,7 @@ selFnOptions: {fixedSNRCut: 5.0,
 # (these can be overridden by keys with the same name in mapFilters)
 allFilters: {class: "ArnaudModelMatchedFilter",
              params: {noiseParams: {method: "dataMap",
-                                    noiseGridArcmin: 20.},
+                                    noiseGridArcmin: 40.},
                       outputUnits: 'yc',
                       edgeTrimArcmin: 0.0}
             }
@@ -102,7 +103,9 @@ mapFilters:
     #- {label: "Arnaud_M1e14_z0p4",
        #params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
-       params: {M500MSun: 2.0e+14, z: 0.4}}
+       params: {M500MSun: 2.0e+14, z: 0.4,
+                saveFilteredMaps: True,
+                savePlots: True}}
     #- {label: "Arnaud_M4e14_z0p4",
        #params: {M500MSun: 4.0e+14, z: 0.4}}
     #- {label: "Arnaud_M8e14_z0p4",

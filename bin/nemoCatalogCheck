@@ -18,7 +18,7 @@ from astLib import *
 import numpy as np
 import time
 import argparse
-import IPython
+#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
@@ -46,8 +46,8 @@ if __name__ == '__main__':
     RAKey, decKey=catalogs.getTableRADecKeys(tab)
 
     # Use selFn routines to determine if objects were in the valid area mask
-    selFn=completeness.SelFn(args.configFileName, config.selFnDir, args.fixedSNRCut, setUpAreaMask = True,
-                             enableCompletenessCalc = False)
+    selFn=completeness.SelFn(config.selFnDir, args.fixedSNRCut, configFileName = args.configFileName,
+                             setUpAreaMask = True, enableCompletenessCalc = False)
     inMask=selFn.checkCoordsInAreaMask(tab[RAKey], tab[decKey])
     maxPossibleMatches=inMask.sum()
     tab.add_column(atpy.Column(inMask, "inMask"))

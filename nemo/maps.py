@@ -22,7 +22,7 @@ import nemoCython
 import time
 import shutil
 import copy
-import IPython
+#import IPython
 from pixell import enmap
 import nemo
 from . import catalogs
@@ -54,28 +54,150 @@ def convertToDeltaT(mapData, obsFrequencyGHz = 148):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
-def makeTileDeck(parDict):
-    """Makes a tileDeck multi-extension .fits file, if the needed parameters are given in parDict, or
-    will handle setting up such a file if given directly in unfilteredMapsDictList in parDict (and the .par
-    file). Adjusts unfilteredMapsDictList accordingly and returns it.
+def autotiler(surveyMaskPath, targetTileWidth, targetTileHeight):
+    """Given a survey mask (where values > 0 indicate valid area, and 0 indicates area to be ignored), 
+    figure out an optimal tiling strategy to accommodate tiles of the given dimensions. The survey mask need
+    not be contiguous (e.g., AdvACT and SO maps, using the default pixelization, can be segmented into three
+    or more different regions).
     
-    If the options for making a tileDeck image aren't given in parDict, then we pass through a standard
+    Args:
+        surveyMaskPath (str): Path to the survey mask (.fits image).
+        targetTileWidth (float): Desired tile width, in degrees (RA direction for CAR).
+        targetTileHeight (float): Desired tile height, in degrees (dec direction for CAR).
+    
+    Returns:
+        Dictionary list defining tiles in same format as config file.
+    
+    Note:
+        While this routine will try to match the target file sizes, it may not match exactly. Also,
+        makeTileDir will expand tiles by a user-specified amount such that they overlap.
+    
+    """
+
+    if surveyMaskPath is None:
+        raise Exception("You need to set surveyMask in .yml config file to point to a .fits image for autotiler to work.")
+    
+    with pyfits.open(surveyMaskPath) as img:    
+        # Just in case RICE-compressed or similar
+        if img[0].data is None:
+            segMap=img['COMPRESSED_IMAGE'].data
+        else:
+            segMap=img[0].data
+        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+
+    segMap, numObjects=ndimage.label(np.greater(segMap, 0))
+    fieldIDs=np.arange(1, numObjects+1)
+
+    tileList=[]
+    for f in fieldIDs:
+        ys, xs=np.where(segMap == f)
+        if len(ys) < 100:  # In case of stray individual pixels (e.g., combined with extended sources mask)
+            continue
+        yMin=ys.min()
+        yMax=ys.max()
+        xc=int((xs.min()+xs.max())/2)
+        RAc, decMin=wcs.pix2wcs(xc, yMin)
+        RAc, decMax=wcs.pix2wcs(xc, yMax)
+        
+        numRows=int((decMax-decMin)/targetTileHeight)
+        tileHeight=np.ceil(((decMax-decMin)/numRows)*100)/100
+        assert(tileHeight < 10)
+        
+        for i in range(numRows):
+            decBottom=decMin+i*tileHeight
+            decTop=decMin+(i+1)*tileHeight
+            xc, yBottom=wcs.wcs2pix(RAc, decBottom)
+            xc, yTop=wcs.wcs2pix(RAc, decTop)
+            yBottom=int(yBottom)
+            yTop=int(yTop)
+            yc=int((yTop+yBottom)/2)
+            
+            strip=segMap[yBottom:yTop]
+            ys, xs=np.where(strip == f)
+            xMin=xs.min()
+            xMax=xs.max()
+            stripWidthDeg=(xMax-xMin)*wcs.getXPixelSizeDeg()
+            RAMax, decc=wcs.pix2wcs(xMin, yc)
+            RAMin, decc=wcs.pix2wcs(xMax, yc)
+            numCols=int(stripWidthDeg/targetTileWidth)
+            tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
+            #assert(tileWidth < targetTileWidth*1.1)
+        
+            stretchFactor=1/np.cos(np.radians(decTop)) 
+            numCols=int(stripWidthDeg/(targetTileWidth*stretchFactor))
+            for j in range(numCols):
+                tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
+                RALeft=RAMax-j*tileWidth
+                RARight=RAMax-(j+1)*tileWidth
+                if RALeft < 0:
+                    RALeft=RALeft+360
+                if RARight < 0:
+                    RARight=RARight+360
+                # HACK: Edge-of-map handling
+                if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
+                    RARight=180.01
+                tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
+                                'RADecSection': [RARight, RALeft, decBottom, decTop]})
+    
+    return tileList
+
+#-------------------------------------------------------------------------------------------------------------
+def loadTile(pathToTileImages, tileName, returnWCS = False):
+    """Given a path to a directory full of tiles, or a .fits file, return the map array and (optionally)
+    the WCS.
+    
+    Args:
+        pathToTileImages(str): Path to either a .fits file, or a directory full of .fits files named by tileName.
+        tileName(str): The name of the tile to load.
+        
+    Returns:
+        Map data (and optionally wcs)
+    
+    """
+
+    if os.path.isdir(pathToTileImages) == True:
+        with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
+            if returnWCS == True:
+                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            data=img[0].data
+    else:
+        with pyfits.open(pathToTileImages) as img:
+            if returnWCS == True:
+                wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
+            data=img[tileName].data
+
+    if returnWCS == True:
+        return data, wcs
+    else:
+        return data
+
+#-------------------------------------------------------------------------------------------------------------
+def makeTileDir(parDict):
+    """Update this later. Revised version. Instead of making a MEF, makes a directory for each map and puts
+    individual tile images there. We'll only need to edit preprocessMapDict to handle the difference. Why
+    are we doing this? Just in case reading from the same file is gumming up MPI runs on hippo when using lots
+    of nodes.
+    
+    Makes a tileDir (directory containing .fits images, one per tile) file, if the needed parameters are 
+    given in parDict. Adjusts unfilteredMapsDictList accordingly and returns it.
+    
+    If the options for making a tileDir image aren't given in parDict, then we pass through a standard
     single extension file (or rather the path to it, as originally given)
     
     NOTE: If the map given in unfilteredMaps is 3d (enki gives I, Q, U as a datacube), then this will extract
-    only the I (temperature) part and save that in the tileDeck file. This will need changing if hunting for
+    only the I (temperature) part and save that in the tileDir file. This will need changing if hunting for
     polarized sources...
     
     Returns unfilteredMapsDictList [input for filterMaps], list of extension names
     
     """
     
-    if 'makeTileDeck' not in list(parDict.keys()):
-        parDict['makeTileDeck']=False
-
+    if 'makeTileDir' not in list(parDict.keys()):
+        parDict['makeTileDir']=False
+    
     # Some of this is rather clunky...
     unfilteredMapsDictList=[]
-    if parDict['makeTileDeck'] == False:
+    if parDict['makeTileDir'] == False:
         tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
             unfilteredMapsDictList.append(mapDict.copy())
@@ -91,21 +213,13 @@ def makeTileDeck(parDict):
     else:
         tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
-                        
-            # Added an option to define tiles in the .par file... otherwise, we will do the automatic tiling
-            if 'tileDefinitions' in list(parDict.keys()):
-                if 'tileDefLabel' in list(parDict.keys()):
-                    tileDefLabel=parDict['tileDefLabel']
-                else:
-                    tileDefLabel='userDefined'
-                tileDeckFileNameLabel="%s_%.1f" % (tileDefLabel, parDict['tileOverlapDeg'])
-                defineTilesAutomatically=False
+                 
+            if 'tileDefLabel' in list(parDict.keys()):
+                tileDefLabel=parDict['tileDefLabel']
             else:
-                tileDeckFileNameLabel="%dx%d_%.1f" % (parDict['numHorizontalTiles'],
-                                                      parDict['numVerticalTiles'], 
-                                                      parDict['tileOverlapDeg'])
-                defineTilesAutomatically=True
-            
+                tileDefLabel='userDefined'
+            tileDirFileNameLabel="%s_%.1f" % (tileDefLabel, parDict['tileOverlapDeg'])
+                    
             # Figure out what the input / output files will be called
             # NOTE: we always need to make a survey mask if none exists, as used to zap over regions, so that gets special treatment
             fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
@@ -113,116 +227,70 @@ def makeTileDeck(parDict):
             outFileNames=[]
             mapTypeList=[]
             for f in fileNameKeys:
-                if f in list(mapDict.keys()) and mapDict[f] != None:
+                if f in list(mapDict.keys()) and mapDict[f] is not None:
                     inFileNames.append(mapDict[f])
                     mapDir, mapFileName=os.path.split(mapDict[f])
                     if mapDir != '':
                         mapDirStr=mapDir+os.path.sep
                     else:
                         mapDirStr=''
-                    outFileNames.append(mapDirStr+"tileDeck_%s_" % (tileDeckFileNameLabel)+mapFileName)
-                    mapTypeList.append(f)
-                if f == 'surveyMask' and mapDict[f] == None:
-                    inFileNames.append(None)
-                    outFileNames.append(outFileNames[0].replace(".fits", "_surveyMask.fits"))
+                    outFileNames.append(mapDirStr+"tileDir_%s_" % (tileDirFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
 
             allFilesMade=True
             for f in outFileNames:
                 if os.path.exists(f) == False:
                     allFilesMade=False
-            
+                            
             if allFilesMade == True:
-                # We need the extension names only here...
-                img=pyfits.open(outFileNames[0])
-                if tileNames == []:
-                    for ext in img:
-                        tileNames.append(ext.name)
+                if os.path.isdir(outFileNames[0]) == True:
+                    tileFiles=glob.glob(outFileNames[0]+os.path.sep+"*.fits")
+                    tileNames=[]
+                    for t in tileFiles:
+                        tileNames.append(os.path.split(t)[-1].replace(".fits", ""))
+                    tileNames.sort()
                 else:
-                    for ext in img:
-                        if ext.name not in tileNames:
-                            raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
+                    # We need the extension names only here...
+                    img=pyfits.open(outFileNames[0])
+                    if tileNames == []:
+                        for ext in img:
+                            tileNames.append(ext.name)
+                    else:
+                        for ext in img:
+                            if ext.name not in tileNames:
+                                raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             else:
-                
+                                
                 # Whether we make tiles automatically or not, we need the WCS from somewhere...
-                if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] != None:
-                    wht=pyfits.open(mapDict['surveyMask'])
-                    print(">>> Using survey mask to determine tiling ...")
+                if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
+                    wcsPath=mapDict['surveyMask']
                 else:
-                    wht=pyfits.open(mapDict['weightsFileName'])
-                    print(">>> Using weight map to determine tiling ...")
-                wcs=astWCS.WCS(wht[0].header, mode = 'pyfits')
-                tileOverlapDeg=parDict['tileOverlapDeg']
-   
-                if defineTilesAutomatically == True:
-                    
-                    if 'surveyMask' in mapDict.keys() and mapDict['surveyMask'] == None:
-                        print("... WARNING: same tiling not guaranteed across multiple frequencies ...")
-                    
-                    # NOTE: here we look at surveyMask first to determine where to put down tiles
-                    # since this will ensure algorithm uses same tiles for multi-freq data
-                    # Otherwise, we use the wht image (but then can't guarantee f090 and f150 have same tiles)
-                    deckWht=pyfits.HDUList()
-                    whtData=wht[0].data
-                    mapWidth=whtData.shape[1]
-                    mapHeight=whtData.shape[0]
-
-                    # Figure out where edges are
-                    edges={}
-                    for y in range(mapHeight):
-                        xIndices=np.where(whtData[y] != 0)[0]
-                        if len(xIndices) > 0:
-                            xMin=xIndices.min()
-                            xMax=xIndices.max()
-                            edges[y]=[xMin, xMax]
-                    
-                    # Starting from bottom left, work our way around the map adding tiles, ignoring blank regions
-                    numHorizontalTiles=parDict['numHorizontalTiles']
-                    numVerticalTiles=parDict['numVerticalTiles']
-                    ys=list(edges.keys())
-                    ys.sort()
-                    ys=np.array(ys)
-                    coordsList=[]
-                    tileNames=[]
-                    tileHeightPix=int(np.ceil((ys.max()-ys.min())/float(numVerticalTiles)))
-                    for i in range(numVerticalTiles):
-                        yMin=ys.min()+i*tileHeightPix
-                        yMax=ys.min()+(i+1)*tileHeightPix
-                        keys=np.arange(yMin, yMax)
-                        minXMin=1e6
-                        maxXMax=0
-                        for k in keys:
-                            if k in list(edges.keys()):
-                                xMin, xMax=edges[k]
-                                if xMin < minXMin:
-                                    minXMin=xMin
-                                if xMax > maxXMax:
-                                    maxXMax=xMax
-                        tileWidthPix=int(np.ceil(maxXMax-minXMin)/float(numHorizontalTiles))
-                        for j in range(numHorizontalTiles):
-                            xMin=minXMin+j*tileWidthPix
-                            xMax=minXMin+(j+1)*tileWidthPix
-                            coordsList.append([xMin, xMax, yMin, yMax])
-                            tileNames.append("%d_%d" % (j, i))
-                    
-                    # Not sure if this will actually tidy up...
-                    wht.close()
-                    del whtData
+                    wcsPath=mapDict['weightsFileName']
+                wcs=astWCS.WCS(wcsPath)
                 
-                else:
-                    # Use user-defined tiles - this is a bit of a faff, to avoid re-writing below bit where we make the tiles...
-                    tileNames=[]
-                    coordsList=[]
-                    for tileDict in parDict['tileDefinitions']:
-                        ra0, ra1, dec0, dec1=tileDict['RADecSection']
-                        x0, y0=wcs.wcs2pix(ra0, dec0)
-                        x1, y1=wcs.wcs2pix(ra1, dec1)
-                        xMin=min([x0, x1])
-                        xMax=max([x0, x1])
-                        yMin=min([y0, y1])
-                        yMax=max([y0, y1])
-                        coordsList.append([xMin, xMax, yMin, yMax])
-                        tileNames.append(tileDict['tileName'])   
+                # Added an option to define tiles in the .config file... otherwise, we will do the automatic tiling
+                if type(parDict['tileDefinitions']) == dict:
+                    print(">>> Using autotiler ...")
+                    if 'surveyMask' not in mapDict.keys():
+                        raise Exception("Need to specify a survey mask in the config file to use automatic tiling.")
+                    parDict['tileDefinitions']=autotiler(mapDict['surveyMask'], 
+                                                         parDict['tileDefinitions']['targetTileWidthDeg'],
+                                                         parDict['tileDefinitions']['targetTileHeightDeg'])
+                    print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
+                    
+                # Extract tile definitions (may have been inserted above by autotiler)
+                tileNames=[]
+                coordsList=[]
+                for tileDict in parDict['tileDefinitions']:
+                    ra0, ra1, dec0, dec1=tileDict['RADecSection']
+                    x0, y0=wcs.wcs2pix(ra0, dec0)
+                    x1, y1=wcs.wcs2pix(ra1, dec1)
+                    xMin=min([x0, x1])
+                    xMax=max([x0, x1])
+                    yMin=min([y0, y1])
+                    yMax=max([y0, y1])
+                    coordsList.append([xMin, xMax, yMin, yMax])
+                    tileNames.append(tileDict['tileName'])   
                 
                 # Output a .reg file for debugging (pixel coords)
                 outFile=open(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
@@ -232,25 +300,25 @@ def makeTileDeck(parDict):
                 for c, name in zip(coordsList, tileNames):
                     outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
                 outFile.close()
-                #print("check tiles")
-                #sys.exit()
                 
                 # Make tiles
                 # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
-                # Since we would only use such an option with tileDeck files, this should be okay
-                # Although since we do this by modifying headers, would need to remake tileDeck files each time adjusted in .par file
+                # Since we would only use such an option with tileDir files, this should be okay
+                # Although since we do this by modifying headers, would need to remake tileDir files each time adjusted in .par file
                 # NOTE: now treating surveyMask as special, and zapping overlap regions there (simplify selection function stuff later)
+                tileOverlapDeg=parDict['tileOverlapDeg']
                 for mapType, inMapFileName, outMapFileName in zip(mapTypeList, inFileNames, outFileNames):
                     if os.path.exists(outMapFileName) == False:
-                        print(">>> Writing tileDeck file %s ..." % (outMapFileName))
-                        deckImg=pyfits.HDUList()
+                        print(">>> Writing tileDir directory %s ..." % (outMapFileName))
+                        os.makedirs(outMapFileName, exist_ok = True)
+                        #deckImg=pyfits.HDUList()
                         # Special handling for case where surveyMask = None in the .par file (tidy later...)
-                        if mapType == 'surveyMask' and inMapFileName == None:
-                            img=pyfits.open(inFileNames[0])
-                            mapData=np.ones(img[0].data.shape)
+                        if mapType == 'surveyMask' and inMapFileName is None:
+                            with pyfits.open(inFileNames[0]) as img:
+                                mapData=np.ones(img[0].data.shape)
                         else:
-                            img=pyfits.open(inMapFileName)
-                            mapData=img[0].data
+                            with pyfits.open(inMapFileName) as img:
+                                mapData=img[0].data
 
                         # Deal with Sigurd's maps which have T, Q, U as one 3d array
                         # If anyone wants to find polarized sources, this will need changing...
@@ -281,12 +349,14 @@ def makeTileDeck(parDict):
                             count=0
                             clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             while clip['data'].shape[0] % 2 != 0:
-                                clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1+ddec*count)
+                                clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0-ddec*count, dec1)
                                 count=count+1
+                                if count > 100:
+                                    raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
                             # Old
                             #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                             print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
-                            header=clip['wcs'].header.copy()
+                            header=clip['wcs'].header#.copy()
                             if 'tileNoiseRegions' in list(parDict.keys()):
                                 if name in list(parDict['tileNoiseRegions'].keys()):
                                     noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=parDict['tileNoiseRegions'][name]
@@ -322,10 +392,11 @@ def makeTileDeck(parDict):
                                 zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                                 clip['data']=clip['data']*zapMask
                                 #astImages.saveFITS("test.fits", zapMask, clip['wcs'])
-                            hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = header, name = name)
-                            deckImg.append(hdu)    
-                        deckImg.writeto(outMapFileName)
-                        deckImg.close()
+                            astImages.saveFITS(outMapFileName+os.path.sep+name+".fits", clip['data'], clip['wcs'])
+                            #hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = header, name = name)
+                            #deckImg.append(hdu)    
+                        #deckImg.writeto(outMapFileName)
+                        #deckImg.close()
                                 
             # Replace entries in unfilteredMapsDictList in place
             for key, outFileName in zip(mapTypeList, outFileNames):
@@ -386,7 +457,22 @@ def shrinkWCS(origShape, origWCS, scaleFactor):
     scaledWCS.updateFromHeader()
     
     return scaledShape, scaledWCS
+
+#-------------------------------------------------------------------------------------------------------------
+def checkMask(fileName):
+    """Checks whether a mask contains negative values (invalid) and throws an exception if this is the case.
+    
+    Args:
+        fileName (str): Name of the .fits format mask file to check
         
+    """
+    
+    with pyfits.open(fileName) as img:
+        for hdu in img:
+            if hdu.data is not None:
+                if np.less(hdu.data, 0).sum() > 0:
+                    raise Exception("Mask file '%s' contains negative values - please fix your mask." % (fileName))
+    
 #-------------------------------------------------------------------------------------------------------------
 def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
     """Fast routine for stitching map tiles back together. Since this uses interpolation, you probably don't 
@@ -397,7 +483,7 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
     NOTE: This assumes RA in x direction, dec in y direction (and CAR projection).
     
     NOTE: This routine only writes output if there are multiple files that match filePattern (to save needless
-    duplicating maps if nemo was not run in tileDeck mode).
+    duplicating maps if nemo was not run in tileDir mode).
     
     Output map will be multiplied by fluxRescale (this is necessary if downsampling in resolution).
 
@@ -423,8 +509,11 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
         count=count+1
         #print("... %d/%d ..." % (count, len(inFiles)))
         with pyfits.open(f) as img:
-            d=img[0].data
-            inWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+            for hdu in img:
+                if hdu.shape is not ():
+                    d=hdu.data
+                    inWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
+                    break
         xIn=np.arange(d.shape[1])
         yIn=np.arange(d.shape[0])
         inRACoords=np.array(inWCS.pix2wcs(xIn, [0]*len(xIn)))
@@ -435,7 +524,7 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
         yOut=np.array(DecToY(inDec), dtype = int)
         for i in range(len(yOut)):
             outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
-    astImages.saveFITS(outFileName, outData*fluxRescale, outWCS)
+    saveFITS(outFileName, outData*fluxRescale, outWCS, compressed = True)
 
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
@@ -622,10 +711,8 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         ('surveyMask', 'pointSourceMask'), and WCS object ('wcs').
     
     """
-            
-    with pyfits.open(mapDict['mapFileName'], memmap = True) as img:
-        wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
-        data=img[tileName].data
+    
+    data, wcs=loadTile(mapDict['mapFileName'], tileName, returnWCS = True)
     
     # For Enki maps... take only I (temperature) for now, add options for this later
     if data.ndim == 3:
@@ -641,8 +728,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
 
     # Load weight map if given
     if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] is not None:
-        with pyfits.open(mapDict['weightsFileName'], memmap = True) as wht:
-            weights=wht[tileName].data
+        weights=loadTile(mapDict['weightsFileName'], tileName)
         # For Enki maps... take only I (temperature) for now, add options for this later
         if weights.ndim == 3:       # I, Q, U
             weights=weights[0, :]
@@ -657,15 +743,13 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     
     # Load survey and point source masks, if given
     if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
-        with pyfits.open(mapDict['surveyMask'], memmap = True) as smImg:
-            surveyMask=smImg[tileName].data
+        surveyMask=loadTile(mapDict['surveyMask'], tileName)
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
 
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] is not None:
-        with pyfits.open(mapDict['pointSourceMask'], memmap = True) as psImg:
-            psMask=psImg[tileName].data
+        psMask=loadTile(mapDict['pointSourceMask'], tileName)
     else:
         psMask=np.ones(data.shape)
                 
@@ -737,46 +821,39 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
         # This is fast enough if using small tiles and running in parallel...
-        # If our masking/filling is effective enough, we may not need to mask so much here...     
-        tab=atpy.Table().read(mapDict['maskPointSourcesFromCatalog'])
-        #xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
-        #xyCoords=np.array(xyCoords, dtype = int)
-        #mask=[]
-        #for i in range(len(tab)):
-            #x, y=xyCoords[i][0], xyCoords[i][1]
-            #if x >= 0 and x < data.shape[1]-1 and y >= 0 and y < data.shape[0]-1:
-                #mask.append(True)
-            #else:
-                #mask.append(False)
-        #tab=tab[mask]
-        tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-        # Variable sized holes: based on inspecting sources by deltaT in f150 maps
-        tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
-        tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
-        tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 50000)]=8.0
-        tab['rArcmin'][tab['deltaT_c'] >= 50000]=10.0
+        # If our masking/filling is effective enough, we may not need to mask so much here...
+        if type(mapDict['maskPointSourcesFromCatalog']) is not list:
+            mapDict['maskPointSourcesFromCatalog']=[mapDict['maskPointSourcesFromCatalog']]
         psMask=np.ones(data.shape)
-        for row in tab:
-            rArcminMap=np.ones(data.shape, dtype = float)*1e6
-            rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                           row['RADeg'], row['decDeg'], 
-                                                                           row['rArcmin']/60.)
-            rArcminMap=rArcminMap*60
-            psMask[rArcminMap < row['rArcmin']]=0
-        # Fill holes with smoothed map + white noise
-        pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-        bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
-        if mapDict['weightsType'] =='invVar':
-            rms=np.zeros(weights.shape)
-            rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
-        else:
-            raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
-        data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
-        #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
+        for catalogPath in mapDict['maskPointSourcesFromCatalog']:
+            tab=atpy.Table().read(catalogPath)
+            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+            # Variable sized holes: based on inspecting sources by deltaT in f150 maps
+            tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
+            tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
+            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
+            tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
+            for row in tab:
+                rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                            row['RADeg'], row['decDeg'], 
+                                                                            row['rArcmin']/60.)
+                rArcminMap=rArcminMap*60
+                psMask[rArcminMap < row['rArcmin']]=0
+            # Fill holes with smoothed map + white noise
+            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+            bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
+            if mapDict['weightsType'] =='invVar':
+                rms=np.zeros(weights.shape)
+                rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
+            else:
+                raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
+            data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+            #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
     
     # Add the map data to the dict
     mapDict['data']=data
@@ -1251,7 +1328,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     """
     
-    print(">>> Making model image ...")
     modelMap=np.zeros(shape, dtype = float)
     
     # This works per-tile, so throw out objects that aren't in it
@@ -1338,7 +1414,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryTest(config, imageDict):
+def positionRecoveryTest(config):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
     offset with respect to the true location as a function of S/N (for the fixed reference scale only).
     
@@ -1346,9 +1422,6 @@ def positionRecoveryTest(config, imageDict):
     
     Args:
         config (:obj:`startUp.NemoConfig`): Nemo configuration object.
-        imageDict (:obj:`dict`): A dictionary containing the output filtered maps and catalogs from running 
-        on the real data (i.e., the output of pipelines.filterMapsAndMakeCatalogs). This will not be 
-        modified.
     
     Returns:
         An astropy Table containing percentiles of offset distribution in fixed_SNR bins.
@@ -1363,9 +1436,10 @@ def positionRecoveryTest(config, imageDict):
     simConfig=config
     
     # This should make it quicker to generate test catalogs (especially when using tiles)
-    selFn=completeness.SelFn(config.configFileName, config.selFnDir, 4.0, 
-                             enableCompletenessCalc = False, setUpAreaMask = True)
-            
+    selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
+                             enableCompletenessCalc = False, setUpAreaMask = True,
+                             tileNames = config.tileNames)
+    
     print(">>> Position recovery test [rank = %d] ..." % (config.rank))
 
     if 'posRecIterations' not in config.parDict.keys():
@@ -1410,6 +1484,12 @@ def positionRecoveryTest(config, imageDict):
             for filtDict in simConfig.parDict['mapFilters']:
                 filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
             
+            # We don't want to save/cache position recovery test maps
+            for filtDict in simConfig.parDict['mapFilters']:
+                keysToFalsify=['saveFilteredMaps', 'savePlots']
+                for key in keysToFalsify:
+                    filtDict['params'][key]=False
+            
             # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
             # NOTE: As it stands, point-source only runs may not define photFilter - we need to handle that
             # That should be obvious, as mapFilters will only have one entry
@@ -1445,15 +1525,17 @@ def positionRecoveryTest(config, imageDict):
                 for m in mapFileNames:
                     os.remove(m)
 
-            simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
-                                                            rootOutDir = simRootOutDir,
-                                                            copyFilters = True)
-
-            # Cross match the output with the input catalog - how close were we?
-            recCatalog=simImageDict['optimalCatalog']
-            x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)        
-            SNRDict[posRecModel['label']]=SNRDict[posRecModel['label']]+x_recCatalog['fixed_SNR'].tolist()
-            rArcminDict[posRecModel['label']]=rArcminDict[posRecModel['label']]+(rDeg*60).tolist()
+            # Ideally we shouldn't have blank tiles... but if we do, skip
+            if len(mockCatalog) > 0:
+                recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
+                                                               copyFilters = True, useCachedMaps = False)
+                if len(recCatalog) > 0:
+                    try:
+                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
+                    except:
+                        raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(simConfig.tileNames), len(mockCatalog), len(recCatalog)))
+                    SNRDict[posRecModel['label']]=SNRDict[posRecModel['label']]+x_recCatalog['fixed_SNR'].tolist()
+                    rArcminDict[posRecModel['label']]=rArcminDict[posRecModel['label']]+(rDeg*60).tolist()
         SNRDict[posRecModel['label']]=np.array(SNRDict[posRecModel['label']])
         rArcminDict[posRecModel['label']]=np.array(rArcminDict[posRecModel['label']])
     
@@ -1538,4 +1620,35 @@ def plotPositionRecovery(percentileTable, basePlotFileName, percentilesToPlot = 
         plt.savefig(plotFileName)
         plt.savefig(plotFileName.replace(".pdf", ".png"))
         plt.close()
+
+#---------------------------------------------------------------------------------------------------
+def saveFITS(outputFileName, mapData, wcs, compressed = False):
+    """Writes a map (2d image array) to a new .fits file.
     
+    Args:
+        outputFileName (str): Filename of output FITS image.
+        mapData (:obj:`np.ndarray`): Map data array
+        wcs (:obj:`astWCS.WCS`): Map WCS object
+        compressed (bool): If True, writes a compressed image
+    
+    """
+    
+    if os.path.exists(outputFileName):
+        os.remove(outputFileName)
+    
+    if compressed == False:
+        if wcs is not None:
+            hdu=pyfits.PrimaryHDU(mapData, wcs.header)
+        else:
+            hdu=pyfits.PrimaryHDU(mapData, None)
+    
+    if compressed == True:
+        if wcs is not None:
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), wcs.header)
+        else:
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), None)
+            
+    newImg=pyfits.HDUList()
+    newImg.append(hdu)
+    newImg.writeto(outputFileName)
+    newImg.close()

@@ -7,28 +7,22 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "TOnly_la280_CAR.fits",
-       weightsFileName: null,
-       obsFreqGHz: 280.0, units: 'uK',
-       beamFileName: "beam_gaussian_la280.txt"}
-    - {mapFileName: "TOnly_la225_CAR.fits",
-       weightsFileName: null,
-       obsFreqGHz: 225.0, units: 'uK',
-       beamFileName: "beam_gaussian_la225.txt"}
-    - {mapFileName: "TOnly_la145_CAR.fits",
-       weightsFileName: null,
+    - {mapFileName: "maps/Mar2019/TOnly_act_planck_f150_prelim_map_mono.fits",
+       weightsFileName: "maps/Mar2019/act_planck_f150_prelim_div_mono.fits",
        obsFreqGHz: 145.3, units: 'uK',
-       beamFileName: "beam_gaussian_la145.txt"}
-    - {mapFileName: "TOnly_la093_CAR.fits",
-       weightsFileName: null,
+       beamFileName: "Beams/181222/mr3c_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
+    - {mapFileName: "maps/Mar2019/TOnly_act_planck_f090_prelim_map_mono.fits",
+       weightsFileName: "maps/Mar2019/act_planck_f090_prelim_div_mono.fits",
        obsFreqGHz: 94.1, units: 'uK',
-       beamFileName: "beam_gaussian_la093.txt"}
+       beamFileName: "Beams/181222/mr3c_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
 
 # Masks
-surveyMask: null
+surveyMask: 'maps/Mar2019/surveyMask_v6_inc_extsrc.fits'
 
 # Instead of giving point source mask, can give catalog instead
-maskPointSourcesFromCatalog: null
+maskPointSourcesFromCatalog: 
+    - "PS_S18_f150_auto_pass1/PS_S18_f150_auto_pass1_optimalCatalog.fits"
+    - "PS_S18_f150_auto_pass2/PS_S18_f150_auto_pass2_optimalCatalog.fits"
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
@@ -61,33 +55,38 @@ massOptions: {tenToA0: 4.95e-5,
               B0: 0.08, 
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
-              relativisticCorrection: False,
+              relativisticCorrection: True,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "MF-MultiScale-Hybrid-MJH_redshifts_20180814.fits", 
+              redshiftCatalog: "AdvACT_redshifts.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
-# Selection function options - only used by the nemoSelFn script
+# Selection function options
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
+calcSelFn: True
 selFnOptions: {fixedSNRCut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
                
-#selFnFootprints: 
-    #- {label: "HSC",
-       #maskList: ["HSCCheckAndSelFn/s18a_fdfc_CAR_contarea.fits.gz"]}
-    #- {label: "KiDS",
-       #maskList: ["KiDSSelFn/mask_KiDSN.fits.gz", "KiDSSelFn/mask_KiDSS.fits.gz"]}
-    #- {label: "DES",
-       #maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+selFnFootprints: 
+    - {label: "HSC",
+       maskList: ["HSCCheckAndSelFn/s18a_fdfc_CAR_contarea.fits.gz"]}
+    - {label: "KiDS",
+       maskList: ["KiDSSelFn/mask_KiDSN.fits.gz", "KiDSSelFn/mask_KiDSS.fits.gz"]}
+    - {label: "DES",
+       maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
 
 # Filter definitions:
 # allFilters is a dictionary of parameters that will be copied into all mapFilters
 # (these can be overridden by keys with the same name in mapFilters)
 allFilters: {class: "ArnaudModelMatchedFilter",
              params: {noiseParams: {method: "dataMap",
-                                    noiseGridArcmin: 20.},
+                                    noiseGridArcmin: 40.},
+                      saveFilteredMaps: False,
+                      saveRMSMap: False,
+                      savePlots: False,
+                      saveDS9Regions: False,
                       outputUnits: 'yc',
                       edgeTrimArcmin: 0.0}
             }
@@ -95,38 +94,38 @@ allFilters: {class: "ArnaudModelMatchedFilter",
 # mapFilters is a list of all the different filters to apply
 # (keys in mapFilters with the same name as those in allFilters take priority)
 mapFilters:
-    #- {label: "Arnaud_M1e14_z0p2",
-       #params: {M500MSun: 1.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M2e14_z0p2",
-       #params: {M500MSun: 2.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M4e14_z0p2",
-       #params: {M500MSun: 4.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M8e14_z0p2",
-       #params: {M500MSun: 8.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M1e14_z0p4",
-       #params: {M500MSun: 1.0e+14, z: 0.4}}
+    - {label: "Arnaud_M1e14_z0p2",
+       params: {M500MSun: 1.0e+14, z: 0.2}}
+    - {label: "Arnaud_M2e14_z0p2",
+       params: {M500MSun: 2.0e+14, z: 0.2}}
+    - {label: "Arnaud_M4e14_z0p2",
+       params: {M500MSun: 4.0e+14, z: 0.2}}
+    - {label: "Arnaud_M8e14_z0p2",
+       params: {M500MSun: 8.0e+14, z: 0.2}}
+    - {label: "Arnaud_M1e14_z0p4",
+       params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
        params: {M500MSun: 2.0e+14, z: 0.4}}
-    #- {label: "Arnaud_M4e14_z0p4",
-       #params: {M500MSun: 4.0e+14, z: 0.4}}
-    #- {label: "Arnaud_M8e14_z0p4",
-       #params: {M500MSun: 8.0e+14, z: 0.4}}              
-    #- {label: "Arnaud_M1e14_z0p8",
-       #params: {M500MSun: 1.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M2e14_z0p8",
-       #params: {M500MSun: 2.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M4e14_z0p8",
-       #params: {M500MSun: 4.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M8e14_z0p8",
-       #params: {M500MSun: 8.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M1e14_z1p2",
-       #params: {M500MSun: 1.0e+14, z: 1.2}}
-    #- {label: "Arnaud_M2e14_z1p2",
-       #params: {M500MSun: 2.0e+14, z: 1.2}}
-    #- {label: "Arnaud_M4e14_z1p2",
-       #params: {M500MSun: 4.0e+14, z: 1.2}}
-    #- {label: "Arnaud_M8e14_z1p2",
-       #params: {M500MSun: 8.0e+14, z: 1.2}}
+    - {label: "Arnaud_M4e14_z0p4",
+       params: {M500MSun: 4.0e+14, z: 0.4}}
+    - {label: "Arnaud_M8e14_z0p4",
+       params: {M500MSun: 8.0e+14, z: 0.4}}              
+    - {label: "Arnaud_M1e14_z0p8",
+       params: {M500MSun: 1.0e+14, z: 0.8}}
+    - {label: "Arnaud_M2e14_z0p8",
+       params: {M500MSun: 2.0e+14, z: 0.8}}
+    - {label: "Arnaud_M4e14_z0p8",
+       params: {M500MSun: 4.0e+14, z: 0.8}}
+    - {label: "Arnaud_M8e14_z0p8",
+       params: {M500MSun: 8.0e+14, z: 0.8}}
+    - {label: "Arnaud_M1e14_z1p2",
+       params: {M500MSun: 1.0e+14, z: 1.2}}
+    - {label: "Arnaud_M2e14_z1p2",
+       params: {M500MSun: 2.0e+14, z: 1.2}}
+    - {label: "Arnaud_M4e14_z1p2",
+       params: {M500MSun: 4.0e+14, z: 1.2}}
+    - {label: "Arnaud_M8e14_z1p2",
+       params: {M500MSun: 8.0e+14, z: 1.2}}
     
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
 # Set numSkySims to number required - we need to average over many as results vary a fair bit
@@ -139,10 +138,25 @@ estimateContaminationFromInvertedMaps: False
 
 # Run position recovery test
 positionRecoveryTest: False
-posRecIterations: 2
-posRecSourcesPerTile: 100
+posRecIterations: 1
+posRecSourcesPerTile: 200
 posRecModels:
-    - {'redshift': 0.8, 'M500': 2.0e+14}
-    - {'redshift': 0.4, 'M500': 2.0e+14}
-    - {'redshift': 0.2, 'M500': 2.0e+14}
-    - {'redshift': 0.1, 'M500': 2.0e+14}
+    - {redshift: 0.8, M500: 2.0e+14}
+    - {redshift: 0.4, M500: 2.0e+14}
+    - {redshift: 0.2, M500: 2.0e+14}
+    - {redshift: 0.1, M500: 2.0e+14}
+
+# tileDir options - cut-up each map into smaller sections
+makeTileDir: True
+makeQuickLookMaps: True
+tileOverlapDeg: 1.0
+tileDefLabel: 'auto'
+tileDefinitions: {targetTileWidthDeg: 10.0, targetTileHeightDeg: 5.0}
+
+# If this is given, only the named tiles will be processed (useful for testing)
+#tileNameList:
+    #- '1_10_7'      # powerful f150 source
+    #- '1_10_8'      # J2327 (next to a source)
+    #- '2_0_7'       # powerful f150 source
+    #- '2_2_8'       # powerful f150 source
+    #- '3_0_1'       # powerful f150 source

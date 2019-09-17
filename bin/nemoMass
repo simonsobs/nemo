@@ -28,11 +28,12 @@ from nemo import filters
 from nemo import MockSurvey
 from nemo import photometry
 from nemo import startUp
+from nemo import completeness
 import argparse
 import astropy.io.fits as pyfits
 import time
 import yaml
-import IPython
+#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def addForcedPhotometry(forcedTab, config):
@@ -55,14 +56,13 @@ def addForcedPhotometry(forcedTab, config):
     catalog=[]
     for tileName in config.tileNames:
         # We need this to check if objects in the catalog are actually in the footprint
-        areaMaskImg=pyfits.open(config.selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
-        areaMask=areaMaskImg[0].data
-        wcs=astWCS.WCS(areaMaskImg[0].header, mode = 'pyfits')
+        areaMask, wcs=completeness.loadAreaMask(tileName, config.selFnDir)
         for row in forcedTab:
             objDict={}
             for key in list(forcedTab.keys()):
                 objDict[key]=row[key]
-            objDict['template']=photFilterLabel+"#"+tileName
+            objDict['template']=photFilterLabel
+            objDict['tileName']=tileName
             objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
             objDict['redshift']=row['redshift']
             if 'redshiftErr' in forcedTab.keys():
@@ -121,7 +121,7 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
         print("... rank %d; %d/%d; %s (%.3f +/- %.3f) ..." % (config.rank, count, len(tab), row['name'], 
                                                               row['redshift'], row['redshiftErr']))
 
-        tileName=row['template'].split("#")[-1]
+        tileName=row['tileName']
         
         # Corrected for mass function steepness
         massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
@@ -146,6 +146,7 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
                                                 sigma_int = massOptions['sigma_int'],
                                                 tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                                 applyMFDebiasCorrection = False,
+                                                applyRelativisticCorrection = massOptions['relativisticCorrection'],
                                                 fRelWeightsDict = fRelWeightsDict)
         row['M500Uncorr']=unCorrMassDict['M500']
         row['M500Uncorr_errPlus']=unCorrMassDict['M500_errPlus']
@@ -180,8 +181,8 @@ if __name__ == '__main__':
                         then these will be used to infer mass estimates. If not, "forced photometry" mode 
                         will be enabled, and the fixed_y_c, fixed_err_y_c values will be extracted from the
                         filtered maps.""", default = None)
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
-                        want to use this, run using something like: mpiexec --np 4 nemoMass ...""", 
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
+                        want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M""", 
                         default = False)
     args = parser.parse_args()
     
@@ -200,10 +201,27 @@ if __name__ == '__main__':
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(massOptions['redshiftCatalog'])
-        # Remove any freq weight columns from redshift tab before we start
+        # Sanity check/clean z table
+        # We're matching on name alone before, so keep only one row with unique name
+        wantedColumns=['name', 'RADeg', 'decDeg', 'redshift', 'redshiftErr']
+        colsToRemove=[]
         for key in zTab.keys():
-            if key.find("fixed_y_c_weight") != -1:
-                zTab.remove_column(key)
+            if key not in wantedColumns:
+                colsToRemove.append(key)
+        zTab.remove_columns(colsToRemove)
+        keepIndices=[]
+        gotClusters=[]
+        for row in zTab:
+            matched=np.where(row['name'] == zTab['name'])
+            if row['name'] not in gotClusters:
+                if len(np.unique(zTab[matched]['redshift'])) != 1 and config.rank == 0:
+                    print("... WARNING: Found redshifts %s for cluster %s - adopted z = %.3f" 
+                        % (str(zTab['redshift'][matched].tolist()), row['name'], row['redshift']))
+                keepIndices.append(matched[0][0])
+                gotClusters.append(row['name'])
+        zTab=zTab[keepIndices]
+        assert(len(np.unique(zTab['name'])) == len(zTab))
+        # Now join...
         tab=atpy.join(nemoTab, zTab, 'name')
         colsToRemove=[]
         for k in list(tab.keys()):
@@ -211,13 +229,13 @@ if __name__ == '__main__':
                 colsToRemove.append(k)
         tab.remove_columns(colsToRemove)
         # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
-        colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
+        colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template', 'tileName']
         for k in colsToKeep:
             if k+"_1" in list(tab.keys()):
                 tab.rename_column(k+"_1", k)
         colsToRemove=[]
         for k in list(tab.keys()):
-            if k not in colsToKeep and k.find('fixed_y_c_weight') == -1:
+            if k not in colsToKeep:
                 colsToRemove.append(k)
         tab.remove_columns(colsToRemove)
         outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
@@ -237,9 +255,7 @@ if __name__ == '__main__':
                 forcedPhotometry=True
 
     # Q function (filter mismatch) options
-    # NOTE: this should be calculated for the fixed, fiducial cosmology used for object detection
-    # NOTE: Q calculation is the only bit of this code that uses MPI - rank != 0 MPI jobs killed after fitQ
-    tckQFitDict=signals.fitQ(config)
+    tckQFitDict=signals.loadQ(config)
     
     # Dictionary by tile with frequency weights needed by relativistic corrections
     fRelWeightsDict=signals.getFRelWeights(config)
@@ -296,7 +312,7 @@ if __name__ == '__main__':
         relStr="no relativistic correction applied"
     else:
         relStr="relativistic correction applied"
-    print(">>> Estimating masses (%s) ..." % (relStr))
+    if config.rank == 0: print(">>> Estimating masses (%s) ..." % (relStr))
 
     # Seems like multiprocessing doesn't work under slurm...   
     # So use MPI instead: just divide up catalog among processes

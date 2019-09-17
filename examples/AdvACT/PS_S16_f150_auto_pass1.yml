@@ -1,0 +1,64 @@
+# Nemo config file
+# YAML format 
+# - use null to return None in Python
+# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+
+# Valid units are uK or Jy/sr
+# this should be a list of maps at different frequencies
+# NOTE: surveyMask is optional
+unfilteredMaps:
+    - {mapFileName: "maps/Mar2019/TOnly_act_planck_f150_map_mono.fits",
+       weightsFileName: "maps/Mar2019/act_planck_f150_div_mono.fits",
+       obsFreqGHz: 145.3, units: 'uK',
+       beamFileName: "Beams/181222/mr3c_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
+#    - {mapFileName: "maps/Mar2019/TOnly_act_planck_f090_map_mono.fits",
+#       weightsFileName: "maps/Mar2019/act_planck_f090_div_mono.fits",
+#       obsFreqGHz: 94.1, units: 'uK',
+#       beamFileName: "Beams/181222/mr3c_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
+
+# Masks
+# WARNING: while you can use .gz files, cutting them into tiles is hundreds of times slower
+surveyMask: 'maps/Mar2019/surveyMask_v6.fits'
+    
+# Instead of giving point source mask, can give catalog instead
+#maskPointSourcesFromCatalog: "PS_S16_f150_auto/PS_S16_f150_auto_optimalCatalog.fits"
+    
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 10.0
+minObjPix: 1
+findCenterOfMass: True
+useInterpolator: True
+rejectBorder: 0
+objIdent: 'ACT-S'
+longNames: False
+catalogCuts: ['SNR > 4.0']
+
+# Filter definitions:
+mapFilters:
+    - {label: "Beam",
+       class: "BeamMatchedFilter",
+             params: {noiseParams: {method: "dataMap",
+                                    noiseGridArcmin: 40.},
+                      outputUnits: 'uK',
+                      edgeTrimArcmin: 0.0}}
+
+# Run position recovery test
+positionRecoveryTest: False
+posRecIterations: 1
+posRecSourcesPerTile: 100
+
+# tileDeck options - cut-up each map into smaller sections
+makeTileDir: True
+makeQuickLookMaps: True
+tileOverlapDeg: 1.0
+tileDefLabel: 'auto'
+tileDefinitions: {targetTileWidthDeg: 10.0, targetTileHeightDeg: 5.0}
+
+# If this is given, only the named tiles will be processed (useful for testing)
+#tileNameList:
+    #- '1_10_7'      # powerful f150 source
+    #- '1_10_8'      # J2327 (next to a source)
+    #- '2_0_7'       # powerful f150 source
+    #- '2_2_8'       # powerful f150 source
+    #- '3_0_1'       # powerful f150 source

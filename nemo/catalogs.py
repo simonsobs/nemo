@@ -1,6 +1,6 @@
 """
 
-This module contains tools for handling catalogs, which for us are (generally) astropy Table objects.
+This module contains tools for handling catalogs, which are (usually) astropy Table objects.
 
 """
 
@@ -14,7 +14,7 @@ import astropy.table as atpy
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
 import astropy.io.fits as pyfits
-import IPython
+#import IPython
 
 # For adding meta data to output
 import datetime
@@ -30,8 +30,8 @@ COLUMN_NAMES    = ['name',
                    'decDeg', 
                    'SNR', 
                    'numSigPix', 
-                   'fractionMapsDetected', 
                    'template', 
+                   'tileName',
                    'galacticLatDeg',
                    'deltaT_c',
                    'err_deltaT_c',
@@ -55,7 +55,7 @@ COLUMN_FORMATS  = ['%s',
                    '%.6f',
                    '%.1f',
                    '%d',
-                   '%.2f',
+                   '%s',
                    '%s',
                    '%.6f',
                    '%.3f',
@@ -73,13 +73,13 @@ COLUMN_FORMATS  = ['%s',
                    '%.3f',
                    '%.3f',
                    '%.3f',
-                   '%.3f'
+                   '%.3f',
                    ]
 
 columnsToAdd=[]
 formatsToAdd=[]
 for k in COLUMN_NAMES:
-    if k not in ['name', 'RADeg', 'decDeg', 'galacticLatDeg', 'fractionMapsDetected', 'numSigPix']:
+    if k in ['y_c', 'err_y_c', 'deltaT_c', 'err_deltaT_c']:
         i=COLUMN_NAMES.index(k)
         formatsToAdd.append(COLUMN_FORMATS[i])
         columnsToAdd.append("fixed_"+k)
@@ -87,15 +87,16 @@ COLUMN_NAMES=COLUMN_NAMES+columnsToAdd
 COLUMN_FORMATS=COLUMN_FORMATS+formatsToAdd
         
 if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
-    raise exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
+    raise Exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
         
 #------------------------------------------------------------------------------------------------------------
-def makeOptimalCatalog(imageDict, constraintsList = []):
+def makeOptimalCatalog(catalogDict, constraintsList = []):
     """Identifies common objects between catalogs in the imageDict and creates a master catalog with
     one entry per object, keeping only the highest S/N detection details.
     
     Args:
-        imageDict: dictionary containing filtered maps and associated object catalogs
+        catalogDict (dict): Dictionary where each key corresponds to a catalog of objects extracted from a 
+            map, labeled 
         constraintsList: an optional list of constraints (for format, see selectFromCatalog)
         
     Returns:
@@ -103,16 +104,10 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
     
     """
     
-    # Get list of templates - assuming here that all keys that are NOT 'mergedCatalog' are template names    
-    templates=[]
-    for key in imageDict['mapKeys']:
-        if key != "mergedCatalog" and key != "optimalCatalog":
-            templates.append(key)
-
     allCatalogs=[]
-    for temp in templates:
-        if len(imageDict[temp]['catalog']) > 0:
-            allCatalogs.append(imageDict[temp]['catalog'])
+    for key in catalogDict.keys():
+        if len(catalogDict[key]['catalog']) > 0:
+            allCatalogs.append(catalogDict[key]['catalog'])
     if len(allCatalogs) > 0:
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
@@ -130,11 +125,13 @@ def makeOptimalCatalog(imageDict, constraintsList = []):
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
         mergedCatalog=[]
-    imageDict['optimalCatalog']=mergedCatalog   
+    
+    return mergedCatalog
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
-                RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", writeNemoInfo = True, coordSys = 'fk5'):
+                RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
+                writeNemoInfo = True, coordSys = 'fk5'):
     """Converts a catalog containing object dictionaries into a DS9 region file. 
     
     Args:
@@ -187,8 +184,10 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                 colorString=obj['color']
             else:
                 colorString=color
-            outFile.write("%s;point(%.6f,%.6f) # point=boxcircle color={%s} text={%s%s}\n" \
-                        % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, obj[idKeyToUse], infoString))
+            if showNames == True:
+                infoString=obj[idKeyToUse]+infoString
+            outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
+                        % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
 
 #------------------------------------------------------------------------------------------------------------
 def makeACTName(RADeg, decDeg, prefix = 'ACT-CL'):
@@ -361,12 +360,6 @@ def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
     """
     
     availKeys=list(catalogList[0].keys())
-    
-    # A fudge: we don't know what names y_c_weight keys will have in advance, so they aren't already given
-    for key in availKeys:
-        if key.find("fixed_y_c_weight") != -1 and key not in keysToWrite:
-            keysToWrite.append(key)
-    
     tab=atpy.Table()
     for key in keysToWrite:
         if key in availKeys:
@@ -409,6 +402,9 @@ def writeCatalog(catalog, outFileName, constraintsList = []):
     
     """
 
+    # Deal with any blank catalogs (e.g., in blank tiles - not that we would want such things...)
+    if type(catalog) == list and len(catalog) == 0:
+        return None
     cutCatalog=selectFromCatalog(catalog, constraintsList)
     if outFileName.split(".")[-1] == 'csv':
         cutCatalog.write(outFileName, format = 'ascii.csv', delimiter = '\t', overwrite = True)
@@ -510,7 +506,7 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
     """
     
     if selFn is None:
-        selFn=completeness.SelFn(config.configFileName, config.selFnDir, 4.0, 
+        selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName, 
                                  enableCompletenessCalc = False, setUpAreaMask = True)
 
     RAs=[]
@@ -518,6 +514,8 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
     amps=[]
     for tileName in config.tileNames:
         mapData=selFn.areaMaskDict[tileName]
+        if mapData.sum() == 0:  # Skip any empty/blank tile
+            continue
         wcs=selFn.WCSDict[tileName]
         if amplitudeDistribution == 'linear':
             amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], numSourcesPerTile)

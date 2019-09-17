@@ -31,29 +31,60 @@ import pickle
 import astropy.io.fits as pyfits
 import time
 import yaml
-import IPython
+#import IPython
 plt.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoMock")
-    parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
-                        want to use this, run using something like: mpiexec --np 4 nemoMock ...""", 
+    parser.add_argument("selFnDir", help="""Directory containing files needed for computing the selection 
+                        function.""")
+    parser.add_argument("mocksDir", help="""Output directory where mock catalogs will be written.""")
+    parser.add_argument("-c", "--config", dest = "configFileName", help="""A .yml configuration file. If
+                        this is not given, the config.yml file in selFnDir will be used.""",
+                        default = None)
+    parser.add_argument("-N", "--number-of-mocks", dest = "numMocks", help="""Number of mock catalogs to
+                        make. If this is not given, the value from makeMockCatalogs parameter in the 
+                        config file will be used.""", default = None, type = int)
+    parser.add_argument("-C", "--combine-mocks", dest="combineMocks", action="store_true", 
+                        help="""Combine the mocks into one large catalog (use this to make oversampled 
+                        mock catalogs).""",
                         default = False)
+    #parser.add_argument("-f", "--footprint", dest = "footprint", help="""Footprint to use, e.g., DES,
+                        #HSC, KiDS (default: full).""", default = None)
+    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="""Include only clusters with fixed_SNR > 
+                        this value.""", default = 4.0, type = float)
+    #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
+                        #want to use this, run with e.g., mpiexec -np 4 nemoMock selFnDir mocksDir -M""", 
+                        #default = False)
     args = parser.parse_args()
     
-    parDictFileName=args.configFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
+    selFnDir=args.selFnDir
+    mocksDir=args.mocksDir
+    configFileName=args.configFileName
+    numMocksToMake=args.numMocks
+    combineMocks=args.combineMocks
+    SNRCut=args.SNRCut
+    MPIEnabled=False
+    #zStep=args.zStep
+    #footprintLabel=args.footprint
 
-    if 'makeMockCatalogs' in config.parDict.keys():
-        numMocksToMake=config.parDict['makeMockCatalogs']
-    else:
-        numMocksToMake=1
+    if configFileName is None:
+        configFileName=args.selFnDir+os.path.sep+"config.yml"
+    config=startUp.NemoConfig(configFileName, MPIEnabled = MPIEnabled, makeOutputDirs = False, 
+                              selFnDir = selFnDir, setUpMaps = False, verbose = False)
+    config.mocksDir=mocksDir
+    
+    if numMocksToMake is None:
+        if 'makeMockCatalogs' in config.parDict.keys():
+            numMocksToMake=config.parDict['makeMockCatalogs']
+        else:
+            numMocksToMake=1
 
     # Remove this once we re-jig for MPI
     if config.MPIEnabled == True and numMocksToMake > 1:
-        raise Exception("nemoMock needs to be adapted for MPI if making multiple mocks - not done yet")
+        raise Exception("NemoMock needs to be adapted for MPI if making multiple mocks - not done yet.")
 
-    pipelines.makeMockClusterCatalog(config, numMocksToMake = numMocksToMake, writeCatalogs = True, verbose = True)
+    pipelines.makeMockClusterCatalog(config, numMocksToMake = numMocksToMake, combineMocks = combineMocks,
+                                     writeCatalogs = True, verbose = True)

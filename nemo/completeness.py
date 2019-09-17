@@ -1,6 +1,6 @@
 """
 
-Tools for calculating completeness of cluster samples.
+This module contains tools for calculating the completeness of cluster samples.
 
 """
 
@@ -28,7 +28,8 @@ import types
 import pickle
 import astropy.io.fits as pyfits
 import time
-import IPython
+import shutil
+#import IPython
 plt.matplotlib.interactive(False)
 
 # If want to catch warnings as errors...
@@ -38,9 +39,9 @@ plt.matplotlib.interactive(False)
 #------------------------------------------------------------------------------------------------------------
 class SelFn(object):
         
-    def __init__(self, parDictFileName, selFnDir, SNRCut, footprintLabel = None, zStep = 0.01, 
-                 enableDrawSample = False, downsampleRMS = True, applyMFDebiasCorrection = True,
-                 setUpAreaMask = False, enableCompletenessCalc = True):
+    def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
+                 tileNames = None, enableDrawSample = False, downsampleRMS = True, 
+                 applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True):
         """Initialise a SelFn object.
         
         This is a class that uses the output from nemoSelFn to re-calculate the selection function
@@ -60,16 +61,20 @@ class SelFn(object):
         self.downsampleRMS=downsampleRMS
         self.applyMFDebiasCorrection=applyMFDebiasCorrection
         self.selFnDir=selFnDir
+        self.zStep=zStep
 
-        self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
-        parDict=startUp.parseConfigFile(parDictFileName)
-        self.tileNames=self.tckQFitDict.keys()
+        self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
+        if configFileName is None:
+            configFileName=self.selFnDir+os.path.sep+"config.yml"
+            if os.path.exists(configFileName) == False:
+                raise Exception("No config .yml file found in selFnDir and no other location given.")
+        parDict=startUp.parseConfigFile(configFileName)
         
-        # ignoreMPI gives us the complete list of tileNames, regardless of how this parameter is set in the config file
-        #config=startUp.NemoConfig(parDictFileName, makeOutputDirs = False, ignoreMPI = True)
-        #parDict=config.parDict
-        #self.tileNames=config.tileNames
-        
+        if tileNames == None:
+            self.tileNames=self.tckQFitDict.keys()
+        else:
+            self.tileNames=tileNames
+            
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
             if 'selFnFootprints' not in parDict.keys():
@@ -83,37 +88,44 @@ class SelFn(object):
         
         # We only care about the filter used for fixed_ columns
         self.photFilterLabel=['photFilter']
-        
         self.scalingRelationDict=parDict['massOptions']
-        
+
         # Load area masks
         if setUpAreaMask == True:
-            # Takes around 20 sec
             self._setUpAreaMask()
         else:
             self.tileTab=None
             self.WCSDict=None
             self.areaMaskDict=None
-        
-        # Tile-weighted average noise and area will not change... we'll just re-calculate fitTab and put in place here
-        # Takes around 20 sec
-        self.selFnDictList=[]
-        self.totalAreaDeg2=0.0
-        for tileName in self.tileNames:
-            RMSTab=getRMSTab(tileName, self.photFilterLabel, self.selFnDir, footprintLabel = self.footprintLabel)
-            if type(RMSTab) == atpy.Table:
-                tileAreaDeg2=RMSTab['areaDeg2'].sum()
-                if tileAreaDeg2 > 0:
-                    if downsampleRMS == True:
-                        RMSTab=downsampleRMSTab(RMSTab)
-                    selFnDict={'tileName': tileName,
-                            'RMSTab': RMSTab,
-                            'tileAreaDeg2': tileAreaDeg2}
-                    self.selFnDictList.append(selFnDict)
-                    self.totalAreaDeg2=self.totalAreaDeg2+tileAreaDeg2
-        
-        # Set initial fiducial cosmology - can be overridden using update function
+                        
         if enableCompletenessCalc == True:
+            # We should be able to do everything (except clustering) with this
+            # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
+            RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
+            if footprintLabel is not None:
+                RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+            self.RMSTab=atpy.Table().read(RMSTabFileName)
+            self.RMSDict={}
+            tileNames=[]
+            for tileName in self.tileNames:
+                tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
+                if downsampleRMS == True and len(tileTab) > 0:
+                    tileTab=downsampleRMSTab(tileTab) 
+                if len(tileTab) > 0:    # We may have some blank tiles...
+                    self.RMSDict[tileName]=tileTab
+                    tileNames.append(tileName)
+            self.tileNames=tileNames
+            self.totalAreaDeg2=self.RMSTab['areaDeg2'].sum()
+            
+            # For weighting - arrays where entries correspond with tileNames list
+            tileAreas=[]    
+            for tileName in self.tileNames:
+                areaDeg2=self.RMSTab[self.RMSTab['tileName'] == tileName]['areaDeg2'].sum()
+                tileAreas.append(areaDeg2)
+            self.tileAreas=np.array(tileAreas)
+            self.fracArea=self.tileAreas/self.totalAreaDeg2
+            
+            # Initial cosmology set-up
             minMass=5e13
             zMin=0.0
             zMax=2.0
@@ -121,8 +133,8 @@ class SelFn(object):
             Om0=0.30
             Ob0=0.05
             sigma_8=0.8
-            self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = zStep, enableDrawSample = enableDrawSample)
-            # An initial run...
+            self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, 
+                                                  zStep = self.zStep, enableDrawSample = enableDrawSample)
             self.update(H0, Om0, Ob0, sigma_8)
 
 
@@ -231,24 +243,21 @@ class SelFn(object):
         (yes, this is a bit circular)
         
         """
-        
-        if scalingRelationDict != None:
+
+        if scalingRelationDict is not None:
             self.scalingRelationDict=scalingRelationDict
         
         self.mockSurvey.update(H0, Om0, Ob0, sigma_8)
         
-        tileAreas=[]
         compMzCube=[]
-        for selFnDict in self.selFnDictList:
-            tileAreas.append(selFnDict['tileAreaDeg2'])
-            selFnDict['compMz']=calcCompleteness(selFnDict['RMSTab'], self.SNRCut, selFnDict['tileName'], self.mockSurvey, 
-                                                            self.scalingRelationDict, self.tckQFitDict)
-            compMzCube.append(selFnDict['compMz'])
-        tileAreas=np.array(tileAreas)
-        fracArea=tileAreas/self.totalAreaDeg2
+        for tileName in self.RMSDict.keys():
+            compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName, 
+                                               self.mockSurvey, self.scalingRelationDict, self.tckQFitDict))
+            if np.any(np.isnan(compMzCube[-1])) == True:
+                raise Exception("NaNs in compMz for tile '%s'" % (tileName))
         compMzCube=np.array(compMzCube)
-        self.compMz=np.average(compMzCube, axis = 0, weights = fracArea)
-                    
+        self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+        
 
     def projectCatalogToMz(self, tab):
         """Project a catalog (as astropy Table) into the (log10 M500, z) grid. Takes into account the uncertainties
@@ -263,7 +272,7 @@ class SelFn(object):
                                        self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']
 
         for row in tab:
-            tileName=row['template'].split("#")[-1]
+            tileName=row['tileName']
             z=row['redshift']
             zErr=row['redshiftErr']
             y0=row['fixed_y_c']*1e-4
@@ -279,18 +288,80 @@ class SelFn(object):
     
 #------------------------------------------------------------------------------------------------------------
 def loadAreaMask(tileName, selFnDir):
-    """Loads the survey area mask (i.e., after edge-trimming and point source masking, produced by nemo).
+    """Loads the survey area mask (i.e., after edge-trimming and point source masking, produced by nemo) for
+    the given tile.
     
     Returns map array, wcs
     
     """
     
-    areaImg=pyfits.open(selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName))
-    areaMap=areaImg[0].data
-    wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
-    areaImg.close()
-    
+    areaMap, wcs=_loadTile(tileName, selFnDir, "areaMask", extension = 'fits')   
     return areaMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def loadRMSMap(tileName, selFnDir, photFilter):
+    """Loads the RMS map for the given tile.
+    
+    Returns map array, wcs
+    
+    """
+    
+    RMSMap, wcs=_loadTile(tileName, selFnDir, "RMSMap_%s" % (photFilter), extension = 'fits')   
+    return RMSMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def loadMassLimitMap(tileName, diagnosticsDir, z):
+    """Loads the mass limit map for the given tile at the given z.
+    
+    Returns map array, wcs
+    
+    """
+    
+    massLimMap, wcs=_loadTile(tileName, diagnosticsDir, "massLimitMap_z%s" % (str(z).replace(".", "p")), 
+                              extension = 'fits')   
+    return massLimMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def loadIntersectionMask(tileName, selFnDir, footprint):
+    """Loads the intersection mask for the given tile and footprint.
+    
+    Returns map array, wcs
+    
+    """           
+            
+    intersectMask, wcs=_loadTile(tileName, selFnDir, "intersect_%s" % (footprint), extension = 'fits')   
+    return intersectMask, wcs
+
+#------------------------------------------------------------------------------------------------------------
+def _loadTile(tileName, baseDir, baseFileName, extension = 'fits'):
+    """Generic function to load a tile image from either a multi-extension FITS file, or a file with 
+    #tileName.fits type extension, whichever is found.
+        
+    Returns map array, wcs
+    
+    """
+    
+    # After tidyUp is run, this will be a MEF file... during first run, it won't be (written under MPI)
+    if os.path.exists(baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)):
+        fileName=baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)
+    else:
+        fileName=baseDir+os.path.sep+"%s.%s" % (baseFileName, extension)
+    with pyfits.open(fileName) as img:
+        # If we find the tile - great. If not, we use first extension with data as it'll be compressed
+        if tileName in img:
+            extName=tileName
+            data=img[extName].data
+        else:
+            data=None
+        if data is None:
+            for extName in img:
+                data=img[extName].data
+                if data is not None:
+                    break
+        data=img[extName].data
+        wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
+    
+    return data, wcs
 
 #------------------------------------------------------------------------------------------------------------
 def getTileTotalAreaDeg2(tileName, selFnDir, masksList = [], footprintLabel = None):
@@ -328,58 +399,65 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
     Returns intersectionMask as array (1 = valid area, 0 = otherwise)
     
     """
-        
+    
+    # After tidyUp has run, there will be intersection mask MEF files
+    intersectFileName=selFnDir+os.path.sep+"intersect_%s.fits" % (label)
+    if os.path.exists(intersectFileName):
+        intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
+        return intersectMask
+    
+    # Otherwise, we may have a per-tile intersection mask
+    intersectFileName=selFnDir+os.path.sep+"intersect_%s#%s.fits" % (label, tileName)
+    if os.path.exists(intersectFileName):
+        intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
+        return intersectMask
+
+    # Otherwise... make it
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
-    
-    intersectFileName=selFnDir+os.path.sep+"intersect_%s#%s.fits.gz" % (label, tileName)
-    if os.path.exists(intersectFileName) == True:
-        with pyfits.open(intersectFileName) as intersectImg:
-            intersectMask=intersectImg[0].data
-    else:
-        if masksList == []:
-            raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
-        print("... creating %s intersection mask (%s) ..." % (label, tileName))         
-        intersectMask=np.zeros(areaMap.shape)
+    if masksList == []:
+        raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
+    print("... creating %s intersection mask (%s) ..." % (label, tileName))         
+    intersectMask=np.zeros(areaMap.shape)
+    outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
+    outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
+    outRA=outRACoords[:, 0]
+    outDec=outDecCoords[:, 1]
+    RAToX=interpolate.interp1d(outRA, np.arange(intersectMask.shape[1]), fill_value = 'extrapolate')
+    DecToY=interpolate.interp1d(outDec, np.arange(intersectMask.shape[0]), fill_value = 'extrapolate')
+    for fileName in masksList:
+        with pyfits.open(fileName) as maskImg:
+            for hdu in maskImg:
+                if type(hdu) == pyfits.ImageHDU:
+                    break
+            maskWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
+            maskData=hdu.data
+        # From sourcery tileDir stuff
+        RAc, decc=wcs.getCentreWCSCoords()
+        xc, yc=maskWCS.wcs2pix(RAc, decc)
+        xc, yc=int(xc), int(yc)
+        xIn=np.arange(maskData.shape[1])
+        yIn=np.arange(maskData.shape[0])
+        inRACoords=np.array(maskWCS.pix2wcs(xIn, [yc]*len(xIn)))
+        inDecCoords=np.array(maskWCS.pix2wcs([xc]*len(yIn), yIn))
+        inRA=inRACoords[:, 0]
+        inDec=inDecCoords[:, 1]
+        RAToX=interpolate.interp1d(inRA, xIn, fill_value = 'extrapolate')
+        DecToY=interpolate.interp1d(inDec, yIn, fill_value = 'extrapolate')
         outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
         outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
         outRA=outRACoords[:, 0]
         outDec=outDecCoords[:, 1]
-        RAToX=interpolate.interp1d(outRA, np.arange(intersectMask.shape[1]), fill_value = 'extrapolate')
-        DecToY=interpolate.interp1d(outDec, np.arange(intersectMask.shape[0]), fill_value = 'extrapolate')
-        for fileName in masksList:
-            with pyfits.open(fileName) as maskImg:
-                for hdu in maskImg:
-                    if type(hdu) == pyfits.ImageHDU:
-                        break
-                maskWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
-                maskData=hdu.data
-            # From sourcery tileDir stuff
-            RAc, decc=wcs.getCentreWCSCoords()
-            xc, yc=maskWCS.wcs2pix(RAc, decc)
-            xc, yc=int(xc), int(yc)
-            xIn=np.arange(maskData.shape[1])
-            yIn=np.arange(maskData.shape[0])
-            inRACoords=np.array(maskWCS.pix2wcs(xIn, [yc]*len(xIn)))
-            inDecCoords=np.array(maskWCS.pix2wcs([xc]*len(yIn), yIn))
-            inRA=inRACoords[:, 0]
-            inDec=inDecCoords[:, 1]
-            RAToX=interpolate.interp1d(inRA, xIn, fill_value = 'extrapolate')
-            DecToY=interpolate.interp1d(inDec, yIn, fill_value = 'extrapolate')
-            outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
-            outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
-            outRA=outRACoords[:, 0]
-            outDec=outDecCoords[:, 1]
-            xIn=np.array(RAToX(outRA), dtype = int)
-            yIn=np.array(DecToY(outDec), dtype = int)
-            xMask=np.logical_and(xIn >= 0, xIn < maskData.shape[1])
-            yMask=np.logical_and(yIn >= 0, yIn < maskData.shape[0])
-            xOut=np.arange(intersectMask.shape[1])
-            yOut=np.arange(intersectMask.shape[0])
-            for i in yOut[yMask]:
-                intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
-        intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
-        astImages.saveFITS(intersectFileName, intersectMask, wcs)
+        xIn=np.array(RAToX(outRA), dtype = int)
+        yIn=np.array(DecToY(outDec), dtype = int)
+        xMask=np.logical_and(xIn >= 0, xIn < maskData.shape[1])
+        yMask=np.logical_and(yIn >= 0, yIn < maskData.shape[0])
+        xOut=np.arange(intersectMask.shape[1])
+        yOut=np.arange(intersectMask.shape[0])
+        for i in yOut[yMask]:
+            intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
+    intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
+    maps.saveFITS(intersectFileName, intersectMask, wcs, compressed = True)
         
     return intersectMask
 
@@ -399,26 +477,31 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     
     """
     
-    # This can probably be sped up, but takes ~200 sec for a ~1000 sq deg tile, so we cache
+    # After tidyUp has run, we may have one global RMS table with an extra tileName column we can use
+    RMSTabFileName=selFnDir+os.path.sep+"RMSTab.fits"
+    if footprintLabel is not None:
+        RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+    if os.path.exists(RMSTabFileName):
+        tab=atpy.Table().read(RMSTabFileName)
+        return tab[np.where(tab['tileName'] == tileName)]
+    
+    # Otherwise, we may have a per-tile RMS table
     RMSTabFileName=selFnDir+os.path.sep+"RMSTab_%s.fits" % (tileName)
     if footprintLabel != None:
         RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
-        
     if os.path.exists(RMSTabFileName) == True:
         return atpy.Table().read(RMSTabFileName)
-    
+        
     # We can't make the RMSTab without access to stuff in the diagnostics dir
     # So this bit allows us to skip missing RMSTabs for footprints with no overlap (see SelFn)
-    if diagnosticsDir == None:
+    if diagnosticsDir is None:
         return None
 
     print(("... making %s ..." % (RMSTabFileName)))
-    RMSImg=pyfits.open(selFnDir+os.path.sep+"RMSMap_Arnaud_M2e14_z0p4#%s.fits.gz" % (tileName))
-    RMSMap=RMSImg[0].data
-
+    RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
-    
+
     if footprintLabel != None:  
         intersectMask=makeIntersectionMask(tileName, selFnDir, footprintLabel)
         areaMapSqDeg=areaMapSqDeg*intersectMask        
@@ -434,6 +517,12 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     RMSTab=atpy.Table()
     RMSTab.add_column(atpy.Column(tileArea, 'areaDeg2'))
     RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
+    # Sanity checks - these should be impossible but we have seen (e.g., when messed up masks)
+    tol=1e-3
+    if abs(RMSTab['areaDeg2'].sum()-areaMapSqDeg.sum()) > tol:
+        raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))
+    if np.less(RMSTab['areaDeg2'], 0).sum() > 0:
+        raise Exception("Negative area in tile '%s' - check your survey mask (and delete/remake tileDir files if necessary)." % (tileName))
     RMSTab.write(RMSTabFileName)
 
     return RMSTab
@@ -446,14 +535,13 @@ def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
     
     """
     
-    stepSize=0.001*1e-4
     binEdges=np.arange(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max()+stepSize, stepSize)
     y0Binned=[]
     tileAreaBinned=[]
     binMins=[]
     binMaxs=[]
     for i in range(len(binEdges)-1):
-        mask=np.logical_and(RMSTab['y0RMS'] > binEdges[i], RMSTab['y0RMS'] <= binEdges[i+1])
+        mask=np.logical_and(RMSTab['y0RMS'] >= binEdges[i], RMSTab['y0RMS'] < binEdges[i+1])
         if mask.sum() > 0:
             y0Binned.append(np.average(RMSTab['y0RMS'][mask], weights = RMSTab['areaDeg2'][mask]))
             tileAreaBinned.append(np.sum(RMSTab['areaDeg2'][mask]))
@@ -530,9 +618,9 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
         makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, diagnosticsDir+os.path.sep+"completeness90Percent_%s%s.pdf" % (footprintLabel, additionalLabel), title = "footprint: %s" % (footprintLabel))
         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-        print("... total survey area (after masking) = %.3f sq deg" % (np.sum(tileAreas)))
-        print("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.3f x 10^14 MSun" % (massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
-        print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.3f x 10^14 MSun" % (averageMassLimit_90Complete))
+        print("... total survey area (after masking) = %.1f sq deg" % (np.sum(tileAreas)))
+        print("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
+        print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (averageMassLimit_90Complete))
 
 #------------------------------------------------------------------------------------------------------------
 def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
@@ -614,7 +702,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     
     """
         
-    if z != None:
+    if z is not None:
         zIndex=np.argmin(abs(mockSurvey.z-z))
         zRange=mockSurvey.z[zIndex:zIndex+1]
     else:
@@ -691,7 +779,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     else:
         raise Exception("calcCompleteness only has 'fast', and 'Monte Carlo' methods available")
             
-    if plotFileName != None:
+    if plotFileName is not None:
         # Calculate 90% completeness as function of z
         zBinEdges=np.arange(0.05, 2.1, 0.1)
         zBinCentres=(zBinEdges[:-1]+zBinEdges[1:])/2.
@@ -714,10 +802,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
     
     """
         
-    # Get the stuff we need...
-    RMSImg=pyfits.open(selFnDir+os.path.sep+"RMSMap_%s#%s.fits.gz" % (photFilterLabel, tileName))
-    RMSMap=RMSImg[0].data
-    wcs=astWCS.WCS(RMSImg[0].header, mode = 'pyfits')
+    RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir)
     
     # Downsampling for speed? 
@@ -725,7 +810,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
     #RMSTab=downsampleRMSTab(RMSTab)
     
     # Fill in blocks in map for each RMS value
-    outFileName=diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits.gz" % (str(z).replace(".", "p"), tileName)
+    outFileName=diagnosticsDir+os.path.sep+tileName+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), tileName)
     if os.path.exists(outFileName) == False:
         massLimMap=np.zeros(RMSMap.shape)
         count=0
@@ -739,7 +824,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
         t1=time.time()
         mask=np.not_equal(massLimMap, 0)
         massLimMap[mask]=np.power(10, massLimMap[mask])/1e14
-        astImages.saveFITS(outFileName, massLimMap, wcs)
+        maps.saveFITS(outFileName, massLimMap, wcs, compressed = True)
         
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title = None):
@@ -768,26 +853,17 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     plt.close()   
     
 #------------------------------------------------------------------------------------------------------------
-def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
+def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     """Make a cumulative plot of 90%-completeness mass limit versus survey area, at the given redshift.
     
     """
-
-    fileList=glob.glob(diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits.gz" % (str(z).replace(".", "p")))
-    tileNames=[]
-    for f in fileList:
-        tileNames.append(f.split("#")[-1].split(".fits")[0])
-    tileNames.sort()
     
     # NOTE: We can avoid this if we add 'areaDeg2' column to selFn_mapFitTab_*.fits tables
     allLimits=[]
     allAreas=[]
     for tileName in tileNames:
-        with pyfits.open(diagnosticsDir+os.path.sep+"massLimitMap_z%s#%s.fits.gz" % (str(z).replace(".", "p"), tileName)) as massLimImg:
-            massLimMap=massLimImg[0].data
-        with pyfits.open(selFnDir+os.path.sep+"areaMask#%s.fits.gz" % (tileName)) as areaImg:
-            areaMap=areaImg[0].data
-            wcs=astWCS.WCS(areaImg[0].header, mode = 'pyfits')
+        massLimMap, wcs=loadMassLimitMap(tileName, diagnosticsDir+os.path.sep+tileName, z)
+        areaMap, wcs=loadAreaMask(tileName, selFnDir)
         areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
         limits=np.unique(massLimMap).tolist()
         if limits[0] == 0:
@@ -822,7 +898,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
     labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
     plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
-    plt.xlim(0, 15.0)
+    plt.xlim(0,)
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.pdf" % (str(z).replace(".", "p")))
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.png" % (str(z).replace(".", "p")))
@@ -839,7 +915,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir):
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
     labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
     plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
-    plt.xlim(0.0, 5.0)
+    plt.xlim(0,)
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.pdf" % (str(z).replace(".", "p")))
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.png" % (str(z).replace(".", "p")))
@@ -852,22 +928,23 @@ def makeFullSurveyMassLimitMapPlot(z, config):
         
     """
     
-    outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
     if 'makeQuickLookMaps' not in config.parDict.keys():
         config.quicklookScale=0.25
         config.quicklookShape, config.quicklookWCS=maps.shrinkWCS(config.origShape, config.origWCS, config.quicklookScale)
-    
-    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"massLimitMap_z%s#*.fits.gz" % (str(z).replace(".", "p")), 
+
+    outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
+    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"*"+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")), 
                      outFileName, config.quicklookWCS, config.quicklookShape, 
                      fluxRescale = config.quicklookScale)
 
     # Make plot
     if os.path.exists(outFileName) == True:
         with pyfits.open(outFileName) as img:
-            reproj=np.nan_to_num(img[0].data)
-            #reproj=np.ma.masked_where(reproj == np.nan, reproj)
-            reproj=np.ma.masked_where(reproj <1e-6, reproj)
-            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            for hdu in img:
+                if hdu.shape is not ():
+                    reproj=np.nan_to_num(hdu.data)
+                    reproj=np.ma.masked_where(reproj <1e-6, reproj)
+                    wcs=astWCS.WCS(hdu.header, mode = 'pyfits')
             plotSettings.update_rcParams()
             fontSize=20.0
             figSize=(16, 5.7)
@@ -889,3 +966,90 @@ def makeFullSurveyMassLimitMapPlot(z, config):
             plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
             plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
             plt.close()
+
+#------------------------------------------------------------------------------------------------------------
+def tidyUp(config):
+    """Tidy up the selFn directory - making MEF files etc. and deleting individual tile files.
+    
+    We also copy the configuration file into the selFn dir to make things easier for distribution/end users.
+    
+    """
+    
+    shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
+
+    # Combine Q fits
+    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
+        signals.makeCombinedQTable(config)
+        for tileName in config.allTileNames:
+            QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
+            if os.path.exists(QFileName):
+                os.remove(QFileName)
+    
+    # Make MEFs
+    MEFsToBuild=["areaMask", "RMSMap_%s" % (config.parDict['photFilter'])]
+    if 'selFnFootprints' in config.parDict.keys():
+        for footprintDict in config.parDict['selFnFootprints']:
+            MEFsToBuild.append("intersect_%s" % footprintDict['label'])
+    for MEFBaseName in MEFsToBuild:  
+        outFileName=config.selFnDir+os.path.sep+MEFBaseName+".fits"
+        newImg=pyfits.HDUList()
+        filesToRemove=[]
+        for tileName in config.allTileNames:
+            fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits"
+            if os.path.exists(fileName):
+                with pyfits.open(fileName) as img:
+                    if tileName not in img:
+                        extName=0
+                    else:
+                        extName=tileName
+                    if 'COMPRESSED_IMAGE' in img:
+                        extName='COMPRESSED_IMAGE'                                          
+                    hdu=pyfits.CompImageHDU(np.array(img[extName].data, dtype = float), img[extName].header, name = tileName)
+                    data=img[extName].data
+                filesToRemove.append(fileName)
+                newImg.append(hdu)
+        if len(newImg) > 0:
+            newImg.writeto(outFileName, overwrite = True)
+            for f in filesToRemove:
+                os.remove(f)
+            
+    # Combine RMSTab files (we can downsample further later if needed)
+    # We add a column for the tileName just in case want to select on this later
+    footprints=['']
+    if 'selFnFootprints' in config.parDict.keys():
+        for footprintDict in config.parDict['selFnFootprints']:
+            footprints.append(footprintDict['label'])
+    strLen=0
+    for tileName in config.allTileNames:
+        if len(tileName) > strLen:
+            strLen=len(tileName)
+    for footprint in footprints:
+        if footprint != "":
+            label="_"+footprint
+        else:
+            label=""
+        outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
+        tabList=[]
+        filesToRemove=[]
+        for tileName in config.allTileNames:
+            fileName=config.selFnDir+os.path.sep+"RMSTab_"+tileName+label+".fits"
+            if os.path.exists(fileName):
+                tileTab=atpy.Table().read(fileName)
+                tileTab.add_column(atpy.Column(np.array([tileName]*len(tileTab), dtype = '<U%d' % (strLen)), 
+                                               "tileName"))
+                tabList.append(tileTab)
+                filesToRemove.append(fileName)
+        if len(tabList) > 0:
+            tab=atpy.vstack(tabList)
+            tab.sort('y0RMS')
+            tab.write(outFileName, overwrite = True)
+            for f in filesToRemove:
+                os.remove(f)
+    
+    # Write a table of tile areas for those that want it
+    with open(config.selFnDir+os.path.sep+"tileAreas.txt", "w") as outFile:
+        outFile.write("#tileName areaDeg2\n")
+        for tileName in config.allTileNames:
+            tileAreaDeg2=getTileTotalAreaDeg2(tileName, config.selFnDir)
+            outFile.write("%s %.6f\n" % (tileName, tileAreaDeg2))
+    

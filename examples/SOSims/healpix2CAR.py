@@ -17,6 +17,7 @@ import IPython
 parser = argparse.ArgumentParser()
 parser.add_argument("ifiles", nargs="+")
 parser.add_argument("template")
+parser.add_argument("-L", '--label', type=str, default="CAR") 
 parser.add_argument('-W', '--add-white-noise', type=float, default=0)
 parser.add_argument("-l", "--lmax",    type=int, default=0)
 parser.add_argument("-v", "--verbose", action="store_true")
@@ -86,7 +87,7 @@ if "map" in outputs:
         progress("%s TQU map2alm" % name)
         curvedsky.alm2map_cyl(alm, omap)
         del alm
-        ofile = ifile.replace(".fits", "_CAR.fits")
+        ofile = ifile.replace(".fits", "_%s.fits" % (args.label))
         if args.add_white_noise > 0:
             progress("%s adding extra white noise with sigma = %.1f per pixel" % (name, args.add_white_noise))
             omap[0]=omap[0]+np.random.normal(0, args.add_white_noise, omap[0].shape)

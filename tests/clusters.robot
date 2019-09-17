@@ -7,10 +7,9 @@ Recover published ACTPol cluster masses - real space filter
     Status should be        SUCCESS
 
 Recover unbiased masses from mock catalog - real space filter
-    Set config              configs/equD56_quick.yml
-    Run nemo selfn
-    Run nemo mass
-    Run nemo mock
+    Run ACTPol clusters pipeline - real space filter
+    Run nemo selfn          configs/equD56_quick.yml
+    Run nemo mock           configs/equD56_quick/selFn  configs/equD56_quick/mocks
     Run nemo mass           configs/equD56_quick/mocks/mockCatalog_1.fits
     Cross match             configs/equD56_quick/mocks/mockCatalog_1.fits   configs/equD56_quick/mocks/mockCatalog_1_M500.fits
     Check recovered ratio   true_M500   M500    tolerance=0.02    SNRCut=5.0  plotFileName=plots/M500Recovery_mock.png

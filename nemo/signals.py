@@ -35,7 +35,7 @@ import nemo
 import glob
 import shutil
 import yaml
-import IPython
+#import IPython
 np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
@@ -274,7 +274,7 @@ def getFRelWeights(config):
         fRelTab.add_column(atpy.Column(config.allTileNames, 'tileName'))
         for tileCount in range(len(config.allTileNames)):
             tileName=config.allTileNames[tileCount]
-            filterFileName=config.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (config.parDict['photFilter'], tileName)
+            filterFileName=config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"filter_%s#%s.fits" % (config.parDict['photFilter'], tileName)
             with pyfits.open(filterFileName) as img:
                 for i in range(1, 10):
                     if 'RW%d_GHZ' % (i) in img[0].header.keys():
@@ -308,22 +308,18 @@ def loadFRelWeights(fRelWeightsFileName):
 
 #------------------------------------------------------------------------------------------------------------
 def fitQ(config):
-    """Calculates Q on a grid, and then fits (theta, Q) with a spline, saving a plot in the diagnosticDir
-    and the (theta, Q) array under selFnDir.
+    """Calculates the filter mismatch function Q on a grid of scale sizes (given in terms of theta500 in 
+    arcmin), for each tile in the map. The results are initially cached (with a separate .fits table for each
+    tile) under the selFn directory, before being combined into a single file at the end of a nemo run.
+    Use GNFWParams (in config.parDict) if you want to specify a different cluster profile shape.
     
-    Needs a startUp.NemoConfig object.
+    Args:
+        config (:obj:`startUp.NemoConfig`): A NemoConfig object.
+    
+    Note:
+        See :obj:`loadQ` for how to load in the output of this routine.
         
-    Use GNFWParams (in config.parDict) to specify a different shape.
-    
-    The calculation will be done in parallel, if MPIEnabled = True, and comm and rank are given, and tileNames 
-    is different for each rank. This is only needed for the first run of this routine by the nemoMass script.
-            
     """
-
-    outFileName=config.selFnDir+os.path.sep+"QFit.fits"
-    if os.path.exists(outFileName) == True:
-        print(">>> Loading previously cached Q fit ...")
-        return loadQ(outFileName)
         
     if config.parDict['GNFWParams'] == 'default':
         GNFWParams=gnfw._default_params
@@ -369,13 +365,14 @@ def fitQ(config):
     MRange=MRange+MRange_wanted
     zRange=zRange+zRange_wanted.tolist()
     
-    # Q calc - results for all tiles stored in one file    
-    # Do each tile in turn
-    rank_QTabDict={}
-    print(">>> Fitting for Q ...")
+    # Here we save the fit for each tile separately... 
+    # completeness.tidyUp will put them into one file at the end of a nemo run
     for tileName in config.tileNames:        
-        
-        print("... %s ..." % (tileName))
+        tileQTabFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
+        if os.path.exists(tileQTabFileName) == True:
+            print("... already done Q fit for tile %s ..." % (tileName))
+            continue
+        print("... fitting Q in tile %s ..." % (tileName))
 
         # Load reference scale filter
         foundFilt=False
@@ -387,7 +384,8 @@ def fitQ(config):
             raise Exception("couldn't find filter that matches photFilter")
         filterClass=eval('filters.%s' % (filt['class']))
         filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
-                              tileName = tileName, diagnosticsDir = config.diagnosticsDir)
+                              tileName = tileName, 
+                              diagnosticsDir = config.diagnosticsDir+os.path.sep+tileName)
         filterObj.loadFilter()
         
         # Real space kernel or Fourier space filter?
@@ -405,13 +403,12 @@ def fitQ(config):
         # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
         # NOTE: 5 deg is too small for the largest very low-z clusters: it's better to add a z cut and ignore those
         # NOTE: 5 deg fell over (ringing) for tiles_v2 RE6_10_0, but 10 deg worked fine
-        with pyfits.open(config.filteredMapsDir+os.path.sep+photFilterLabel+"#%s_SNMap.fits" % (tileName)) as img:
-            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-            extMap=img[0].data
-            RADeg, decDeg=wcs.getCentreWCSCoords()                
-            clipDict=astImages.clipImageSectionWCS(img[0].data, wcs, RADeg, decDeg, 10.0)
-            wcs=clipDict['wcs']
-            extMap=clipDict['data']
+        extMap=np.zeros(filterObj.shape)
+        wcs=filterObj.wcs
+        RADeg, decDeg=wcs.getCentreWCSCoords()                
+        clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, 10.0)
+        wcs=clipDict['wcs']
+        extMap=clipDict['data']
         
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
@@ -465,7 +462,8 @@ def fitQ(config):
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
         QTab.sort('theta500Arcmin')
-        rank_QTabDict[tileName]=QTab
+        QTab.write(tileQTabFileName, overwrite = True)
+        #rank_QTabDict[tileName]=QTab
                     
         # Fit with spline
         tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
@@ -487,41 +485,27 @@ def fitQ(config):
         plt.semilogx()
         plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
         plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
-        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.pdf" % (tileName))
-        plt.savefig(config.diagnosticsDir+os.path.sep+"QFit_%s.png" % (tileName))
+        plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.pdf" % (tileName))
+        plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.png" % (tileName))
         plt.close()
         print("... Q fit finished [tileName = %s, rank = %d] ..." % (tileName, config.rank))
-            
-    if config.MPIEnabled == True:
-        gathered_QTabDicts=config.comm.gather(rank_QTabDict, root = 0)
-        if config.rank == 0:
-            print("... gathering QTabDicts ...")
-            QTabDict={}
-            for tabDict in gathered_QTabDicts:
-                for key in tabDict:
-                    QTabDict[key]=tabDict[key]
-            combinedQTab=makeCombinedQTable(QTabDict, outFileName)
-        else:
-            combinedQTab=None
-        combinedQTab=config.comm.bcast(combinedQTab, root = 0)
-    else:
-        QTabDict=rank_QTabDict
-        combinedQTab=makeCombinedQTable(QTabDict, outFileName)
-        
-    tckDict={}
-    for key in combinedQTab.keys():
-        if key != 'theta500Arcmin':
-            tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
-    
-    return tckDict
 
 #------------------------------------------------------------------------------------------------------------
-def makeCombinedQTable(QTabDict, outFileName):
+def makeCombinedQTable(config):
     """Writes dictionary of tables (containing individual tile Q fits) as a single .fits table.
     
     Returns combined Q astropy table object
     
     """
+
+    outFileName=config.selFnDir+os.path.sep+"QFit.fits"    
+    if os.path.exists(outFileName) == True:
+        return atpy.Table().read(outFileName)
+        
+    QTabDict={}
+    for tileName in config.allTileNames:
+        QTabDict[tileName]=atpy.Table().read(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
+    
     combinedQTab=atpy.Table()
     for tabKey in list(QTabDict.keys()):
         for colKey in QTabDict[tabKey].keys():
@@ -535,17 +519,41 @@ def makeCombinedQTable(QTabDict, outFileName):
     return combinedQTab
 
 #------------------------------------------------------------------------------------------------------------
-def loadQ(combinedQTabFileName):
-    """Loads tckQFitDict from given path.
+def loadQ(source, tileNames = None):
+    """Load the filter mismatch function Q as a dictionary of spline fits.
     
+    Args:
+        source (NemoConfig or str): Either the path to a .fits table (containing Q fits for all tiles - this
+            is normally selFn/QFit.fits), or a NemoConfig object (from which the path and tiles to use will
+            be inferred).
+        tileNames (optional, list): A list of tiles for which the Q function will be extracted. If 
+            source is a NemoConfig object, this should be set to None.
+    
+    Returns:
+        A dictionary (with tile names as keys), containing spline knots for the Q function for each tile.
+        
     """
-    
-    combinedQTab=atpy.Table().read(combinedQTabFileName)
-    tckDict={}
-    for key in combinedQTab.keys():
-        if key != 'theta500Arcmin':
-            tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
 
+    if type(source) == str:
+        combinedQTabFileName=source
+    else:
+        # We should add a check to confirm this is actually a NemoConfig object
+        combinedQTabFileName=source.selFnDir+os.path.sep+"QFit.fits"
+        tileNames=source.tileNames
+        
+    tckDict={}    
+    if os.path.exists(combinedQTabFileName) == True:
+        combinedQTab=atpy.Table().read(combinedQTabFileName)
+        for key in combinedQTab.keys():
+            if key != 'theta500Arcmin':
+                tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
+    else:
+        if tileNames is None:
+            raise Exception("If source does not point to a complete QFit.fits file, you need to supply tileNames.")
+        for tileName in tileNames:
+            tab=atpy.Table().read(combinedQTabFileName.replace(".fits", "#%s.fits" % (tileName)))
+            tckDict[tileName]=interpolate.splrep(tab['theta500Arcmin'], tab['Q'])
+           
     return tckDict
 
 #------------------------------------------------------------------------------------------------------------
@@ -596,7 +604,8 @@ def calcFRel(z, M500, cosmoModel, obsFreqGHz = 148.0):
     # Using Arnaud et al. (2005) M-T to get temperature
     A=3.84e14
     B=1.71
-    TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)
+    #TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)   # HMF/Astropy
+    TkeV=5.*np.power(((cosmoModel.Ez(z)*M500)/A), 1/B)   # Colossus
     TKelvin=TkeV*((1000*e)/kB)
 
     # Itoh et al. (1998) eqns. 2.25 - 2.30
@@ -722,7 +731,7 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B
     function. The approach followed is described in H13, Section 3.2.
     
     Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
-    (in turn using the hmf module). Supplying mockSurvey is no longer optional (and handles setting the 
+    (in turn using the Colossus module). Supplying mockSurvey is no longer optional (and handles setting the 
     cosmology anyway when initialised or updated).
     
     tckQFit is a set of spline knots, as returned by fitQ.

@@ -24,13 +24,14 @@ from nemo import MockSurvey
 from nemo import completeness
 from nemo import plotSettings
 from nemo import startUp
+from nemo import pipelines
 import argparse
 import types
 import pickle
 import astropy.io.fits as pyfits
 import time
 import yaml
-import IPython
+#import IPython
 plt.matplotlib.interactive(False)
 
 # If want to catch warnings as errors...
@@ -42,20 +43,13 @@ if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoSelFn")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you
-                        want to use this, run using something like: mpiexec --np 4 nemoSelFn ...""", 
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
+                        want to use this, run with e.g., mpiexec -np 4 nemoSelFn configFile.yml -M""", 
                         default = False)
     args = parser.parse_args()
     
     parDictFileName=args.configFileName
     config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled)
-
-    # Q varies across tiles
-    QFitFileName=config.selFnDir+os.path.sep+"QFit.fits"
-    if os.path.exists(QFitFileName) == True:
-        tckQFitDict=signals.loadQ(QFitFileName)
-    else:
-        raise Exception("could not find cached Q fit - run nemoMass first")
 
     # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
     minMass=8e13
@@ -68,70 +62,8 @@ if __name__ == '__main__':
     sigma_8=0.8
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
     
-    # We only care about the filter used for fixed_ columns
-    photFilterLabel=config.parDict['photFilter']
-    for filterDict in config.parDict['mapFilters']:
-        if filterDict['label'] == photFilterLabel:
-            break
-
-    # We'll only calculate completeness for this given selection
-    SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
-
-    # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
-    if 'numDraws' not in config.parDict['selFnOptions'].keys():
-        config.parDict['selFnOptions']['numDraws']=2000000
-    if 'numIterations' not in config.parDict['selFnOptions'].keys():
-        config.parDict['selFnOptions']['numIterations']=100
+    selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
     
-    # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
-    footprintsList=[]
-    if 'selFnFootprints' in config.parDict.keys():
-        footprintsList=footprintsList+config.parDict['selFnFootprints']
-        
-    # Run the selection function calculation on each tile in turn
-    selFnCollection={'full': []}
-    for footprintDict in footprintsList:
-        if footprintDict['label'] not in selFnCollection.keys():
-            selFnCollection[footprintDict['label']]=[]
-            
-    for tileName in config.tileNames:
-        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
-        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
-                                           numDraws = config.parDict['selFnOptions']['numDraws'],
-                                           numIterations = config.parDict['selFnOptions']['numIterations'],
-                                           method = config.parDict['selFnOptions']['method'],
-                                           plotFileName = config.diagnosticsDir+os.path.sep+"completeness90Percent#%s.pdf" % (tileName))
-        selFnDict={'tileName': tileName,
-                   'RMSTab': RMSTab,
-                   'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
-                   'compMz': compMz}
-        selFnCollection['full'].append(selFnDict)
-        
-        # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
-        # May as well do this bit here (in parallel) and assemble output later
-        for footprintDict in footprintsList:
-            completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
-            tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
-            if tileAreaDeg2 > 0:
-                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
-                                              footprintLabel = footprintDict['label'])
-                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
-                                                   numDraws = config.parDict['selFnOptions']['numDraws'],
-                                                   numIterations = config.parDict['selFnOptions']['numIterations'],
-                                                   method = config.parDict['selFnOptions']['method'])
-                selFnDict={'tileName': tileName,
-                           'RMSTab': RMSTab,
-                           'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
-                           'compMz': compMz}
-                selFnCollection[footprintDict['label']].append(selFnDict)
-            
-        # Optional mass-limit maps
-        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
-            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
-                                            config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
-                                            config.selFnDir)  
-        
     # MPI: gather together selection function results, so we can compute survey-wide average
     if config.MPIEnabled == True:
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
@@ -161,7 +93,8 @@ if __name__ == '__main__':
     if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
         print(">>> Making cumulative area plots and full survey mass limit plots ...")
         for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-            completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir) 
+            completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir, config.allTileNames) 
             completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
             
-            
+    # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
+    completeness.tidyUp(config)
