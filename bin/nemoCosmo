@@ -64,7 +64,7 @@ def lnprob(parameters):
     t1=time.time()
     
     # Apply completeness only to predicted counts (selection is already applied to observed)
-    predMz=selFn.compMz*selFn.mockSurvey.clusterCount    
+    predMz=selFn.compMz*selFn.mockSurvey.clusterCount
     
     # Do we really need to do this step? We'd gain > factor 2 in speed if we didn't
     # (i.e., if we just splatted onto the grid as a straight 2d histogram)

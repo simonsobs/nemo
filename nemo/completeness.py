@@ -125,6 +125,9 @@ class SelFn(object):
             self.tileAreas=np.array(tileAreas)
             self.fracArea=self.tileAreas/self.totalAreaDeg2
             
+            # For relativistic corrections
+            self.fRelDict=signals.loadFRelWeights(self.selFnDir+os.path.sep+"fRelWeights.fits")
+            
             # Initial cosmology set-up
             minMass=5e13
             zMin=0.0
@@ -279,7 +282,8 @@ class SelFn(object):
             y0Err=row['fixed_err_y_c']*1e-4
             P=signals.calcPM500(y0, y0Err, z, zErr, self.tckQFitDict[tileName], self.mockSurvey, 
                                   tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
-                                  applyMFDebiasCorrection = self.applyMFDebiasCorrection, fRelWeightsDict = {148.0: 1.0},
+                                  applyMFDebiasCorrection = self.applyMFDebiasCorrection, 
+                                  fRelWeightsDict = self.fRelDict[tileName],
                                   return2D = True)
             # Paste into (M, z) grid
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
