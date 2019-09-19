@@ -66,8 +66,13 @@ def lnprob(parameters):
     # Apply completeness only to predicted counts (selection is already applied to observed)
     predMz=selFn.compMz*selFn.mockSurvey.clusterCount    
     
+    # Do we really need to do this step? We'd gain > factor 2 in speed if we didn't
+    # (i.e., if we just splatted onto the grid as a straight 2d histogram)
     t2=time.time()
-    obsMz=selFn.projectCatalogToMz(tab)
+    try:
+        obsMz=selFn.projectCatalogToMz(tab)
+    except:
+        return -np.inf
     t3=time.time()
     
     # Poisson probability in (M, z) grid
