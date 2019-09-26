@@ -164,7 +164,7 @@ class MapFilter(object):
                             break
                     if foundLine == True:
                         bits=line.split("=")
-                        solidAngle_nsr=float(bits[1].split("nsr")[0])
+                        solidAngle_nsr=float(bits[1].split()[0])
                     else:
                         solidAngle_nsr=0.0
             self.beamSolidAnglesDict[mapDict['obsFreqGHz']]=solidAngle_nsr
