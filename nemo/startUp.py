@@ -93,6 +93,9 @@ def parseConfigFile(parDictFileName):
             for entry in parDict['tileNameList']:
                 newList.append(entry.upper())
             parDict['tileNameList']=newList
+        # We shouldn't have to give this unless we're using it
+        if 'catalogCuts' not in parDict.keys():
+            parDict['catalogCuts']=[]
         # Don't measure object shapes by default
         if 'measureShapes' not in parDict.keys():
             parDict['measureShapes']=False
