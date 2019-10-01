@@ -829,6 +829,9 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             tab=atpy.Table().read(catalogPath)
             tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
             # Variable sized holes: based on inspecting sources by deltaT in f150 maps
+            # To avoid the problem of rings around sources, we sort the list and mask the brightest first
+            # If an object lands in an already masked area, we remove it from the catalog
+            tab.sort('deltaT_c', reverse = True)
             tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
             tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
             tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
@@ -837,13 +840,20 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
             tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
             tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
+            selectedRows=[]
             for row in tab:
-                rArcminMap=np.ones(data.shape, dtype = float)*1e6
-                rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            row['rArcmin']/60.)
-                rArcminMap=rArcminMap*60
-                psMask[rArcminMap < row['rArcmin']]=0
+                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                if psMask[int(y), int(x)] != 0:
+                    rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                                   row['RADeg'], row['decDeg'], 
+                                                                                   row['rArcmin']/60.)
+                    rArcminMap=rArcminMap*60
+                    psMask[rArcminMap < row['rArcmin']]=0
+                    selectedRows.append(True)
+                else:
+                    selectedRows.append(False)
+            tab=tab[np.where(selectedRows)]
             # Subtract sources (if there are small residuals, doesn't matter, as masked later anyway)
             model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'])
             data=data-model

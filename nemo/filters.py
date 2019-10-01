@@ -898,6 +898,14 @@ class RealSpaceMatchedFilter(MapFilter):
             if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
                 RADecSection=[self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
                             self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
+            elif self.params['noiseParams']['RADecSection'] == 'auto':
+                cRA, cDec=self.wcs.getCentreWCSCoords()
+                halfSizeDeg=2.0
+                nRAMin=cRA-halfSizeDeg/np.cos(np.radians(cDec))
+                nRAMax=cRA+halfSizeDeg/np.cos(np.radians(cDec))
+                nDecMin=cDec-halfSizeDeg
+                nDecMax=cDec+halfSizeDeg
+                RADecSection=[nRAMin, nRAMax, nDecMin, nDecMax]
             else:
                 RADecSection=self.params['noiseParams']['RADecSection']
             self.applyDecCentre=(decMax+decMin)/2.

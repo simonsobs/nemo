@@ -29,9 +29,17 @@ longNames: False
 # Filter definitions:
 mapFilters:
     - {label: "Beam",
-       class: "BeamMatchedFilter",
+       class: "BeamRealSpaceMatchedFilter",
              params: {noiseParams: {method: "dataMap",
-                                    noiseGridArcmin: 40.},
+                                    noiseGridArcmin: 40.,
+                                    matchedFilterClass: 'BeamMatchedFilter',
+                                    RADecSection: 'auto',
+                                    kernelMaxArcmin: 7.,
+                                    RMSEstimator: 'biweight',
+                                    symmetrize: False, 
+                                    saveHighPassMap: False,
+                                    saveRMSMap: False},
+                      bckSub: True,
                       saveFilteredMaps: True,
                       outputUnits: 'uK',
                       edgeTrimArcmin: 0.0}}
