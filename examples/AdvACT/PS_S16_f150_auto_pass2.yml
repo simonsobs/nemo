@@ -33,7 +33,7 @@ longNames: False
 mapFilters:
     - {label: "Beam",
        class: "BeamMatchedFilter",
-             params: {noiseParams: {method: "dataMap",
+             params: {noiseParams: {method: "model",
                                     noiseGridArcmin: 40.},
                       saveFilteredMaps: True,
                       outputUnits: 'uK',

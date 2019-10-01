@@ -423,6 +423,12 @@ class MatchedFilter(MapFilter):
                         NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                         NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
                         NP=np.maximum.reduce([NP, NPCMB])
+                    elif self.params['noiseParams']['method'] == 'model':
+                        NPCMB=self.makeForegroundsPower()
+                        # Assuming inv var
+                        iRMS=np.mean(1/np.sqrt(iMap['weights']))
+                        jRMS=np.mean(1/np.sqrt(jMap['weights']))
+                        NP=np.ones(self.shape)*(iRMS*jRMS)+NPCMB
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)

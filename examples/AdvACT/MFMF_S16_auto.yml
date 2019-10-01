@@ -21,7 +21,7 @@ surveyMask: 'maps/Sep2019/surveyMask_v6_inc_extsrc.fits'
 
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
-    - "PS_S16_f150_auto_realspace/PS_S16_f150_auto_realspace_optimalCatalog.fits"
+    - "PS_S16_f150_auto_pass1/PS_S16_f150_auto_pass1_optimalCatalog.fits"
     #- "PS_S16_f150_auto_pass2/PS_S16_f150_auto_pass2_optimalCatalog.fits"
     
 # Detection/catalog options
