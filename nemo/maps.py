@@ -271,9 +271,9 @@ def makeTileDir(parDict):
                 # Added an option to define tiles in the .config file... otherwise, we will do the automatic tiling
                 if type(parDict['tileDefinitions']) == dict:
                     print(">>> Using autotiler ...")
-                    if 'surveyMask' not in mapDict.keys():
-                        raise Exception("Need to specify a survey mask in the config file to use automatic tiling.")
-                    parDict['tileDefinitions']=autotiler(mapDict['surveyMask'], 
+                    if 'mask' not in parDict['tileDefinitions'].keys():
+                        raise Exception("Need to specify a mask in the tileDefinitions dictionary to use automatic tiling.")
+                    parDict['tileDefinitions']=autotiler(parDict['tileDefinitions']['mask'], 
                                                          parDict['tileDefinitions']['targetTileWidthDeg'],
                                                          parDict['tileDefinitions']['targetTileHeightDeg'])
                     print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
@@ -844,15 +844,18 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                                                                             row['rArcmin']/60.)
                 rArcminMap=rArcminMap*60
                 psMask[rArcminMap < row['rArcmin']]=0
-            # Fill holes with smoothed map + white noise
-            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-            bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
-            if mapDict['weightsType'] =='invVar':
-                rms=np.zeros(weights.shape)
-                rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
-            else:
-                raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
-            data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+            # Subtract sources (if there are small residuals, doesn't matter, as masked later anyway)
+            model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'])
+            data=data-model
+            # Or fill holes with smoothed map + white noise
+            #pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+            #bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
+            #if mapDict['weightsType'] =='invVar':
+                #rms=np.zeros(weights.shape)
+                #rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
+            #else:
+                #raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
+            #data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
             #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
     
     # Add the map data to the dict

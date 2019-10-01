@@ -15,10 +15,6 @@ unfilteredMaps:
        #weightsFileName: "maps/Sep2019/act_planck_s08_s16_cmb_f090_night_div.fits",
        #obsFreqGHz: 94.1, units: 'uK',
        #beamFileName: "Beams/190809/b20190809_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb.txt"}
-
-# Masks
-# WARNING: while you can use .gz files, cutting them into tiles is hundreds of times slower
-#surveyMask: 'maps/Sep2019/surveyMask_inc_extsrc_v6.fits'
     
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: "PS_S16_f150_auto_pass1/PS_S16_f150_auto_pass1_optimalCatalog.fits"
@@ -53,7 +49,9 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {targetTileWidthDeg: 10.0, targetTileHeightDeg: 5.0}
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v6.fits',
+                  targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:

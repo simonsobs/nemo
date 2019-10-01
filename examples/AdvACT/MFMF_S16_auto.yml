@@ -22,7 +22,7 @@ surveyMask: 'maps/Sep2019/surveyMask_v6_inc_extsrc.fits'
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
     - "PS_S16_f150_auto_pass1/PS_S16_f150_auto_pass1_optimalCatalog.fits"
-    - "PS_S16_f150_auto_pass2/PS_S16_f150_auto_pass2_optimalCatalog.fits"
+    #- "PS_S16_f150_auto_pass2/PS_S16_f150_auto_pass2_optimalCatalog.fits"
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
@@ -153,7 +153,9 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {targetTileWidthDeg: 10.0, targetTileHeightDeg: 5.0}
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v6.fits',
+                  targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:
