@@ -21,8 +21,7 @@ surveyMask: 'maps/Sep2019/surveyMask_v6_inc_extsrc.fits'
 
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
-    - "PS_S18_f150_auto_pass1/PS_S18_f150_auto_pass1_optimalCatalog.fits"
-    - "PS_S18_f150_auto_pass2/PS_S18_f150_auto_pass2_optimalCatalog.fits"
+    - "PS_S18_f150_auto/PS_S18_f150_auto_optimalCatalog.fits"
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
@@ -71,9 +70,9 @@ selFnOptions: {fixedSNRCut: 5.0,
                
 selFnFootprints: 
     - {label: "HSC",
-       maskList: ["HSCCheckAndSelFn/s18a_fdfc_CAR_contarea.fits.gz"]}
+       maskList: ["HSCCheckAndSelFn/s18a_fdfc_CAR_contarea.fits"]}
     - {label: "KiDS",
-       maskList: ["KiDSSelFn/mask_KiDSN.fits.gz", "KiDSSelFn/mask_KiDSS.fits.gz"]}
+       maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
     - {label: "DES",
        maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
 
@@ -153,12 +152,14 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {targetTileWidthDeg: 10.0, targetTileHeightDeg: 5.0}
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v6.fits',
+                  targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:
-    #- '1_10_7'      # powerful f150 source
-    #- '1_10_8'      # J2327 (next to a source)
+    #- '1_10_7'      # powerful f150 source; do as set - sensitive to point-source mask threshold
+    #- '1_10_8'      # J2327 (next to a source); do as set - sensitive to point-source mask threshold
     #- '2_0_7'       # powerful f150 source
     #- '2_2_8'       # powerful f150 source
     #- '3_0_1'       # powerful f150 source

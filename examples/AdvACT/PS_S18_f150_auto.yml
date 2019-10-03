@@ -11,21 +11,10 @@ unfilteredMaps:
        weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f150_night_div.fits",
        obsFreqGHz: 145.3, units: 'uK',
        beamFileName: "Beams/190809/b20190809_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb.txt"}
-    #- {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f090_night_map.fits",
-       #weightsFileName: "maps/Sep2019/act_planck_s08_s16_cmb_f090_night_div.fits",
-       #obsFreqGHz: 94.1, units: 'uK',
-       #beamFileName: "Beams/190809/b20190809_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb.txt"}
-
-# Masks
-# WARNING: while you can use .gz files, cutting them into tiles is hundreds of times slower
-#surveyMask: 'maps/Sep2019/surveyMask_inc_extsrc_v6.fits'
-    
-# Instead of giving point source mask, can give catalog instead
-maskPointSourcesFromCatalog: "PS_S18_f150_auto_pass1/PS_S18_f150_auto_pass1_optimalCatalog.fits"
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
-thresholdSigma: 5.0
+thresholdSigma: 10.0
 minObjPix: 1
 findCenterOfMass: True
 useInterpolator: True
@@ -37,7 +26,7 @@ longNames: False
 mapFilters:
     - {label: "Beam",
        class: "BeamMatchedFilter",
-             params: {noiseParams: {method: "dataMap",
+             params: {noiseParams: {method: "model",
                                     noiseGridArcmin: 40.},
                       saveFilteredMaps: True,
                       outputUnits: 'uK',
@@ -48,17 +37,29 @@ positionRecoveryTest: False
 posRecIterations: 1
 posRecSourcesPerTile: 100
 
-# tileDir options - cut-up each map into smaller sections
+# tileDeck options - cut-up each map into smaller sections
 makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {targetTileWidthDeg: 10.0, targetTileHeightDeg: 5.0}
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v6.fits', 
+                  targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:
-    #- '1_10_7'      # powerful f150 source
-    #- '1_10_8'      # J2327 (next to a source)
+    #- '3_1_1'       # set 3
+    #- '3_1_2'       # set 3
+    #- '3_0_1'       # set 3
+    #- '3_0_2'       # set 3
+    #- '1_4_1'       # set 2
+    #- '1_4_2'       # set 2
+    #- '1_4_3'       # set 2
+    #- '1_3_2'       # set 2
+    #- '1_3_1'       # set 2
+    #- '1_2_2'       # set 2
+    #- '1_10_7'      # powerful f150 source; do as set - sensitive to point-source mask threshold
+    #- '1_10_8'      # J2327 (next to a source); do as set - sensitive to point-source mask threshold
     #- '2_0_7'       # powerful f150 source
     #- '2_2_8'       # powerful f150 source
-    #- '3_0_1'       # powerful f150 source)
+    #- '3_0_1'       # powerful f150 source
