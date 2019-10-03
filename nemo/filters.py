@@ -573,15 +573,16 @@ class MatchedFilter(MapFilter):
 
         # Apply final survey mask to signal-to-noise map and RMS map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
+        # NOTE: we now save the mask after detecting objects, as we can detect rings around extremely
+        # bright sources and add those to the mask there (see pipelines module)
         SNMap=SNMap*surveyMask
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
-
-        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
-        surveyMask=np.array(surveyMask, dtype = int)
-        if os.path.exists(maskFileName) == False:
-            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
-        
+        #maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
+        #surveyMask=np.array(surveyMask, dtype = int)
+        #if os.path.exists(maskFileName) == False:
+            #maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
+                
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
             maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)

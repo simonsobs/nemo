@@ -18,7 +18,7 @@ unfilteredMaps:
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
-thresholdSigma: 5.0
+thresholdSigma: 10.0
 minObjPix: 1
 findCenterOfMass: True
 useInterpolator: True
@@ -52,8 +52,16 @@ tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v6.fits',
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:
-    #- '1_9_7'       # do as set - sensitive to point-source mask threshold
-    #- '1_9_8'       # do as set - sensitive to point-source mask threshold
+    #- '3_1_1'       # set 3
+    #- '3_1_2'       # set 3
+    #- '3_0_1'       # set 3
+    #- '3_0_2'       # set 3
+    #- '1_4_1'       # set 2
+    #- '1_4_2'       # set 2
+    #- '1_4_3'       # set 2
+    #- '1_3_2'       # set 2
+    #- '1_3_1'       # set 2
+    #- '1_2_2'       # set 2
     #- '1_10_7'      # powerful f150 source; do as set - sensitive to point-source mask threshold
     #- '1_10_8'      # J2327 (next to a source); do as set - sensitive to point-source mask threshold
     #- '2_0_7'       # powerful f150 source

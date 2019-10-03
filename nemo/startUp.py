@@ -309,7 +309,7 @@ class NemoConfig(object):
                 os.makedirs(d+os.path.sep+tileName, exist_ok = True)
         
         # For debugging...
-        if verbose: print(("... rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
+        if verbose: print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
     def restoreConfig(self):

@@ -855,17 +855,17 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                     selectedRows.append(False)
             tab=tab[np.where(selectedRows)]
             # Subtract sources (if there are small residuals, doesn't matter, as masked later anyway)
-            model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'])
-            data=data-model
-            # Or fill holes with smoothed map + white noise
-            #pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-            #bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
-            #if mapDict['weightsType'] =='invVar':
-                #rms=np.zeros(weights.shape)
-                #rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
-            #else:
-                #raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
-            #data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+            #model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'])
+            #data=data-model
+            # Or fill holes with smoothed map + white noise - this works much better than the above (currently)
+            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+            bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
+            if mapDict['weightsType'] =='invVar':
+                rms=np.zeros(weights.shape)
+                rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
+            else:
+                raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
+            data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
             #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
     
     # Add the map data to the dict
