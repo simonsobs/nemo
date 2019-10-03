@@ -42,7 +42,7 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v6.fits', 
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7.fits', 
                   targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}
 

@@ -46,12 +46,14 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v6.fits', 
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7.fits', 
                   targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:
+    #- '1_9_0'       # set 4
+    #- '1_9_1'       # set 4
     #- '3_1_1'       # set 3
     #- '3_1_2'       # set 3
     #- '3_0_1'       # set 3
