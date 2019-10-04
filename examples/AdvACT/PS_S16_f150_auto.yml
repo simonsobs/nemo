@@ -18,7 +18,7 @@ unfilteredMaps:
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
-thresholdSigma: 10.0
+thresholdSigma: 5.0
 minObjPix: 1
 findCenterOfMass: True
 useInterpolator: True
@@ -46,12 +46,14 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7.fits', 
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7_S16.fits', 
                   targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:
+    #- '2_3_2'       # set 5
+    #- '2_3_3'       # set 5
     #- '1_9_0'       # set 4
     #- '1_9_1'       # set 4
     #- '3_1_1'       # set 3
