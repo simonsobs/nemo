@@ -665,7 +665,7 @@ class MatchedFilter(MapFilter):
         else:
             filt=self.reshapeFilter(mapDataToFilter.shape)
         
-        if np.any(np.iscomplex(mapDataToFilter)) == True:
+        if 'complex' in mapDataToFilter.dtype.name:
             fMapsToFilter=mapDataToFilter
         else:
             fMapsToFilter=enmap.fft(enmap.apod(mapDataToFilter, self.apodPix))
