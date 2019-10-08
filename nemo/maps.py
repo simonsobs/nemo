@@ -1481,6 +1481,13 @@ def positionRecoveryTest(config):
     else:
         numSourcesPerTile=config.parDict['posRecSourcesPerTile']
     
+    # We need the actual catalog to throw out spurious 'recoveries'
+    # i.e., we only want to cross-match with objects we injected
+    catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+    if os.path.exists(catFileName) == False:
+        raise Exception("Catalog file '%s' not found - needed to do position recovery test." % (catFileName))
+    realCatalog=atpy.Table().read(catFileName)
+    
     # Run each scale / model and then collect everything into one table afterwards
     SNRDict={}
     rArcminDict={}
@@ -1543,6 +1550,8 @@ def positionRecoveryTest(config):
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
                                                                copyFilters = True, useCachedMaps = False)
                 if len(recCatalog) > 0:
+                    # We can perhaps cross-match to remove real objects more agressively
+                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 0.7)
                     try:
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
                     except:
