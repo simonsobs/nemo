@@ -5,4 +5,5 @@
 #SBATCH --time=23:59:00
 
 source ~/.bashrc
-time mpiexec nemo PS_S18_f150_auto.yml -M
+time mpiexec nemo PS_S18_f150_auto.yml -M -n
+

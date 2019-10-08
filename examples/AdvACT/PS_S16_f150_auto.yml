@@ -7,8 +7,8 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_map.fits",
-       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_div.fits",
+    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_map_premasked.fits",
+       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_div_premasked.fits",
        obsFreqGHz: 145.3, units: 'uK',
        beamFileName: "Beams/190809/b20190809_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb.txt"}
     #- {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f090_night_map.fits",
