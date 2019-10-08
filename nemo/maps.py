@@ -1550,6 +1550,8 @@ def positionRecoveryTest(config):
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
                                                                copyFilters = True, useCachedMaps = False)
                 if len(recCatalog) > 0:
+                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 0.7)
+                if len(recCatalog) > 0:
                     # We can perhaps cross-match to remove real objects more agressively
                     recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 0.7)
                     try:
