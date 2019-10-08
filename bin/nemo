@@ -82,14 +82,18 @@ if __name__ == '__main__':
     # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
     if config.rank == 0 and 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
         # RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure) 
-        maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits", 
-                        config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits", 
-                        config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
+        if os.path.exists(config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits") == False:
+            maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits", 
+                             config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits", 
+                             config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
+        else:
+            print("... already made %s ..." % (config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits"))
         # S/N maps at reference filter scale
-        if config.parDict['photFilter'] is not None:
+        quicklookSNMapPath=config.filteredMapsDir+os.path.sep+"*"+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter'])
+        if config.parDict['photFilter'] is not None and os.path.exists(quicklookSNMapPath) == False:
             maps.stitchTiles(config.filteredMapsDir+os.path.sep+"*"+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
-                            config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
-                            config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)   
+                             quicklookSNMapPath, config.quicklookWCS, config.quicklookShape, 
+                             fluxRescale = config.quicklookScale)   
                 
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
