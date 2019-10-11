@@ -7,17 +7,18 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_map_premasked.fits",
-       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_div_premasked.fits",
+    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_map.fits",
+       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f150_night_div.fits",
        obsFreqGHz: 145.3, units: 'uK',
        beamFileName: "Beams/190809/b20190809_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb.txt"}
-    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f090_night_map_premasked.fits",
-       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f090_night_div_premasked.fits",
+    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f090_night_map.fits",
+       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s16_cmb_f090_night_div.fits",
        obsFreqGHz: 94.1, units: 'uK',
        beamFileName: "Beams/190809/b20190809_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb.txt"}
 
 # Masks
 surveyMask: 'maps/Sep2019/surveyMask_v7_S16_inc_extsrc.fits'
+apodizeUsingSurveyMask: True
 
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 

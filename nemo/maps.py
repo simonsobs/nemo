@@ -11,6 +11,7 @@ from scipy.signal import convolve as scipy_convolve
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 import astropy.stats as apyStats
+import mahotas
 import numpy as np
 import pylab as plt
 import glob
@@ -747,6 +748,18 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
+    
+    # Some apodisation of the data outside the survey mask
+    # NOTE: should add adjustable parameter for this somewhere later
+    if 'apodizeUsingSurveyMask' in list(mapDict.keys()) and mapDict['apodizeUsingSurveyMask'] == True:
+        # We need to remain unapodized to at least noiseGridArcmin beyond the edge of the survey mask
+        # We'll need to make these adjustable parameters
+        apodMask=np.array(surveyMask, dtype = bool)
+        for i in range(120):
+            apodMask=mahotas.dilate(apodMask)
+        apodMask=ndimage.gaussian_filter(np.array(apodMask, dtype = float), 20)
+        data=data*apodMask
+        del apodMask
 
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] is not None:
         psMask=loadTile(mapDict['pointSourceMask'], tileName)
