@@ -112,7 +112,8 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
         for row in allCatalogs:
-            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'], allCatalogs['decDeg']) 
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data, 
+                                         allCatalogs['decDeg'].data) 
             xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
             if len(xIndices) > 1:
                 xMatches=allCatalogs[xIndices]

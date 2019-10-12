@@ -59,7 +59,7 @@ if __name__ == '__main__':
     xMatchRadiusDeg=args.matchRadiusArcmin/60.
     missing=[]
     for row in tab:
-        rDeg=astCoords.calcAngSepDeg(row[RAKey], row[decKey], checkAgainst['RADeg'], checkAgainst['decDeg'])
+        rDeg=astCoords.calcAngSepDeg(row[RAKey], row[decKey], checkAgainst['RADeg'].data, checkAgainst['decDeg'].data)
         if rDeg.min() > xMatchRadiusDeg:
             missing.append(True)
         else:
