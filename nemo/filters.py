@@ -406,6 +406,9 @@ class MatchedFilter(MapFilter):
             fMapsForNoise=[]
             for mapDict in self.unfilteredMapsDictList: 
                 d=mapDict['data']
+                if 'applyNoiseWeights' in self.params['noiseParams'].keys() \
+                    and self.params['noiseParams']['applyNoiseWeights'] == True:
+                    d=d*np.sqrt(mapDict['weights']) # assumed inv var, this divides by white-noise sigma
                 fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
             fMapsForNoise=np.array(fMapsForNoise)
         
