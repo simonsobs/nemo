@@ -105,6 +105,8 @@ def parseConfigFile(parDictFileName):
         # By default, undo the pixel window function
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True
+        if 'fitQ' not in parDict.keys():
+            parDict['fitQ']=True
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'

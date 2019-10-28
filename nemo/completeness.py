@@ -982,7 +982,7 @@ def tidyUp(config):
     shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
     # Combine Q fits
-    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
+    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
         signals.makeCombinedQTable(config)
         for tileName in config.allTileNames:
             QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
