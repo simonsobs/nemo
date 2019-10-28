@@ -36,5 +36,6 @@ setup(name='nemo',
                         "PyYAML",
                         "colossus",
                         "mpi4py",
-                        "colorcet >= 1.0"]
+                        "colorcet >= 1.0",
+                        "mahotas >= 1.4"]
 )

@@ -52,7 +52,7 @@ massOptions: {tenToA0: 4.95e-5,
               rescaleFactorErr: 0.11,
               redshiftCatalog: "ACTPol_clusters_20180816.fits"}
 
-# Selection function options
+# Selection function options - only used by the nemoSelFn script
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
 calcSelFn: True
@@ -79,6 +79,7 @@ allFilters: {class: "ArnaudModelRealSpaceMatchedFilter",
                                     symmetrize: True,
                                     noiseGridArcmin: 20.},
                       bckSub: True,
+                      saveFilteredMaps: True,
                       saveHighPassMap: False,
                       saveRMSMap: False,
                       outputUnits: 'yc',
@@ -101,7 +102,7 @@ mapFilters:
     - {label: "Arnaud_M1e14_z0p4",
        params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
-       params: {M500MSun: 2.0e+14, z: 0.4}}
+       params: {M500MSun: 2.0e+14, z: 0.4, saveFilteredMaps: True}}
     - {label: "Arnaud_M4e14_z0p4",
        params: {M500MSun: 4.0e+14, z: 0.4}}
     - {label: "Arnaud_M8e14_z0p4",

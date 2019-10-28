@@ -13,6 +13,7 @@ import time
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astLib import astWCS
+import numpy as np
 from . import startUp
 from . import filters
 from . import photometry
@@ -125,6 +126,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
                                            minObjPix = config.parDict['minObjPix'], 
                                            findCenterOfMass = config.parDict['findCenterOfMass'], 
+                                           removeRings = True,
                                            rejectBorder = config.parDict['rejectBorder'], 
                                            objIdent = config.parDict['objIdent'], 
                                            longNames = config.parDict['longNames'],
@@ -132,6 +134,12 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                                            measureShapes = config.parDict['measureShapes'],
                                            invertMap = invertMap,
                                            DS9RegionsPath = DS9RegionsPath)
+            
+            # We write area mask here, because it gets modified by findObjects if removing rings
+            maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
+            surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
+            if os.path.exists(maskFileName) == False:
+                maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True)
             
             if measureFluxes == True:
                 photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,

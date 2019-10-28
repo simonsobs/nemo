@@ -164,7 +164,7 @@ class MapFilter(object):
                             break
                     if foundLine == True:
                         bits=line.split("=")
-                        solidAngle_nsr=float(bits[1].split("nsr")[0])
+                        solidAngle_nsr=float(bits[1].split()[0])
                     else:
                         solidAngle_nsr=0.0
             self.beamSolidAnglesDict[mapDict['obsFreqGHz']]=solidAngle_nsr
@@ -423,6 +423,14 @@ class MatchedFilter(MapFilter):
                         NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                         NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
                         NP=np.maximum.reduce([NP, NPCMB])
+                    elif self.params['noiseParams']['method'] == 'model':
+                        NPCMB=self.makeForegroundsPower()
+                        # Assuming inv var
+                        ivalid=np.nonzero(iMap['weights'])
+                        jvalid=np.nonzero(jMap['weights'])
+                        iRMS=np.mean(1/np.sqrt(iMap['weights'][ivalid]))
+                        jRMS=np.mean(1/np.sqrt(jMap['weights'][jvalid]))
+                        NP=np.ones(self.shape)*(iRMS*jRMS)+NPCMB
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
@@ -567,15 +575,16 @@ class MatchedFilter(MapFilter):
 
         # Apply final survey mask to signal-to-noise map and RMS map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
+        # NOTE: we now save the mask after detecting objects, as we can detect rings around extremely
+        # bright sources and add those to the mask there (see pipelines module)
         SNMap=SNMap*surveyMask
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
-
-        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
-        surveyMask=np.array(surveyMask, dtype = int)
-        if os.path.exists(maskFileName) == False:
-            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
-        
+        #maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
+        #surveyMask=np.array(surveyMask, dtype = int)
+        #if os.path.exists(maskFileName) == False:
+            #maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
+                
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
             maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
@@ -656,7 +665,7 @@ class MatchedFilter(MapFilter):
         else:
             filt=self.reshapeFilter(mapDataToFilter.shape)
         
-        if np.any(np.iscomplex(mapDataToFilter)) == True:
+        if 'complex' in mapDataToFilter.dtype.name:
             fMapsToFilter=mapDataToFilter
         else:
             fMapsToFilter=enmap.fft(enmap.apod(mapDataToFilter, self.apodPix))
@@ -898,6 +907,14 @@ class RealSpaceMatchedFilter(MapFilter):
             if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
                 RADecSection=[self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
                             self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
+            elif self.params['noiseParams']['RADecSection'] == 'auto':
+                cRA, cDec=self.wcs.getCentreWCSCoords()
+                halfSizeDeg=2.0
+                nRAMin=cRA-halfSizeDeg/np.cos(np.radians(cDec))
+                nRAMax=cRA+halfSizeDeg/np.cos(np.radians(cDec))
+                nDecMin=cDec-halfSizeDeg
+                nDecMax=cDec+halfSizeDeg
+                RADecSection=[nRAMin, nRAMax, nDecMin, nDecMax]
             else:
                 RADecSection=self.params['noiseParams']['RADecSection']
             self.applyDecCentre=(decMax+decMin)/2.

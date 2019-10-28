@@ -32,7 +32,7 @@ def parseConfigFile(parDictFileName):
         # We've moved masks out of the individual map definitions in the config file
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
-        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog']
+        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -93,6 +93,9 @@ def parseConfigFile(parDictFileName):
             for entry in parDict['tileNameList']:
                 newList.append(entry.upper())
             parDict['tileNameList']=newList
+        # We shouldn't have to give this unless we're using it
+        if 'catalogCuts' not in parDict.keys():
+            parDict['catalogCuts']=[]
         # Don't measure object shapes by default
         if 'measureShapes' not in parDict.keys():
             parDict['measureShapes']=False
@@ -102,6 +105,8 @@ def parseConfigFile(parDictFileName):
         # By default, undo the pixel window function
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True
+        if 'fitQ' not in parDict.keys():
+            parDict['fitQ']=True
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
@@ -306,7 +311,7 @@ class NemoConfig(object):
                 os.makedirs(d+os.path.sep+tileName, exist_ok = True)
         
         # For debugging...
-        if verbose: print(("... rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
+        if verbose: print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
     def restoreConfig(self):

@@ -3,7 +3,7 @@
 import subprocess, os
 
 # Point sources run (two passes)
-process=subprocess.run(['sbatch', 'PS_S16_f150_auto_2pass.sh'], stdout=subprocess.PIPE)
+process=subprocess.run(['sbatch', 'PS_S16_f150_auto.sh'], stdout=subprocess.PIPE)
 if (process.returncode == 0):
     jobnum=process.stdout.split(b"job ")[-1].rstrip().decode()
     print("   jobnum = %s" % (jobnum))

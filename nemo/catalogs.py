@@ -112,7 +112,8 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
         for row in allCatalogs:
-            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'], allCatalogs['decDeg']) 
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data, 
+                                         allCatalogs['decDeg'].data) 
             xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
             if len(xIndices) > 1:
                 xMatches=allCatalogs[xIndices]
@@ -574,6 +575,34 @@ def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
     
     return inTab, matched_outTab, rDeg
 
+#------------------------------------------------------------------------------------------------------------
+def removeCrossMatched(refCatalog, matchCatalog, radiusArcmin = 2.5):
+    """Cross matches matchCatalog onto refCatalog for objects found within some angular radius 
+    (specified in arcmin), and returns refCatalog with the matching entries removed.
+    
+    Args:
+        refCatalog (:obj:`astropy.table.Table`): The reference catalog.
+        matchCatalog (:obj:`astropy.table.Table`): The catalog to match onto the reference catalog.
+        radiusArcmin (float, optional): Cross-match radius in arcmin.
+    
+    Returns:
+        Cross-matched reference catalog (:obj:`astropy.table.Table`) with matches to matchCatalog removed.
+        
+    """
+        
+    inTab=refCatalog
+    outTab=matchCatalog
+    RAKey1, decKey1=getTableRADecKeys(inTab)
+    RAKey2, decKey2=getTableRADecKeys(outTab)
+    cat1=SkyCoord(ra = inTab[RAKey1].data, dec = inTab[decKey1].data, unit = 'deg')
+    xMatchRadiusDeg=radiusArcmin/60.
+    cat2=SkyCoord(ra = outTab[RAKey2].data, dec = outTab[decKey2].data, unit = 'deg')
+    xIndices, rDeg, sep3d = match_coordinates_sky(cat1, cat2, nthneighbor = 1)
+    mask=np.greater(rDeg.value, xMatchRadiusDeg)  
+    inTab=inTab[mask]
+    
+    return inTab
+    
 #------------------------------------------------------------------------------------------------------------
 def getTableRADecKeys(tab):
     """Returns the column names in the table in which RA, dec coords are stored, after trying a couple of 

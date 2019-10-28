@@ -20,11 +20,12 @@ from . import completeness
 import sys
 #import IPython
 np.random.seed()
-                
+
 #------------------------------------------------------------------------------------------------------------
 def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                findCenterOfMass = True, invertMap = False, objIdent = 'ACT-CL', longNames = False, 
-                verbose = True, useInterpolator = True, measureShapes = False, DS9RegionsPath = None):
+                findCenterOfMass = True, removeRings = True, invertMap = False, objIdent = 'ACT-CL', 
+                longNames = False, verbose = True, useInterpolator = True, measureShapes = False, 
+                DS9RegionsPath = None):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
         
@@ -34,6 +35,8 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
     
     Set measureShapes == True to fit ellipses in a similar style to how SExtractor does it (may be useful for
     automating finding of extended sources).
+    
+    This now find rings around extremely bright sources and adds them to the survey mask if removeRings is True
     
     """
            
@@ -49,20 +52,24 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
         data=data*-1
         
     # Thresholding to identify significant pixels
-    sigPix=np.array(np.greater(data, threshold), dtype=int)
-    sigPixMask=np.equal(sigPix, 1)
-    
-    # Fast, simple segmentation - don't know about deblending, but doubt that's a problem for us
-    segmentationMap, numObjects=ndimage.label(sigPix)
-    
-    # Get object positions, number of pixels etc.
-    objIDs=np.unique(segmentationMap)
-    if findCenterOfMass == True:
-        objPositions=ndimage.center_of_mass(data, labels = segmentationMap, index = objIDs)
+    # NOTE: We're now going to detection S/N=3 to find any rings
+    # Objects in rings will be discarded; we update the survey area mask accordingly in-place here
+    objIDs, objPositions, objNumPix, segMap=getObjectPositions(data, threshold, 
+                                                               findCenterOfMass = findCenterOfMass)
+    if removeRings == True:
+        minRingPix=30
+        ringIDs, ringPositions, ringNumPix, ringSegMap=getObjectPositions(data, 3, 
+                                                                          findCenterOfMass = True)    
+        for i in range(len(ringIDs)):
+            if type(ringNumPix) != float and ringNumPix[i] > minRingPix:
+                y, x=ringPositions[i]
+                if ringSegMap[int(y), int(x)] != ringIDs[i]:
+                    ringSegMap[np.equal(ringSegMap, ringIDs[i])]=-1*ringSegMap[np.equal(ringSegMap, ringIDs[i])]
+        ringSegMap=np.array(np.less(ringSegMap, 0), dtype = int)
+        ringMask=ringSegMap
+        filteredMapDict['surveyMask']=filteredMapDict['surveyMask']-ringMask
     else:
-        objPositions=ndimage.maximum_position(data, labels = segmentationMap, index = objIDs)
-
-    objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
+        ringMask=None
 
     # In the past this had problems - Simone using happily in his fork though, so now optional
     if useInterpolator == True:
@@ -95,6 +102,9 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
             objDict['id']=idNumCount
             objDict['x']=objPositions[i][1]
             objDict['y']=objPositions[i][0]
+            if ringMask is not None:
+                if ringMask[int(objDict['y']), int(objDict['x'])] > 0:
+                    continue
             objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
             if objDict['RADeg'] < 0:
                 objDict['RADeg']=360.0+objDict['RADeg']
@@ -175,6 +185,36 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
             catalogs.catalog2DS9(catalog, DS9RegionsPath)
 
     return catalog
+
+#------------------------------------------------------------------------------------------------------------
+def getObjectPositions(mapData, threshold, findCenterOfMass = True):
+    """Creates a segmentation map and find objects above the given threshold.
+    
+    Args:
+        mapData (:obj:`numpy.ndarray`): The 2d map to segment.
+        threshold (float): The threshold above which objects will be selected.
+        findCenterOfMass: If True, return the object center weighted according to the values in mapData. If
+            False, return the pixel that holds the maximum value.
+    Returns:
+        objIDs (:obj:`numpy.ndarray`): Array of object ID numbers.
+        objPositions (list): List of corresponding (y, x) positions.
+        objNumPix (:obj:`numpy.ndarray`): Array listing number of pixels per object.
+        segmentationMap (:obj:`numpy.ndarray`): The segmentation map (2d array).
+    
+    """
+    
+    
+    sigPix=np.array(np.greater(mapData, threshold), dtype=int)
+    sigPixMask=np.equal(sigPix, 1)    
+    segmentationMap, numObjects=ndimage.label(sigPix)
+    objIDs=np.unique(segmentationMap)
+    if findCenterOfMass == True:
+        objPositions=ndimage.center_of_mass(mapData, labels = segmentationMap, index = objIDs)
+    else:
+        objPositions=ndimage.maximum_position(mapData, labels = segmentationMap, index = objIDs)
+    objNumPix=ndimage.sum(sigPixMask, labels = segmentationMap, index = objIDs)
+
+    return objIDs, objPositions, objNumPix, segmentationMap
 
 #------------------------------------------------------------------------------------------------------------
 def getSNRValues(catalog, SNMap, wcs, useInterpolator = True, invertMap = False, prefix = ''):

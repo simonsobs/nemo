@@ -11,6 +11,7 @@ from scipy.signal import convolve as scipy_convolve
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 import astropy.stats as apyStats
+import mahotas
 import numpy as np
 import pylab as plt
 import glob
@@ -271,9 +272,9 @@ def makeTileDir(parDict):
                 # Added an option to define tiles in the .config file... otherwise, we will do the automatic tiling
                 if type(parDict['tileDefinitions']) == dict:
                     print(">>> Using autotiler ...")
-                    if 'surveyMask' not in mapDict.keys():
-                        raise Exception("Need to specify a survey mask in the config file to use automatic tiling.")
-                    parDict['tileDefinitions']=autotiler(mapDict['surveyMask'], 
+                    if 'mask' not in parDict['tileDefinitions'].keys():
+                        raise Exception("Need to specify a mask in the tileDefinitions dictionary to use automatic tiling.")
+                    parDict['tileDefinitions']=autotiler(parDict['tileDefinitions']['mask'], 
                                                          parDict['tileDefinitions']['targetTileWidthDeg'],
                                                          parDict['tileDefinitions']['targetTileHeightDeg'])
                     print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
@@ -747,6 +748,18 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     else:
         surveyMask=np.ones(data.shape)
         surveyMask[weights == 0]=0
+    
+    # Some apodisation of the data outside the survey mask
+    # NOTE: should add adjustable parameter for this somewhere later
+    if 'apodizeUsingSurveyMask' in list(mapDict.keys()) and mapDict['apodizeUsingSurveyMask'] == True:
+        # We need to remain unapodized to at least noiseGridArcmin beyond the edge of the survey mask
+        # We'll need to make these adjustable parameters
+        apodMask=np.array(surveyMask, dtype = bool)
+        for i in range(120):
+            apodMask=mahotas.dilate(apodMask)
+        apodMask=ndimage.gaussian_filter(np.array(apodMask, dtype = float), 20)
+        data=data*apodMask
+        del apodMask
 
     if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] is not None:
         psMask=loadTile(mapDict['pointSourceMask'], tileName)
@@ -829,6 +842,9 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             tab=atpy.Table().read(catalogPath)
             tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
             # Variable sized holes: based on inspecting sources by deltaT in f150 maps
+            # To avoid the problem of rings around sources, we sort the list and mask the brightest first
+            # If an object lands in an already masked area, we remove it from the catalog
+            tab.sort('deltaT_c', reverse = True)
             tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
             tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
             tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
@@ -837,14 +853,24 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
             tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
             tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
+            selectedRows=[]
             for row in tab:
-                rArcminMap=np.ones(data.shape, dtype = float)*1e6
-                rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            row['rArcmin']/60.)
-                rArcminMap=rArcminMap*60
-                psMask[rArcminMap < row['rArcmin']]=0
-            # Fill holes with smoothed map + white noise
+                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                if psMask[int(y), int(x)] != 0:
+                    rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                                   row['RADeg'], row['decDeg'], 
+                                                                                   row['rArcmin']/60.)
+                    rArcminMap=rArcminMap*60
+                    psMask[rArcminMap < row['rArcmin']]=0
+                    selectedRows.append(True)
+                else:
+                    selectedRows.append(False)
+            tab=tab[np.where(selectedRows)]
+            # Subtract sources (if there are small residuals, doesn't matter, as masked later anyway)
+            #model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'])
+            #data=data-model
+            # Or fill holes with smoothed map + white noise - this works much better than the above (currently)
             pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
             if mapDict['weightsType'] =='invVar':
@@ -1468,6 +1494,13 @@ def positionRecoveryTest(config):
     else:
         numSourcesPerTile=config.parDict['posRecSourcesPerTile']
     
+    # We need the actual catalog to throw out spurious 'recoveries'
+    # i.e., we only want to cross-match with objects we injected
+    catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+    if os.path.exists(catFileName) == False:
+        raise Exception("Catalog file '%s' not found - needed to do position recovery test." % (catFileName))
+    realCatalog=atpy.Table().read(catFileName)
+    
     # Run each scale / model and then collect everything into one table afterwards
     SNRDict={}
     rArcminDict={}
@@ -1530,6 +1563,10 @@ def positionRecoveryTest(config):
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
                                                                copyFilters = True, useCachedMaps = False)
                 if len(recCatalog) > 0:
+                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 0.7)
+                if len(recCatalog) > 0:
+                    # We can perhaps cross-match to remove real objects more agressively
+                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 0.7)
                     try:
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
                     except:

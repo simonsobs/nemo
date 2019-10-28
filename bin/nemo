@@ -77,11 +77,28 @@ if __name__ == '__main__':
                                  addInfo = addInfo, color = "cyan")
     else:
         if config.rank == 0: print("... already made catalog %s ..." % (optimalCatalogFileName))
-            
+
+    # Stitch together map tiles - these are 'quicklook' images (downsampled by factor 4 in resolution)
+    # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
+    if config.rank == 0 and 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
+        # RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure) 
+        if os.path.exists(config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits") == False:
+            maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits", 
+                             config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits", 
+                             config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
+        else:
+            print("... already made %s ..." % (config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits"))
+        # S/N maps at reference filter scale
+        quicklookSNMapPath=config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter'])
+        if config.parDict['photFilter'] is not None and os.path.exists(quicklookSNMapPath) == False:
+            maps.stitchTiles(config.filteredMapsDir+os.path.sep+"*"+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
+                             quicklookSNMapPath, config.quicklookWCS, config.quicklookShape, 
+                             fluxRescale = config.quicklookScale)   
+                
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
     # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)
-    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None:
+    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
 
@@ -171,19 +188,6 @@ if __name__ == '__main__':
         ## Plot contamination together
         #if conTabDict != {}:
             #maps.plotContamination(conTabDict, config.diagnosticsDir)           
-                    
-        # Stitch together map tiles - these are 'quicklook' images (downsampled by factor 4 in resolution)
-        # The stitchTiles routine will only write output if there are multiple maps matching the file pattern
-        if 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
-            # RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure) 
-            maps.stitchTiles(config.selFnDir+os.path.sep+"RMSMap*.fits", 
-                            config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits", 
-                            config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
-            # S/N maps at reference filter scale
-            if config.parDict['photFilter'] is not None:
-                maps.stitchTiles(config.filteredMapsDir+os.path.sep+"*"+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']), 
-                                config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter']), 
-                                config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)    
 
         # Cache file containing weights for relativistic corrections
         # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do
