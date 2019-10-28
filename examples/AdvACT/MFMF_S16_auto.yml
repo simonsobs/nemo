@@ -82,7 +82,7 @@ selFnFootprints:
 # (these can be overridden by keys with the same name in mapFilters)
 allFilters: {class: "ArnaudModelMatchedFilter",
              params: {noiseParams: {method: "dataMap",
-                                    noiseGridArcmin: 40.},
+                                    noiseGridArcmin: 20.},
                       saveFilteredMaps: False,
                       saveRMSMap: False,
                       savePlots: False,
