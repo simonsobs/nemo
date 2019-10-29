@@ -126,7 +126,7 @@ if __name__ == '__main__':
         cosmoOutDir="cosmo_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
         
     # Cobaya set-up
-    info={'likelihood': {'my_like': lnprob},
+    info={'likelihood': {'tsz-n': lnprob},
           'params': {'Ob0': 0.05, 
                      'tenToA0': 4.95e-5, 
                      'B0': 0.08, 
@@ -143,7 +143,7 @@ if __name__ == '__main__':
                                 'ref': {'dist': 'norm', 'loc': 0.8, 'scale': 0.1},
                                 'proposal': 0.02,
                                 'latex': '\sigma_8'}},
-          'sampler': {'mcmc': {'burn_in': numToBurn, 'max_samples': maxSamples}},
+          'sampler': {'mcmc': {'burn_in': numToBurn, 'max_samples': maxSamples, 'max_tries': np.inf}},
           'output': cosmoOutDir+os.path.sep+"chains",
           'timing': True,
           'debug': True
