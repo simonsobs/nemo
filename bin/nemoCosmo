@@ -2,13 +2,13 @@
 
 """
 
-Example of using nemo selection function stuff for cosmology
+Example of using nemo selection function stuff for cosmology.
 
 NOTE: relies on global variables:
 - selFn
 - tab
 
-This avoid emcee pickling/passing them around processes more than once
+Using Cobaya as the sampler.
 
 """
 
@@ -26,54 +26,40 @@ from scipy.special import factorial
 from nemo import completeness
 from nemo import signals
 import argparse
-import emcee
-import multiprocessing, logging
 import time
+from collections import OrderedDict as odict
+from cobaya.run import run
+from getdist.mcsamples import MCSamplesFromCobaya
+import getdist.plots as gdplt
+
 #import IPython
 
 # Extreme debugging (better for multiprocessing stuff to crash where we can see it)
 import warnings
 #warnings.filterwarnings("error")
-mpl=multiprocessing.log_to_stderr()
-mpl.setLevel(logging.INFO)
     
 #-------------------------------------------------------------------------------------------------------------
-def lnprob(parameters):
-    """Log likelihood function for use with emcee.
-    
-    parameters = H0, Om0, sigma_8
-    
+def lnprob(H0, Om0, sigma8, Ob0, tenToA0, B0, Mpivot, sigma_int):
+    """Log likelihood function for use with Cobaya.
+        
     """
-
-    Ob0=0.05
-    H0, Om0, sigma_8 = parameters
     
-    lp=lnprior(parameters)
-    if not np.isfinite(lp):
-        return -np.inf
-
-    processName=multiprocessing.current_process().name
-    #print(processName, "start step: ", H0, Om0, sigma_8, lp)
-    
-    t0=time.time()
     # This can fail if wander outside parameter space where mass function is defined
     try:
-        selFn.update(H0, Om0, Ob0, sigma_8)
+        selFn.update(H0, Om0, Ob0, sigma8, scalingRelationDict = {'tenToA0': tenToA0, 'B0': B0, 
+                                                                  'Mpivot': Mpivot, 'sigma_int': sigma_int})
     except:
         return -np.inf
-    t1=time.time()
     
     # Apply completeness only to predicted counts (selection is already applied to observed)
     predMz=selFn.compMz*selFn.mockSurvey.clusterCount
     
     # Do we really need to do this step? We'd gain > factor 2 in speed if we didn't
     # (i.e., if we just splatted onto the grid as a straight 2d histogram)
-    t2=time.time()
     try:
         obsMz=selFn.projectCatalogToMz(tab)
     except:
         return -np.inf
-    t3=time.time()
     
     # Poisson probability in (M, z) grid
     # (this is the similar to what Planck does, e.g., Planck 2015 XXIV eqn. 15)
@@ -81,100 +67,14 @@ def lnprob(parameters):
     #mask=np.greater(predMz, 0)
     mask=np.logical_and(np.greater(obsMz, 0), np.greater(predMz, 0))
     lnlike=np.sum(obsMz[mask]*np.log(predMz[mask])-predMz[mask]-np.log(factorial(obsMz[mask])))
-    
-    print(processName, "end step: ", H0, Om0, sigma_8, lp, "timings (sec):", t1-t0, t3-t2)
-    
-    return lp+lnlike
-
-#-------------------------------------------------------------------------------------------------------------
-def lnprior(parameters):
-    """Priors for using with emcee.
-            
-    """
-    
-    H0, Om0, sigma_8 = parameters
-    if Om0 < 0.12 or Om0 > 0.7:
-        return -np.inf
-    if sigma_8 < 0.5 or sigma_8 > 1.0:
-        return -np.inf
-    
-    # Gaussian prior on H0 (H13 adopted 73.9 +/- 3.6 km/s/Mpc for comparison)
-    priorH0=70.0
-    priorH0Sigma=4.0
-    return np.log(1.0/(np.sqrt(2*np.pi)*priorH0Sigma))-0.5*(H0-priorH0)**2/priorH0Sigma**2
-
-#-------------------------------------------------------------------------------------------------------------
-def runMCMC(outDir, nsteps = 10, nwalkers = 10, MPIOption = "multiprocessing", numToBurn = 50):
-    """Runs emcee... returns samples
-    
-    """
-
-    if MPIOption == 'MPI':
-        from schwimmbad import MPIPool
-        PoolToUse=MPIPool
-    elif MPIOption == 'emceeMPI':
-        # This is to be removed by emcee 3+
-        from emcee.utils import MPIPool
-        PoolToUse=MPIPool
-    elif MPIOption == 'multiprocessing':
-        from schwimmbad import MultiPool
-        PoolToUse=MultiPool
-    elif MPIOption == 'serial':
-        from schwimmbad import SerialPool
-        PoolToUse=SerialPool
-    
-    outFileName=outDir+os.path.sep+"chain.npz"
-    
-    if os.path.exists(outFileName) == True:
-        print("... loading previously saved chain %s ..." % (outFileName))
-        arrDict=np.load(outFileName)
-        chain=arrDict['chain']        
-    else:
-
-        with PoolToUse() as pool:        
-            
-            try:
-                # Only for MPI
-                if not pool.is_master():
-                    pool.wait()
-                    sys.exit(0)
-            except:
-                pass
-                
-            # Parameters we'll fit for: H0, Om0, sigma_8 (fix Omb = 0.05 for now)
-            # NOTE: initial values must be within prior ranges, or will get errors (in multiprocessing / MPI only?)
-            p0=[]
-            for i in range(nwalkers):
-                p0.append([np.random.uniform(60.0, 85.0),   # H0
-                           np.random.uniform(0.12, 0.7),     # Om0
-                           np.random.uniform(0.5, 1.0),     # sigma_8
-                          ])
-                    
-            sampler=emcee.EnsembleSampler(nwalkers, 3, lnprob, pool = pool)     
-            sampler.run_mcmc(p0, nsteps)
-            np.savez(outFileName, chain = sampler.chain)
-            chain=sampler.chain
         
-    samples=chain[:, numToBurn:, :].reshape((-1, 3))
-    
-    return samples
+    return lnlike
 
 #------------------------------------------------------------------------------------------------------------
-def makeGetDistPlot(samples, cosmoOutDir):
-    """Converts samples to GetDist chain format and makes corner plot.
+def makeGetDistPlot(cosmoOutDir):
+    """Makes a corner plot using GetDist.
     
     """
-
-    # Write needed files
-    with open(cosmoOutDir+os.path.sep+"chain.paramnames", "w") as outFile:
-        outFile.write("H0 H_0\nOm0 \Omega_0\nsigma8 \sigma_8\n")
-    with open(cosmoOutDir+os.path.sep+"chain.ranges", "w") as outFile:
-        outFile.write("H0 N N\nOm0 N N\nsigma8 N N\n")
-    outFileName=cosmoOutDir+os.path.sep+"chain.txt"
-    with open(outFileName, "w") as outFile:
-        for row in samples:
-            # Second column should be likelihood? But we don't have that from emcee in our .npz files now
-            outFile.write("1 1 %.5e %.5e %.5e\n" % (row[0], row[1], row[2]))
     
     # Plot
     import getdist.plots as gplot
@@ -195,32 +95,23 @@ if __name__ == '__main__':
                         or nemoMock.""")
     parser.add_argument("selFnDir", help="""Directory containing files needed for computing the selection 
                         function.""")
-    parser.add_argument("numStepsPerWalker", help="""Number of steps per walker.""", type = int)
-    parser.add_argument("numWalkers", help="""Number of walkers.""", type = int)
+    parser.add_argument("maxSamples", help="""Maximum number of samples.""", type = int)
     parser.add_argument("-o", "--output-dir", dest="cosmoOutDir", help="""Name of directory in which
                         to store output chains and plots (default: cosmo_catalogFileName_SNRCut, where
                         catalogFileName is stripped of the .fits extension).""", default = None)
-    parser.add_argument("-P", "--parallel-method", dest = "MPIOption", help="""Method to use for 
-                        parallelization. Choose from: 'MPI', 'emceeMPI', 'multiprocessing', 'serial'.""", 
-                        default = 'multiprocessing')
     parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="""Use only clusters with fixed_SNR > 
                         this value.""", default = 5.0, type = float)
-    parser.add_argument("-b", "--burn", dest = "numToBurn", help="""Number of samples to burn per 
-                        walker.""", default = 50, type = int)
+    parser.add_argument("-b", "--burn", dest = "numToBurn", help="""Number of samples to burn.""", 
+                        default = 50, type = int)
     args = parser.parse_args()
     
     configFileName=args.configFileName
     tabFileName=args.catalogFileName
     selFnDir=args.selFnDir
-    nsteps=args.numStepsPerWalker
-    nwalkers=args.numWalkers
-    MPIOption=args.MPIOption
+    maxSamples=args.maxSamples
     SNRCut=args.SNRCut
     cosmoOutDir=args.cosmoOutDir
     numToBurn=args.numToBurn
-    
-    if MPIOption not in ['MPI', 'emceeMPI', 'multiprocessing', 'serial']:
-        raise Exception("--parallel-method must be 'MPI', 'emceeMPI', 'serial', or 'multiprocessing'")
     
     tab=atpy.Table().read(tabFileName)
     if 'redshift' not in tab.keys():
@@ -229,43 +120,48 @@ if __name__ == '__main__':
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
     selFn=completeness.SelFn(selFnDir, SNRCut, configFileName = configFileName, zStep = 0.1)
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
-
+    
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
     if cosmoOutDir == None:
         cosmoOutDir="cosmo_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
-    
-    # Just to stop multiple MPI processes trying to make the output dir at the same time (MPI still hangs on first run with this)
-    # NOTE: we still have this bug, this didn't fix it
-    if 'MPI' in MPIOption:
-        from mpi4py import MPI
-        comm=MPI.COMM_WORLD
-        rank=comm.Get_rank()
-    else:
-        rank=0
-    if rank == 0 and os.path.exists(cosmoOutDir) == False:
-        os.makedirs(cosmoOutDir)
-    
-    # Below here we actually run everything...
-    print(">>> Running MCMC [%d steps per walker, %d walkers] ..." % (nsteps, nwalkers))
-    t0=time.time()
-    samples=runMCMC(cosmoOutDir, nsteps = nsteps, nwalkers = nwalkers, MPIOption = MPIOption, numToBurn = numToBurn)
-    t1=time.time()
-    print("... took %.3f sec ..." % (t1-t0))
-    
-    print(">>> Results:")
-    print("... H0        = %.3f +/- %.3f km/s/Mpc" % (np.mean(samples[:, 0]), np.percentile(abs(samples[:, 0]-np.mean(samples[:, 0])), 68.3)))
-    print("... Om0       =  %.3f +/- %.3f" % (np.mean(samples[:, 1]), np.percentile(abs(samples[:, 1]-np.mean(samples[:, 1])), 68.3)))
-    print("... sigma_8   =  %.3f +/- %.3f" % (np.mean(samples[:, 2]), np.percentile(abs(samples[:, 2]-np.mean(samples[:, 2])), 68.3)))
-    
-    # New corner plot
-    makeGetDistPlot(samples, cosmoOutDir)
-    
-    # Old corner plot
-    #import corner
-    #fig=corner.corner(samples, labels = ["H0", "Om0", "sigma_8"])
-    #fig.savefig(cosmoOutDir+os.path.sep+"cornerplot.png")
-    #fig.savefig(cosmoOutDir+os.path.sep+"cornerplot.pdf")
-    #plt.close()
-
-
         
+    # Cobaya set-up
+    info={'likelihood': {'my_like': lnprob},
+          'params': {'Ob0': 0.05, 
+                     'tenToA0': 4.95e-5, 
+                     'B0': 0.08, 
+                     'Mpivot': 3.0e+14, 
+                     'sigma_int': 0.2,
+                     'H0':     {'prior': {'dist': 'norm', 'loc': 70.0, 'scale': 4.0},
+                                'proposal': 5.0,
+                                'latex': 'H_0'},
+                     'Om0':    {'prior': {'min': 0.1, 'max': 0.5}, 
+                                'ref': {'dist': 'norm', 'loc': 0.3, 'scale': 0.1},
+                                'proposal': 0.05,
+                                'latex': '\Omega_{\\rm m0}'},
+                     'sigma8': {'prior': {'min': 0.6, 'max': 0.9}, 
+                                'ref': {'dist': 'norm', 'loc': 0.8, 'scale': 0.1},
+                                'proposal': 0.02,
+                                'latex': '\sigma_8'}},
+          'sampler': {'mcmc': {'burn_in': numToBurn, 'max_samples': maxSamples}},
+          'output': cosmoOutDir+os.path.sep+"chains",
+          'timing': True,
+          'debug': True
+         }
+    
+    updated_info, products=run(info)
+
+    # This needs generalising? Or people can just run GetDist themselves...
+    gd_sample=MCSamplesFromCobaya(updated_info, products["sample"])
+    
+    g=gdplt.getSubplotPlotter()
+    params=['H0', 'Om0', 'sigma8']
+    param_3d = None
+    g.triangle_plot(gd_sample, params, plot_3d_with_param=param_3d, filled=True, shaded=False)
+    g.export(fname=cosmoOutDir+os.path.sep+"cornerplot.pdf")
+    g.export(fname=cosmoOutDir+os.path.sep+"cornerplot.png")
+
+    mean=gd_sample.getMeans()[:3]   # H0, Om0, sigma8
+    print("Mean:")
+    print(mean)
+    
