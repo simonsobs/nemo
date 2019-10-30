@@ -29,10 +29,9 @@ import argparse
 import time
 from collections import OrderedDict as odict
 from cobaya.run import run
+import cobaya.yaml
 from getdist.mcsamples import MCSamplesFromCobaya
 import getdist.plots as gdplt
-
-#import IPython
 
 # Extreme debugging (better for multiprocessing stuff to crash where we can see it)
 import warnings
@@ -89,23 +88,31 @@ def makeGetDistPlot(cosmoOutDir):
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
 
+    defaultMaxSamples=3000
+    defaultNumToBurn=50
     parser=argparse.ArgumentParser("nemoCosmo")
-    parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    parser.add_argument("catalogFileName", help="""Catalog file name, in .fits format, as produced by nemo
+    parser.add_argument("catalogFileName", help = """Catalog file name, in .fits format, as produced by nemo
                         or nemoMock.""")
-    parser.add_argument("selFnDir", help="""Directory containing files needed for computing the selection 
+    parser.add_argument("selFnDir", help = """Directory containing files needed for computing the selection 
                         function.""")
-    parser.add_argument("maxSamples", help="""Maximum number of samples.""", type = int)
-    parser.add_argument("-o", "--output-dir", dest="cosmoOutDir", help="""Name of directory in which
-                        to store output chains and plots (default: cosmo_catalogFileName_SNRCut, where
+    parser.add_argument("-c", "--cobaya-config", dest = "cobayaConfig", help = """A Cobaya .yml configuration 
+                        file. Use the -d switch to dump the default settings to a file.""", default = None)
+    parser.add_argument("-d", "--dump-default-config", dest = "dumpConfig", help = """Dumps the default Cobaya
+                        configuration to a file called default.yml in the current working directory.""",
+                        action = "store_true", default = False)
+    parser.add_argument("-o", "--output-dir", dest = "cosmoOutDir", help = """Name of directory in which
+                        to store output chains (default: cosmo_catalogFileName_SNRCut, where
                         catalogFileName is stripped of the .fits extension).""", default = None)
-    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="""Use only clusters with fixed_SNR > 
+    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help = """Use only clusters with fixed_SNR > 
                         this value.""", default = 5.0, type = float)
-    parser.add_argument("-b", "--burn", dest = "numToBurn", help="""Number of samples to burn.""", 
-                        default = 50, type = int)
+    parser.add_argument("-m", "--max-samples", dest="maxSamples", help="""Maximum number of samples. If 
+                        given, overrides the value given in the Cobaya configuration file.""", type = int,
+                        default = defaultMaxSamples)
+    parser.add_argument("-b", "--burn", dest = "numToBurn", help = """Number of samples to burn. If given,
+                        overrides the value given in the Cobaya configuration file.""", 
+                        default = defaultNumToBurn, type = int)
     args = parser.parse_args()
     
-    configFileName=args.configFileName
     tabFileName=args.catalogFileName
     selFnDir=args.selFnDir
     maxSamples=args.maxSamples
@@ -116,52 +123,68 @@ if __name__ == '__main__':
     tab=atpy.Table().read(tabFileName)
     if 'redshift' not in tab.keys():
         raise Exception("no 'redshift' column in catalog")
-    
-    print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
-    selFn=completeness.SelFn(selFnDir, SNRCut, configFileName = configFileName, zStep = 0.1)
-    tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
-    
+        
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
     if cosmoOutDir == None:
         cosmoOutDir="cosmo_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
         
     # Cobaya set-up
-    info={'likelihood': {'tsz-n': lnprob},
-          'params': {'Ob0': 0.05, 
-                     'tenToA0': 4.95e-5, 
-                     'B0': 0.08, 
-                     'Mpivot': 3.0e+14, 
-                     'sigma_int': 0.2,
-                     'H0':     {'prior': {'dist': 'norm', 'loc': 70.0, 'scale': 4.0},
-                                'proposal': 5.0,
-                                'latex': 'H_0'},
-                     'Om0':    {'prior': {'min': 0.1, 'max': 0.5}, 
-                                'ref': {'dist': 'norm', 'loc': 0.3, 'scale': 0.1},
-                                'proposal': 0.05,
-                                'latex': '\Omega_{\\rm m0}'},
-                     'sigma8': {'prior': {'min': 0.6, 'max': 0.9}, 
-                                'ref': {'dist': 'norm', 'loc': 0.8, 'scale': 0.1},
-                                'proposal': 0.02,
-                                'latex': '\sigma_8'}},
-          'sampler': {'mcmc': {'burn_in': numToBurn, 'max_samples': maxSamples, 'max_tries': np.inf}},
-          'output': cosmoOutDir+os.path.sep+"chains",
-          'timing': True,
-          'debug': True
-         }
+    if args.cobayaConfig is None:
+        info={'sampler': {'mcmc': {'burn_in': defaultNumToBurn, 
+                                   'max_samples': defaultMaxSamples, 
+                                   'max_tries': np.inf}}}
+        info['params']=odict([['Ob0', 0.05],
+                              ['tenToA0',4.95e-5],
+                              ['B0', 0.08],
+                              ['Mpivot', 3.0e+14],
+                              ['sigma_int', 0.2],
+                              ['H0', {'prior': {'dist': 'norm', 'loc': 70.0, 'scale': 4.0},
+                                      'proposal': 5.0,
+                                      'latex': 'H_0'}],
+                              ['Om0', {'prior': {'min': 0.1, 'max': 0.5}, 
+                                       'ref': {'dist': 'norm', 'loc': 0.3, 'scale': 0.1},
+                                       'proposal': 0.05,
+                                       'latex': '\Omega_{\\rm m0}'}],
+                              ['sigma8', {'prior': {'min': 0.6, 'max': 0.9}, 
+                                          'ref': {'dist': 'norm', 'loc': 0.8, 'scale': 0.1},
+                                           'proposal': 0.02,
+                                           'latex': '\sigma_8'}]
+                             ])
+        if args.dumpConfig == True:
+            cobaya.yaml.yaml_dump_file("default.yml", info, error_if_exists = False)
+            print("Dumped default Cobaya configuration to `default.yml`")
+            sys.exit()
+    else:
+        info=cobaya.yaml.yaml_load_file(args.cobayaConfig)
     
+    info['likelihood']={'tsz-n': lnprob}
+    info['output']=cosmoOutDir+os.path.sep+"chains"
+    info['timing']=True
+    info['debug']=True
+    
+    if numToBurn != defaultNumToBurn:
+        info['sampler']['mcmc']['burn_in']=numToBurn
+    if maxSamples != defaultMaxSamples:
+        info['sampler']['mcmc']['max_samples']=maxSamples
+
+    print("Setting up SNR > %.2f selection function" % (SNRCut))
+    selFn=completeness.SelFn(selFnDir, SNRCut, zStep = 0.1)
+    tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
+    
+    # Run Cobaya...
     updated_info, products=run(info)
 
-    # This needs generalising? Or people can just run GetDist themselves...
-    gd_sample=MCSamplesFromCobaya(updated_info, products["sample"])
+    # We'll generally be running under MPI... so just run GetDist later instead...
+    #gd_sample=MCSamplesFromCobaya(updated_info, products["sample"])
     
-    g=gdplt.getSubplotPlotter()
-    params=['H0', 'Om0', 'sigma8']
-    param_3d = None
-    g.triangle_plot(gd_sample, params, plot_3d_with_param=param_3d, filled=True, shaded=False)
-    g.export(fname=cosmoOutDir+os.path.sep+"cornerplot.pdf")
-    g.export(fname=cosmoOutDir+os.path.sep+"cornerplot.png")
+    #g=gdplt.getSubplotPlotter()
+    #params=['H0', 'Om0', 'sigma8']
+    #param_3d = None
+    #g.triangle_plot(gd_sample, params, plot_3d_with_param=param_3d, filled=True, shaded=False)
+    #g.export(fname=cosmoOutDir+os.path.sep+"cornerplot.pdf")
+    #g.export(fname=cosmoOutDir+os.path.sep+"cornerplot.png")
 
-    mean=gd_sample.getMeans()[:3]   # H0, Om0, sigma8
-    print("Mean:")
-    print(mean)
+    #mean=gd_sample.getMeans()[:3]   # H0, Om0, sigma8
+    #print("Mean:")
+    #print(mean)
     
