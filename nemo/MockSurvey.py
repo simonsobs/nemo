@@ -26,10 +26,6 @@ from astLib import *
 import time
 
 #------------------------------------------------------------------------------------------------------------
-# Stop colossus writing cache files (not MPI friendly)
-cosmology.settings.PERSISTENCE=''
-
-#------------------------------------------------------------------------------------------------------------
 class MockSurvey(object):
     
     def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, zStep = 0.01, enableDrawSample = False):
@@ -50,7 +46,8 @@ class MockSurvey(object):
         self.zBinEdges=zRange
         self.z=(zRange[:-1]+zRange[1:])/2.
         
-        params={'flat': True, 'H0': H0, 'Om0': Om0, 'Ob0': Ob0, 'sigma8': sigma_8, 'ns': 0.95}
+        params={'flat': True, 'H0': H0, 'Om0': Om0, 'Ob0': Ob0, 'sigma8': sigma_8, 'ns': 0.95,
+                'persistence': ''}
         self.cosmoModel=cosmology.setCosmology('nemo', params)
         self.cosmoModel.checkForChangedCosmology()
         
@@ -73,7 +70,8 @@ class MockSurvey(object):
         self.Ob0=Ob0
         self.sigma_8=sigma_8
 
-        params={'flat': True, 'H0': H0, 'Om0': Om0, 'Ob0': Ob0, 'sigma8': sigma_8, 'ns': 0.95}
+        params={'flat': True, 'H0': H0, 'Om0': Om0, 'Ob0': Ob0, 'sigma8': sigma_8, 'ns': 0.95,
+                'persistence': ''}
         self.cosmoModel=cosmology.setCosmology('nemo', params)
         self.cosmoModel.checkForChangedCosmology()
         
