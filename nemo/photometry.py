@@ -340,7 +340,58 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
                 if reportJyFluxes == True:
                     obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
                     obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+
+#------------------------------------------------------------------------------------------------------------
+def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterpolator = True, 
+                                DS9RegionsPath = None):
+    """Make a catalog on which we can do forced photometry at the locations of objects in it.
+        
+    """
     
+    forcedTab=atpy.Table().read(inputCatalogFileName)
+    wcs=filteredMapDict['wcs']
+    areaMask=filteredMapDict['surveyMask'] 
+    tileName=filteredMapDict['tileName']
+    data=filteredMapDict['SNMap']
+    if useInterpolator == True:
+        mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
+                                                        np.arange(data.shape[1]), 
+                                                        data, kx = 3, ky = 3)
+    catalog=[]
+    idNumCount=1
+    for row in forcedTab:
+        objDict={}
+        objDict['id']=idNumCount
+        x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+        inMask=False
+        if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
+            if areaMask[int(round(y)), int(round(x))] > 0:
+                objDict['x']=x
+                objDict['y']=y
+                inMask=True
+        if inMask == True:
+            objDict['RADeg'], objDict['decDeg']=row['RADeg'], row['decDeg']
+            galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
+            objDict['galacticLatDeg']=galLat
+            objDict['name']=row['name']
+            objDict['numSigPix']=1
+            objDict['template']=filteredMapDict['label']
+            objDict['tileName']=filteredMapDict['tileName']
+            if useInterpolator == True:
+                objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
+            else:
+                objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+            catalog.append(objDict)
+            idNumCount=idNumCount+1
+
+    # From here on, catalogs should be astropy Table objects...
+    if len(catalog) > 0:
+        catalog=catalogs.catalogListToTab(catalog)
+        if DS9RegionsPath is not None:
+            catalogs.catalog2DS9(catalog, DS9RegionsPath)
+            
+    return catalog
+
 #------------------------------------------------------------------------------------------------------------
 def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
     """Add relative weighting by frequency for each object in the optimal catalog, extracted from the 

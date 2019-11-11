@@ -122,18 +122,26 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                 photFilteredMapDict={}
                 photFilteredMapDict['SNMap']=filteredMapDict['SNMap']
                 photFilteredMapDict['data']=filteredMapDict['data']
-            
-            catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
-                                           minObjPix = config.parDict['minObjPix'], 
-                                           findCenterOfMass = config.parDict['findCenterOfMass'], 
-                                           removeRings = True,
-                                           rejectBorder = config.parDict['rejectBorder'], 
-                                           objIdent = config.parDict['objIdent'], 
-                                           longNames = config.parDict['longNames'],
-                                           useInterpolator = config.parDict['useInterpolator'], 
-                                           measureShapes = config.parDict['measureShapes'],
-                                           invertMap = invertMap,
-                                           DS9RegionsPath = DS9RegionsPath)
+
+            # Forced photometry on user-supplied list of objects, or detect sources
+            if 'forcedPhotometryCatalog' in config.parDict.keys() and config.parDict['forcedPhotometryCatalog'] is not None:
+                catalog=photometry.makeForcedPhotometryCatalog(filteredMapDict, 
+                                                               config.parDict['forcedPhotometryCatalog'],
+                                                               useInterpolator = config.parDict['useInterpolator'],
+                                                               DS9RegionsPath = DS9RegionsPath)
+            else:
+                # Normal mode
+                catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
+                                               minObjPix = config.parDict['minObjPix'], 
+                                               findCenterOfMass = config.parDict['findCenterOfMass'], 
+                                               removeRings = True,
+                                               rejectBorder = config.parDict['rejectBorder'], 
+                                               objIdent = config.parDict['objIdent'], 
+                                               longNames = config.parDict['longNames'],
+                                               useInterpolator = config.parDict['useInterpolator'], 
+                                               measureShapes = config.parDict['measureShapes'],
+                                               invertMap = invertMap,
+                                               DS9RegionsPath = DS9RegionsPath)
             
             # We write area mask here, because it gets modified by findObjects if removing rings
             maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
