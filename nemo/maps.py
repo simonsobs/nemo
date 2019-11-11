@@ -715,6 +715,10 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     
     data, wcs=loadTile(mapDict['mapFileName'], tileName, returnWCS = True)
     
+    # Optional calibration factor
+    if 'calibFactor' in mapDict.keys():
+        data=data*mapDict['calibFactor']
+    
     # For Enki maps... take only I (temperature) for now, add options for this later
     if data.ndim == 3:
         data=data[0, :]
