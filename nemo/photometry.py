@@ -363,9 +363,10 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterp
         objDict={}
         objDict['id']=idNumCount
         x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+        x, y=int(round(x)), int(round(y))
         inMask=False
         if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
-            if areaMask[int(round(y)), int(round(x))] > 0:
+            if areaMask[y, x] > 0:
                 objDict['x']=x
                 objDict['y']=y
                 inMask=True
