@@ -55,14 +55,16 @@ def convertToDeltaT(mapData, obsFrequencyGHz = 148):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
-def autotiler(surveyMaskPath, targetTileWidth, targetTileHeight):
+def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
     """Given a survey mask (where values > 0 indicate valid area, and 0 indicates area to be ignored), 
     figure out an optimal tiling strategy to accommodate tiles of the given dimensions. The survey mask need
     not be contiguous (e.g., AdvACT and SO maps, using the default pixelization, can be segmented into three
     or more different regions).
     
     Args:
-        surveyMaskPath (str): Path to the survey mask (.fits image).
+        surveyMask (numpy.ndarray): Survey mask image (2d array). Values > 0 will be taken to define valid 
+            area.
+        wcs (astWCS.WCS): WCS associated with survey mask image.
         targetTileWidth (float): Desired tile width, in degrees (RA direction for CAR).
         targetTileHeight (float): Desired tile height, in degrees (dec direction for CAR).
     
@@ -74,25 +76,15 @@ def autotiler(surveyMaskPath, targetTileWidth, targetTileHeight):
         makeTileDir will expand tiles by a user-specified amount such that they overlap.
     
     """
-
-    if surveyMaskPath is None:
-        raise Exception("You need to set surveyMask in .yml config file to point to a .fits image for autotiler to work.")
     
-    with pyfits.open(surveyMaskPath) as img:    
-        # Just in case RICE-compressed or similar
-        if img[0].data is None:
-            segMap=img['COMPRESSED_IMAGE'].data
-        else:
-            segMap=img[0].data
-        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-
+    segMap=surveyMask
     segMap, numObjects=ndimage.label(np.greater(segMap, 0))
     fieldIDs=np.arange(1, numObjects+1)
-
+        
     tileList=[]
     for f in fieldIDs:
         ys, xs=np.where(segMap == f)
-        if len(ys) < 100:  # In case of stray individual pixels (e.g., combined with extended sources mask)
+        if len(ys) < 1000:  # In case of stray individual pixels (e.g., combined with extended sources mask)
             continue
         yMin=ys.min()
         yMax=ys.max()
@@ -262,19 +254,29 @@ def makeTileDir(parDict):
                                 raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             else:
                                 
-                # Whether we make tiles automatically or not, we need the WCS from somewhere...
-                if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
-                    wcsPath=mapDict['surveyMask']
-                else:
-                    wcsPath=mapDict['weightsFileName']
-                wcs=astWCS.WCS(wcsPath)
-                
                 # Added an option to define tiles in the .config file... otherwise, we will do the automatic tiling
                 if type(parDict['tileDefinitions']) == dict:
+                    # If we're not given a survey mask, we'll make one up from the map image itself
+                    if 'mask' in parDict['tileDefinitions'].keys() and parDict['tileDefinitions']['mask'] is not None:
+                        surveyMaskPath=parDict['tileDefinitions']['mask']
+                    else:
+                        surveyMaskPath=mapDict['mapFileName']
+                    with pyfits.open(surveyMaskPath) as img:    
+                        # Just in case RICE-compressed or similar
+                        if img[0].data is None:
+                            surveyMask=img['COMPRESSED_IMAGE'].data
+                            wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
+                        else:
+                            surveyMask=img[0].data
+                            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+                        # One day we will write a routine to deal with the multi-plane thing sensibly...
+                        # But today is not that day
+                        if surveyMask.ndim == 3:
+                            surveyMask=surveyMask[0, :]
+                        assert(surveyMask.ndim == 2)   
+                        surveyMask[surveyMask != 0]=1
                     print(">>> Using autotiler ...")
-                    if 'mask' not in parDict['tileDefinitions'].keys():
-                        raise Exception("Need to specify a mask in the tileDefinitions dictionary to use automatic tiling.")
-                    parDict['tileDefinitions']=autotiler(parDict['tileDefinitions']['mask'], 
+                    parDict['tileDefinitions']=autotiler(surveyMask, wcs, 
                                                          parDict['tileDefinitions']['targetTileWidthDeg'],
                                                          parDict['tileDefinitions']['targetTileHeightDeg'])
                     print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
