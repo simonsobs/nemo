@@ -208,7 +208,9 @@ class SelFn(object):
                     matchTilesList.append(str(item))
             for tileName in matchTilesList:
                 x, y=self.WCSDict[tileName].wcs2pix(ra, dec)
-                if self.areaMaskDict[tileName][int(y), int(x)] > 0:
+                x=int(round(x)); y=int(round(y))
+                if x < self.WCSDict[tileName].header['NAXIS1'] and y < self.WCSDict[tileName].header['NAXIS2'] \
+                    and self.areaMaskDict[tileName][y, x] > 0:
                     inMask=True
             inMaskList.append(inMask)
         

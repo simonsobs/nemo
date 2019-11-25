@@ -77,6 +77,14 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
     
     """
     
+    # This deals with identifying boss vs. full AdvACT footprint maps 
+    mapCentreRA, mapCentreDec=wcs.getCentreWCSCoords()    
+    skyWidth, skyHeight=wcs.getFullSizeSkyDeg()
+    if mapCentreRA < 0.1 and skyWidth < 0.1 or skyWidth > 359.9:
+        handle180Wrap=True
+    else:
+        handle180Wrap=False
+    
     segMap=surveyMask
     segMap, numObjects=ndimage.label(np.greater(segMap, 0))
     fieldIDs=np.arange(1, numObjects+1)
@@ -127,8 +135,9 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                 if RARight < 0:
                     RARight=RARight+360
                 # HACK: Edge-of-map handling
-                if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
-                    RARight=180.01
+                if handle180Wrap == True:
+                    if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
+                        RARight=180.01
                 tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
                                 'RADecSection': [RARight, RALeft, decBottom, decTop]})
     
