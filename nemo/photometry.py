@@ -203,7 +203,9 @@ def getObjectPositions(mapData, threshold, findCenterOfMass = True):
     
     """
     
-    
+    if threshold < 0:
+        raise Exception("Detection threshold (thresholdSigma in the config file) cannot be negative unless in forced photometry mode.")
+            
     sigPix=np.array(np.greater(mapData, threshold), dtype=int)
     sigPixMask=np.equal(sigPix, 1)    
     segmentationMap, numObjects=ndimage.label(sigPix)
@@ -357,6 +359,8 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterp
         mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
                                                         np.arange(data.shape[1]), 
                                                         data, kx = 3, ky = 3)
+
+    forcedTab=catalogs.getCatalogWithinImage(forcedTab, data.shape, wcs)
     catalog=[]
     idNumCount=1
     for row in forcedTab:
@@ -364,26 +368,21 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterp
         objDict['id']=idNumCount
         x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
         x, y=int(round(x)), int(round(y))
-        inMask=False
-        if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
-            if areaMask[y, x] > 0:
-                objDict['x']=x
-                objDict['y']=y
-                inMask=True
-        if inMask == True:
-            objDict['RADeg'], objDict['decDeg']=row['RADeg'], row['decDeg']
-            galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
-            objDict['galacticLatDeg']=galLat
-            objDict['name']=row['name']
-            objDict['numSigPix']=1
-            objDict['template']=filteredMapDict['label']
-            objDict['tileName']=filteredMapDict['tileName']
-            if useInterpolator == True:
-                objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
-            else:
-                objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
-            catalog.append(objDict)
-            idNumCount=idNumCount+1
+        objDict['x']=x
+        objDict['y']=y
+        objDict['RADeg'], objDict['decDeg']=row['RADeg'], row['decDeg']
+        galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
+        objDict['galacticLatDeg']=galLat
+        objDict['name']=row['name']
+        objDict['numSigPix']=1
+        objDict['template']=filteredMapDict['label']
+        objDict['tileName']=filteredMapDict['tileName']
+        if useInterpolator == True:
+            objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
+        else:
+            objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+        catalog.append(objDict)
+        idNumCount=idNumCount+1
 
     # From here on, catalogs should be astropy Table objects...
     if len(catalog) > 0:

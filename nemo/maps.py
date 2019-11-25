@@ -756,7 +756,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     # We rely on pixels with zero weight having zero value in actual maps later (automated edge trimming)
     # This might not be the case if the map has been filtered slightly before being fed into nemo
     data[weights == 0]=0
-    
+
     # Load survey and point source masks, if given
     if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
         surveyMask=loadTile(mapDict['surveyMask'], tileName)
