@@ -192,6 +192,7 @@ class NemoConfig(object):
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
+                img[0].header['NAXIS']=2
                 self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
                 self.origShape=(img[0].header['NAXIS2'], img[0].header['NAXIS1'])
         except:
