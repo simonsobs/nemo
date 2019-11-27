@@ -139,10 +139,72 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                     if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
                         RARight=180.01
                 tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
-                                'RADecSection': [RARight, RALeft, decBottom, decTop]})
-    
+                                'RADecSection': [RARight, RALeft, decBottom, decTop]})   
+
     return tileList
 
+#------------------------------------------------------------------------------------------------------------
+def saveTilesDS9RegionsFile(parDict, DS9RegionFileName):
+    """Writes a DS9 .reg file containing the locations of tiles defined in parDict.
+    
+    Args:
+        parDict (:obj:`dict`): Dictionary containing the contents of the Nemo config file.
+        DS9RegionFileName (str): Path to DS9 regions file to be written.
+    
+    """
+
+    if type(parDict['tileDefinitions']) is not list:
+        raise Exception("parDict did not contain a list of tile definitions.")
+    
+    tileNames=[]
+    coordsList=[]
+    for tileDict in parDict['tileDefinitions']:
+        ra0, ra1, dec0, dec1=tileDict['RADecSection']
+        coordsList.append([ra0, ra1, dec0, dec1])
+        tileNames.append(tileDict['tileName'])   
+    with open(DS9RegionFileName, "w") as outFile:
+        outFile.write("# Region file format: DS9 version 4.1\n")
+        outFile.write('global color=blue dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+        outFile.write("fk5\n")
+        for c, name in zip(coordsList, tileNames):
+            outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))  
+                
+#------------------------------------------------------------------------------------------------------------
+def addAutoTileDefinitions(parDict, DS9RegionFileName = None):
+    """Runs autotiler to add automatic tile definitions into the parameters dictionary in-place.
+    
+    Args:
+        parDict (:obj:`dict`): Dictionary containing the contents of the Nemo config file.
+        DS9RegionFileName (str, optional): Path to DS9 regions file to be written.
+
+    """
+
+    if type(parDict['tileDefinitions']) == dict:
+        # If we're not given a survey mask, we'll make one up from the map image itself
+        if 'mask' in parDict['tileDefinitions'].keys() and parDict['tileDefinitions']['mask'] is not None:
+            surveyMaskPath=parDict['tileDefinitions']['mask']
+        else:
+            surveyMaskPath=parDict['unfilteredMaps'][0]['mapFileName']
+        with pyfits.open(surveyMaskPath) as img:    
+            # Just in case RICE-compressed or similar
+            if img[0].data is None:
+                surveyMask=img['COMPRESSED_IMAGE'].data
+                wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
+            else:
+                surveyMask=img[0].data
+                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            # One day we will write a routine to deal with the multi-plane thing sensibly...
+            # But today is not that day
+            if surveyMask.ndim == 3:
+                surveyMask=surveyMask[0, :]
+            assert(surveyMask.ndim == 2)   
+            surveyMask[surveyMask != 0]=1
+        parDict['tileDefinitions']=autotiler(surveyMask, wcs, 
+                                             parDict['tileDefinitions']['targetTileWidthDeg'],
+                                             parDict['tileDefinitions']['targetTileHeightDeg'])
+        print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
+        saveTilesDS9RegionsFile(parDict, DS9RegionFileName)
+                
 #-------------------------------------------------------------------------------------------------------------
 def loadTile(pathToTileImages, tileName, returnWCS = False):
     """Given a path to a directory full of tiles, or a .fits file, return the map array and (optionally)
@@ -192,6 +254,8 @@ def makeTileDir(parDict):
     
     Returns unfilteredMapsDictList [input for filterMaps], list of extension names
     
+    NOTE: Under MPI, this should only be called by the rank = 0 process
+    
     """
     
     if 'makeTileDir' not in list(parDict.keys()):
@@ -221,7 +285,7 @@ def makeTileDir(parDict):
             else:
                 tileDefLabel='userDefined'
             tileDirFileNameLabel="%s_%.1f" % (tileDefLabel, parDict['tileOverlapDeg'])
-                    
+            
             # Figure out what the input / output files will be called
             # NOTE: we always need to make a survey mask if none exists, as used to zap over regions, so that gets special treatment
             fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
@@ -238,34 +302,12 @@ def makeTileDir(parDict):
                         mapDirStr=''
                     outFileNames.append(mapDirStr+"tileDir_%s_" % (tileDirFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
-                                                            
-            # Added an option to define tiles in the .config file... otherwise, we will do the automatic tiling
-            if type(parDict['tileDefinitions']) == dict:
-                # If we're not given a survey mask, we'll make one up from the map image itself
-                if 'mask' in parDict['tileDefinitions'].keys() and parDict['tileDefinitions']['mask'] is not None:
-                    surveyMaskPath=parDict['tileDefinitions']['mask']
-                else:
-                    surveyMaskPath=mapDict['mapFileName']
-                with pyfits.open(surveyMaskPath) as img:    
-                    # Just in case RICE-compressed or similar
-                    if img[0].data is None:
-                        surveyMask=img['COMPRESSED_IMAGE'].data
-                        wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
-                    else:
-                        surveyMask=img[0].data
-                        wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-                    # One day we will write a routine to deal with the multi-plane thing sensibly...
-                    # But today is not that day
-                    if surveyMask.ndim == 3:
-                        surveyMask=surveyMask[0, :]
-                    assert(surveyMask.ndim == 2)   
-                    surveyMask[surveyMask != 0]=1
-                parDict['tileDefinitions']=autotiler(surveyMask, wcs, 
-                                                        parDict['tileDefinitions']['targetTileWidthDeg'],
-                                                        parDict['tileDefinitions']['targetTileHeightDeg'])
-                print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
+
+            wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
+            with pyfits.open(wcsPath) as img:
+                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
                 
-            # Extract tile definitions (may have been inserted above by autotiler)
+            # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]
             coordsList=[]
             for tileDict in parDict['tileDefinitions']:
@@ -278,15 +320,6 @@ def makeTileDir(parDict):
                 yMax=max([y0, y1])
                 coordsList.append([xMin, xMax, yMin, yMax])
                 tileNames.append(tileDict['tileName'])   
-            
-            # Output a .reg file for debugging (pixel coords)
-            outFile=open(outFileNames[0].replace(".fits", "_tiles.reg"), "w")
-            outFile.write("# Region file format: DS9 version 4.1\n")
-            outFile.write('global color=blue dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
-            outFile.write("image\n")
-            for c, name in zip(coordsList, tileNames):
-                outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))
-            outFile.close()
             
             # Make tiles
             # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
