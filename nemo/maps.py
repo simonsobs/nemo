@@ -295,24 +295,26 @@ def makeTileDir(parDict):
             # NOTE: now treating surveyMask as special, and zapping overlap regions there (simplify selection function stuff later)
             tileOverlapDeg=parDict['tileOverlapDeg']
             for mapType, inMapFileName, outMapFileName in zip(mapTypeList, inFileNames, outFileNames):
+                mapData=None    # only load the map if we have to
                 os.makedirs(outMapFileName, exist_ok = True)
-                #deckImg=pyfits.HDUList()
-                # Special handling for case where surveyMask = None in the .par file (tidy later...)
-                if mapType == 'surveyMask' and inMapFileName is None:
-                    with pyfits.open(inFileNames[0]) as img:
-                        mapData=np.ones(img[0].data.shape)
-                else:
-                    with pyfits.open(inMapFileName) as img:
-                        mapData=img[0].data
-
-                # Deal with Sigurd's maps which have T, Q, U as one 3d array
-                # If anyone wants to find polarized sources, this will need changing...
-                if mapData.ndim == 3:
-                    mapData=mapData[0, :]
                 for c, name in zip(coordsList, tileNames):
                     tileFileName=outMapFileName+os.path.sep+name+".fits"
                     if os.path.exists(tileFileName) == True:
                         continue
+                    if mapData is None:
+                        #deckImg=pyfits.HDUList()
+                        # Special handling for case where surveyMask = None in the .par file (tidy later...)
+                        if mapType == 'surveyMask' and inMapFileName is None:
+                            with pyfits.open(inFileNames[0]) as img:
+                                mapData=np.ones(img[0].data.shape)
+                        else:
+                            with pyfits.open(inMapFileName) as img:
+                                mapData=img[0].data
+                        # Deal with Sigurd's maps which have T, Q, U as one 3d array
+                        # If anyone wants to find polarized sources, this will need changing...
+                        if mapData.ndim == 3:
+                            mapData=mapData[0, :]
+                    # Defining clip region
                     y0=c[2]
                     y1=c[3]
                     x0=c[0]

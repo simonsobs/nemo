@@ -255,6 +255,7 @@ class NemoConfig(object):
             else:
                 madeTileDir=None
             if self.MPIEnabled == True:
+                self.comm.barrier()
                 madeTileDir=self.comm.bcast(madeTileDir, root = 0)
                 if self.rank != 0 and madeTileDir == True:
                     self.unfilteredMapsDictList, self.tileNames=maps.makeTileDir(self.parDict)
