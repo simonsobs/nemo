@@ -260,7 +260,6 @@ def makeTileDir(parDict):
                         surveyMask=surveyMask[0, :]
                     assert(surveyMask.ndim == 2)   
                     surveyMask[surveyMask != 0]=1
-                print(">>> Using autotiler ...")
                 parDict['tileDefinitions']=autotiler(surveyMask, wcs, 
                                                         parDict['tileDefinitions']['targetTileWidthDeg'],
                                                         parDict['tileDefinitions']['targetTileHeightDeg'])
