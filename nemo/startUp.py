@@ -255,9 +255,9 @@ class NemoConfig(object):
                 bcastUnfilteredMapsDictList=self.comm.bcast(bcastUnfilteredMapsDictList, root = 0)
                 bcastTileNames=self.comm.bcast(bcastTileNames, root = 0)
                 self.comm.barrier()
-                self.unfilteredMapsDictList=bcastUnfilteredMapsDictList
-                self.tileNames=bcastTileNames
-                self.parDict=bcastParDict
+            self.unfilteredMapsDictList=bcastUnfilteredMapsDictList
+            self.tileNames=bcastTileNames
+            self.parDict=bcastParDict
             # For when we want to test on only a subset of tiles
             if 'tileNameList' in list(self.parDict.keys()):
                 newList=[]
