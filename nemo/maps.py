@@ -179,7 +179,7 @@ def addAutoTileDefinitions(parDict, DS9RegionFileName = None):
 
     """
 
-    if type(parDict['tileDefinitions']) == dict:
+    if 'tileDefinitions' in parDict.keys() and type(parDict['tileDefinitions']) == dict:
         # If we're not given a survey mask, we'll make one up from the map image itself
         if 'mask' in parDict['tileDefinitions'].keys() and parDict['tileDefinitions']['mask'] is not None:
             surveyMaskPath=parDict['tileDefinitions']['mask']
