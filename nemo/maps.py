@@ -607,11 +607,6 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
                 maskedMapData[circleMask]=annulusValues[indices]
                 
             elif mask == 'subtract':         
-                # NOTE: This only makes sense to do on an unfiltered map...
-                if obj['id'] == 1445:
-                    print("Fix oversubtraction... peakValue is pointSource + CMB...")
-                    IPython.embed()
-                    sys.exit()
                 peakValue=mapData[int(round(obj['y'])), int(round(obj['x']))]
                 sigmaDeg=(1.4/60.0)/np.sqrt(8.0*np.log(2.0))            
                 profRDeg=np.linspace(0.0, 30.0/60.0, 5000)

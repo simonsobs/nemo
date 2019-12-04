@@ -111,6 +111,7 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
     if len(allCatalogs) > 0:
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
+        mergedCatalog.add_column(atpy.Column(np.zeros(len(mergedCatalog)), 'toRemove'))
         for row in allCatalogs:
             rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data, 
                                          allCatalogs['decDeg'].data) 
@@ -120,8 +121,9 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
                 xMatchIndex=np.argmax(xMatches['SNR'])
                 for index in xIndices:
                     if index != xIndices[xMatchIndex]:
-                        mergedCatalog['SNR'][index]=-99
-        mergedCatalog=mergedCatalog[mergedCatalog['SNR'] > 0]
+                        mergedCatalog['toRemove'][index]=1
+        mergedCatalog=mergedCatalog[mergedCatalog['toRemove'] == 0]
+        mergedCatalog.remove_column('toRemove')
         mergedCatalog.sort(['RADeg', 'decDeg'])
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
