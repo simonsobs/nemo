@@ -352,8 +352,12 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterp
     
     forcedTab=atpy.Table().read(inputCatalogFileName)
     RAKey, decKey=catalogs.getTableRADecKeys(forcedTab)
+    mask=np.less(forcedTab[RAKey], 0)
+    forcedTab[RAKey][mask]=360-abs(forcedTab[RAKey][mask])
     forcedTab.rename_column(RAKey, 'RADeg')
     forcedTab.rename_column(decKey, 'decDeg')
+    if 'name' not in forcedTab.keys():
+        forcedTab.add_column(atpy.Column(np.arange(len(forcedTab))+1, 'name'))
     
     wcs=filteredMapDict['wcs']
     areaMask=filteredMapDict['surveyMask'] 

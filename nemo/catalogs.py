@@ -439,9 +439,12 @@ def removeDuplicates(tab):
     for i in range(len(dupTab)):
         # NOTE: astCoords does not like atpy.Columns sometimes...
         rDeg=astCoords.calcAngSepDeg(dupTab['RADeg'][i], dupTab['decDeg'][i], dupTab['RADeg'].data, dupTab['decDeg'].data)
-        mask=np.less(rDeg, XMATCH_RADIUS_DEG)
-        indices=np.where(mask == True)[0]
-        bestIndex=indices[np.equal(dupTab['SNR'][mask], dupTab['SNR'][mask].max())][0]
+        mask=np.less_equal(rDeg, XMATCH_RADIUS_DEG)
+        if mask.sum() == 0:	# This ought not to be possible but catch anyway
+            bestIndex=i
+        else:
+            indices=np.where(mask == True)[0]
+            bestIndex=indices[np.equal(dupTab['SNR'][mask], dupTab['SNR'][mask].max())][0]
         keepMask[bestIndex]=True
     keepTab=dupTab[keepMask]
     
