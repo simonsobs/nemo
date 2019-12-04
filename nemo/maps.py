@@ -23,6 +23,7 @@ import nemoCython
 import time
 import shutil
 import copy
+import yaml
 #import IPython
 from pixell import enmap
 import nemo
@@ -138,8 +139,9 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                 if handle180Wrap == True:
                     if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
                         RARight=180.01
+                # NOTE: floats here to make tileDefinitions.yml readable
                 tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
-                                'RADecSection': [RARight, RALeft, decBottom, decTop]})   
+                                 'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})   
 
     return tileList
 
@@ -170,14 +172,21 @@ def saveTilesDS9RegionsFile(parDict, DS9RegionFileName):
             outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))  
                 
 #------------------------------------------------------------------------------------------------------------
-def addAutoTileDefinitions(parDict, DS9RegionFileName = None):
+def addAutoTileDefinitions(parDict, DS9RegionFileName = None, cacheFileName = None):
     """Runs autotiler to add automatic tile definitions into the parameters dictionary in-place.
     
     Args:
         parDict (:obj:`dict`): Dictionary containing the contents of the Nemo config file.
         DS9RegionFileName (str, optional): Path to DS9 regions file to be written.
+        cacheFileName (str, optional): Path to output a cached .yml file which will can be read instead on 
+            repeated runs (for speed).
 
     """
+    
+    if cacheFileName is not None and os.path.exists(cacheFileName):
+        with open(cacheFileName, "r") as stream:
+            parDict['tileDefinitions']=yaml.safe_load(stream)
+        return None
 
     if 'tileDefinitions' in parDict.keys() and type(parDict['tileDefinitions']) == dict:
         # If we're not given a survey mask, we'll make one up from the map image itself
@@ -204,7 +213,12 @@ def addAutoTileDefinitions(parDict, DS9RegionFileName = None):
                                              parDict['tileDefinitions']['targetTileHeightDeg'])
         print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
         saveTilesDS9RegionsFile(parDict, DS9RegionFileName)
-                
+    
+        if cacheFileName is not None:
+            stream=yaml.dump(parDict['tileDefinitions'])
+            with open(cacheFileName, "w") as outFile: 
+                outFile.write(stream) 
+
 #-------------------------------------------------------------------------------------------------------------
 def loadTile(pathToTileImages, tileName, returnWCS = False):
     """Given a path to a directory full of tiles, or a .fits file, return the map array and (optionally)
@@ -277,9 +291,9 @@ def makeTileDir(parDict):
                         raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
             img.close()
     else:
-        tileNames=[]        
+        tileNames=[]
+        wcs=None
         for mapDict in parDict['unfilteredMaps']:
-                 
             if 'tileDefLabel' in list(parDict.keys()):
                 tileDefLabel=parDict['tileDefLabel']
             else:
@@ -303,9 +317,10 @@ def makeTileDir(parDict):
                     outFileNames.append(mapDirStr+"tileDir_%s_" % (tileDirFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
 
-            wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
-            with pyfits.open(wcsPath) as img:
-                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            if wcs is None:
+                wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
+                with pyfits.open(wcsPath) as img:
+                    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
                 
             # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]

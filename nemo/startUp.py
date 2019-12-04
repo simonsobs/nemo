@@ -241,7 +241,8 @@ class NemoConfig(object):
 
         if setUpMaps == True:
             if self.rank == 0:
-                maps.addAutoTileDefinitions(self.parDict, DS9RegionFileName = self.diagnosticsDir+os.path.sep+"tiles.reg")
+                maps.addAutoTileDefinitions(self.parDict, DS9RegionFileName = self.selFnDir+os.path.sep+"tiles.reg",
+                                            cacheFileName = self.selFnDir+os.path.sep+"tileDefinitions.yml")
                 bcastUnfilteredMapsDictList, bcastTileNames=maps.makeTileDir(self.parDict)
                 bcastParDict=self.parDict
             else:

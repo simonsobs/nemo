@@ -158,7 +158,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
     """
     
     cutCatalog=selectFromCatalog(catalog, constraintsList) 
-        
+    
     with open(outFileName, "w") as outFile:
         timeStamp=datetime.datetime.today().date().isoformat()
         comment="# DS9 region file"
@@ -186,7 +186,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
             else:
                 colorString=color
             if showNames == True:
-                infoString=obj[idKeyToUse]+infoString
+                infoString=str(obj[idKeyToUse])+infoString
             outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
                         % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
 
@@ -558,7 +558,7 @@ def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
         each correspond to the matched objects.
     
     """
-
+    
     inTab=refCatalog
     outTab=matchCatalog
     RAKey1, decKey1=getTableRADecKeys(inTab)

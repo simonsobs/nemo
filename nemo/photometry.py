@@ -351,6 +351,10 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterp
     """
     
     forcedTab=atpy.Table().read(inputCatalogFileName)
+    RAKey, decKey=catalogs.getTableRADecKeys(forcedTab)
+    forcedTab.rename_column(RAKey, 'RADeg')
+    forcedTab.rename_column(decKey, 'decDeg')
+    
     wcs=filteredMapDict['wcs']
     areaMask=filteredMapDict['surveyMask'] 
     tileName=filteredMapDict['tileName']
