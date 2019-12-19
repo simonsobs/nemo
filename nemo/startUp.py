@@ -192,7 +192,8 @@ class NemoConfig(object):
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
-                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+                # NOTE: Zapping keywords here that appear in old ACT maps but which confuse astropy.wcs
+                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
                 self.origShape=(img[0].header['NAXIS2'], img[0].header['NAXIS1'])
         except:
             # We don't always need or want this... should we warn by default if not found?

@@ -561,7 +561,10 @@ def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
         xOut=np.array(RAToX(inRA), dtype = int)
         yOut=np.array(DecToY(inDec), dtype = int)
         for i in range(len(yOut)):
-            outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
+            try:
+                outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
+            except:
+                raise Exception("Output pixel coords invalid - if you see this, probably outWCS.header has keywords that confuse astropy.wcs (PC1_1 etc. - in old ACT maps)")
     saveFITS(outFileName, outData*fluxRescale, outWCS, compressed = True)
 
 #-------------------------------------------------------------------------------------------------------------
