@@ -236,12 +236,13 @@ def loadTile(pathToTileImages, tileName, returnWCS = False):
     if os.path.isdir(pathToTileImages) == True:
         with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
             if returnWCS == True:
-                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+                # Zapping keywords in old ACT maps that confuse astropy.wcs
+                wcs=astWCS.WCS(img[0].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
             data=img[0].data
     else:
         with pyfits.open(pathToTileImages) as img:
             if returnWCS == True:
-                wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits')
+                wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
             data=img[tileName].data
 
     if returnWCS == True:
