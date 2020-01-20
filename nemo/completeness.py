@@ -74,8 +74,11 @@ class SelFn(object):
                 
         if tileNames == None:
             self.tileNames=[]
-            for tileDef in parDict['tileDefinitions']:
-                self.tileNames.append(tileDef['tileName'])
+            if 'tileDefinitions' not in parDict.keys():
+                self.tileNames.append('PRIMARY')
+            else:
+                for tileDef in parDict['tileDefinitions']:
+                    self.tileNames.append(tileDef['tileName'])
         else:
             self.tileNames=tileNames
             

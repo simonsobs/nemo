@@ -105,6 +105,9 @@ if __name__ == '__main__':
                         catalogFileName is stripped of the .fits extension).""", default = None)
     parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help = """Use only clusters with fixed_SNR > 
                         this value.""", default = 5.0, type = float)
+    parser.add_argument("-f", "--footprint", dest = "footprint", help="""Footprint to use, e.g., DES,
+                        HSC, KiDS (default: full). Note that the catalog will not be trimmed to match 
+                        the footprint.""", default = None)
     parser.add_argument("-m", "--max-samples", dest="maxSamples", help="""Maximum number of samples. If 
                         given, overrides the value given in the Cobaya configuration file.""", type = int,
                         default = defaultMaxSamples)
@@ -117,6 +120,7 @@ if __name__ == '__main__':
     selFnDir=args.selFnDir
     maxSamples=args.maxSamples
     SNRCut=args.SNRCut
+    footprintLabel=args.footprint
     cosmoOutDir=args.cosmoOutDir
     numToBurn=args.numToBurn
     
@@ -167,8 +171,8 @@ if __name__ == '__main__':
     if maxSamples != defaultMaxSamples:
         info['sampler']['mcmc']['max_samples']=maxSamples
 
-    print("Setting up SNR > %.2f selection function" % (SNRCut))
-    selFn=completeness.SelFn(selFnDir, SNRCut, zStep = 0.1)
+    print("Setting up SNR > %.2f selection function (footprint: %s)" % (SNRCut, footprintLabel))
+    selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1)
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
     
     # Run Cobaya...
