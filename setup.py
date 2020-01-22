@@ -13,9 +13,12 @@ import numpy
 import versioneer
 #import popen2
 
+cmdclass=versioneer.get_cmdclass()
+cmdclass['build_ext']=build_ext
+
 setup(name='nemo',
       version=versioneer.get_version(),
-      cmdclass=versioneer.get_cmdclass(),
+      cmdclass=cmdclass,
       url="https://acru.ukzn.ac.za/~mjh/nemo",
       author='Matt Hilton',
       author_email='hiltonm@ukzn.ac.za',
