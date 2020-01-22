@@ -24,8 +24,8 @@ point sources.
 
 We now tag releases using the format vMAJOR.MINOR.PATCH. The first tagged release using this 
 scheme is v0.1.0 (January 2020). The previously tagged internal releases of Nemo have been 
-removed, except for the version used for the [two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H)
-- this is now tagged as ACTPol2018.
+removed, except for the version used for the 
+[two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H) - this is now tagged as ACTPol2018.
 
 # Software needed
 
