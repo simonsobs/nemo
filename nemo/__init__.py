@@ -17,4 +17,6 @@ from . import pipelines
 __all__ = ['startUp', 'catalogs', 'maps', 'filters', 'photometry', 
            'signals', 'completeness', 'pipelines', 'plotSettings']
 
-__version__ = "git"
+from ._version import get_versions
+__version__ = get_versions()['version']
+del get_versions

@@ -7,17 +7,14 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f150_night_map.fits",
-       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f150_night_div.fits",
-       obsFreqGHz: 149.8, units: 'uK',
-       beamFileName: "Beams/181222/mr3c_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
-    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f090_night_map.fits",
-       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f090_night_div.fits",
-       obsFreqGHz: 98.3, units: 'uK',
-       beamFileName: "Beams/181222/mr3c_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
+    - {mapFileName: $MAP,
+       weightsFileName: null,
+       obsFreqGHz: $FREQ, units: 'uK',
+       beamFileName: $BEAM,
+       calibFactor: $CALIBFACTOR}
 
 # Masks
-surveyMask: 'maps/Sep2019/surveyMask_v7_S18_inc_extsrc.fits'
+#surveyMask: 'surveyMask_v7_S18_inc_extsrc.fits'
 
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
@@ -25,17 +22,21 @@ maskPointSourcesFromCatalog:
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
-thresholdSigma: 4.0
+# NOTE: thesholdSigma set to 0 since we're doing forced photometry
+thresholdSigma: -10.0
 minObjPix: 1
 findCenterOfMass: True
 useInterpolator: True
 rejectBorder: 0
 objIdent: 'ACT-CL'
 longNames: False
-catalogCuts: ['SNR > 4.0']
 
 # Photometry options
 photFilter: 'Arnaud_M2e14_z0p4'
+
+# Forced photometry: give a .fits table here with a catalog, and fluxes will be extracted at RA, dec positions
+# This will be done instead of detecting and measuring fluxes of objects in the filtered maps
+forcedPhotometryCatalog: 'MFMF_S18_auto_M500.fits'
 
 # Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
 # The example below is for the Planck Pressure Profile (PPP)
@@ -57,14 +58,13 @@ massOptions: {tenToA0: 4.95e-5,
               relativisticCorrection: True,
               rescaleFactor: 0.68, 
               rescaleFactorErr: 0.11,
-              redshiftCatalog: "AdvACT_redshifts.fits", 
-              forcedPhotometry: False, 
-              Q: 'fit'}
+              redshiftCatalog: "AdvACT_redshifts.fits"}
+fitQ: False
 
 # Selection function options
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
-calcSelFn: True
+calcSelFn: False
 selFnOptions: {fixedSNRCut: 5.0, 
                massLimitMaps: [{z: 0.5}]}
                
@@ -93,41 +93,11 @@ allFilters: {class: "ArnaudModelMatchedFilter",
 # mapFilters is a list of all the different filters to apply
 # (keys in mapFilters with the same name as those in allFilters take priority)
 mapFilters:
-    - {label: "Arnaud_M1e14_z0p2",
-       params: {M500MSun: 1.0e+14, z: 0.2}}
-    - {label: "Arnaud_M2e14_z0p2",
-       params: {M500MSun: 2.0e+14, z: 0.2}}
-    - {label: "Arnaud_M4e14_z0p2",
-       params: {M500MSun: 4.0e+14, z: 0.2}}
-    - {label: "Arnaud_M8e14_z0p2",
-       params: {M500MSun: 8.0e+14, z: 0.2}}
-    - {label: "Arnaud_M1e14_z0p4",
-       params: {M500MSun: 1.0e+14, z: 0.4}}
     - {label: "Arnaud_M2e14_z0p4",
        params: {M500MSun: 2.0e+14, z: 0.4,
-                saveFilteredMaps: True,
-                savePlots: True}}
-    - {label: "Arnaud_M4e14_z0p4",
-       params: {M500MSun: 4.0e+14, z: 0.4}}
-    - {label: "Arnaud_M8e14_z0p4",
-       params: {M500MSun: 8.0e+14, z: 0.4}}              
-    - {label: "Arnaud_M1e14_z0p8",
-       params: {M500MSun: 1.0e+14, z: 0.8}}
-    - {label: "Arnaud_M2e14_z0p8",
-       params: {M500MSun: 2.0e+14, z: 0.8}}
-    - {label: "Arnaud_M4e14_z0p8",
-       params: {M500MSun: 4.0e+14, z: 0.8}}
-    - {label: "Arnaud_M8e14_z0p8",
-       params: {M500MSun: 8.0e+14, z: 0.8}}
-    - {label: "Arnaud_M1e14_z1p2",
-       params: {M500MSun: 1.0e+14, z: 1.2}}
-    - {label: "Arnaud_M2e14_z1p2",
-       params: {M500MSun: 2.0e+14, z: 1.2}}
-    - {label: "Arnaud_M4e14_z1p2",
-       params: {M500MSun: 4.0e+14, z: 1.2}}
-    - {label: "Arnaud_M8e14_z1p2",
-       params: {M500MSun: 8.0e+14, z: 1.2}}
-    
+                saveFilteredMaps: False,
+                savePlots: False}}
+
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
 # Set numSkySims to number required - we need to average over many as results vary a fair bit
 estimateContaminationFromSkySim: False
@@ -152,14 +122,12 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7_S18.fits',
+tileDefinitions: {mask: $SURVEYMASK,
                   targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:
-    #- '1_10_7'      # powerful f150 source; do as set - sensitive to point-source mask threshold
-    #- '1_10_8'      # J2327 (next to a source); do as set - sensitive to point-source mask threshold
-    #- '2_0_7'       # powerful f150 source
-    #- '2_2_8'       # powerful f150 source
-    #- '3_0_1'       # powerful f150 source
+    #- '1_0_0'
+    #- '1_0_1'
+

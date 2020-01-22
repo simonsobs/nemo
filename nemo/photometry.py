@@ -203,7 +203,9 @@ def getObjectPositions(mapData, threshold, findCenterOfMass = True):
     
     """
     
-    
+    if threshold < 0:
+        raise Exception("Detection threshold (thresholdSigma in the config file) cannot be negative unless in forced photometry mode.")
+            
     sigPix=np.array(np.greater(mapData, threshold), dtype=int)
     sigPixMask=np.equal(sigPix, 1)    
     segmentationMap, numObjects=ndimage.label(sigPix)
@@ -340,7 +342,64 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
                 if reportJyFluxes == True:
                     obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
                     obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+
+#------------------------------------------------------------------------------------------------------------
+def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterpolator = True, 
+                                DS9RegionsPath = None):
+    """Make a catalog on which we can do forced photometry at the locations of objects in it.
+        
+    """
     
+    forcedTab=atpy.Table().read(inputCatalogFileName)
+    RAKey, decKey=catalogs.getTableRADecKeys(forcedTab)
+    mask=np.less(forcedTab[RAKey], 0)
+    forcedTab[RAKey][mask]=360-abs(forcedTab[RAKey][mask])
+    forcedTab.rename_column(RAKey, 'RADeg')
+    forcedTab.rename_column(decKey, 'decDeg')
+    if 'name' not in forcedTab.keys():
+        forcedTab.add_column(atpy.Column(np.arange(len(forcedTab))+1, 'name'))
+    
+    wcs=filteredMapDict['wcs']
+    areaMask=filteredMapDict['surveyMask'] 
+    tileName=filteredMapDict['tileName']
+    data=filteredMapDict['SNMap']
+    if useInterpolator == True:
+        mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
+                                                        np.arange(data.shape[1]), 
+                                                        data, kx = 3, ky = 3)
+
+    forcedTab=catalogs.getCatalogWithinImage(forcedTab, data.shape, wcs)
+    catalog=[]
+    idNumCount=1
+    for row in forcedTab:
+        objDict={}
+        objDict['id']=idNumCount
+        x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+        x, y=int(round(x)), int(round(y))
+        objDict['x']=x
+        objDict['y']=y
+        objDict['RADeg'], objDict['decDeg']=row['RADeg'], row['decDeg']
+        galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
+        objDict['galacticLatDeg']=galLat
+        objDict['name']=row['name']
+        objDict['numSigPix']=1
+        objDict['template']=filteredMapDict['label']
+        objDict['tileName']=filteredMapDict['tileName']
+        if useInterpolator == True:
+            objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
+        else:
+            objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+        catalog.append(objDict)
+        idNumCount=idNumCount+1
+
+    # From here on, catalogs should be astropy Table objects...
+    if len(catalog) > 0:
+        catalog=catalogs.catalogListToTab(catalog)
+        if DS9RegionsPath is not None:
+            catalogs.catalog2DS9(catalog, DS9RegionsPath)
+            
+    return catalog
+
 #------------------------------------------------------------------------------------------------------------
 def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
     """Add relative weighting by frequency for each object in the optimal catalog, extracted from the 

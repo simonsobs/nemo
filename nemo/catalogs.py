@@ -111,6 +111,7 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
     if len(allCatalogs) > 0:
         allCatalogs=atpy.vstack(allCatalogs)
         mergedCatalog=allCatalogs.copy()
+        mergedCatalog.add_column(atpy.Column(np.zeros(len(mergedCatalog)), 'toRemove'))
         for row in allCatalogs:
             rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data, 
                                          allCatalogs['decDeg'].data) 
@@ -120,8 +121,9 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
                 xMatchIndex=np.argmax(xMatches['SNR'])
                 for index in xIndices:
                     if index != xIndices[xMatchIndex]:
-                        mergedCatalog['SNR'][index]=-99
-        mergedCatalog=mergedCatalog[mergedCatalog['SNR'] > 0]
+                        mergedCatalog['toRemove'][index]=1
+        mergedCatalog=mergedCatalog[mergedCatalog['toRemove'] == 0]
+        mergedCatalog.remove_column('toRemove')
         mergedCatalog.sort(['RADeg', 'decDeg'])
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
@@ -158,7 +160,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
     """
     
     cutCatalog=selectFromCatalog(catalog, constraintsList) 
-        
+    
     with open(outFileName, "w") as outFile:
         timeStamp=datetime.datetime.today().date().isoformat()
         comment="# DS9 region file"
@@ -186,7 +188,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
             else:
                 colorString=color
             if showNames == True:
-                infoString=obj[idKeyToUse]+infoString
+                infoString=str(obj[idKeyToUse])+infoString
             outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
                         % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
 
@@ -439,9 +441,12 @@ def removeDuplicates(tab):
     for i in range(len(dupTab)):
         # NOTE: astCoords does not like atpy.Columns sometimes...
         rDeg=astCoords.calcAngSepDeg(dupTab['RADeg'][i], dupTab['decDeg'][i], dupTab['RADeg'].data, dupTab['decDeg'].data)
-        mask=np.less(rDeg, XMATCH_RADIUS_DEG)
-        indices=np.where(mask == True)[0]
-        bestIndex=indices[np.equal(dupTab['SNR'][mask], dupTab['SNR'][mask].max())][0]
+        mask=np.less_equal(rDeg, XMATCH_RADIUS_DEG)
+        if mask.sum() == 0:	# This ought not to be possible but catch anyway
+            bestIndex=i
+        else:
+            indices=np.where(mask == True)[0]
+            bestIndex=indices[np.equal(dupTab['SNR'][mask], dupTab['SNR'][mask].max())][0]
         keepMask[bestIndex]=True
     keepTab=dupTab[keepMask]
     
@@ -558,7 +563,7 @@ def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
         each correspond to the matched objects.
     
     """
-
+    
     inTab=refCatalog
     outTab=matchCatalog
     RAKey1, decKey1=getTableRADecKeys(inTab)

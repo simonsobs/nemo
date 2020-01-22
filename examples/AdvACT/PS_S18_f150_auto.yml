@@ -14,7 +14,7 @@ unfilteredMaps:
     
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
-thresholdSigma: 5.0
+thresholdSigma: 4.0
 minObjPix: 1
 findCenterOfMass: True
 useInterpolator: True

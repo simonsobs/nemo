@@ -44,6 +44,8 @@ if __name__ == '__main__':
     
     tab=atpy.Table().read(catFileName)
     RAKey, decKey=catalogs.getTableRADecKeys(tab)
+    mask=np.less(tab[RAKey], 0)     # Sigurd likes -ve RA
+    tab[RAKey][mask]=360-abs(tab[RAKey][mask])
 
     # Use selFn routines to determine if objects were in the valid area mask
     selFn=completeness.SelFn(config.selFnDir, args.fixedSNRCut, configFileName = args.configFileName,
@@ -56,6 +58,7 @@ if __name__ == '__main__':
                                                                              catFileName, config.rootOutDir))
 
     # Cross matching
+    #xTab, xCheckAgainst, rDeg=catalogs.crossMatch(tab, checkAgainst, radiusArcmin=args.matchRadiusArcmin)
     xMatchRadiusDeg=args.matchRadiusArcmin/60.
     missing=[]
     for row in tab:

@@ -29,6 +29,7 @@ import pickle
 import astropy.io.fits as pyfits
 import time
 import shutil
+import yaml
 #import IPython
 plt.matplotlib.interactive(False)
 
@@ -63,15 +64,21 @@ class SelFn(object):
         self.selFnDir=selFnDir
         self.zStep=zStep
 
-        self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
         if configFileName is None:
             configFileName=self.selFnDir+os.path.sep+"config.yml"
             if os.path.exists(configFileName) == False:
                 raise Exception("No config .yml file found in selFnDir and no other location given.")
         parDict=startUp.parseConfigFile(configFileName)
-        
+        maps.addAutoTileDefinitions(parDict, DS9RegionFileName = self.selFnDir+os.path.sep+"tiles.reg",
+                                    cacheFileName = self.selFnDir+os.path.sep+"tileDefinitions.yml")
+                
         if tileNames == None:
-            self.tileNames=self.tckQFitDict.keys()
+            self.tileNames=[]
+            if 'tileDefinitions' not in parDict.keys():
+                self.tileNames.append('PRIMARY')
+            else:
+                for tileDef in parDict['tileDefinitions']:
+                    self.tileNames.append(tileDef['tileName'])
         else:
             self.tileNames=tileNames
             
@@ -86,10 +93,6 @@ class SelFn(object):
                 if footprintLabel not in labelsList:
                     raise Exception("Footprint '%s' not found in selFnFootprints - check .yml config file" % (footprintLabel))
         
-        # We only care about the filter used for fixed_ columns
-        self.photFilterLabel=['photFilter']
-        self.scalingRelationDict=parDict['massOptions']
-
         # Load area masks
         if setUpAreaMask == True:
             self._setUpAreaMask()
@@ -99,6 +102,10 @@ class SelFn(object):
             self.areaMaskDict=None
                         
         if enableCompletenessCalc == True:
+            
+            self.scalingRelationDict=parDict['massOptions']
+            self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
+            
             # We should be able to do everything (except clustering) with this
             # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
             RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
@@ -208,7 +215,9 @@ class SelFn(object):
                     matchTilesList.append(str(item))
             for tileName in matchTilesList:
                 x, y=self.WCSDict[tileName].wcs2pix(ra, dec)
-                if self.areaMaskDict[tileName][int(y), int(x)] > 0:
+                x=int(round(x)); y=int(round(y))
+                if x < self.WCSDict[tileName].header['NAXIS1'] and y < self.WCSDict[tileName].header['NAXIS2'] \
+                    and self.areaMaskDict[tileName][y, x] > 0:
                     inMask=True
             inMaskList.append(inMask)
         

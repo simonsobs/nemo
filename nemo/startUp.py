@@ -188,12 +188,13 @@ class NemoConfig(object):
 
         self.parDict=parseConfigFile(configFileName)
         self.configFileName=configFileName
-            
+                        
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
-                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
-                self.origShape=img[0].data.shape
+                # NOTE: Zapping keywords here that appear in old ACT maps but which confuse astropy.wcs
+                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
+                self.origShape=(img[0].header['NAXIS2'], img[0].header['NAXIS1'])
         except:
             # We don't always need or want this... should we warn by default if not found?
             self.origWCS=None
@@ -228,13 +229,7 @@ class NemoConfig(object):
                 if os.path.exists(d) == False:
                     os.makedirs(d, exist_ok = True)
             madeOutputDirs=True
-        # This serves two purposes:
-        # 1. Makes sure comms are running
-        # 2. Avoids (well, not quite) a race to make directories before filtered maps start coming in
-        #if self.MPIEnabled == True and makeOutputDirs == True:
-            #madeOutputDirs=self.comm.bcast(madeOutputDirs, root = 0)
-            #assert(madeOutputDirs == True)
-        
+
         # Optional override of selFn directory location
         if selFnDir is not None:
             self.selFnDir=selFnDir
@@ -245,19 +240,25 @@ class NemoConfig(object):
         for filtDict in self.parDict['mapFilters']:
             filtDict['params']['GNFWParams']=self.parDict['GNFWParams']
 
-        # tileDir file handling - either make one, or handle loading of one
         if setUpMaps == True:
-            # MPI: if the tileDir doesn't exist, only one process makes it - the others wait until it is done
             if self.rank == 0:
-                self.unfilteredMapsDictList, self.tileNames=maps.makeTileDir(self.parDict)
-                madeTileDir=True
+                maps.addAutoTileDefinitions(self.parDict, DS9RegionFileName = self.selFnDir+os.path.sep+"tiles.reg",
+                                            cacheFileName = self.selFnDir+os.path.sep+"tileDefinitions.yml")
+                bcastUnfilteredMapsDictList, bcastTileNames=maps.makeTileDir(self.parDict)
+                bcastParDict=self.parDict
             else:
-                madeTileDir=None
+                bcastUnfilteredMapsDictList=None
+                bcastTileNames=None
+                bcastParDict=None
             if self.MPIEnabled == True:
-                madeTileDir=self.comm.bcast(madeTileDir, root = 0)
-                if self.rank != 0 and madeTileDir == True:
-                    self.unfilteredMapsDictList, self.tileNames=maps.makeTileDir(self.parDict)
-
+                #self.comm.barrier()
+                bcastParDict=self.comm.bcast(bcastParDict, root = 0)
+                bcastUnfilteredMapsDictList=self.comm.bcast(bcastUnfilteredMapsDictList, root = 0)
+                bcastTileNames=self.comm.bcast(bcastTileNames, root = 0)
+                self.comm.barrier()
+            self.unfilteredMapsDictList=bcastUnfilteredMapsDictList
+            self.tileNames=bcastTileNames
+            self.parDict=bcastParDict
             # For when we want to test on only a subset of tiles
             if 'tileNameList' in list(self.parDict.keys()):
                 newList=[]

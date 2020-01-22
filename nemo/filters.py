@@ -426,11 +426,12 @@ class MatchedFilter(MapFilter):
                     elif self.params['noiseParams']['method'] == 'model':
                         NPCMB=self.makeForegroundsPower()
                         # Assuming inv var
-                        ivalid=np.nonzero(iMap['weights'])
-                        jvalid=np.nonzero(jMap['weights'])
-                        iRMS=np.mean(1/np.sqrt(iMap['weights'][ivalid]))
-                        jRMS=np.mean(1/np.sqrt(jMap['weights'][jvalid]))
-                        NP=np.ones(self.shape)*(iRMS*jRMS)+NPCMB
+                        #ivalid=np.nonzero(iMap['weights'])
+                        #jvalid=np.nonzero(jMap['weights'])
+                        #iRMS=np.mean(1/np.sqrt(iMap['weights'][ivalid]))
+                        #jRMS=np.mean(1/np.sqrt(jMap['weights'][jvalid]))
+                        #NP=np.ones(self.shape)*(iRMS*jRMS)+NPCMB
+                        NP=NPCMB+1 # We have to add something to avoid ringing
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
