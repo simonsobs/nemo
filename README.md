@@ -3,7 +3,7 @@ galaxy clusters using the Sunyaev-Zel'dovich effect. It can also be used to find
 
 * Documentation: <https://acru.ukzn.ac.za/~mjh/nemo/>
 * License: Will be BSD 2-clause when released (this is a currently a private repository: for 
-now nemo cannot be used for non-ACT, non-SO approved projects; however, the aim is to make the 
+now Nemo cannot be used for non-ACT, non-SO approved projects; however, the aim is to make the 
 code fully public by the time the first AdvACT cluster catalog is published)
 
 Nemo is *not* the pipeline used for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), 
@@ -12,7 +12,7 @@ the same map (or at least it did in the past). *It is* the pipeline, that has be
 [two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
 
 A slightly modified version of Matthew Hasselfield's `gnfw.py` code (used for modeling cluster
-pressure profiles) is included in nemo.
+pressure profiles) is included in Nemo.
 
 See [examples/equD56/](examples/equD56/) if you would like to re-create the 
 cluster catalog produced for the E-D56 field; [examples/AdvACT/](examples/AdvACT/) if you want to
@@ -22,16 +22,10 @@ point sources.
 
 # Current status and previous internal releases
 
-**Note**: Versions in the git respository after the last tagged release (v18.06) use a new config 
-file format (.yml) - see the [examples/](examples/) directory. We only guarantee compatibility
-with Python 3.x (and we're no longer testing on Python 2.7).
-
-Listed below are tagged, internal releases of nemo:
-
-* **v18.06:** Brought up-to-date with changes that were made in tileDeck branch (can run in 
-  parallel using MPI); this is the version used for making S16 point source catalogs (by Sigurd) 
-  and preliminary AdvACT cluster catalogs.
-* **v17.10:** Version of the code at the time of submission of the ACTPol cluster catalog paper.
+We now tag releases using the format vMAJOR.MINOR.PATCH. The first tagged release using this 
+scheme is v0.1.0 (January 2020). The previously tagged internal releases of Nemo have been 
+removed, except for the version used for the [two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H)
+- this is now tagged as ACTPol2018.
 
 # Software needed
 
@@ -41,7 +35,7 @@ Nemo itself is written in Python (3.6+), and requires the following additional m
 * numpy (1.13.3)
 * scipy (1.3.0)
 * matplotlib (2.1.1)
-* astLib (0.10.2)
+* astLib (0.11.3)
 * [pixell](https://github.com/simonsobs/pixell/) (0.5.3 or git version)
 * Pillow (5.1.0)
 * astropy (3.2.1)
@@ -99,7 +93,7 @@ each parameter does.
 
 # Related codes
 
-Catalogs produced by nemo can be fed into:
+Catalogs produced by Nemo can be fed into:
 
 * [Sourcery](https://github.com/mattyowl/sourcery) - a package that creates and serves a live,
   editable web database with multi-wavelength imaging.
