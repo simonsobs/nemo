@@ -316,8 +316,8 @@ class MapFilter(object):
         overlapPix=int(gridSize/2)
         numXChunks=mapData.shape[1]/gridSize
         numYChunks=mapData.shape[0]/gridSize
-        yChunks=np.linspace(0, mapData.shape[0], numYChunks+1, dtype = int)
-        xChunks=np.linspace(0, mapData.shape[1], numXChunks+1, dtype = int)
+        yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
+        xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
         #SNMap=np.zeros(mapData.shape)
         apodMask=np.not_equal(mapData, 0)
         # We could make below behaviour default if match photFilter? Would need to see photFilter though...

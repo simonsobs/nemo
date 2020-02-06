@@ -1327,7 +1327,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
         binMin=4.0
         binMax=20.0
         binStep=0.2
-        binEdges=np.linspace(binMin, binMax, (binMax-binMin)/binStep+1)
+        binEdges=np.linspace(binMin, binMax, int((binMax-binMin)/binStep+1))
         binCentres=(binEdges+binStep/2.0)[:-1]
         candidateSNRHist=np.histogram(candidateSNRs, bins = binEdges)
         invertedSNRHist=np.histogram(invertedSNRs, bins = binEdges)    
