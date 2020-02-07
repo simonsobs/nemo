@@ -33,7 +33,7 @@ minObjPix: 1
 findCenterOfMass: True
 useInterpolator: True
 rejectBorder: 0
-objIdent: 'ACT-CL'
+objIdent: 'SO-CL'
 longNames: False
 catalogCuts: ['SNR > 4.0']
 
@@ -153,4 +153,6 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {targetTileWidthDeg: 10.0, targetTileHeightDeg: 5.0}
+tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7_S18_inc_extsrc.fits',
+                  targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}

@@ -85,9 +85,9 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
         maxY=np.where(areaMask > 0)[0].max()
     else:
         minX=0
-        maxX=segmentationMap.shape[1]-1
+        maxX=segMap.shape[1]-1
         minY=0
-        maxY=segmentationMap.shape[0]-1
+        maxY=segMap.shape[0]-1
     minX=minX+rejectBorder
     maxX=maxX-rejectBorder
     minY=minY+rejectBorder
