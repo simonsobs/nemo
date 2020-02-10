@@ -125,8 +125,8 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
             if measureShapes == True:
                 doubleCheck=False
                 if objDict['numSigPix'] > 9:
-                    mask=np.equal(segmentationMap, objIDs[i])
-                    ys, xs=np.where(segmentationMap == objIDs[i])
+                    mask=np.equal(segMap, objIDs[i])
+                    ys, xs=np.where(segMap == objIDs[i])
                     yMin=ys.min()
                     xMin=xs.min()
                     yMax=ys.max()
@@ -155,7 +155,7 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
                         B=np.sqrt((x2+y2)/2.0 - np.sqrt( ((x2-y2)/2)**2 + xy**2))
                         # Moments work terribly for low surface brightness, diffuse things which aren't strongly peaked
                         # Shape measurement is okay though - so just scale A, B to match segMap area
-                        segArea=float(np.count_nonzero(np.equal(segmentationMap, objIDs[i])))
+                        segArea=float(np.count_nonzero(np.equal(segMap, objIDs[i])))
                         curArea=A*B*np.pi
                         scaleFactor=np.sqrt(segArea/curArea)
                         A=A*scaleFactor
