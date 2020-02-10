@@ -5,4 +5,4 @@
 #SBATCH --time=10:00:00
 
 source ~/.bashrc
-time mpiexec nemo MFMF_SOSim_3freq_tiles.yml -M
+time mpiexec nemo MFMF_SOSim_3freq_tiles.yml -M -n

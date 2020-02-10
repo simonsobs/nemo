@@ -171,7 +171,7 @@ class MapFilter(object):
         
         # For pixell / enmap
         # NOTE: enki maps can have an additional axis, which we don't want
-        enheader=self.wcs.header
+        enheader=self.wcs.header.copy()
         if 'NAXIS3' in enheader.keys():
             del enheader['NAXIS3']
         enheader['NAXIS']=2
