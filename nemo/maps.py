@@ -884,15 +884,17 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             # Variable sized holes: based on inspecting sources by deltaT in f150 maps
             # To avoid the problem of rings around sources, we sort the list and mask the brightest first
             # If an object lands in an already masked area, we remove it from the catalog
-            tab.sort('deltaT_c', reverse = True)
-            tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
-            tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
-            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
-            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
-            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
-            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
-            tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
-            tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
+            # If we're given a catalog that already has rArcmin in it, we use that instead
+            if 'rArcmin' not in tab.keys():
+                tab.sort('deltaT_c', reverse = True)
+                tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
+                tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
+                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
+                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
+                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
+                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
+                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
+                tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
             selectedRows=[]
             for row in tab:
                 x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
