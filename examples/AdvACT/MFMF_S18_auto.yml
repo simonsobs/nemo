@@ -22,7 +22,8 @@ surveyMask: 'maps/Sep2019/surveyMask_v7_S18_inc_extsrc.fits'
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
     - "PS_S18_f150_auto/PS_S18_f150_auto_optimalCatalog.fits"
-    
+    - "customPSMask_S18/customPSCatalog_S18.fits"
+
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
 thresholdSigma: 4.0
