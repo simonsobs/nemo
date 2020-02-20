@@ -165,6 +165,7 @@ if __name__ == '__main__':
     info['output']=cosmoOutDir+os.path.sep+"chains"
     info['timing']=True
     info['debug']=True
+    info['resume']=True
     
     if numToBurn != defaultNumToBurn:
         info['sampler']['mcmc']['burn_in']=numToBurn

@@ -17,7 +17,8 @@ unfilteredMaps:
        beamFileName: "Beams/181222/mr3c_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
 
 # Masks
-surveyMask: 'maps/Sep2019/surveyMask_v7_S18_inc_extsrc.fits'
+surveyMask: "maps/Sep2019/surveyMask_v7_galLatCut_S18_extsrc_dust.fits"
+#surveyMask: 'maps/Sep2019/surveyMask_v7_S18_inc_extsrc.fits'
 
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
