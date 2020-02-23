@@ -909,10 +909,13 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                 else:
                     selectedRows.append(False)
             tab=tab[np.where(selectedRows)]
+            
             # Subtract sources (if there are small residuals, doesn't matter, as masked later anyway)
+            # NOTE: Doesn't work very well at the moment
             #model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'])
             #data=data-model
-            # Or fill holes with smoothed map + white noise - this works much better than the above (currently)
+            # Or fill holes with smoothed map
+            # NOTE: We were filling with white noise - this is bad for repeatability (since we use as noise term in filter)
             pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
             if mapDict['weightsType'] =='invVar':
@@ -920,7 +923,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                 rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
             else:
                 raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
-            data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]+np.random.normal(0, rms[np.where(psMask == 0)]) 
+            data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]#+np.random.normal(0, rms[np.where(psMask == 0)]) 
             #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
     
     # Add the map data to the dict
@@ -940,7 +943,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     ## Save trimmed weights - this isn't necessary
     #if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName)) == False:
         #astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName), weights, wcs)
-        
+    
     return mapDict
 
 #------------------------------------------------------------------------------------------------------------
