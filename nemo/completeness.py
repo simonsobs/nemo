@@ -30,6 +30,7 @@ import astropy.io.fits as pyfits
 import time
 import shutil
 import yaml
+from decimal import Decimal
 #import IPython
 plt.matplotlib.interactive(False)
 
@@ -870,8 +871,8 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     """Make a cumulative plot of 90%-completeness mass limit versus survey area, at the given redshift.
     
     """
-    
-    # NOTE: We can avoid this if we add 'areaDeg2' column to selFn_mapFitTab_*.fits tables
+        
+    # NOTE: We truncate mass limits to 0.1 level here - differences beyond that are due to compression
     allLimits=[]
     allAreas=[]
     for tileName in tileNames:
@@ -882,9 +883,12 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
         if limits[0] == 0:
             limits=limits[1:]
         areas=[]
+        truncLim=[]
         for l in limits:
+            truncLim.append(round(l, 1))
+            #truncLim.append(float(Decimal(l).quantize(Decimal('0.1'))))
             areas.append(areaMapSqDeg[np.where(massLimMap == l)].sum())
-        allLimits=allLimits+limits
+        allLimits=allLimits+truncLim
         allAreas=allAreas+areas
     
     # Reduce redundant mass limits
@@ -899,7 +903,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     tab.add_column(atpy.Column(uniqLimits, 'MLim'))
     tab.add_column(atpy.Column(uniqAreas, 'areaDeg2'))
     tab.sort('MLim')
-    
+        
     plotSettings.update_rcParams()
         
     # Full survey plot
@@ -907,11 +911,12 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     ax=plt.axes([0.155, 0.12, 0.82, 0.86])
     plt.minorticks_on()
     plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
+    #plt.plot(plotMRange, plotCumArea, 'k-')
     plt.ylabel("survey area < $M_{\\rm 500c}$ limit (deg$^2$)")
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
     labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
     plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
-    plt.xlim(0,)
+    plt.xlim(tab['MLim'].min(), tab['MLim'].max())
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.pdf" % (str(z).replace(".", "p")))
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.png" % (str(z).replace(".", "p")))
@@ -928,7 +933,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
     labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
     plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
-    plt.xlim(0,)
+    plt.xlim(deepTab['MLim'].min(), deepTab['MLim'].max())
     plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.pdf" % (str(z).replace(".", "p")))
     plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.png" % (str(z).replace(".", "p")))
