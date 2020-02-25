@@ -72,7 +72,7 @@ selFnOptions: {fixedSNRCut: 5.0,
                
 selFnFootprints: 
     - {label: "HSC",
-       maskList: ["HSCCheckAndSelFn/s18a_fdfc_CAR_contarea.fits"]}
+       maskList: ["HSCCheckAndSelFn/s19a_fdfc_CAR_contarea_ziy-gt-5.fits"]}
     - {label: "KiDS",
        maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
     - {label: "DES",
