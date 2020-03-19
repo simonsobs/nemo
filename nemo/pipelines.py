@@ -292,7 +292,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     # We need an assumed scaling relation for mock observations
     scalingRelationDict=config.parDict['massOptions']
     
-    if verbose: print(">>> Setting up mock surveys dictionary ...")
+    if verbose: print(">>> Setting up mock survey ...")
     # NOTE: Sanity check is possible here: area in RMSTab should equal area from areaMask.fits
     # If it isn't, there is a problem...
     # Also, we're skipping the individual tile-loading routines here for speed
@@ -303,6 +303,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     count=0
     totalAreaDeg2=0
     RMSMapDict={}
+    areaDeg2Dict={}
     if checkAreaConsistency == True:
         areaMap=pyfits.open(config.selFnDir+os.path.sep+"areaMask.fits")
     t0=time.time()
@@ -326,6 +327,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             wcsDict[tileName]=astWCS.WCS(RMSMap[tileName].header, mode = 'pyfits')
         # Area from RMS table
         areaDeg2=RMSTab[RMSTab['tileName'] == tileName]['areaDeg2'].sum()
+        areaDeg2Dict[tileName]=areaDeg2
         totalAreaDeg2=totalAreaDeg2+areaDeg2
         # Area from map (slower)
         if checkAreaConsistency == True:
@@ -349,7 +351,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     Om0=0.30
     Ob0=0.05
     sigma_8=0.8
-    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
+    mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
     
     if verbose: print(">>> Making mock catalogs ...")
     catList=[]
@@ -363,10 +365,12 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
                                           photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
                                           SNRLimit = thresholdSigma, applySNRCut = True, 
+                                          areaDeg2 = areaDeg2Dict[tileName],
                                           applyPoissonScatter = applyPoissonScatter, 
                                           applyIntrinsicScatter = applyIntrinsicScatter,
                                           applyNoiseScatter = applyNoiseScatter)
-            mockTabsList.append(mockTab)
+            if mockTab is not None:
+                mockTabsList.append(mockTab)
         tab=atpy.vstack(mockTabsList)
         catList.append(tab)
         t1=time.time()

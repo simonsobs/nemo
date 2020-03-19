@@ -255,7 +255,7 @@ class MockSurvey(object):
         This routine is used in the nemoMock script.
 
         Returns catalog as an astropy Table (and an array of length self.z corresponding to low mass limit
-        if numDraws is used).
+        if numDraws is used). Returns None if the catalog would contain zero clusters.
                 
         """
         
@@ -280,11 +280,15 @@ class MockSurvey(object):
             else:
                 numClustersByRedshift[k]=np.random.poisson(int(round(self.numClustersByRedshift[zIndex])))
 
-        if areaDeg2 != None:
-            numClustersByRedshift=int(round(numClustersByRedshift*(areaDeg2/self.areaDeg2)))
-        
+        if areaDeg2 is not None:
+            numClustersByRedshift=np.array(np.round(numClustersByRedshift*(areaDeg2/self.areaDeg2)), dtype = int)
+      
         numClusters=numClustersByRedshift.sum()
-            
+        
+        # This happens in the case of negligible but not quite zero area
+        if numClusters == 0:
+            return None
+        
         if numDraws != None:
             numClusters=numDraws            
 
@@ -300,7 +304,7 @@ class MockSurvey(object):
             coordIndices=np.random.randint(0, len(xsInMask), numClusters)
             ys=ysInMask[coordIndices]
             xs=xsInMask[coordIndices]
-            if wcs != None:
+            if wcs is not None:
                 RADecCoords=wcs.pix2wcs(xs, ys)
                 RADecCoords=np.array(RADecCoords)
                 RAs=RADecCoords[:, 0]
@@ -356,6 +360,8 @@ class MockSurvey(object):
             log10Ms_zk=self.log10MRollers[k](np.random.random_sample(numClusters_zk))
             log10Ms_zk[log10Ms_zk < self.log10M.min()]=self.log10M.min()
             log10Ms_zk[log10Ms_zk > self.log10M.max()]=self.log10M.max()
+            if len(log10Ms_zk) == 0:
+                continue
             
             theta500s_zk=interpolate.splev(log10Ms_zk, self.theta500Splines[k], ext = 3)
             Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[tileName], ext = 3)
