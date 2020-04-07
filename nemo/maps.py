@@ -1495,7 +1495,7 @@ def positionRecoveryTest(config):
         config (:obj:`startUp.NemoConfig`): Nemo configuration object.
     
     Returns:
-        An astropy Table containing percentiles of offset distribution in fixed_SNR bins.
+        An astropy Table containing recovered position offsets versus fixed_SNR for various cluster models
     
     """
     
@@ -1621,44 +1621,35 @@ def positionRecoveryTest(config):
         SNRDict[posRecModel['label']]=np.array(SNRDict[posRecModel['label']])
         rArcminDict[posRecModel['label']]=np.array(rArcminDict[posRecModel['label']])
     
-    # S/N binning and percentiles to work with
-    percentilesToCalc=[1, 5, 10, 16, 50, 84, 90, 95, 99]
-    binEdges=np.linspace(4.0, 10.0, 13) 
-    binCentres=(binEdges[:-1]+binEdges[1:])/2.
-    percentileTable=atpy.Table()
-    percentileTable.add_column(atpy.Column(binCentres, 'fixed_SNR'))
+    # Just collect results as long tables (model, SNR, rArcmin) that we can later stack and average etc.
+    # (see positionRecoveryAnalysis below)
+    models=[]
+    SNRs=[]
+    rArcmin=[]
     for posRecModel in posRecModelList:
         label=posRecModel['label']
-        for p in percentilesToCalc:
-            vals=np.zeros(len(binCentres))
-            for i in range(len(binEdges)-1):
-                bin_rArcmin=rArcminDict[label][np.logical_and(np.greater_equal(SNRDict[label], binEdges[i]), 
-                                                              np.less(SNRDict[label], binEdges[i+1]))]
-                if len(bin_rArcmin) > 0:
-                    vals[i]=np.percentile(bin_rArcmin, p)
-            percentileTable.add_column(atpy.Column(vals, '%s_rArcmin_%dpercent' % (label, p)))
-    
-    # Write out for debugging - we might not want to do this when tested...
-    fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
-    percentileTable.write(fitsOutFileName, overwrite = True)
-
-    basePlotFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d" % (config.rank)   
-    plotPositionRecovery(percentileTable, basePlotFileName)
+        models=models+[label]*len(SNRDict[label])
+        SNRs=SNRs+SNRDict[label].tolist()
+        rArcmin=rArcmin+rArcminDict[label].tolist()
+    resultsTable=atpy.Table()
+    resultsTable.add_column(atpy.Column(models, 'posRecModel'))
+    resultsTable.add_column(atpy.Column(SNRs, 'fixed_SNR'))
+    resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
 
     # Restore the original config parameters (which we overrode here)
     config.restoreConfig()
-    
-    return percentileTable
+
+    return resultsTable
 
 #------------------------------------------------------------------------------------------------------------
-def plotPositionRecovery(percentileTable, basePlotFileName, percentilesToPlot = [50, 90], 
-                         labelsToPlot = 'all'):
+def positionRecoveryAnalysis(posRecTable, basePlotFileName, percentilesToPlot = [50, 90], 
+                             labelsToPlot = 'all'):
     """Plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using the contents
     of percentileTable (see positionRecoveryTest).
     
     Args:
-        percentileTable (:obj:`astropy.table.Table`): Table of recovery percentiles as returned by 
-            maps.positionRecoveryTest.
+        posRecTable (:obj:`astropy.table.Table`): Table of recovered position offsets versus fixed_SNR for
+            various cluster models (produced by positionRecoveryTest).
         basePlotFileName (str): Path where the plot file will be written, with no extension (e.g.,
             "diagnostics/positionRecovery". The percentile plotted and file extension will be appended to
             this path, preceded by an underscore (e.g., "diagnostics/positionRecovery_50.pdf"). Both .pdf
@@ -1673,6 +1664,62 @@ def plotPositionRecovery(percentileTable, basePlotFileName, percentilesToPlot = 
             
     """
     
+    print("write code to analyse position recovery table")
+    sys.exit()
+    
+    import IPython
+    IPython.embed()
+    sys.exit()
+    labels=np.unique(posRecTable['posRecModel']).tolist()  
+    
+    # We want to know what is the probability that an object with S/N > threshold is recovered within < X arcmin
+    # Let's do that as a 2d histogram on a grid (S/N and rArcmin will be thresholds, not binned)
+    label=labels[1]
+    tab=posRecTable[posRecTable['posRecModel'] == label]
+    SNRThreshold=np.linspace(0, 10, 101)
+    rArcminThreshold=np.linspace(0, 10, 101)
+    grid=np.zeros([SNRThreshold.shape[0], rArcminThreshold.shape[0]])
+    for i in range(SNRThreshold.shape[0]):
+        for j in range(rArcminThreshold.shape[0]):
+            total=(tab['fixed_SNR'] < SNRThreshold[i]).sum()
+            withinR=np.logical_and(tab['fixed_SNR'] < SNRThreshold[i], tab['rArcmin'] < rArcminThreshold[j]).sum()
+            if total > 0:
+                grid[i, j]=withinR/total
+            
+    # Example of use
+    # Interpolated
+    #gridInterp=interpolate.RectBivariateSpline(np.arange(grid.shape[0]), 
+                                               #np.arange(grid.shape[1]), 
+                                               #grid, kx = 3, ky = 3)
+    #SNR_index=interpolate.UnivariateSpline(SNRThreshold, np.arange(len(SNRThreshold)))
+    #rArcmin_index=interpolate.UnivariateSpline(rArcminThreshold, np.arange(len(rArcminThreshold)))
+    #P=gridInterp(SNR_index(5.0), rArcmin_index(2.5))[0][0]
+        
+    # Not interpolated (but steps of 0.1 in SNRThreshold, rArcminThreshold)
+    P=grid[SNRThreshold == 5.0, rArcminThreshold == 2.5][0]
+    
+    #-----
+    # Okay - S/N in bins, rArcmin as threshold
+    label=labels[1]
+    tab=posRecTable#posRecTable[posRecTable['posRecModel'] == label]
+    SNREdges=np.linspace(3.0, 10.0, 36)#np.linspace(0, 10, 101)
+    SNRCentres=(SNREdges[1:]+SNREdges[:-1])/2.
+    rArcminThreshold=np.linspace(0, 10, 101)
+    grid=np.zeros([SNREdges.shape[0]-1, rArcminThreshold.shape[0]])
+    totalGrid=np.zeros(grid.shape)
+    withinRGrid=np.zeros(grid.shape)
+    for i in range(SNREdges.shape[0]-1):
+        SNRMask=np.logical_and(tab['fixed_SNR'] >= SNREdges[i], tab['fixed_SNR'] < SNREdges[i+1])
+        for j in range(rArcminThreshold.shape[0]):
+            total=SNRMask.sum()
+            withinR=(tab['rArcmin'][SNRMask] < rArcminThreshold[j]).sum()
+            totalGrid[i, j]=total
+            withinRGrid[i, j]=withinR
+            if total > 0:
+                grid[i, j]=withinR/total
+    
+    
+    #---
     # Find labels
     labels=[]
     for key in percentileTable.keys():

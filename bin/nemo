@@ -110,20 +110,21 @@ if __name__ == '__main__':
             posRecTableList=config.comm.gather(posRecTable, root = 0)
             if config.rank == 0:
                 print("... gathered position recovery test results ...")
-                toAverage=[]
+                toStack=[]
                 for posRecTable in posRecTableList:
                     if type(posRecTable) == astropy.table.table.Table:
-                        toAverage.append(posRecTable)
-                if len(toAverage) > 0:
-                    avTable=atpy.Table()
-                    for key in toAverage[0].keys():
-                        avTable.add_column(atpy.Column(np.zeros(len(toAverage[0])), key))
-                    for tab in toAverage:
-                        for key in tab.keys():
-                            avTable[key]=avTable[key]+tab[key]
-                    for key in avTable.keys():
-                        avTable[key]=avTable[key]/len(toAverage)
-                    posRecTable=avTable
+                        toStack.append(posRecTable)
+                if len(toStack) > 0:
+                    posRecTable=atpy.vstack(toStack)
+                    #avTable=atpy.Table()
+                    #for key in toAverage[0].keys():
+                        #avTable.add_column(atpy.Column(np.zeros(len(toAverage[0])), key))
+                    #for tab in toAverage:
+                        #for key in tab.keys():
+                            #avTable[key]=avTable[key]+tab[key]
+                    #for key in avTable.keys():
+                        #avTable[key]=avTable[key]/len(toAverage)
+                    #posRecTable=avTable
                 else:
                     posRecTable=None
     else:
@@ -181,9 +182,9 @@ if __name__ == '__main__':
         
         # Plot tile-averaged position recovery test
         if posRecTable is not None:
-            posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecovery_average.fits", overwrite = True) 
-            maps.plotPositionRecovery(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average",
-                                      percentilesToPlot = [50, 90])
+            posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecoveryData.fits", overwrite = True) 
+            maps.positionRecoveryAnalysis(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average",
+                                          percentilesToPlot = [50, 90])
             
         ## Plot contamination together
         #if conTabDict != {}:
