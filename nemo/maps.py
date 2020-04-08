@@ -1651,7 +1651,7 @@ def positionRecoveryTest(config, writeRankTable = False):
 
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50, 90, 95, 99], 
-                             plotRawData = True, pickleFileName = None):
+                             plotRawData = True, rawDataAlpha =  0.02, pickleFileName = None):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using 
     the contents of posRecTable (see positionRecoveryTest).
     
@@ -1696,7 +1696,8 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
     plotSettings.update_rcParams()
     plt.figure(figsize=(9,6.5))
     ax=plt.axes([0.11, 0.11, 0.88, 0.87])
-    plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', alpha = (1/len(tab))*5e3)
+    if plotRawData == True:
+        plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', alpha = rawDataAlpha)
     contoursDict={}
     for i in range(len(levelsList)):
         vertices=contours.collections[i].get_paths()[0].vertices
