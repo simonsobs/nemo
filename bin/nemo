@@ -112,19 +112,10 @@ if __name__ == '__main__':
                 print("... gathered position recovery test results ...")
                 toStack=[]
                 for posRecTable in posRecTableList:
-                    if type(posRecTable) == astropy.table.table.Table:
+                    if type(posRecTable) == astropy.table.table.Table and len(posRecTable) > 0:
                         toStack.append(posRecTable)
                 if len(toStack) > 0:
                     posRecTable=atpy.vstack(toStack)
-                    #avTable=atpy.Table()
-                    #for key in toAverage[0].keys():
-                        #avTable.add_column(atpy.Column(np.zeros(len(toAverage[0])), key))
-                    #for tab in toAverage:
-                        #for key in tab.keys():
-                            #avTable[key]=avTable[key]+tab[key]
-                    #for key in avTable.keys():
-                        #avTable[key]=avTable[key]/len(toAverage)
-                    #posRecTable=avTable
                 else:
                     posRecTable=None
     else:
