@@ -1636,6 +1636,10 @@ def positionRecoveryTest(config):
     resultsTable.add_column(atpy.Column(SNRs, 'fixed_SNR'))
     resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
 
+    # This is just for debugging - can be removed later
+    fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
+    resultsTable.write(fitsOutFileName, overwrite = True)
+    
     # Restore the original config parameters (which we overrode here)
     config.restoreConfig()
 
