@@ -24,6 +24,7 @@ import time
 import shutil
 import copy
 import yaml
+import pickle
 #import IPython
 from pixell import enmap
 import nemo
@@ -1485,7 +1486,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryTest(config):
+def positionRecoveryTest(config, writeRankTable = False):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
     offset with respect to the true location as a function of S/N (for the fixed reference scale only).
     
@@ -1493,6 +1494,8 @@ def positionRecoveryTest(config):
     
     Args:
         config (:obj:`startUp.NemoConfig`): Nemo configuration object.
+        writeRankTable (bool, optional): If True, saves a table as output for this MPI rank under the 
+            diagnostics/ directory. Useful for MPI debugging only.
     
     Returns:
         An astropy Table containing recovered position offsets versus fixed_SNR for various cluster models
@@ -1637,8 +1640,9 @@ def positionRecoveryTest(config):
     resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
 
     # This is just for debugging - can be removed later
-    fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
-    resultsTable.write(fitsOutFileName, overwrite = True)
+    if writeRankTable == True:
+        fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
+        resultsTable.write(fitsOutFileName, overwrite = True)
     
     # Restore the original config parameters (which we overrode here)
     config.restoreConfig()
@@ -1646,70 +1650,29 @@ def positionRecoveryTest(config):
     return resultsTable
 
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryAnalysis(posRecTable, basePlotFileName, percentilesToPlot = [50, 90], 
-                             labelsToPlot = 'all'):
-    """Plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using the contents
-    of percentileTable (see positionRecoveryTest).
+def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50, 90, 95, 99], 
+                             plotRawData = True, pickleFileName = None):
+    """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using 
+    the contents of posRecTable (see positionRecoveryTest).
     
     Args:
         posRecTable (:obj:`astropy.table.Table`): Table of recovered position offsets versus fixed_SNR for
             various cluster models (produced by positionRecoveryTest).
-        basePlotFileName (str): Path where the plot file will be written, with no extension (e.g.,
-            "diagnostics/positionRecovery". The percentile plotted and file extension will be appended to
-            this path, preceded by an underscore (e.g., "diagnostics/positionRecovery_50.pdf"). Both .pdf
-            and .png versions of the plot will be written.
-        percentilesToPlot (list, optional): List of percentiles to plot (must be integers and present in the
-            column names for percentileTable). Each percentile will be plotted in a separate file (e.g.,
-            "percentilePlot_50.pdf" for the 50% percentile, i.e., the median.)
-        labelsToPlot (list, optional): If the position recovery test was run for different models (e.g., 
-            clusters with different angular size, labelled according to theta500 in arcmin), specific 
-            models can be plotted. The default ('all') will plot all labels found in the table (these will 
-            be indicated in the figure legend).
+        plotFileName (str): Path where the plot file will be written.
+        percentilesToPlot (list, optional): List of percentiles to plot (some interpolation will be done).
+        plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background. 
+        pickleFileName (string, optional). Saves the percentile contours data as a pickle file if not None. 
+            This is saved a dictionary with top-level keys named according to percentilesToPlot.
             
     """
     
-    print("write code to analyse position recovery table")
-    sys.exit()
-    
-    import IPython
-    IPython.embed()
-    sys.exit()
-    labels=np.unique(posRecTable['posRecModel']).tolist()  
-    
-    # We want to know what is the probability that an object with S/N > threshold is recovered within < X arcmin
-    # Let's do that as a 2d histogram on a grid (S/N and rArcmin will be thresholds, not binned)
-    label=labels[1]
-    tab=posRecTable[posRecTable['posRecModel'] == label]
-    SNRThreshold=np.linspace(0, 10, 101)
-    rArcminThreshold=np.linspace(0, 10, 101)
-    grid=np.zeros([SNRThreshold.shape[0], rArcminThreshold.shape[0]])
-    for i in range(SNRThreshold.shape[0]):
-        for j in range(rArcminThreshold.shape[0]):
-            total=(tab['fixed_SNR'] < SNRThreshold[i]).sum()
-            withinR=np.logical_and(tab['fixed_SNR'] < SNRThreshold[i], tab['rArcmin'] < rArcminThreshold[j]).sum()
-            if total > 0:
-                grid[i, j]=withinR/total
-            
-    # Example of use
-    # Interpolated
-    #gridInterp=interpolate.RectBivariateSpline(np.arange(grid.shape[0]), 
-                                               #np.arange(grid.shape[1]), 
-                                               #grid, kx = 3, ky = 3)
-    #SNR_index=interpolate.UnivariateSpline(SNRThreshold, np.arange(len(SNRThreshold)))
-    #rArcmin_index=interpolate.UnivariateSpline(rArcminThreshold, np.arange(len(rArcminThreshold)))
-    #P=gridInterp(SNR_index(5.0), rArcmin_index(2.5))[0][0]
-        
-    # Not interpolated (but steps of 0.1 in SNRThreshold, rArcminThreshold)
-    P=grid[SNRThreshold == 5.0, rArcminThreshold == 2.5][0]
-    
-    #-----
-    # Okay - S/N in bins, rArcmin as threshold
-    label=labels[1]
-    tab=posRecTable#posRecTable[posRecTable['posRecModel'] == label]
+    # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
+    # No longer separating by input model (clusters are all shapes anyway)
+    tab=posRecTable
     SNREdges=np.linspace(3.0, 10.0, 36)#np.linspace(0, 10, 101)
     SNRCentres=(SNREdges[1:]+SNREdges[:-1])/2.
     rArcminThreshold=np.linspace(0, 10, 101)
-    grid=np.zeros([SNREdges.shape[0]-1, rArcminThreshold.shape[0]])
+    grid=np.zeros([rArcminThreshold.shape[0], SNREdges.shape[0]-1])
     totalGrid=np.zeros(grid.shape)
     withinRGrid=np.zeros(grid.shape)
     for i in range(SNREdges.shape[0]-1):
@@ -1717,42 +1680,44 @@ def positionRecoveryAnalysis(posRecTable, basePlotFileName, percentilesToPlot = 
         for j in range(rArcminThreshold.shape[0]):
             total=SNRMask.sum()
             withinR=(tab['rArcmin'][SNRMask] < rArcminThreshold[j]).sum()
-            totalGrid[i, j]=total
-            withinRGrid[i, j]=withinR
+            totalGrid[j, i]=total
+            withinRGrid[j, i]=withinR
             if total > 0:
-                grid[i, j]=withinR/total
+                grid[j, i]=withinR/total
     
+    # What we want are contours of constant prob - easiest to get this via matplotlib
+    levelsList=np.array(percentilesToPlot)/100.
+    contours=plt.contour(SNRCentres, rArcminThreshold, grid, levels = levelsList)
+    minSNR=SNRCentres[np.sum(grid, axis = 0) > 0].min()
+    maxSNR=SNRCentres[np.sum(grid, axis = 0) > 0].max()
+    plt.close()
     
-    #---
-    # Find labels
-    labels=[]
-    for key in percentileTable.keys():
-        if key not in ['fixed_SNR']:
-            label=key.split('_rArcmin')[0]
-            if label not in labels:
-                labels.append(label)
-                
-    if labelsToPlot != 'all':
-        labels=labelsToPlot
-                    
+    # We make our own plot so we use consistent colours, style (haven't fiddled with contour rc settings)
     plotSettings.update_rcParams()
-    for p in percentilesToPlot:
-        plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.12, 0.11, 0.87, 0.87]) 
-        for l in labels:
-            validMask=np.greater(percentileTable['%s_rArcmin_%dpercent' % (l, p)], 0)
-            plt.plot(percentileTable['fixed_SNR'][validMask], percentileTable['%s_rArcmin_%dpercent' % (l, p)][validMask], 
-                        '-', label = '%s' % (l))
-        plt.xlim(percentileTable['fixed_SNR'].min(), percentileTable['fixed_SNR'].max())
-        plt.ylim(0,)
-        if len(labels) > 1:
-            plt.legend()
-        plt.xlabel("SNR$_{2.4}$")
-        plt.ylabel("Recovered Position Offset ($^\prime$)")
-        plotFileName=basePlotFileName+"_%d.pdf" % (p)
-        plt.savefig(plotFileName)
-        plt.savefig(plotFileName.replace(".pdf", ".png"))
-        plt.close()
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.11, 0.11, 0.88, 0.87])
+    plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', alpha = (1/len(tab))*5e3)
+    contoursDict={}
+    for i in range(len(levelsList)):
+        vertices=contours.collections[i].get_paths()[0].vertices
+        SNRs=vertices[:, 0]
+        rArcminAtProb=vertices[:, 1]
+        labelStr="%d" % (percentilesToPlot[i]) + "%"
+        contoursDict[labelStr]={'fixed_SNR': SNRs, 'rArcmin': rArcminAtProb}
+        plt.plot(SNRs, rArcminAtProb, label = labelStr, lw = 3)
+    plt.xlim(minSNR, maxSNR)
+    plt.ylim(0, 5)
+    plt.legend(loc = 'upper right')
+    plt.xlabel("SNR$_{2.4}$")
+    plt.ylabel("Recovered Position Offset ($^\prime$)")
+    plt.savefig(plotFileName)
+    plt.close()
+    
+    # Save %-ile contours in case we want to use them in some modelling later
+    if pickleFileName is not None:
+        with open(pickleFileName, "wb") as pickleFile:
+            pickler=pickle.Pickler(pickleFile)
+            pickler.dump(contoursDict)
 
 #---------------------------------------------------------------------------------------------------
 def saveFITS(outputFileName, mapData, wcs, compressed = False):
