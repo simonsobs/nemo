@@ -1651,7 +1651,8 @@ def positionRecoveryTest(config, writeRankTable = False):
 
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50, 90, 95, 99], 
-                             plotRawData = True, rawDataAlpha =  0.02, pickleFileName = None):
+                             plotRawData = True, rawDataAlpha =  0.02, pickleFileName = None,
+                             clipPercentile = 99.7):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using 
     the contents of posRecTable (see positionRecoveryTest).
     
@@ -1661,10 +1662,17 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
         plotFileName (str): Path where the plot file will be written.
         percentilesToPlot (list, optional): List of percentiles to plot (some interpolation will be done).
         plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background. 
-        pickleFileName (string, optional). Saves the percentile contours data as a pickle file if not None. 
+        pickleFileName (string, optional): Saves the percentile contours data as a pickle file if not None. 
             This is saved a dictionary with top-level keys named according to percentilesToPlot.
+        clipPercentile (float, optional): Clips offset values outside of this percentile of the whole 
+            offsets distribution, to remove a small number of outliers (spurious next-neighbour cross 
+            matches) that otherwise bias the contours high for large (99%+) percentile cuts in 
+            individual fixed_SNR bins.
             
     """
+    
+    # Clip extreme outliers (which are almost certainly spurious next-neighbour cross matches)
+    posRecTable=posRecTable[posRecTable['rArcmin'] < np.percentile(posRecTable['rArcmin'], clipPercentile)]
     
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
@@ -1703,7 +1711,7 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
         vertices=contours.collections[i].get_paths()[0].vertices
         SNRs=vertices[:, 0]
         rArcminAtProb=vertices[:, 1]
-        labelStr="%d" % (percentilesToPlot[i]) + "%"
+        labelStr="%.1f" % (percentilesToPlot[i]) + "%"
         contoursDict[labelStr]={'fixed_SNR': SNRs, 'rArcmin': rArcminAtProb}
         plt.plot(SNRs, rArcminAtProb, label = labelStr, lw = 3)
     plt.xlim(minSNR, maxSNR)

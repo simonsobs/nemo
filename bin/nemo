@@ -174,8 +174,9 @@ if __name__ == '__main__':
         # Plot tile-averaged position recovery test
         if posRecTable is not None:
             posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecoveryData.fits", overwrite = True) 
-            maps.positionRecoveryAnalysis(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery_average",
-                                          percentilesToPlot = [50, 90])
+            maps.positionRecoveryAnalysis(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
+                                          percentilesToPlot = [50, 90], plotRawData = False,
+                                          pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl')
             
         ## Plot contamination together
         #if conTabDict != {}:
