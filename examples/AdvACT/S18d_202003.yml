@@ -17,8 +17,7 @@ unfilteredMaps:
        beamFileName: "Beams/190809/b20190809_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb.txt"}
 
 # Masks
-#surveyMask: "maps/Sep2019/surveyMask_v7_galLatCut_S18_extsrc_dust.fits"
-surveyMask: "maps/Sep2019/surveyMask_v7_galLatCut_S18_20200405_extsrc_dust.fits"
+surveyMask: "maps/Mar2020/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
 
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
@@ -154,7 +153,7 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7_S18.fits',
+tileDefinitions: {mask: 'maps/Mar2020/AdvACTSurveyMask_v7_galLatCut_S18.fits',
                   targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}
 
