@@ -113,6 +113,13 @@ add10mJy=True                                                   # Post-processin
 artifactsRegFileName="all_artifacts_20200405.reg"
 sourceCatalogFileName="PS_S18d_202003_optimalCatalog.fits"
 
+# We can't automatically mask 10 mJy sources... because some clusters have rings that are picked up
+# So, we will remove objects from the source catalog that are within some radius of bright clusters
+# NOTE: These values are based on not wanting to zap ACT-CL J0417.5-1154 (SNR ~ 25, fixed_yc = 3.3e-04)
+clusterCatalogFileName="S18d_202003_optimalCatalog.fits"        
+ycBrightCut=3.0
+ycBrightExclusionRadiusArcmin=9.0
+
 # New format for output file names
 mask1FileName=mask1RegFileName.replace(".reg", ".fits")    # Survey mask with no holes written here
 mask2FileName=mask2RegFileName.replace(".reg", ".fits")    # The mask with holes
@@ -172,6 +179,14 @@ if add10mJy == True:
     print("... adding 10 mJy sources from file = %s ..." % (sourceCatalogFileName))
     tab=atpy.Table().read(sourceCatalogFileName)
     tab=tab[tab['fluxJy']*1000 > 10]
+    # Have to remove spurious sources (rings) that are too close to bright clusters
+    clTab=atpy.Table().read(clusterCatalogFileName)
+    clTab=clTab[clTab['fixed_y_c'] > ycBrightCut]
+    for row in clTab:
+        rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], tab['RADeg'].data, tab['decDeg'].data)
+        rGoodMask=(rDeg > ycBrightExclusionRadiusArcmin/60.)
+        tab=tab[rGoodMask]
+    # Now do the masking
     maskRadiusArcsec=320
     degreesMap=np.ones(shape, dtype = float)*1e6   # Updated in place (fast)
     count=0
