@@ -69,10 +69,43 @@ def addArtifactsToMask(regFile, surveyMask, wcs):
     return surveyMask
 
 #-------------------------------------------------------------------------------------------------------------
+def makeSurveyMask(surveyMaskRegFileName, shape, wcs):
+    """Makes a survey mask from a DS9 .reg file.
+    
+    Returns survey mask (2d array)
+    
+    """
+    
+    with open(surveyMaskRegFileName, "r") as inFile:
+        lines=inFile.readlines()
+    polyList=[]
+    for line in lines:
+        if line.find("polygon") != -1:
+            polyPoints=[]
+            coords=line.split("polygon(")[-1].split(") ")[0].split(",")
+            for i in range(0, len(coords), 2):
+                try:
+                    RADeg, decDeg=[float(coords[i]), float(coords[i+1])]
+                except:
+                    IPython.embed()
+                    sys.exit()
+                x, y=wcs.wcs2pix(RADeg, decDeg)
+                polyPoints.append((int(round(y)), int(round(x))))
+            polyList.append(polyPoints)
+    surveyMask=np.zeros(shape, dtype = int)
+    for polyPoints in polyList:
+        mahotas.polygon.fill_polygon(polyPoints, surveyMask)
+        
+    return surveyMask
+
+#-------------------------------------------------------------------------------------------------------------
 # Main
 
 # Options
-surveyMaskRegFileName="AdvACTSurveyMask_v7_galLatCut_S18.reg"   # Defines survey geometry / tiling (no holes)
+# NOTE: Can have two different survey geometry masks - mask 1 here doesn't have galactic latitude cut
+# We're doing this so that tiles remain the same across versions (could be changed for next release)
+mask1RegFileName="AdvACTSurveyMask_v7_S18.reg"                  # Defines survey geometry / tiling (no holes)
+mask2RegFileName="AdvACTSurveyMask_v7_galLatCut_S18.reg"        # Defines survey geometry (with holes)
 addDust=True                                                    # Add in dust from P353 map
 addArtifacts=True                                               # Mask anything in artifactRegFileName
 addExtended=True                                                # Apply Simone's extended objects mask
@@ -81,8 +114,8 @@ artifactsRegFileName="all_artifacts_20200405.reg"
 sourceCatalogFileName="PS_S18d_202003_optimalCatalog.fits"
 
 # New format for output file names
-mask1FileName=surveyMaskRegFileName.replace(".reg", ".fits")    # Survey mask with no holes written here
-mask2FileName=mask1FileName                                     # The mask with holes                          
+mask1FileName=mask1RegFileName.replace(".reg", ".fits")    # Survey mask with no holes written here
+mask2FileName=mask2RegFileName.replace(".reg", ".fits")    # The mask with holes
 if addDust == True:
     mask2FileName=mask2FileName.replace(".fits", "-dust.fits")
 if addArtifacts == True:
@@ -101,29 +134,12 @@ with pyfits.open("act_s08_s18_cmb_f150_daynight_map.fits") as img:
 # NOTE: now can handle multiple polygons
 # mahotas is needed for > 2 Gb images
 print(">>> Making mask 1: survey mask for tiling (no holes) ...")
-with open(surveyMaskRegFileName, "r") as inFile:
-    lines=inFile.readlines()
-polyList=[]
-for line in lines:
-    if line.find("polygon") != -1:
-        polyPoints=[]
-        coords=line.split("polygon(")[-1].split(") ")[0].split(",")
-        for i in range(0, len(coords), 2):
-            try:
-                RADeg, decDeg=[float(coords[i]), float(coords[i+1])]
-            except:
-                IPython.embed()
-                sys.exit()
-            x, y=wcs.wcs2pix(RADeg, decDeg)
-            polyPoints.append((int(round(y)), int(round(x))))
-        polyList.append(polyPoints)
-surveyMask=np.zeros(shape, dtype = int)
-for polyPoints in polyList:
-    mahotas.polygon.fill_polygon(polyPoints, surveyMask)
+surveyMask=makeSurveyMask(mask1RegFileName, shape, wcs)
 astImages.saveFITS(mask1FileName, surveyMask, wcs)
 
 # Drill optional holes
 print(">>> Making mask 2: survey mask with holes ...")
+surveyMask=makeSurveyMask(mask2RegFileName, shape, wcs)
 if addExtended == True:
     print("... adding extended sources ...")
     with pyfits.open("mask_extsrc_gt4arcmin_20190416.fits") as img:
