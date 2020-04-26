@@ -127,7 +127,7 @@ sourceCatalogFileName="PS_S18d_202003_optimalCatalog.fits"
 # So, we will remove objects from the source catalog that are within some radius of bright clusters
 # NOTE: These values are based on not wanting to zap ACT-CL J0417.5-1154 (SNR ~ 25, fixed_yc = 3.3e-04)
 clusterCatalogFileName="S18d_202003_optimalCatalog.fits"        
-ycBrightCut=3.0
+ycBrightCut=1.0
 ycBrightExclusionRadiusArcmin=9.0
 
 # New format for output file names
@@ -199,12 +199,13 @@ if add10mJy == True:
     # Now do the masking
     maskRadiusArcsec=320
     if useThreads == True:
+        #mask2FileName=mask2FileName.replace(".fits", "_threaded.fits") # If testing
         import multiprocessing
         from concurrent.futures import ThreadPoolExecutor
         from itertools import repeat
-        #initializer = init_maskObject, initargs = (shape)
-        RAs=tab['RADeg']
-        decs=tab['decDeg']
+        print("... num threads = %d ..." % (multiprocessing.cpu_count()))
+        RAs=tab['RADeg'].data
+        decs=tab['decDeg'].data
         degreesMap=np.ones(shape, dtype = float)*1e6   # Updated in place (fast)
         with ThreadPoolExecutor(max_workers = multiprocessing.cpu_count()) as executor:
             executor.map(maskObject, repeat(surveyMask), repeat(degreesMap), repeat(wcs), RAs, decs, repeat(maskRadiusArcsec/3600))
