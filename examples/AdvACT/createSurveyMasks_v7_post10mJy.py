@@ -99,6 +99,15 @@ def makeSurveyMask(surveyMaskRegFileName, shape, wcs):
     return surveyMask
 
 #-------------------------------------------------------------------------------------------------------------
+def maskObject(mapToMask, degreesMap, wcs, RADeg, decDeg, maskRadiusDeg):
+    """Set circular region in mapToMask to zero. Done in place.
+    
+    """
+    degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 
+                                                                   maskRadiusDeg)
+    mapToMask[degreesMap < maskRadiusArcsec/3600.0]=0
+
+#-------------------------------------------------------------------------------------------------------------
 # Main
 
 # Options
@@ -110,6 +119,7 @@ addDust=True                                                    # Add in dust fr
 addArtifacts=True                                               # Mask anything in artifactRegFileName
 addExtended=True                                                # Apply Simone's extended objects mask
 add10mJy=True                                                   # Post-processing masking of 10 mJy sources
+useThreads=True
 artifactsRegFileName="all_artifacts_20200405.reg"
 sourceCatalogFileName="PS_S18d_202003_optimalCatalog.fits"
 
@@ -188,15 +198,26 @@ if add10mJy == True:
         tab=tab[rGoodMask]
     # Now do the masking
     maskRadiusArcsec=320
-    degreesMap=np.ones(shape, dtype = float)*1e6   # Updated in place (fast)
-    count=0
-    for row in tab:
-        print("... %d/%d ..." % (count, len(tab)))
-        count=count+1
-        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                       row['RADeg'], row['decDeg'], 
-                                                                       maskRadiusArcsec/3600.0)
-        surveyMask[degreesMap < maskRadiusArcsec/3600.0]=0
+    if useThreads == True:
+        import multiprocessing
+        from concurrent.futures import ThreadPoolExecutor
+        from itertools import repeat
+        #initializer = init_maskObject, initargs = (shape)
+        RAs=tab['RADeg']
+        decs=tab['decDeg']
+        degreesMap=np.ones(shape, dtype = float)*1e6   # Updated in place (fast)
+        with ThreadPoolExecutor(max_workers = multiprocessing.cpu_count()) as executor:
+            executor.map(maskObject, repeat(surveyMask), repeat(degreesMap), repeat(wcs), RAs, decs, repeat(maskRadiusArcsec/3600))
+    else:
+        degreesMap=np.ones(shape, dtype = float)*1e6   # Updated in place (fast)
+        count=0        
+        for row in tab:
+            print("... %d/%d ..." % (count, len(tab)))
+            count=count+1
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                        row['RADeg'], row['decDeg'], 
+                                                                        maskRadiusArcsec/3600.0)
+            surveyMask[degreesMap < maskRadiusArcsec/3600.0]=0
     
 # Don't want -ve area (holes where sources outside survey mask)
 surveyMask[np.less(surveyMask, 0)]=0
