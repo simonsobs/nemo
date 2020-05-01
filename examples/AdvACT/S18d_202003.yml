@@ -7,18 +7,17 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f150_night_map.fits",
-       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f150_night_div.fits",
+    - {mapFileName: "maps/Mar2020/act_s08_s18_cmb_f150_daynight_map.fits",
+       weightsFileName: "maps/Mar2020/act_s08_s18_cmb_f150_daynight_ivar.fits",
        obsFreqGHz: 149.8, units: 'uK',
-       beamFileName: "Beams/181222/mr3c_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
-    - {mapFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f090_night_map.fits",
-       weightsFileName: "maps/Sep2019/TOnly_act_planck_s08_s18_cmb_f090_night_div.fits",
+       beamFileName: "Beams/190809/b20190809_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb.txt"}
+    - {mapFileName: "maps/Mar2020/act_s08_s18_cmb_f090_daynight_map.fits",
+       weightsFileName: "maps/Mar2020/act_s08_s18_cmb_f090_daynight_ivar.fits",
        obsFreqGHz: 98.3, units: 'uK',
-       beamFileName: "Beams/181222/mr3c_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb_181222.txt"}
+       beamFileName: "Beams/190809/b20190809_s16_pa3_f090_nohwp_night_beam_profile_jitter_cmb.txt"}
 
 # Masks
-surveyMask: "maps/Sep2019/surveyMask_v7_galLatCut_S18_extsrc_dust.fits"
-#surveyMask: 'maps/Sep2019/surveyMask_v7_S18_inc_extsrc.fits'
+surveyMask: "maps/Mar2020/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
 
 # Instead of giving point source mask, can give catalog instead
 maskPointSourcesFromCatalog: 
@@ -57,9 +56,9 @@ massOptions: {tenToA0: 4.95e-5,
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
               relativisticCorrection: True,
-              rescaleFactor: 0.68, 
-              rescaleFactorErr: 0.11,
-              redshiftCatalog: "AdvACT_redshifts.fits", 
+              rescaleFactor: 0.69, 
+              rescaleFactorErr: 0.07,
+              redshiftCatalog: "S18Clusters/AdvACT_confirmed.fits", 
               forcedPhotometry: False, 
               Q: 'fit'}
 
@@ -154,7 +153,7 @@ makeTileDir: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
-tileDefinitions: {mask: 'maps/Sep2019/surveyMask_v7_S18.fits',
+tileDefinitions: {mask: 'maps/Mar2020/AdvACTSurveyMask_v7_S18.fits',
                   targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}
 
