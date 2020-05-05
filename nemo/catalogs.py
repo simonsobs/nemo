@@ -621,7 +621,7 @@ def getTableRADecKeys(tab):
     
     """
     RAKeysToTry=['ra', 'RA', 'RADeg']
-    decKeysToTry=['dec', 'DEC', 'decDeg']
+    decKeysToTry=['dec', 'DEC', 'decDeg', 'Dec']
     RAKey, decKey=None, None
     for key in RAKeysToTry:
         if key in tab.keys():

@@ -29,6 +29,7 @@ from nemo import MockSurvey
 from nemo import photometry
 from nemo import startUp
 from nemo import completeness
+from nemo import pipelines
 import argparse
 import astropy.io.fits as pyfits
 import time
@@ -36,72 +37,59 @@ import yaml
 #import IPython
 
 #------------------------------------------------------------------------------------------------------------
-def addForcedPhotometry(forcedTab, config):
-    """Given a tab with (minimum) name, RADeg, decDeg, redshift columns, add forced photometry columns so we
-    can estimate SZ masses.
+def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnName = None):
+    """Given the path to a catalog that contains minimal columns name, RADeg, decDeg, redshift, 
+    add forced photometry columns so we can estimate SZ masses.
     
     """
     
     print(">>> Doing forced photometry ...")
     
-    # Filter maps - but should already have been done, this is just for easy set up
-    photFilterLabel=config.parDict['photFilter']
-    photFilterList=[]
-    for filterDict in config.parDict['mapFilters']:
-        if filterDict['label'] == photFilterLabel:
-            photFilterList.append(filterDict)
-    imageDict=mapFilters.filterMaps(config.parDict['unfilteredMaps'], photFilterList, tileNames = config.tileNames, rootOutDir = config.rootOutDir)
+    zTab=atpy.Table().read(pathToCatalog)
+    if zColumnName is not None:
+        if 'redshift' in zTab.keys():
+            zTab.remove_column('redshift')
+        zTab.rename_column(zColumnName, 'redshift')
+    if zErrColumnName is not None:
+        if 'redshiftErr' in zTab.keys():
+            zTab.remove_column('redshiftErr')
+        zTab.rename_column(zErrColumnName, 'redshiftErr')
+    if 'redshift' not in zTab.keys():
+        foundRedshiftCol=False
+        possZCols=['z', 'Z', 'REDSHIFT', 'Redshift', 'z_cl']
+        for p in possZCols:
+            if p in zTab.keys():
+                print("... assuming %s is the redshift column ..." % (p))
+                foundRedshiftCol=True
+                zTab.rename_column(p, 'redshift')
+        if foundRedshiftCol == False:
+            raise Exception("Couldn't find a redshift column in %s" % (pathToCatalog))
+    if 'redshiftErr' not in zTab.keys():
+        possZErrCols=['zErr', 'dz']
+        for p in possZErrCols:
+            if p in zTab.keys():
+                print("... assuming %s is the redshiftErr column ..." % (p))
+                zTab.rename_column(p, 'redshiftErr')
+    if 'redshiftErr' not in zTab.keys():
+        print("... assuming redshiftErr = 0 for all objects (no suitable redshiftErr column found) ...")
+        zTab.add_column(atpy.Column(np.zeros(len(zTab)), 'redshiftErr'))
+        
+    config.parDict['forcedPhotometryCatalog']=pathToCatalog
     
-    # Re-jig the catalog into the appropriate format before feeding through photometry routine
-    catalog=[]
-    for tileName in config.tileNames:
-        # We need this to check if objects in the catalog are actually in the footprint
-        areaMask, wcs=completeness.loadAreaMask(tileName, config.selFnDir)
-        for row in forcedTab:
-            objDict={}
-            for key in list(forcedTab.keys()):
-                objDict[key]=row[key]
-            objDict['template']=photFilterLabel
-            objDict['tileName']=tileName
-            objDict['SNR']=1.0  # Just to keep photometry routine happy; not used for masses
-            objDict['redshift']=row['redshift']
-            if 'redshiftErr' in forcedTab.keys():
-                objDict['redshiftErr']=row['redshiftErr']
-            else:
-                objDict['redshiftErr']=0.0
-            x, y=wcs.wcs2pix(objDict['RADeg'], objDict['decDeg'])
-            if x > 0 and y > 0 and x < areaMask.shape[1] and y < areaMask.shape[0]:
-                if areaMask[int(round(y)), int(round(x))] == 1:
-                    objDict['x']=x
-                    objDict['y']=y
-                    catalog.append(objDict)
-    imageDict[photFilterLabel+"#"+tileName]['catalog']=catalog
-    photometry.measureFluxes(imageDict, config.parDict['photFilter'], config.diagnosticsDir, unfilteredMapsDict = config.parDict['unfilteredMaps'])
-    catalogs.mergeCatalogs(imageDict)
+    # Trim all filters except the reference one, then make catalog
+    trimmedList=[]
+    for mapFilter in config.parDict['mapFilters']:
+        if mapFilter['label'] == config.parDict['photFilter']:
+            trimmedList.append(mapFilter)
+    config.parDict['mapFilters']=trimmedList
+    forcedTab=pipelines.filterMapsAndMakeCatalogs(config)
+
+    # Need to graft the redshifts back on
+    zMatched, forcedMatched, rDeg=catalogs.crossMatch(zTab, forcedTab)
+    tab=forcedMatched
+    tab.add_column(zMatched['redshift'])
+    tab.add_column(zMatched['redshiftErr'])
     
-    # No cuts here, because if we're using this mode, the objects almost certainly weren't detected...
-    catalogs.makeOptimalCatalog(imageDict, [])  
-    photometry.addFreqWeightsToCatalog(imageDict, config.parDict['photFilter'], config.diagnosticsDir)
-
-    # Make into an atpy Table
-    # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
-    wantedKeys=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template']
-    for key in imageDict['optimalCatalog'][0].keys():
-        if key.find("fixed_y_c_weight") != -1:
-            wantedKeys.append(key)
-    tab=atpy.Table()
-    for tileName in config.tileNames:
-        catalog=imageDict['optimalCatalog']
-        for key in wantedKeys:
-            arr=[]
-            for objDict in catalog:
-                if key in list(objDict.keys()):
-                    arr.append(objDict[key])
-                else:
-                    arr.append(0)
-            tab.add_column(atpy.Column(np.array(arr), key))
-    tab=tab[np.where(tab['redshift'] != 0)]
-
     # Flag things with -ve y0~, which we can't do anything with (unless we add stacking / averaging mode)
     for row in tab:
         if row['fixed_y_c'] < 0:
@@ -226,6 +214,13 @@ if __name__ == '__main__':
                         then these will be used to infer mass estimates. If not, "forced photometry" mode 
                         will be enabled, and the fixed_y_c, fixed_err_y_c values will be extracted from the
                         filtered maps.""", default = None)
+    parser.add_argument("-o", "--output", dest="outFileName", help = """Output catalog file name 
+                        (.fits format). If not given, the name of the output catalog file will be based on
+                        either configFileName or catFileName.""", default = None)
+    parser.add_argument("-z", "--z-column", dest="zColumnName", help = """Specify the name of the redshift
+                        column in the input catalog.""", default = None)
+    parser.add_argument("-e", "--z-error-column", dest="zErrColumnName", help = """Specify the name of the 
+                        redshift uncertainty column in the input catalog.""", default = None)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M""", 
                         default = False)
@@ -233,16 +228,12 @@ if __name__ == '__main__':
     
     parDictFileName=args.configFileName
     catFileName=args.catFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False, verbose = False)
-        
-    massOptions=config.parDict['massOptions']
-    if 'relativisticCorrection' not in massOptions.keys():
-        massOptions['relativisticCorrection']=True
-        
+    outFileName=args.outFileName
     forcedPhotometry=False
     
     # Load the nemo catalog and match against the z catalog
-    if catFileName == None:
+    if catFileName is None:
+        config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False, verbose = False)
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(massOptions['redshiftCatalog'])
@@ -283,32 +274,38 @@ if __name__ == '__main__':
             if k not in colsToKeep:
                 colsToRemove.append(k)
         tab.remove_columns(colsToRemove)
-        outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+        if outFileName is None:
+            outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
 
     else:
         
         # Load another catalog (e.g., a mock, for testing)
         optimalCatalogFileName=catFileName
         tab=atpy.Table().read(optimalCatalogFileName)
-        outFileName=catFileName.replace(".fits", "_M500.fits")
+        if outFileName is None:
+            outFileName=catFileName.replace(".fits", "_M500.fits")
         
         # Enter forced photometry mode if we can't find the columns we need
+        # If we're doing forced photometry, we're going to need to set-up so we can find the filtered maps
         keysNeeded=['fixed_y_c', 'fixed_err_y_c']
         forcedPhotometry=False
         for key in keysNeeded:
             if key not in tab.keys():
                 forcedPhotometry=True
-
-    # Q function (filter mismatch) options
-    tckQFitDict=signals.loadQ(config)
+        config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = forcedPhotometry, 
+                                  verbose = False)
     
-    # Dictionary by tile with frequency weights needed by relativistic corrections
+    # Remaining set-up
+    massOptions=config.parDict['massOptions']
+    if 'relativisticCorrection' not in massOptions.keys():
+        massOptions['relativisticCorrection']=True
+    tckQFitDict=signals.loadQ(config)    
     fRelWeightsDict=signals.getFRelWeights(config)
     
     # Forced photometry (if enabled) - modifying table in place
     # NOTE: Move this up if/when we make it run under MPI
     if forcedPhotometry == True:
-        tab=addForcedPhotometry(tab, config)
+        tab=addForcedPhotometry(catFileName, config, args.zColumnName, args.zErrColumnName)
 
     # Optional fixed SNR cut
     if 'fixedSNRCut' in list(massOptions.keys()):
