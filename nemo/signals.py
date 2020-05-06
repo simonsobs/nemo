@@ -665,7 +665,7 @@ def getM500FromP(P, log10M, calcErrors = True):
             if minIndex < 0 or maxIndex > fineP.shape[0]:
                 # This shouldn't happen; if it does, probably y0 is in the wrong units
                 # Previously we threw an exception here, but we can't if using this for forced photometry
-                print("WARNING: outside M500 range - check y0 units or for problem at cluster location in map (if not in forced photometry mode)")
+                #print("WARNING: outside M500 range - check y0 units or for problem at cluster location in map (if not in forced photometry mode)")
                 clusterM500MinusErr=0.
                 clusterM500PlusErr=0.
                 break

@@ -76,6 +76,10 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
         
     config.parDict['forcedPhotometryCatalog']=pathToCatalog
     
+    # We need to disable any cut in SNR, otherwise we're not doing truly forced photometry
+    # This will allow -ve fixed_y_c, but we'll still only get the +ve masses though
+    config.parDict['thresholdSigma']=-100
+    
     # Trim all filters except the reference one, then make catalog
     trimmedList=[]
     for mapFilter in config.parDict['mapFilters']:
@@ -91,10 +95,10 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
     tab.add_column(zMatched['redshiftErr'])
     
     # Flag things with -ve y0~, which we can't do anything with (unless we add stacking / averaging mode)
-    for row in tab:
-        if row['fixed_y_c'] < 0:
-            print("... %s has fixed_y_c < 0 (and is removed) ..." % (row['name']))
-    tab=tab[np.where(tab['fixed_y_c'] > 0)]
+    #for row in tab:
+        #if row['fixed_y_c'] < 0:
+            #print("... %s has fixed_y_c < 0 (and is removed) ..." % (row['name']))
+    #tab=tab[np.where(tab['fixed_y_c'] > 0)]
 
     return tab
 
@@ -221,6 +225,12 @@ if __name__ == '__main__':
                         column in the input catalog.""", default = None)
     parser.add_argument("-e", "--z-error-column", dest="zErrColumnName", help = """Specify the name of the 
                         redshift uncertainty column in the input catalog.""", default = None)
+    parser.add_argument("-F", "--forced-photometry", dest="forcedPhotometry", help = """Do forced photometry.
+                        This is automatically enabled if the catalog does not contain the fixed_y_c, 
+                        fixed_err_y_c columns. Use this switch to force using this mode even if the 
+                        catalog already contains fixed_y_c, fixed_err_y_c  columns (e.g., for doing forced
+                        photometry on one ACT map using positions of clusters found in another, deeper 
+                        map).""", default = False, action="store_true")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M""", 
                         default = False)
@@ -229,7 +239,7 @@ if __name__ == '__main__':
     parDictFileName=args.configFileName
     catFileName=args.catFileName
     outFileName=args.outFileName
-    forcedPhotometry=False
+    forcedPhotometry=args.forcedPhotometry
     
     # Load the nemo catalog and match against the z catalog
     if catFileName is None:
@@ -288,7 +298,6 @@ if __name__ == '__main__':
         # Enter forced photometry mode if we can't find the columns we need
         # If we're doing forced photometry, we're going to need to set-up so we can find the filtered maps
         keysNeeded=['fixed_y_c', 'fixed_err_y_c']
-        forcedPhotometry=False
         for key in keysNeeded:
             if key not in tab.keys():
                 forcedPhotometry=True
@@ -306,10 +315,6 @@ if __name__ == '__main__':
     # NOTE: Move this up if/when we make it run under MPI
     if forcedPhotometry == True:
         tab=addForcedPhotometry(catFileName, config, args.zColumnName, args.zErrColumnName)
-
-    # Optional fixed SNR cut
-    if 'fixedSNRCut' in list(massOptions.keys()):
-        tab=tab[np.where(tab['fixed_SNR'] > massOptions['fixedSNRCut'])]
     
     # Set cosmological parameters for e.g. E(z) calc if these are set in .par file
     # We set them after the Q calc, because the Q calc needs to be for the fiducial cosmology

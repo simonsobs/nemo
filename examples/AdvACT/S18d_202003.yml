@@ -33,7 +33,6 @@ useInterpolator: True
 rejectBorder: 0
 objIdent: 'ACT-CL'
 longNames: False
-catalogCuts: ['SNR > 4.0']
 
 # Photometry options
 photFilter: 'Arnaud_M2e14_z0p4'
