@@ -757,24 +757,27 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     if method == "montecarlo":
         # Need area-weighted average noise in the tile - we could change this to use entire RMS map instead
         areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
-        y0Noise=np.average(RMSTab['y0RMS'].data, weights = areaWeights)
-        # Monte-carlo sims approach: slow - but can use to verify the other approach below
-        halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
-        binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
-        halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
-        binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
-        allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-        detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-        for i in range(numIterations):
-            tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, tileName = tileName, 
-                                    SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
-            allMz=allMz+np.histogram2d(np.log10(tab['true_M500']*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
-            detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
-            detMz=detMz+np.histogram2d(np.log10(tab['true_M500'][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
-        mask=np.not_equal(allMz, 0)
-        compMz=np.ones(detMz.shape)
-        compMz[mask]=detMz[mask]/allMz[mask]
-        compMz=compMz.transpose()
+        if areaWeights.sum() > 0:
+            y0Noise=np.average(RMSTab['y0RMS'].data, weights = areaWeights)
+            # Monte-carlo sims approach: slow - but can use to verify the other approach below
+            halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
+            binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
+            halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
+            binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
+            allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
+            detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
+            for i in range(numIterations):
+                tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, tileName = tileName, 
+                                        SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
+                allMz=allMz+np.histogram2d(np.log10(tab['true_M500']*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
+                detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
+                detMz=detMz+np.histogram2d(np.log10(tab['true_M500'][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
+            mask=np.not_equal(allMz, 0)
+            compMz=np.ones(detMz.shape)
+            compMz[mask]=detMz[mask]/allMz[mask]
+            compMz=compMz.transpose()
+        else:
+            compMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
         #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
 
     elif method == "fast":
