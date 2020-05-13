@@ -246,7 +246,7 @@ if __name__ == '__main__':
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False, verbose = False)
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
-        zTab=atpy.Table().read(massOptions['redshiftCatalog'])
+        zTab=atpy.Table().read(config.parDict['massOptions']['redshiftCatalog'])
         # Sanity check/clean z table
         # We're matching on name alone before, so keep only one row with unique name
         wantedColumns=['name', 'RADeg', 'decDeg', 'redshift', 'redshiftErr']

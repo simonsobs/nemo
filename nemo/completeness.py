@@ -642,6 +642,32 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
     
     """
     
+    # Easiest way to get at contour for plotting later
+    # The smoothing may only be necessary if compMz is made by montecarlo method
+    contours=plt.contour(z, log10M, compMz.transpose(), levels = [0.9])
+    cont_z=[]
+    cont_log10M=[]
+    for p in contours.collections[0].get_paths():
+        v=p.vertices
+        cont_z=cont_z+v[:, 0].tolist()
+        cont_log10M=cont_log10M+v[:, 1].tolist()
+    plt.close()
+    contTab=atpy.Table()
+    contTab.add_column(atpy.Column(cont_z, 'z'))
+    contTab.add_column(atpy.Column(cont_log10M, 'log10M'))
+    contTab.sort('z')
+    cont_z=[]
+    cont_log10M=[]
+    for zi in z:
+        mask=np.equal(contTab['z'], zi)
+        if mask.sum() > 0:
+            cont_z.append(zi)
+            cont_log10M.append(np.median(contTab['log10M'][mask]))
+    cont_z=np.array(cont_z)
+    cont_log10M=np.array(cont_log10M)
+    #cont_log10M=ndimage.uniform_filter(cont_log10M, int(np.ceil(len(cont_log10M)/20)))
+    
+    # Actual plot
     plotSettings.update_rcParams()
     plt.figure(figsize=(9.5,6.5))
     ax=plt.axes([0.11, 0.11, 0.87, 0.80])
@@ -656,7 +682,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
         labels_log10M.append("%.2f" % (lm))
     plt.yticks(interpolate.splev(plot_log10M, y_tck), labels_log10M)
     plt.ylim(coords_log10M.min(), coords_log10M.max())
-    plt.ylabel("log$_{10}$ ($M / M_{\odot}$)")
+    plt.ylabel("log$_{10}$ ($M_{\\rm 500c} / M_{\odot}$)")
     
     x_tck=interpolate.splrep(z, np.arange(z.shape[0]))
     plot_z=np.linspace(0.0, 2.0, 11)
@@ -668,12 +694,18 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
     plt.xlim(coords_z.min(), coords_z.max())
     plt.xlabel("$z$")
     
+    coords_cont_z=interpolate.splev(cont_z, x_tck)
+    coords_cont_log10M=interpolate.splev(cont_log10M, y_tck)
+    plt.plot(coords_cont_z, coords_cont_log10M, 'k:', lw = 3)
+    
     plt.colorbar(pad = 0.03)
     cbLabel="Completeness (%)" 
     plt.figtext(0.96, 0.52, cbLabel, ha="center", va="center", family = "sans-serif", rotation = "vertical")
 
-    plt.title(title)
+    if title != 'full':
+        plt.title(title)    
     plt.savefig(outFileName)
+    plt.close()
 
 #------------------------------------------------------------------------------------------------------------
 def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
@@ -705,10 +737,10 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     Two methods for doing the calculation are available:
     - "fast"        : applying measurement error and scatter to 'true' y0 on a grid to get (log10 M, z) 
                       completeness 
-    - "Monte Carlo" : using samples drawn from mockSurvey to fill out the (log10 M, z) grid
+    - "montecarlo" : using samples drawn from mockSurvey to fill out the (log10 M, z) grid
     
     Adjust numDraws (per iteration) and numIterations to set the noise level of estimate when using the
-    "Monte Carlo" method. For the "fast" method, numDraws and numIterations are ignored.
+    "montecarlo" method. For the "fast" method, numDraws and numIterations are ignored.
     
     The calculation can be done at a single fixed z, if given.
 
@@ -722,7 +754,10 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     else:
         zRange=mockSurvey.z
     
-    if method == "Monte Carlo":
+    if method == "montecarlo":
+        # Need area-weighted average noise in the tile - we could change this to use entire RMS map instead
+        areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
+        y0Noise=np.average(RMSTab['y0RMS'].data, weights = areaWeights)
         # Monte-carlo sims approach: slow - but can use to verify the other approach below
         halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
         binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
