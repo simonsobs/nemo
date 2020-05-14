@@ -777,7 +777,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
             compMz[mask]=detMz[mask]/allMz[mask]
             compMz=compMz.transpose()
         else:
-            compMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
+            compMz=np.zeros([mockSurvey.clusterCount.shape[0], mockSurvey.clusterCount.shape[1]])
         #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
 
     elif method == "fast":

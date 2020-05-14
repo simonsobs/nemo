@@ -175,7 +175,8 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
                     objDict['ellipse_y0']=-99
                     objDict['ellipse_e']=-99
             # Add to catalog (masks now applied before we get here so no need to check)
-            catalog.append(objDict)
+            if objDict['SNR'] > threshold:
+                catalog.append(objDict)
             idNumCount=idNumCount+1     
     
     # From here on, catalogs should be astropy Table objects...
