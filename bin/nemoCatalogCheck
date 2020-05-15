@@ -81,7 +81,7 @@ if __name__ == '__main__':
     
     regFileName=outFileName.replace(".fits", ".reg")
     foundIDKey=False
-    for idKeyToUse in ['name', 'id', 'ID', 'Name', 'NAME']:
+    for idKeyToUse in ['name', 'id', 'ID', 'Name', 'NAME', 'Cluster']:
         if idKeyToUse in missTab.keys():
             foundIDKey=True
             break
