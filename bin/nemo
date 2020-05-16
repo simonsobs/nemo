@@ -102,24 +102,24 @@ if __name__ == '__main__':
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
 
-    # Optional position recovery test (how well do we recovery positions as fn. of S/N?)
-    if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
-        posRecTable=maps.positionRecoveryTest(config)
+    # Source injection tests for quantifying position recovery accuracy and noise bias
+    if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
+        sourceInjTable=maps.sourceInjectionTest(config)
         if config.MPIEnabled == True:
             config.comm.barrier()
-            posRecTableList=config.comm.gather(posRecTable, root = 0)
+            sourceInjTableList=config.comm.gather(sourceInjTable, root = 0)
             if config.rank == 0:
-                print("... gathered position recovery test results ...")
+                print("... gathered source injection test results ...")
                 toStack=[]
-                for posRecTable in posRecTableList:
-                    if type(posRecTable) == astropy.table.table.Table and len(posRecTable) > 0:
-                        toStack.append(posRecTable)
+                for sourceInjTable in sourceInjTableList:
+                    if type(sourceInjTable) == astropy.table.table.Table and len(sourceInjTable) > 0:
+                        toStack.append(sourceInjTable)
                 if len(toStack) > 0:
-                    posRecTable=atpy.vstack(toStack)
+                    sourceInjTable=atpy.vstack(toStack)
                 else:
-                    posRecTable=None
+                    sourceInjTable=None
     else:
-        posRecTable=None
+        sourceInjTable=None
             
     ## Estimate of contamination from running cluster finding over inverted map
     #if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
@@ -172,11 +172,12 @@ if __name__ == '__main__':
     if config.rank == 0:
         
         # Plot tile-averaged position recovery test
-        if posRecTable is not None:
-            posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecoveryData.fits", overwrite = True) 
-            maps.positionRecoveryAnalysis(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
+        if sourceInjTable is not None:
+            sourceInjTable.write(config.diagnosticsDir+os.path.sep+"positionRecoveryData.fits", overwrite = True) 
+            maps.positionRecoveryAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
                                           percentilesToPlot = [50, 90], plotRawData = False,
                                           pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl')
+            maps.noiseBiasAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"noiseBias.pdf")
             
         ## Plot contamination together
         #if conTabDict != {}:

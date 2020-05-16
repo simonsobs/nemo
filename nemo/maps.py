@@ -1486,9 +1486,11 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryTest(config, writeRankTable = False):
+def sourceInjectionTest(config, writeRankTable = False):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
     offset with respect to the true location as a function of S/N (for the fixed reference scale only).
+    If the inserted sources are clusters, the Q function will be applied to the output fluxes, to account 
+    for any mismatch between the reference filter scale and the inserted clusters.
     
     Writes output to the diagnostics/ directory.
     
@@ -1498,11 +1500,12 @@ def positionRecoveryTest(config, writeRankTable = False):
             diagnostics/ directory. Useful for MPI debugging only.
     
     Returns:
-        An astropy Table containing recovered position offsets versus fixed_SNR for various cluster models
+        An astropy Table containing recovered position offsets and fluxes versus fixed_SNR for inserted
+        sources.
     
     """
     
-    simRootOutDir=config.diagnosticsDir+os.path.sep+"posRec_rank%d" % (config.rank)
+    simRootOutDir=config.diagnosticsDir+os.path.sep+"sourceInjection_rank%d" % (config.rank)
     SNRKeys=['fixed_SNR']
     
     # We don't copy this, because it's complicated due to containing MPI-related things (comm)
@@ -1516,47 +1519,57 @@ def positionRecoveryTest(config, writeRankTable = False):
     
     print(">>> Position recovery test [rank = %d] ..." % (config.rank))
 
-    if 'posRecIterations' not in config.parDict.keys():
+    if 'sourceInjectionIterations' not in config.parDict.keys():
         numIterations=1
     else:
-        numIterations=config.parDict['posRecIterations']
+        numIterations=config.parDict['sourceInjectionIterations']
     
     # For clusters, we may want to run multiple scales
     # We're using theta500Arcmin as the label here
     filtDict=simConfig.parDict['mapFilters'][0]
     if filtDict['class'].find("ArnaudModel") != -1:
-        if 'posRecModels' not in config.parDict.keys():
-            posRecModelList=[{'redshift': 0.4, 'M500': 2e14}]
+        clusterMode=True
+        if 'sourceInjectionModels' not in config.parDict.keys():
+            sourceInjectionModelList=[{'redshift': 0.4, 'M500': 2e14}]
         else:
-            posRecModelList=config.parDict['posRecModels']
-        for posRecModel in posRecModelList:
-            label='%.2f' % (signals.calcTheta500Arcmin(posRecModel['redshift'], 
-                                                       posRecModel['M500'], signals.fiducialCosmoModel))
-            posRecModel['label']=label
+            sourceInjectionModelList=config.parDict['sourceInjectionModels']
+        for sourceInjectionModel in sourceInjectionModelList:
+            label='%.2f' % (signals.calcTheta500Arcmin(sourceInjectionModel['redshift'], 
+                                                       sourceInjectionModel['M500'], signals.fiducialCosmoModel))
+            sourceInjectionModel['label']=label
+        # We need Q for flux recovery stuff...
+        tckQFitDict=signals.loadQ(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
     else:
         # Sources
-        posRecModelList=[{'label': 'pointSource'}]
+        clusterMode=False
+        sourceInjectionModelList=[{'label': 'pointSource'}]
     #
-    if 'posRecSourcesPerTile' not in config.parDict.keys():
+    if 'sourceInjectionSourcesPerTile' not in config.parDict.keys():
         numSourcesPerTile=300
     else:
-        numSourcesPerTile=config.parDict['posRecSourcesPerTile']
+        numSourcesPerTile=config.parDict['sourceInjectionSourcesPerTile']
     
     # We need the actual catalog to throw out spurious 'recoveries'
     # i.e., we only want to cross-match with objects we injected
     catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
     if os.path.exists(catFileName) == False:
-        raise Exception("Catalog file '%s' not found - needed to do position recovery test." % (catFileName))
+        raise Exception("Catalog file '%s' not found - needed to do source injection test." % (catFileName))
     realCatalog=atpy.Table().read(catFileName)
     
     # Run each scale / model and then collect everything into one table afterwards
     SNRDict={}
     rArcminDict={}
-    for posRecModel in posRecModelList:
-        SNRDict[posRecModel['label']]=[]
-        rArcminDict[posRecModel['label']]=[]
+    inFluxDict={}
+    outFluxDict={}
+    tileNamesDict={}
+    for sourceInjectionModel in sourceInjectionModelList:
+        SNRDict[sourceInjectionModel['label']]=[]
+        rArcminDict[sourceInjectionModel['label']]=[]
+        inFluxDict[sourceInjectionModel['label']]=[]
+        outFluxDict[sourceInjectionModel['label']]=[]
+        tileNamesDict[sourceInjectionModel['label']]=[]
         for i in range(numIterations):        
-            print(">>> Position recovery test %d/%d [rank = %d] ..." % (i+1, numIterations, config.rank))
+            print(">>> Source injection and recovery test %d/%d [rank = %d] ..." % (i+1, numIterations, config.rank))
                         
             # NOTE: This block below should be handled when parsing the config file - fix/remove
             # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
@@ -1583,6 +1596,7 @@ def positionRecoveryTest(config, writeRankTable = False):
             # So, we only generate the catalog here
             print("... generating mock catalog ...")
             if filtDict['class'].find("ArnaudModel") != -1:
+                fluxCol='fixed_y_c'
                 # Quick test catalog - takes < 1 sec to generate
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = 'fixed_y_c', 
@@ -1592,8 +1606,9 @@ def positionRecoveryTest(config, writeRankTable = False):
                 # Or... proper mock, but this takes ~24 sec for E-D56
                 #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
                 injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'], 
-                               'override': posRecModel}
+                               'override': sourceInjectionModel}
             elif filtDict['class'].find("BeamModel") != -1:
+                fluxCol='deltaT_c'
                 raise Exception("Haven't implemented generating mock source catalogs here yet")
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
@@ -1619,29 +1634,54 @@ def positionRecoveryTest(config, writeRankTable = False):
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
                     except:
                         raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(simConfig.tileNames), len(mockCatalog), len(recCatalog)))
-                    SNRDict[posRecModel['label']]=SNRDict[posRecModel['label']]+x_recCatalog['fixed_SNR'].tolist()
-                    rArcminDict[posRecModel['label']]=rArcminDict[posRecModel['label']]+(rDeg*60).tolist()
-        SNRDict[posRecModel['label']]=np.array(SNRDict[posRecModel['label']])
-        rArcminDict[posRecModel['label']]=np.array(rArcminDict[posRecModel['label']])
-    
-    # Just collect results as long tables (model, SNR, rArcmin) that we can later stack and average etc.
+                    # If we're using clusters, we need to put in the Q correction
+                    # NOTE: This assumes the model name gives theta500c in arcmin!
+                    if clusterMode == True:
+                        for tileName in np.unique(x_recCatalog['tileName']):
+                            theta500Arcmin=float(sourceInjectionModel['label'])
+                            Q=interpolate.splev(theta500Arcmin, tckQFitDict[tileName])
+                            mask=(x_recCatalog['tileName'] == tileName)
+                            x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
+                    # Store everything - analyse later
+                    SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog['fixed_SNR'].tolist()
+                    rArcminDict[sourceInjectionModel['label']]=rArcminDict[sourceInjectionModel['label']]+(rDeg*60).tolist()
+                    inFluxDict[sourceInjectionModel['label']]=inFluxDict[sourceInjectionModel['label']]+x_mockCatalog[fluxCol].tolist()
+                    outFluxDict[sourceInjectionModel['label']]=outFluxDict[sourceInjectionModel['label']]+x_recCatalog[fluxCol].tolist()
+                    tileNamesDict[sourceInjectionModel['label']]=tileNamesDict[sourceInjectionModel['label']]+x_recCatalog['tileName'].tolist()
+
+        SNRDict[sourceInjectionModel['label']]=np.array(SNRDict[sourceInjectionModel['label']])
+        rArcminDict[sourceInjectionModel['label']]=np.array(rArcminDict[sourceInjectionModel['label']])
+        inFluxDict[sourceInjectionModel['label']]=np.array(inFluxDict[sourceInjectionModel['label']])
+        outFluxDict[sourceInjectionModel['label']]=np.array(outFluxDict[sourceInjectionModel['label']])
+        tileNamesDict[sourceInjectionModel['label']]=np.array(tileNamesDict[sourceInjectionModel['label']])
+        
+    # Just collect results as long tables (model, SNR, rArcmin, inFlux, outFlux) that we can later stack and average etc.
     # (see positionRecoveryAnalysis below)
     models=[]
     SNRs=[]
     rArcmin=[]
-    for posRecModel in posRecModelList:
-        label=posRecModel['label']
+    inFlux=[]
+    outFlux=[]
+    tileNames=[]
+    for sourceInjectionModel in sourceInjectionModelList:
+        label=sourceInjectionModel['label']
         models=models+[label]*len(SNRDict[label])
         SNRs=SNRs+SNRDict[label].tolist()
         rArcmin=rArcmin+rArcminDict[label].tolist()
+        inFlux=inFlux+inFluxDict[label].tolist()
+        outFlux=outFlux+outFluxDict[label].tolist()
+        tileNames=tileNames+tileNamesDict[label].tolist()
     resultsTable=atpy.Table()
-    resultsTable.add_column(atpy.Column(models, 'posRecModel'))
+    resultsTable.add_column(atpy.Column(models, 'sourceInjectionModel'))
     resultsTable.add_column(atpy.Column(SNRs, 'fixed_SNR'))
     resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
+    resultsTable.add_column(atpy.Column(inFlux, 'inFlux'))
+    resultsTable.add_column(atpy.Column(outFlux, 'outFlux'))
+    resultsTable.add_column(atpy.Column(tileNames, 'tileName'))
 
     # This is just for debugging - can be removed later
     if writeRankTable == True:
-        fitsOutFileName=config.diagnosticsDir+os.path.sep+"positionRecovery_rank%d.fits" % (config.rank)
+        fitsOutFileName=config.diagnosticsDir+os.path.sep+"sourceInjection_rank%d.fits" % (config.rank)
         resultsTable.write(fitsOutFileName, overwrite = True)
     
     # Restore the original config parameters (which we overrode here)
@@ -1657,8 +1697,8 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
     the contents of posRecTable (see positionRecoveryTest).
     
     Args:
-        posRecTable (:obj:`astropy.table.Table`): Table of recovered position offsets versus fixed_SNR for
-            various cluster models (produced by positionRecoveryTest).
+        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus fixed_SNR 
+            for various cluster/source models (produced by sourceInjectionTest).
         plotFileName (str): Path where the plot file will be written.
         percentilesToPlot (list, optional): List of percentiles to plot (some interpolation will be done).
         plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background. 
@@ -1728,6 +1768,78 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
             pickler=pickle.Pickler(pickleFile)
             pickler.dump(contoursDict)
 
+#------------------------------------------------------------------------------------------------------------
+def noiseBiasAnalysis(sourceInjTable, plotFileName, clipPercentile = 99.7):
+    """Estimate the noise bias from the ratio of input to recovered flux as a function of signal-to-noise.
+    
+    Args:
+        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus fixed_SNR 
+            for various cluster/source models (produced by sourceInjectionTest).
+        plotFileName (str): Path where the plot file will be written.
+        clipPercentile (float, optional): Clips offset values outside of this percentile of the whole 
+            position offsets distribution, to remove a small number of outliers (spurious next-neighbour 
+            cross matches) that otherwise bias the contours high for large (99%+) percentile cuts in 
+            individual fixed_SNR bins.
+    
+    Notes:
+        For clusters, bear in mind this only makes sense if any mismatch between the inserted cluster's 
+        shape and the signal assumed by the filter is taken into account. This is done using the Q-function
+        in sourceInjectionTest.
+            
+    """
+    
+    # Clip extreme outliers (which are almost certainly spurious next-neighbour cross matches)
+    tab=sourceInjTable
+    tab['ratio']=tab['outFlux']/tab['inFlux']
+    tab=tab[tab['ratio'] < np.percentile(tab['ratio'], clipPercentile)]
+
+    # Noise bias in bins of SNR    
+    # Not binned by model as we assume Q function already applied to outFlux column
+    SNREdges=np.linspace(3.0, 20.0, 86)
+    SNRCentres=(SNREdges[1:]+SNREdges[:-1])/2.
+    noiseBias=[]
+    noiseBiasErr=[]
+    plotSNRs=[]
+    for i in range(SNREdges.shape[0]-1):
+        SNRMask=np.logical_and(tab['fixed_SNR'] >= SNREdges[i], tab['fixed_SNR'] < SNREdges[i+1])
+        if SNRMask.sum() > 0:
+            noiseBias.append(np.mean(tab['ratio'][SNRMask]))
+            noiseBiasErr.append(np.std(tab['ratio'][SNRMask])/np.sqrt(SNRMask.sum()))
+            plotSNRs.append(SNRCentres[i])
+
+    # Plot labels need generalising for sources + clusters
+    SNRLabel="SNR$_{2.4}$"
+    yLabel='$\langle \\tilde{y}_{0} ~/~ \\tilde{y}^{\\rm inj}_{0} \\rangle$'
+   
+    plotSettings.update_rcParams()
+    minSNR=np.min(plotSNRs)-0.5
+    maxSNR=np.max(plotSNRs)+0.5
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.11, 0.11, 0.88, 0.87])
+    plt.errorbar(plotSNRs, noiseBias, yerr = noiseBiasErr, fmt = 'D')#, zorder = 100)
+    plt.xlim(minSNR, maxSNR)
+    plt.ylim(0.8, 1.8)
+    #plt.legend(loc = 'upper right')
+    plt.xlabel(SNRLabel)
+    plt.ylabel(yLabel)
+    plt.savefig(plotFileName)
+    plt.close()
+    
+    # Save results as a .fits table if we want to model this later (like Q)
+    # We probably _don't_ want to put this in nemo output catalogs, just apply it later in SelFn
+    # Maybe we'll just save the spline fits in the same style
+    #print("tile wise noise bias?")
+    #import IPython
+    #IPython.embed()
+    #sys.exit()
+    
+    ## Save %-ile contours in case we want to use them in some modelling later
+    #if pickleFileName is not None:
+        #with open(pickleFileName, "wb") as pickleFile:
+            #pickler=pickle.Pickler(pickleFile)
+            #pickler.dump(contoursDict)
+            
+    
 #---------------------------------------------------------------------------------------------------
 def saveFITS(outputFileName, mapData, wcs, compressed = False):
     """Writes a map (2d image array) to a new .fits file.
