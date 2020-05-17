@@ -1557,16 +1557,19 @@ def sourceInjectionTest(config, writeRankTable = False):
     realCatalog=atpy.Table().read(catFileName)
     
     # Run each scale / model and then collect everything into one table afterwards
+    # NOTE: raw flux error in catalogs is from RMS map, but e.g. outFlux will have Q applied here if cluster
     SNRDict={}
     rArcminDict={}
     inFluxDict={}
     outFluxDict={}
+    noiseLevelDict={}
     tileNamesDict={}
     for sourceInjectionModel in sourceInjectionModelList:
         SNRDict[sourceInjectionModel['label']]=[]
         rArcminDict[sourceInjectionModel['label']]=[]
         inFluxDict[sourceInjectionModel['label']]=[]
         outFluxDict[sourceInjectionModel['label']]=[]
+        noiseLevelDict[sourceInjectionModel['label']]=[]
         tileNamesDict[sourceInjectionModel['label']]=[]
         for i in range(numIterations):        
             print(">>> Source injection and recovery test %d/%d [rank = %d] ..." % (i+1, numIterations, config.rank))
@@ -1597,6 +1600,7 @@ def sourceInjectionTest(config, writeRankTable = False):
             print("... generating mock catalog ...")
             if filtDict['class'].find("ArnaudModel") != -1:
                 fluxCol='fixed_y_c'
+                noiseLevelCol='fixed_err_y_c'
                 # Quick test catalog - takes < 1 sec to generate
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = 'fixed_y_c', 
@@ -1609,6 +1613,7 @@ def sourceInjectionTest(config, writeRankTable = False):
                                'override': sourceInjectionModel}
             elif filtDict['class'].find("BeamModel") != -1:
                 fluxCol='deltaT_c'
+                noiseLevelCol='err_deltaT_c'
                 raise Exception("Haven't implemented generating mock source catalogs here yet")
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
@@ -1647,12 +1652,14 @@ def sourceInjectionTest(config, writeRankTable = False):
                     rArcminDict[sourceInjectionModel['label']]=rArcminDict[sourceInjectionModel['label']]+(rDeg*60).tolist()
                     inFluxDict[sourceInjectionModel['label']]=inFluxDict[sourceInjectionModel['label']]+x_mockCatalog[fluxCol].tolist()
                     outFluxDict[sourceInjectionModel['label']]=outFluxDict[sourceInjectionModel['label']]+x_recCatalog[fluxCol].tolist()
+                    noiseLevelDict[sourceInjectionModel['label']]=noiseLevelDict[sourceInjectionModel['label']]+x_recCatalog[noiseLevelCol].tolist()
                     tileNamesDict[sourceInjectionModel['label']]=tileNamesDict[sourceInjectionModel['label']]+x_recCatalog['tileName'].tolist()
 
         SNRDict[sourceInjectionModel['label']]=np.array(SNRDict[sourceInjectionModel['label']])
         rArcminDict[sourceInjectionModel['label']]=np.array(rArcminDict[sourceInjectionModel['label']])
         inFluxDict[sourceInjectionModel['label']]=np.array(inFluxDict[sourceInjectionModel['label']])
         outFluxDict[sourceInjectionModel['label']]=np.array(outFluxDict[sourceInjectionModel['label']])
+        noiseLevelDict[sourceInjectionModel['label']]=np.array(noiseLevelDict[sourceInjectionModel['label']])
         tileNamesDict[sourceInjectionModel['label']]=np.array(tileNamesDict[sourceInjectionModel['label']])
         
     # Just collect results as long tables (model, SNR, rArcmin, inFlux, outFlux) that we can later stack and average etc.
@@ -1662,6 +1669,7 @@ def sourceInjectionTest(config, writeRankTable = False):
     rArcmin=[]
     inFlux=[]
     outFlux=[]
+    noiseLevel=[]
     tileNames=[]
     for sourceInjectionModel in sourceInjectionModelList:
         label=sourceInjectionModel['label']
@@ -1670,6 +1678,7 @@ def sourceInjectionTest(config, writeRankTable = False):
         rArcmin=rArcmin+rArcminDict[label].tolist()
         inFlux=inFlux+inFluxDict[label].tolist()
         outFlux=outFlux+outFluxDict[label].tolist()
+        noiseLevel=noiseLevel+noiseLevelDict[label].tolist()
         tileNames=tileNames+tileNamesDict[label].tolist()
     resultsTable=atpy.Table()
     resultsTable.add_column(atpy.Column(models, 'sourceInjectionModel'))
@@ -1677,6 +1686,7 @@ def sourceInjectionTest(config, writeRankTable = False):
     resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
     resultsTable.add_column(atpy.Column(inFlux, 'inFlux'))
     resultsTable.add_column(atpy.Column(outFlux, 'outFlux'))
+    resultsTable.add_column(atpy.Column(noiseLevel, 'noiseLevel'))
     resultsTable.add_column(atpy.Column(tileNames, 'tileName'))
 
     # This is just for debugging - can be removed later

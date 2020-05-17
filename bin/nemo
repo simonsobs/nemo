@@ -104,6 +104,8 @@ if __name__ == '__main__':
 
     # Source injection tests for quantifying position recovery accuracy and noise bias
     if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
+        if config.MPIEnabled == True:
+            config.comm.barrier()   # Otherwise, some processes can begin before catalog written to disk and then crash
         sourceInjTable=maps.sourceInjectionTest(config)
         if config.MPIEnabled == True:
             config.comm.barrier()
@@ -173,7 +175,7 @@ if __name__ == '__main__':
         
         # Plot tile-averaged position recovery test
         if sourceInjTable is not None:
-            sourceInjTable.write(config.diagnosticsDir+os.path.sep+"positionRecoveryData.fits", overwrite = True) 
+            sourceInjTable.write(config.diagnosticsDir+os.path.sep+"sourceInjectionData.fits", overwrite = True) 
             maps.positionRecoveryAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
                                           percentilesToPlot = [50, 90], plotRawData = False,
                                           pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl')
