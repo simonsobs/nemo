@@ -1486,7 +1486,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
-def sourceInjectionTest(config, writeRankTable = False):
+def sourceInjectionTest(config, writeRankTable = True):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
     offset with respect to the true location as a function of S/N (for the fixed reference scale only).
     If the inserted sources are clusters, the Q function will be applied to the output fluxes, to account 
