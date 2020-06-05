@@ -12,6 +12,7 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 import astropy.stats as apyStats
 import mahotas
+import colorcet
 import numpy as np
 import pylab as plt
 import glob
@@ -1631,10 +1632,10 @@ def sourceInjectionTest(config, writeRankTable = True):
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
                                                                copyFilters = True, useCachedMaps = False)
                 if len(recCatalog) > 0:
-                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 0.7)
-                if len(recCatalog) > 0:
-                    # We can perhaps cross-match to remove real objects more agressively
-                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 0.7)
+                    # We should be conservative in removing potential matches with real objects
+                    # Because we have a huge sky area and there's no reason to risk contamination of this kind
+                    # Effectively this is the same as using 5' circular holes in the survey mask on real objects
+                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 5.0)
                     try:
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
                     except:
@@ -1689,7 +1690,8 @@ def sourceInjectionTest(config, writeRankTable = True):
     resultsTable.add_column(atpy.Column(noiseLevel, 'noiseLevel'))
     resultsTable.add_column(atpy.Column(tileNames, 'tileName'))
 
-    # This is just for debugging - can be removed later
+    # Shouldn't be necessary BUT seems we have trouble gathering very large runs
+    # So it's actually more reliable to write/read from disk
     if writeRankTable == True:
         fitsOutFileName=config.diagnosticsDir+os.path.sep+"sourceInjection_rank%d.fits" % (config.rank)
         resultsTable.write(fitsOutFileName, overwrite = True)
@@ -1779,7 +1781,7 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
             pickler.dump(contoursDict)
 
 #------------------------------------------------------------------------------------------------------------
-def noiseBiasAnalysis(sourceInjTable, plotFileName, clipPercentile = 99.7):
+def noiseBiasAnalysis(sourceInjTable, plotFileName, clipPercentile = 99.7, sourceInjectionModel = None):
     """Estimate the noise bias from the ratio of input to recovered flux as a function of signal-to-noise.
     
     Args:
@@ -1790,6 +1792,7 @@ def noiseBiasAnalysis(sourceInjTable, plotFileName, clipPercentile = 99.7):
             position offsets distribution, to remove a small number of outliers (spurious next-neighbour 
             cross matches) that otherwise bias the contours high for large (99%+) percentile cuts in 
             individual fixed_SNR bins.
+        sourceInjectionModel (str, optional): If given, restrict analysis to only objects matching this.
     
     Notes:
         For clusters, bear in mind this only makes sense if any mismatch between the inserted cluster's 
@@ -1797,59 +1800,10 @@ def noiseBiasAnalysis(sourceInjTable, plotFileName, clipPercentile = 99.7):
         in sourceInjectionTest.
             
     """
-    
-    # Clip extreme outliers (which are almost certainly spurious next-neighbour cross matches)
-    tab=sourceInjTable
-    tab['ratio']=tab['outFlux']/tab['inFlux']
-    tab=tab[tab['ratio'] < np.percentile(tab['ratio'], clipPercentile)]
 
-    # Noise bias in bins of SNR    
-    # Not binned by model as we assume Q function already applied to outFlux column
-    SNREdges=np.linspace(3.0, 20.0, 86)
-    SNRCentres=(SNREdges[1:]+SNREdges[:-1])/2.
-    noiseBias=[]
-    noiseBiasErr=[]
-    plotSNRs=[]
-    for i in range(SNREdges.shape[0]-1):
-        SNRMask=np.logical_and(tab['fixed_SNR'] >= SNREdges[i], tab['fixed_SNR'] < SNREdges[i+1])
-        if SNRMask.sum() > 0:
-            noiseBias.append(np.mean(tab['ratio'][SNRMask]))
-            noiseBiasErr.append(np.std(tab['ratio'][SNRMask])/np.sqrt(SNRMask.sum()))
-            plotSNRs.append(SNRCentres[i])
-
-    # Plot labels need generalising for sources + clusters
-    SNRLabel="SNR$_{2.4}$"
-    yLabel='$\langle \\tilde{y}_{0} ~/~ \\tilde{y}^{\\rm inj}_{0} \\rangle$'
-   
-    plotSettings.update_rcParams()
-    minSNR=np.min(plotSNRs)-0.5
-    maxSNR=np.max(plotSNRs)+0.5
-    plt.figure(figsize=(9,6.5))
-    ax=plt.axes([0.11, 0.11, 0.88, 0.87])
-    plt.errorbar(plotSNRs, noiseBias, yerr = noiseBiasErr, fmt = 'D')#, zorder = 100)
-    plt.xlim(minSNR, maxSNR)
-    plt.ylim(0.8, 1.8)
-    #plt.legend(loc = 'upper right')
-    plt.xlabel(SNRLabel)
-    plt.ylabel(yLabel)
-    plt.savefig(plotFileName)
-    plt.close()
-    
-    # Save results as a .fits table if we want to model this later (like Q)
-    # We probably _don't_ want to put this in nemo output catalogs, just apply it later in SelFn
-    # Maybe we'll just save the spline fits in the same style
-    #print("tile wise noise bias?")
-    #import IPython
-    #IPython.embed()
-    #sys.exit()
-    
-    ## Save %-ile contours in case we want to use them in some modelling later
-    #if pickleFileName is not None:
-        #with open(pickleFileName, "wb") as pickleFile:
-            #pickler=pickle.Pickler(pickleFile)
-            #pickler.dump(contoursDict)
-            
-    
+    print("Work in progress - skipped")
+    return None
+        
 #---------------------------------------------------------------------------------------------------
 def saveFITS(outputFileName, mapData, wcs, compressed = False):
     """Writes a map (2d image array) to a new .fits file.

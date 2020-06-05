@@ -179,7 +179,7 @@ if __name__ == '__main__':
             maps.positionRecoveryAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
                                           percentilesToPlot = [50, 90], plotRawData = False,
                                           pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl')
-            maps.noiseBiasAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"noiseBias.pdf")
+            #maps.noiseBiasAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"noiseBias.pdf")
             
         ## Plot contamination together
         #if conTabDict != {}:
