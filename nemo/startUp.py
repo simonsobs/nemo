@@ -139,8 +139,9 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, selFnDir = None, 
-                 MPIEnabled = False, verbose = True, strictMPIExceptions = True):
+    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, selFnDir = None,
+                 MPIEnabled = False, divideTilesByProcesses = True, verbose = True,
+                 strictMPIExceptions = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
@@ -154,6 +155,8 @@ class NemoConfig(object):
             MPIEnabled (:obj:`bool`, optional): If True, use MPI to divide the map into tiles, 
                 distributed among processes. This requires `tileDefinitions` and `tileNoiseRegions` 
                 to be given in the .yml config file.
+            divideTilesByProcesses (:obj:`bool`, optional): If True, divides up the list of tiles
+                optimally among the available MPI processes.
             strictMPIExceptions (:obj:`bool`): If True, MPI will abort if an Exception is encountered
                 (the downside is that you will not get the full traceback, but at least you will not waste
                 CPU cycles). If False, MPI probably will not abort if an Exception is encountered, but you 
@@ -283,7 +286,7 @@ class NemoConfig(object):
         self.allTileNames=self.tileNames.copy()
         
         # MPI: just divide up tiles pointed at by tileNames among processes
-        if self.MPIEnabled == True:
+        if self.MPIEnabled == True and divideTilesByProcesses == True:
             # New - bit clunky but distributes more evenly
             rankExtNames={}
             rankCounter=0
