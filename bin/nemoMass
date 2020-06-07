@@ -237,48 +237,16 @@ if __name__ == '__main__':
     forcedPhotometry=args.forcedPhotometry
     
     # Load the nemo catalog and match against the z catalog
+    # NOTE: This is now done using coord matching (nearest within some maximum tolerance), rather than names
     if catFileName is None:
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, setUpMaps = False, verbose = False)
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(config.parDict['massOptions']['redshiftCatalog'])
-        # Sanity check/clean z table
-        # We're matching on name alone before, so keep only one row with unique name
-        wantedColumns=['name', 'RADeg', 'decDeg', 'redshift', 'redshiftErr']
-        colsToRemove=[]
-        for key in zTab.keys():
-            if key not in wantedColumns:
-                colsToRemove.append(key)
-        zTab.remove_columns(colsToRemove)
-        keepIndices=[]
-        gotClusters=[]
-        for row in zTab:
-            matched=np.where(row['name'] == zTab['name'])
-            if row['name'] not in gotClusters:
-                if len(np.unique(zTab[matched]['redshift'])) != 1 and config.rank == 0:
-                    print("... WARNING: Found redshifts %s for cluster %s - adopted z = %.3f" 
-                        % (str(zTab['redshift'][matched].tolist()), row['name'], row['redshift']))
-                keepIndices.append(matched[0][0])
-                gotClusters.append(row['name'])
-        zTab=zTab[keepIndices]
-        assert(len(np.unique(zTab['name'])) == len(zTab))
-        # Now join...
-        tab=atpy.join(nemoTab, zTab, 'name')
-        colsToRemove=[]
-        for k in list(tab.keys()):
-            if k[-2:] == '_2':
-                colsToRemove.append(k)
-        tab.remove_columns(colsToRemove)
-        # NOTE: we're going to extract the tile name from 'template'... not very elegant - should just write in the nemo catalog
-        colsToKeep=['name', 'RADeg', 'decDeg', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c', 'redshift', 'redshiftErr', 'template', 'tileName']
-        for k in colsToKeep:
-            if k+"_1" in list(tab.keys()):
-                tab.rename_column(k+"_1", k)
-        colsToRemove=[]
-        for k in list(tab.keys()):
-            if k not in colsToKeep:
-                colsToRemove.append(k)
-        tab.remove_columns(colsToRemove)
+        nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = 2.5)
+        nemoTab['redshift']=zTab['redshift']
+        nemoTab['redshiftErr']=zTab['redshiftErr']
+        tab=nemoTab
         if outFileName is None:
             outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
 
