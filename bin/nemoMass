@@ -277,7 +277,7 @@ if __name__ == '__main__':
             if key not in tab.keys():
                 forcedPhotometry=True
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = False,
-                                  setUpMaps = forcedPhotometry, verbose = True, strictMPIExceptions = strictMPIExceptions)
+                                  setUpMaps = forcedPhotometry, verbose = False, strictMPIExceptions = strictMPIExceptions)
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
