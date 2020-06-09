@@ -111,7 +111,7 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
             galLong, galLat=astCoords.convertCoords("J2000", "GALACTIC", objDict['RADeg'], objDict['decDeg'], 2000)
             objDict['galacticLatDeg']=galLat
             if longNames == False:
-                objDict['name']=catalogs.makeACTName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)
+                objDict['name']=catalogs.makeName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)
             else:
                 objDict['name']=catalogs.makeLongName(objDict['RADeg'], objDict['decDeg'], prefix = objIdent)                    
             objDict['numSigPix']=objNumPix[i]

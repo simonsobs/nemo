@@ -40,21 +40,74 @@ plt.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
 class SelFn(object):
+    """An object that describes a survey selection function, and provides routines for calculating survey 
+    completeness for a given set of scaling relation and cosmological parameters.
+    
+    Attributes:
+        SNRCut (float): Completeness will be computed relative to this signal-to-noise selection cut 
+            (labelled as fixed_SNR in the catalogs produced by nemo).
+        footprintLabel (str): Use this to specify a footprint, if any are defined in the Nemo config used to
+            produce the selFn dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default of None uses the whole 
+            survey footprint.
+        applyMFDebiasCorrection (bool): Set to False to disable the Eddington bias correction of mass 
+            estimates. Probably only useful for debugging.
+        selFnDir (str): Path to a selFn/ directory, as produced by the nemo and nemoSelFn commands. This 
+            directory contains information such as the survey noise maps, area masks, and filter 
+            mismatch function (Q) fits for clusters.
+        zStep (float): Use this to set the binning in redshift for completeness calculations.
+        tileNames (list): The list of tiles used by the SelFn object (default of None uses all tiles).
+        WCSDict (dict): A dictionary indexed by tileName, containing WCS objects that describe the mapping
+            between pixel coords and (RA, dec) coords in each tile.
+        areaMaskDict (dict): A dictionary containing the survey area masks, indexed by tileName. Values > 0
+            in these masks define the cluster or source search area.
+        scalingRelationDict (dict): A dictionary of scaling relation parameters (see example Nemo config 
+            files for the format).
+        tckQFitDict (dict): A dictionary of interpolation spline knots indexed by tileName, that can be used 
+            to estimate Q, the filter mismatch function (see :func:`nemo.signals.loadQ`).
+        RMSDict (dict): A dictionary of RMS tables, indexed by tileName. Each RMSTable contains noise level
+            by area, as returned by getRMSTab.
+        totalAreaDeg2 (float): The total area, as measured from the survey mask, for the given set of tiles
+            and footprint.
+        fRelDict (dict): A dictionary of weights used for relativistic corrections, indexed by tileName.
+        mockSurvey (:obj: `MockSurvey`): A Nemo `MockSurvey` object, used for halo mass function 
+            calculations and generating mock catalogs.
+    
+    """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
                  tileNames = None, enableDrawSample = False, downsampleRMS = True, 
                  applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True):
-        """Initialise a SelFn object.
+        """Initialise an object that contains a survey selection function. 
         
-        This is a class that uses the output from nemoSelFn to re-calculate the selection function
-        (completeness fraction on (M, z) grid) with different cosmological / scaling relation parameters
-        (see SelFn.update).
+        This class uses the output in the selFn/ directory (produced by the nemo and nemoSelFn commands) to 
+        re-calculate the survey completeness for a given signal-to-noise cut on a (log10 M500c, z) grid for
+        a given set of cosmological and scaling relation parameters.
         
-        Use footprintLabel to specify a footprint (e.g., 'DES', 'HSC', 'KiDS' etc.) defined in 
-        selFnFootprints in the .yml config file. The default None uses the whole survey.
-        
-        Set downsampleRMS = True to speed up the completeness calculation (called each time update is called)
-        considerably.
+        Args:
+            selFnDir (str): Path to a selFn/ directory, as produced by the nemo and nemoSelFn commands. This 
+                directory contains information such as the survey noise maps, area masks, and filter 
+                mismatch function (Q) fits for clusters.
+            SNRCut (float): Completeness will be computed relative to this signal-to-noise selection cut 
+                (labelled as fixed_SNR in the catalogs produced by nemo).
+            configFileName (str, optional): Path to a Nemo configuration file. If not given, this will be
+                read from selFnDir/config.yml, which is the config file for the nemo run that produced the
+                selFn directory.
+            footprintLabel (str, optional): Use this to specify a footprint, if any are defined in the Nemo
+                config used to produce the selFn dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default of None
+                uses the whole survey footprint.
+            zStep (float, optional): Use this to set the binning in redshift for completeness calculations.
+            tileNames (list, optional): If given, restrict the SelFn object to use only these tiles.
+            enableDrawSample (bool, optional): This only needs to be set to True for generating mock 
+                catalogs.
+            downsampleRMS (float, optional): Downsample the resolution of the RMS tables by this factor. 
+                The RMS tables are generated from the noise maps, and are just a listing of noise level 
+                versus survey area. Downsampling speeds up completeness calculations considerably.
+            applyMFDebiasCorrection (bool, optional): Set to False to disable the Eddington bias correction
+                of mass estimates. Probably only useful for debugging.
+            setupAreaMask (bool, optional): If True, read in the area masks so that quick position checks
+                can be done (e.g., by checkCoordsAreInMask).
+            enableCompletenessCalc (bool, optional): If True, set up the machinery needed to do completeness
+                calculations.
         
         """
         
@@ -728,23 +781,33 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
 #------------------------------------------------------------------------------------------------------------
 def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, tckQFitDict,
                      plotFileName = None, z = None, method = "fast", numDraws = 2000000, numIterations = 100):
-    """Calculate completeness as a function of (log10 M500, z) on the mockSurvey grid for assumed fiducial
-    cosmology and scaling relation, at the given SNRCut and noise level. Intrinsic scatter in the scaling
-    relation is taken into account.
+    """Calculate completeness as a function of (log10 M500c, z) on the mockSurvey grid at the given SNRCut.
+    Intrinsic scatter in the scaling relation is taken into account.
     
-    If plotFileName is given, writes 90% completeness plot.
-    
-    Two methods for doing the calculation are available:
-    - "fast"        : applying measurement error and scatter to 'true' y0 on a grid to get (log10 M, z) 
-                      completeness 
-    - "montecarlo" : using samples drawn from mockSurvey to fill out the (log10 M, z) grid
-    
-    Adjust numDraws (per iteration) and numIterations to set the noise level of estimate when using the
-    "montecarlo" method. For the "fast" method, numDraws and numIterations are ignored.
-    
-    The calculation can be done at a single fixed z, if given.
+    Args:
+        RMSTab (astropy Table): Table containing noise level by area, as returned by getRMSTab.
+        SNRCut (float): Completeness will be calculated for objects relative to this cut in fixed_SNR.
+        tileName (str): Name of the map tile.
+        mockSurvey (MockSurvey): A Nemo MockSurvey object used for halo mass function calculations.
+        scalingRelationDict (dict): A dictionary of scaling relation parameters (see example Nemo config 
+            files for the format).
+        tckQFitDict (dict): A dictionary, with keys corresponding to tile names, containing the spline knots
+            used to obtain interpolated values from the filter mismatch function Q 
+            (see :func:`nemo.signals.loadQ`).
+        plotFileName (str, optional): If given, write a plot showing 90% completness limit.
+        z (array, optional): Redshift grid on which the completeness calculation will be performed. 
+            Alternatively, a single redshift can be specified as a float instead.
+        method (str, optional): Two methods for doing the calculation are available: "fast" (applies the 
+            measurement errors and scatter to 'true' y0 values on a grid) and "montecarlo" (uses samples
+            drawn from a mock catalog, generated on the fly, to estimate the completeness). Both methods 
+            should give consistent results.
+        numDraws (int, optional): Used by the "montecarlo" method - sets the number of draws from the 
+            halo mass function on each iteration.
+        numIterations (int, optional): Used by the "montecarlo" method - sets the number of iterations,
+            i.e., the number of mock catalogs from which the completeness is estimated.
 
-    Returns 2d array of (log10 M500, z) completeness
+    Returns:
+        2d array of (log10 M500c, z) completeness
     
     """
         

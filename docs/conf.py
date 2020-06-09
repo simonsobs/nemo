@@ -15,18 +15,22 @@
 # import os
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
+from nemo import __version__
 
+# -- My stuff ----------------------------------------------------------------
+autoclass_content = 'both'
+add_module_names = False
 
 # -- Project information -----------------------------------------------------
 
 project = 'nemo'
-copyright = '2018, Matt Hilton + ACT'
-author = 'Matt Hilton + Atacama Cosmology Telescope collaboration'
+copyright = '2020, Matt Hilton'
+author = 'Matt Hilton + Atacama Cosmology Telescope + Simons Observatory'
 
 # The short X.Y version
-version = ''
+version = __version__
 # The full version, including alpha/beta/rc tags
-release = ''
+release = __version__
 
 
 # -- General configuration ---------------------------------------------------
@@ -71,7 +75,6 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = None
-
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -133,7 +136,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
     (master_doc, 'nemo.tex', 'nemo Documentation',
-     'Matt Hilton + ACT', 'manual'),
+     'Matt Hilton + ACT + Simons Observatory', 'manual'),
 ]
 
 

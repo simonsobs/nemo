@@ -1,6 +1,6 @@
 """
 
-This module contains tools for handling catalogs, which are (usually) astropy Table objects.
+This module contains tools for handling catalogs, which are usually :obj:`astropy.table.Table` objects.
 
 """
 
@@ -91,16 +91,17 @@ if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
         
 #------------------------------------------------------------------------------------------------------------
 def makeOptimalCatalog(catalogDict, constraintsList = []):
-    """Identifies common objects between catalogs in the imageDict and creates a master catalog with
-    one entry per object, keeping only the highest S/N detection details.
+    """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a 
+    master catalog with one entry per object, keeping only the details of the highest signal-to-noise 
+    detection.
     
     Args:
-        catalogDict (dict): Dictionary where each key corresponds to a catalog of objects extracted from a 
-            map, labeled 
-        constraintsList: an optional list of constraints (for format, see selectFromCatalog)
+        catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
+        constraintsList (:obj:`list`, optional): A list of constraints (for the format, see 
+            :func:`selectFromCatalog`).
         
     Returns:
-        Nothing - an 'optimalCatalog' key is added to imageDict
+        None - an ``optimalCatalog`` key is added to ``catalogDict`` in place.
     
     """
     
@@ -135,24 +136,26 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
                 RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
                 writeNemoInfo = True, coordSys = 'fk5'):
-    """Converts a catalog containing object dictionaries into a DS9 region file. 
+    """Writes a DS9 region file corresponding to the given catalog. 
     
     Args:
-        catalog: An astropy Table where each row represents an object.
-        outFileName: A file name for the output DS9 region file.
-        constraintsList: A list of constraints in the same format as used by `selectFromCatalog`.
-        addInfo: A list of dictionaries with keys named `key` and `fmt` (e.g., ``{'key': "SNR", 'fmt': "%.3f"}``).
-            These will be added to the object label shown in DS9.
-        idKeyToUse: The name of the key in each object dictionary that defines the object's name. Used to 
-            label objects in the DS9 region file.
-        RAKeyToUse: The name of the key in each object dictionary that contains the RA (decimal degrees) of the
-            object.
-        decKeyToUse: The name of the key in each object dictionary that contains the declination (decimal 
-            degrees) of the object.
-        color: The color of the plot symbol used by DS9.
-        writeNemoInfo: If True, writes a line with the nemo version and date generated at the top of the 
-            DS9 .reg file.
-        coordSys: A string defining the coordinate system used for RA, dec, as understood by DS9.
+        catalog (:obj:`astropy.table.Table`): An astropy Table where each row represents an object.
+        outFileName (:obj:`str`): A file name for the output DS9 region file.
+        constraintsList (:obj:`list`, optional): A list of constraints in the same format as used by 
+            :func:`selectFromCatalog`.
+        addInfo (:obj:`list`, optional): A list of dictionaries with keys named `key` and `fmt` (e.g., 
+            ``{'key': "SNR", 'fmt': "%.3f"}``). These will be added to the object label shown in DS9.
+        idKeyToUse (:obj:`str`, optional): The name of the key in each object dictionary that defines the 
+            object's name. Used to label objects in the DS9 region file.
+        RAKeyToUse (:obj:`str`, optional): The name of the key in each object dictionary that contains the 
+            RA of the object in decimal degrees.
+        decKeyToUse (:obj:`str`, optional): The name of the key in each object dictionary that contains the
+            declination of the object in decimal degrees.
+        color (:obj:`str`, optional): The color of the plot symbol used by DS9.
+        writeNemoInfo (:obj:`bool`, optional): If ``True``, writes a line with the `nemo` version and date 
+            generated at the top of the DS9 .reg file.
+        coordSys (:obj:`str`, optional): A string defining the coordinate system used for RA, dec, as 
+            understood by DS9.
         
     Returns:
         None
@@ -193,27 +196,43 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                         % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
 
 #------------------------------------------------------------------------------------------------------------
-def makeACTName(RADeg, decDeg, prefix = 'ACT-CL'):
-    """Makes ACT cluster name from RADeg, decDeg
+def makeName(RADeg, decDeg, prefix = 'ACT-CL'):
+    """Makes an object name string from the given object coordinates, following the IAU convention.
+    
+    Args:
+        RADeg (:obj:`float`): Right ascension of the object in J2000 decimal degrees.
+        decDeg (:obj:`float`): Declination of the object in J2000 decimal degrees.
+        prefix (:obj:`str`, optional): Prefix for the object name.
+    
+    Returns:
+        Object name string in the format `prefix JHHMM.m+/-DDMM`.
     
     """
     
-    actName=prefix+" J"+makeRA(RADeg)+makeDec(decDeg)
+    actName=prefix+" J"+_makeRA(RADeg)+_makeDec(decDeg)
     
     return actName
 
 #------------------------------------------------------------------------------------------------------------
 def makeLongName(RADeg, decDeg, prefix = "ACT-CL"):
-    """Makes a long format object name from RADeg, decDeg
+    """Makes a long format object name string from the given object coordinates, following IAU convention.
+    
+    Args:
+        RADeg (:obj:`float`): Right ascension of the object in J2000 decimal degrees.
+        decDeg (:obj:`float`): Declination of the object in J2000 decimal degrees.
+        prefix (:obj:`str`, optional): Prefix for the object name.
+    
+    Returns:
+        Object name string in the format `prefix JHHMMSS.s+/-DDMMSS`.
     
     """
     
-    actName=prefix+" J"+makeLongRA(RADeg)+makeLongDec(decDeg)
+    actName=prefix+" J"+_makeLongRA(RADeg)+_makeLongDec(decDeg)
     
     return actName
     
 #------------------------------------------------------------------------------------------------------------
-def makeRA(myRADeg):
+def _makeRA(myRADeg):
     """Makes RA part of ACT names.
     
     """
@@ -232,7 +251,7 @@ def makeRA(myRADeg):
     return (sHours+sMins)#[:-2] # Trims off .x as not used in ACT names
         
 #------------------------------------------------------------------------------------------------------------
-def makeDec(myDecDeg):
+def _makeDec(myDecDeg):
     """Makes dec part of ACT names
     
     """
@@ -266,7 +285,7 @@ def makeDec(myDecDeg):
         return str(sDeg+sMins)
 
 #-------------------------------------------------------------------------------------------------------------
-def makeLongRA(myRADeg):
+def _makeLongRA(myRADeg):
     """Make a long RA string, i.e. in style of long XCS names
     
     """
@@ -292,7 +311,7 @@ def makeLongRA(myRADeg):
     return sHours+sMins+sSecs
         
 #-------------------------------------------------------------------------------------------------------------
-def makeLongDec(myDecDeg):
+def _makeLongDec(myDecDeg):
     """Make a long dec sting i.e. in style of long XCS names
     
     """

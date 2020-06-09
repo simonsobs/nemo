@@ -4,23 +4,20 @@
 API Reference
 =============
 
-You can find automatically generated documentation for each module in the nemo package below. Note that 
-some functions listed here may not be used by any of the nemo scripts found in the ``bin/`` directory 
-(at some point this will be cleaned up).
+You can find automatically generated documentation for each module in the ``nemo`` package below. Note that 
+some functions listed here may not be used by any of the scripts found in the ``bin/`` directory.
 
 catalogs
 --------
 
 .. automodule:: nemo.catalogs
    :members:
-   
-   
-gnfw
-----
 
-.. automodule:: nemo.gnfw
+completeness
+------------
+
+.. automodule:: nemo.completeness
    :members:
-   
 
 filters
 -------
@@ -28,6 +25,12 @@ filters
 .. automodule:: nemo.filters
    :members:
 
+
+gnfw
+----
+
+.. automodule:: nemo.gnfw
+   :members:
 
 maps
 ----
@@ -71,13 +74,6 @@ plotSettings
    :members:
 
 
-completeness
-------------
-
-.. automodule:: nemo.completeness
-   :members:
-
-
 signals
 -------
 
@@ -90,4 +86,3 @@ startUp
 
 .. automodule:: nemo.startUp
    :members:
-

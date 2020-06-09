@@ -520,17 +520,20 @@ def makeCombinedQTable(config):
 
 #------------------------------------------------------------------------------------------------------------
 def loadQ(source, tileNames = None):
-    """Load the filter mismatch function Q as a dictionary of spline fits.
+    """Load the filter mismatch function Q (see `Hasselfield et al. 2013 
+    <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_) as a dictionary of spline fits.
     
     Args:
-        source (NemoConfig or str): Either the path to a .fits table (containing Q fits for all tiles - this
-            is normally selFn/QFit.fits), or a NemoConfig object (from which the path and tiles to use will
-            be inferred).
-        tileNames (optional, list): A list of tiles for which the Q function will be extracted. If 
-            source is a NemoConfig object, this should be set to None.
+        source (:obj:`nemo.startUp.NemoConfig` or str): Either the path to a .fits table (containing Q fits
+            for all tiles - this is normally ``selFn/QFit.fits``), or a :obj:`nemo.startUp.NemoConfig` object 
+            (from which the path and tiles to use will be inferred).
+        tileNames (optional, list): A list of tiles for which the Q function spline fit coefficients 
+            will be extracted. If source is a :obj:`nemo.startUp.NemoConfig` object, this should be set to 
+            ``None``.
     
     Returns:
-        A dictionary (with tile names as keys), containing spline knots for the Q function for each tile.
+        A dictionary (with tilNames as keys), containing spline knots for the Q function for each tile.
+        Q values can then be obtained by using these with :func:`scipy.interpolate.splev`.
         
     """
 
