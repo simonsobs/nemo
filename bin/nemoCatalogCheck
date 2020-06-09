@@ -36,9 +36,10 @@ if __name__ == '__main__':
                         nemo cluster candidates.""", default = 4.0)
     args = parser.parse_args()
     
-    parDictFileName=args.configFileName
+    configFileName=args.configFileName
     catFileName=args.catalogFileName
-    config=startUp.NemoConfig(parDictFileName, setUpMaps = False, MPIEnabled = False, verbose = False)
+    config=startUp.NemoConfig(configFileName, setUpMaps = False, MPIEnabled = False, verbose = False)
+    outputLabel=os.path.split(parDictFileName)[-1].replace(".yml", "")
     
     print(">>> Checking catalog %s against nemo output:" % (catFileName))
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
@@ -58,6 +59,10 @@ if __name__ == '__main__':
     
     print("... %d/%d objects in %s are in the valid area mask for %s ..." % (maxPossibleMatches, len(tab), 
                                                                              catFileName, config.rootOutDir))
+    
+    outFileName=os.path.split(catFileName)[-1].replace(".fits", "_inMask_%s.fits" % (outputLabel))
+    withinMaskTab=tab[inMask]
+    withinMaskTab.write(outFileName, overwrite = True)
 
     # Cross matching
     #xTab, xCheckAgainst, rDeg=catalogs.crossMatch(tab, checkAgainst, radiusArcmin=args.matchRadiusArcmin)
