@@ -509,7 +509,8 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources):
 
 #------------------------------------------------------------------------------------------------------------
 def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_y_c', 
-                        amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None):
+                        amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None,
+                        avoidanceRadiusArcmin = 20.0):
     """Generate a catalog of objects with random positions and amplitudes. This is for testing purposes - 
     see, e.g., :meth:`maps.positionRecoveryTest`.
     
@@ -542,20 +543,39 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
         if mapData.sum() == 0:  # Skip any empty/blank tile
             continue
         wcs=selFn.WCSDict[tileName]
-        if amplitudeDistribution == 'linear':
-            amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], numSourcesPerTile)
-        elif amplitudeDistribution == 'log':
-            amp=np.power(10, np.random.uniform(np.log10(amplitudeRange)[0], np.log10(amplitudeRange)[1], numSourcesPerTile))
-        else:
-            raise Exception("Must be either 'linear' or 'log'.")
         ys, xs=np.where(mapData != 0)
         ys=ys+np.random.uniform(0, 1, len(ys))
         xs=xs+np.random.uniform(0, 1, len(xs))
-        indices=np.random.randint(0, len(ys), numSourcesPerTile)
+        indices=np.random.randint(0, len(ys), len(ys))
         coords=wcs.pix2wcs(xs[indices], ys[indices])
         coords=np.array(coords)
-        RAs=RAs+coords[:, 0].tolist()
-        decs=decs+coords[:, 1].tolist()
+        tileRAs=[]
+        tileDecs=[]
+        keepIndices=[]
+        for i in indices:
+            rai=coords[i, 0]
+            deci=coords[i, 1]
+            rDeg=astCoords.calcAngSepDeg(rai, deci, tileRAs, tileDecs)
+            keepObj=False
+            if len(rDeg) > 0:
+                if rDeg.min()*60 > avoidanceRadiusArcmin:
+                    keepObj=True
+            else:
+                keepObj=True
+            if keepObj == True:
+                tileRAs.append(rai)
+                tileDecs.append(deci)
+                keepIndices.append(i)
+            if len(keepIndices) == numSourcesPerTile:
+                break
+        RAs=RAs+coords[keepIndices, 0].tolist()
+        decs=decs+coords[keepIndices, 1].tolist()
+        if amplitudeDistribution == 'linear':
+            amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], len(keepIndices))
+        elif amplitudeDistribution == 'log':
+            amp=np.power(10, np.random.uniform(np.log10(amplitudeRange)[0], np.log10(amplitudeRange)[1], len(keepIndices)))
+        else:
+            raise Exception("Must be either 'linear' or 'log'.")
         amps=amps+amp.tolist()
     
     tab=atpy.Table()

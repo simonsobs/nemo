@@ -1496,7 +1496,7 @@ def sourceInjectionTest(config, writeRankTable = True):
     Writes output to the diagnostics/ directory.
     
     Args:
-        config (:obj:`startUp.NemoConfig`): Nemo configuration object.
+        config (:obj:`nemo.startUp.NemoConfig`): Nemo configuration object.
         writeRankTable (bool, optional): If True, saves a table as output for this MPI rank under the 
             diagnostics/ directory. Useful for MPI debugging only.
     
