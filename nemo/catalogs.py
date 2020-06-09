@@ -357,12 +357,16 @@ def _makeLongDec(myDecDeg):
         
 #-------------------------------------------------------------------------------------------------------------
 def selectFromCatalog(catalog, constraintsList):
-    """Given a catalog (an astropy Table), return a table of objects matching the
-    given constraintsList. Each item in constraintsList is a string in the form:
+    """Return a table of objects matching the given constraints from the catalog. 
     
-    "key < value", "key > value", etc.
+    Args:
+        catalog (:obj:`astropy.table.Table`): The catalog from which objects will be selected.
+        constraintsList (:obj:`list`): A list of constraints, where each item is a string of the form
+            "key < value", "key > value", etc.. Note that the spaces between the key, operator 
+            (e.g. '<'), and value are essential.
     
-    Note that the spaces between key, operator (e.g. '<') and value are essential!
+    Returns:
+        An astropy Table object.
     
     """
             
@@ -375,9 +379,15 @@ def selectFromCatalog(catalog, constraintsList):
 
 #------------------------------------------------------------------------------------------------------------
 def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
-    """Converts catalog (as a list of dictionaries) into an astropy Table.
+    """Converts a catalog in the form of a list of dictionaries (where each dictionary holds the object
+    properties) into an astropy Table.
     
-    Returns astropy Table object
+    Args:
+        catalogList (:obj:`list`): Catalog in the form of a list of dictionaries.
+        keysToWrite (:obj:`list`, optional): Keys to convert into columns in the output table.
+    
+    Returns:
+        An astropy Table object.
     
     """
     
@@ -512,19 +522,24 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
                         amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None,
                         avoidanceRadiusArcmin = 20.0):
     """Generate a catalog of objects with random positions and amplitudes. This is for testing purposes - 
-    see, e.g., :meth:`maps.positionRecoveryTest`.
+    see, e.g., :meth:`nemo.maps.sourceInjectionTest`.
     
     Args:
-        config (:obj: `startup.NemoConfig`): Nemo configuration object.
-        numSourcesPerTile (int): Number of sources to insert into each tile.
-        amplitudeColumnName (str): Name of the column in the output catalog in which source (or cluster) 
+        config (:obj:`nemo.startup.NemoConfig`): Nemo configuration object.
+        numSourcesPerTile (:obj:`int`): The maximum number of sources to insert into each tile. The number 
+            of sources actually inserted may be less than this depending on the value of 
+            ``avoidanceRadiusArcmin``.
+        amplitudeColumnName (:obj:`str`): Name of the column in the output catalog in which source (or cluster) 
             amplitudes will be stored. Typically this should be "deltaT_c" for sources, and "fixed_y_c" for
             clusters.
-        amplitudeRange (list): Range for the random amplitudes, in the form [minimum, maximum].
-        amplitudeDistribution (str): Either 'linear' or 'log'.
-        selFn (:obj: `SelFn`, optional): Nemo selection function object, used to access area masks and 
-            coordinates info. If not given, will be created using the info in the config. Providing this 
-            saves time, as the area mask files don't have to be read from disk.
+        amplitudeRange (:obj:`list`): Range for the random amplitudes, in the form [minimum, maximum].
+        amplitudeDistribution (:obj:`str`): Either 'linear' or 'log'.
+        selFn (:obj:`nemo.completeness.SelFn`, optional): Nemo selection function object, used to access 
+            area masks and coordinates info. If not given, a selFn object will be created using the info 
+            in the config. Providing this saves time, as the area mask files don't have to be read from 
+            disk.
+        avoidanceRadiusArcmin (:obj:`float`): Minimum separation between two objects in the output catalog.
+            This should be set large enough to avoid crowding and spurious cross-matching problems.
 
     Returns:
         An astropy Table object containing the catalog.
