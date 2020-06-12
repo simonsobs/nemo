@@ -281,8 +281,6 @@ if __name__ == '__main__':
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
-    if 'relativisticCorrection' not in massOptions.keys():
-        massOptions['relativisticCorrection']=True
     tckQFitDict=signals.loadQ(config)    
     fRelWeightsDict=signals.getFRelWeights(config)
     
@@ -331,12 +329,6 @@ if __name__ == '__main__':
         tab.add_column(atpy.Column(np.zeros(len(tab)), c+"_errPlus"))
         tab.add_column(atpy.Column(np.zeros(len(tab)), c+"_errMinus"))
     
-    #if massOptions['relativisticCorrection'] == False:
-        #relStr="no relativistic correction applied"
-    #else:
-        #relStr="relativistic correction applied"
-    #if config.rank == 0: print(">>> Estimating masses (%s) ..." % (relStr))
-
     # Seems like multiprocessing doesn't work under slurm...   
     # So use MPI instead: just divide up catalog among processes
     tab.add_column(atpy.Column(np.arange(len(tab)), "sortIndex"))

@@ -88,7 +88,58 @@ COLUMN_FORMATS=COLUMN_FORMATS+formatsToAdd
         
 if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
     raise Exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
+
+#------------------------------------------------------------------------------------------------------------
+def _posRecFitFunc(snr, snrFold, pedestal, norm):
+    """Fitting function used for position recovery offset (') in terms of fixed_SNR - see
+    positionRecovery/positionRecoveryTestDriver.py.
+    
+    NOTE: Don't use this directly - call checkCrossMatch instead.
+    
+    """
+    return norm*np.exp(-snr/snrFold)+pedestal
+    
+#------------------------------------------------------------------------------------------------------------
+def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.682,
+                    fitNorm = 37.709):
+    """Checks the cross match offset between an ACT detection and an external catalog using a model derived
+    from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysis`). The position recovery test
+    itself only accounts for the effect of noise fluctuations in the maps on the recovered SZ positions.
+    
+    Args:
+        distArcmin (:obj:`bool`): Distance of the potential cross match from the ACT position in arcmin.
+        fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
+        z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift, and then added
+            in quadrature to the cross matching radius from the position recovery model.
+        addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown) 
+            in the external cross match catalog. This will be added in quadrature.
+        fitSNRFold (:obj:`float`, optional): Model fit parameter - e-folding 
+            (see :func:`nemo.maps.positionRecoveryAnalysis`).
+        fitPedestal (:obj:`float`, optional): Model fit parameter - pedestal level
+            (see :func:`nemo.maps.positionRecoveryAnalysis`).
+        fitNorm (:obj:`float`, optional): Model fit parameter - normalization
+            (see :func:`nemo.maps.positionRecoveryAnalysis`).
+    
+    Returns:
+        True if distArcmin < model offset (+ optional addRMpc in arcmin at z), False if not.
+
+    Note:
+        The default values for the fit parameters are from a run on the f090, f150 ACT-only co-added maps
+        to S18 (as used in the AdvACT S18 cluster catalog paper), and describe a function that recovers
+        99.7% of the inserted sources in the source injection simulations.
         
+    """
+    
+    maxRadiusArcmin=_posRecFitFunc(fixedSNR, fitSNRFold, fitPedestal, fitNorm)
+    addArcmin=0.0
+    if z is not None and z > 0:
+        addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
+    maxRadiusArcmin=np.sqrt(maxRadiusArcmin**2 + addArcmin**2)
+    if distArcmin < maxRadiusArcmin:
+        return True
+    else:
+        return False
+
 #------------------------------------------------------------------------------------------------------------
 def makeOptimalCatalog(catalogDict, constraintsList = []):
     """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a 

@@ -8,6 +8,7 @@ from astLib import *
 from scipy import ndimage
 from scipy import interpolate
 from scipy.signal import convolve as scipy_convolve
+from scipy import optimize
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 import astropy.stats as apyStats
@@ -1702,30 +1703,26 @@ def sourceInjectionTest(config, writeRankTable = True):
     return resultsTable
 
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50, 90, 95, 99], 
-                             plotRawData = True, rawDataAlpha =  0.02, pickleFileName = None,
-                             clipPercentile = 99.7):
-    """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using 
+def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
+                             plotRawData = True, rawDataAlpha =  0.01, pickleFileName = None,
+                             selFnDir = None):
+    """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using
     the contents of posRecTable (see positionRecoveryTest).
     
     Args:
-        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus fixed_SNR 
+        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus fixed_SNR
             for various cluster/source models (produced by sourceInjectionTest).
         plotFileName (str): Path where the plot file will be written.
-        percentilesToPlot (list, optional): List of percentiles to plot (some interpolation will be done).
-        plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background. 
-        pickleFileName (string, optional): Saves the percentile contours data as a pickle file if not None. 
+        percentiles (list, optional): List of percentiles to plot (some interpolation will be done) and
+            for which corresponding model fit parameters will be saved (if selFnDir is not None).
+        plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background.
+        pickleFileName (string, optional): Saves the percentile contours data as a pickle file if not None.
             This is saved a dictionary with top-level keys named according to percentilesToPlot.
-        clipPercentile (float, optional): Clips offset values outside of this percentile of the whole 
-            offsets distribution, to remove a small number of outliers (spurious next-neighbour cross 
-            matches) that otherwise bias the contours high for large (99%+) percentile cuts in 
-            individual fixed_SNR bins.
+        selFnDir (string, optional): If given, model fit parameters will be written to a file named
+            posRecModelParameters.txt under the given selFn directory path.
             
     """
-    
-    # Clip extreme outliers (which are almost certainly spurious next-neighbour cross matches)
-    posRecTable=posRecTable[posRecTable['rArcmin'] < np.percentile(posRecTable['rArcmin'], clipPercentile)]
-    
+
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
     tab=posRecTable
@@ -1746,7 +1743,7 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
                 grid[j, i]=withinR/total
     
     # What we want are contours of constant prob - easiest to get this via matplotlib
-    levelsList=np.array(percentilesToPlot)/100.
+    levelsList=np.array(percentiles)/100.
     contours=plt.contour(SNRCentres, rArcminThreshold, grid, levels = levelsList)
     minSNR=SNRCentres[np.sum(grid, axis = 0) > 0].min()
     maxSNR=SNRCentres[np.sum(grid, axis = 0) > 0].max()
@@ -1757,17 +1754,18 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
     plt.figure(figsize=(9,6.5))
     ax=plt.axes([0.11, 0.11, 0.88, 0.87])
     if plotRawData == True:
-        plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', alpha = rawDataAlpha)
+        plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', color = '#A0A0A0', alpha = rawDataAlpha)
     contoursDict={}
     for i in range(len(levelsList)):
         vertices=contours.collections[i].get_paths()[0].vertices
         SNRs=vertices[:, 0]
         rArcminAtProb=vertices[:, 1]
-        labelStr="%.1f" % (percentilesToPlot[i]) + "%"
+        labelStr="%.1f" % (percentiles[i]) + "%"
         contoursDict[labelStr]={'fixed_SNR': SNRs, 'rArcmin': rArcminAtProb}
         plt.plot(SNRs, rArcminAtProb, label = labelStr, lw = 3)
     plt.xlim(minSNR, maxSNR)
-    plt.ylim(0, 5)
+    #plt.ylim(0, 5)
+    plt.ylim(0,3)
     plt.legend(loc = 'upper right')
     plt.xlabel("SNR$_{2.4}$")
     plt.ylabel("Recovered Position Offset ($^\prime$)")
@@ -1779,9 +1777,45 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentilesToPlot = [50,
         with open(pickleFileName, "wb") as pickleFile:
             pickler=pickle.Pickler(pickleFile)
             pickler.dump(contoursDict)
+    
+    # Fit and save a position recovery model under selFn directory
+    if selFnDir is not None:
+        # This extra plot isn't really necessary
+        outDir, fileName=os.path.split(os.path.abspath(plotFileName))
+        fitPlotFileName=outDir+os.path.sep+"modelFits_"+fileName
+        keys=contoursDict.keys()
+        fitParamsDict={}
+        plotSettings.update_rcParams()
+        plt.figure(figsize=(9,6.5), dpi = 300)
+        ax=plt.axes([0.11, 0.11, 0.88, 0.87])
+        if plotRawData == True:
+            posRecTable=tab
+            plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', color = '#A0A0A0', alpha = rawDataAlpha)
+        for key in keys:
+            a=contoursDict[key]
+            valid=np.where(a['fixed_SNR'] >= 4.1)
+            snr=a['fixed_SNR'][valid]
+            rArcmin=a['rArcmin'][valid]
+            results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin) 
+            bestFitSNRFold, bestFitPedestal, bestFitNorm=results[0]
+            fitParamsDict[key]=np.array([bestFitSNRFold, bestFitPedestal, bestFitNorm])
+            fitSNRs=np.linspace(4, 10, 100)
+            plt.plot(fitSNRs, catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm), '-', label = key)
+            plt.ylim(0, 3)
+            plt.legend(loc = 'upper right')
+            plt.xlim(snr.min(), snr.max())
+            plt.xlabel("SNR$_{2.4}$")
+            plt.ylabel("Recovered Position Offset ($^\prime$)")
+        plt.savefig(fitPlotFileName)
+        plt.close()
+        # Save the fits
+        outFileName=selFnDir+os.path.sep+"posRecModelFits.pkl"
+        with open(outFileName, "wb") as pickleFile:
+            pickler=pickle.Pickler(pickleFile)
+            pickler.dump(fitParamsDict)
 
 #------------------------------------------------------------------------------------------------------------
-def noiseBiasAnalysis(sourceInjTable, plotFileName, clipPercentile = 99.7, sourceInjectionModel = None):
+def noiseBiasAnalysis(sourceInjTable, plotFileName, sourceInjectionModel = None):
     """Estimate the noise bias from the ratio of input to recovered flux as a function of signal-to-noise.
     
     Args:

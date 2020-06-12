@@ -140,8 +140,8 @@ class NemoConfig(object):
     """
     
     def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, selFnDir = None,
-                 MPIEnabled = False, divideTilesByProcesses = True, verbose = True,
-                 strictMPIExceptions = True):
+                 calcSelFn = True, sourceInjectionTest = False, MPIEnabled = False, 
+                 divideTilesByProcesses = True, verbose = True, strictMPIExceptions = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
@@ -152,6 +152,9 @@ class NemoConfig(object):
                 (inc. breaking into tiles if wanted).
             selFnDir (:obj:`str`, optional): Path to the selFn directory (use to override the 
                 default location).
+            calcSelFn (:obj:`bool`, optional): Overrides the value given in the config file if True.
+            sourceInjectionTest (:obj:`bool`, optional): Overrides the value given in the config file
+                if True.
             MPIEnabled (:obj:`bool`, optional): If True, use MPI to divide the map into tiles, 
                 distributed among processes. This requires `tileDefinitions` and `tileNoiseRegions` 
                 to be given in the .yml config file.
@@ -191,7 +194,13 @@ class NemoConfig(object):
 
         self.parDict=parseConfigFile(configFileName)
         self.configFileName=configFileName
-                        
+        
+        # Handle a couple of optional command-line args. These only override if set to True, otherwise ignored
+        if calcSelFn == True:
+            self.parDict['calcSelFn']=True
+        if sourceInjectionTest == True:
+            self.parDict['sourceInjectionTest']=True
+            
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
@@ -217,11 +226,11 @@ class NemoConfig(object):
                                 
         # Output dirs
         if 'outputDir' in list(self.parDict.keys()):
-            self.rootOutDir=self.parDict['outputDir']
+            self.rootOutDir=os.path.abspath(self.parDict['outputDir'])
         else:
             if configFileName.find(".yml") == -1:
                 raise Exception("File must have .yml extension")
-            self.rootOutDir=configFileName.replace(".yml", "")
+            self.rootOutDir=os.path.abspath(configFileName.replace(".yml", ""))
         self.filteredMapsDir=self.rootOutDir+os.path.sep+"filteredMaps"
         self.diagnosticsDir=self.rootOutDir+os.path.sep+"diagnostics"
         self.selFnDir=self.rootOutDir+os.path.sep+"selFn"
