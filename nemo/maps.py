@@ -1632,11 +1632,13 @@ def sourceInjectionTest(config, writeRankTable = True):
             if len(mockCatalog) > 0:
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
                                                                copyFilters = True, useCachedMaps = False)
+                # We should be conservative in removing potential matches with real objects
+                # Because we have a huge sky area and there's no reason to risk contamination of this kind
+                # Effectively this is the same as using 5' circular holes in the survey mask on real objects
+                # (but actually adding the avoidance radius parameter to the test catalogs really solved this)
                 if len(recCatalog) > 0:
-                    # We should be conservative in removing potential matches with real objects
-                    # Because we have a huge sky area and there's no reason to risk contamination of this kind
-                    # Effectively this is the same as using 5' circular holes in the survey mask on real objects
                     recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 5.0)
+                if len(recCatalog) > 0:
                     try:
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
                     except:
@@ -1796,16 +1798,20 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             valid=np.where(a['fixed_SNR'] >= 4.1)
             snr=a['fixed_SNR'][valid]
             rArcmin=a['rArcmin'][valid]
-            results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin) 
+            try:
+                results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
+            except:
+                print("... WARNING: curve_fit failed for key = %s ..." % (key))
+                continue
             bestFitSNRFold, bestFitPedestal, bestFitNorm=results[0]
             fitParamsDict[key]=np.array([bestFitSNRFold, bestFitPedestal, bestFitNorm])
             fitSNRs=np.linspace(4, 10, 100)
             plt.plot(fitSNRs, catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm), '-', label = key)
-            plt.ylim(0, 3)
-            plt.legend(loc = 'upper right')
-            plt.xlim(snr.min(), snr.max())
-            plt.xlabel("SNR$_{2.4}$")
-            plt.ylabel("Recovered Position Offset ($^\prime$)")
+        plt.ylim(0, 3)
+        plt.legend(loc = 'upper right')
+        plt.xlim(snr.min(), snr.max())
+        plt.xlabel("SNR$_{2.4}$")
+        plt.ylabel("Recovered Position Offset ($^\prime$)")
         plt.savefig(fitPlotFileName)
         plt.close()
         # Save the fits
