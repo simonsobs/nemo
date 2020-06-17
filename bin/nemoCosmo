@@ -176,6 +176,10 @@ if __name__ == '__main__':
     selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1)
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
     
+    # NOTE: Since we use such coarse z binning, we completely ignore photo-z errors here
+    # Otherwise, signals.calcPM500 throws exception when z grid is not fine enough
+    tab['redshiftErr'][:]=0.0
+    
     # Run Cobaya...
     updated_info, products=run(info)
 

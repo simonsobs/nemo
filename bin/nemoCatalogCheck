@@ -24,7 +24,9 @@ import argparse
 if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoCatalogCheck")
-    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("configFileName", help="""A .yml configuration file. By default, the correspondng nemo 
+                        output is assumed to be in a directory named configFileName, minus the .yml 
+                        extension.""")
     parser.add_argument("catalogFileName", help = """Object catalog to check against nemo output (.fits format).
                         The catalog must contain at least the following columns (alternatives given in 
                         brackets): name, RADeg (or ra, RA), decDeg (or dec, DEC).""")
@@ -34,9 +36,10 @@ if __name__ == '__main__':
                         nemo cluster candidates.""", default = 4.0)
     args = parser.parse_args()
     
-    parDictFileName=args.configFileName
+    configFileName=args.configFileName
     catFileName=args.catalogFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = False, verbose = False)
+    config=startUp.NemoConfig(configFileName, setUpMaps = False, MPIEnabled = False, verbose = False)
+    outputLabel=os.path.split(parDictFileName)[-1].replace(".yml", "")
     
     print(">>> Checking catalog %s against nemo output:" % (catFileName))
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
@@ -56,6 +59,10 @@ if __name__ == '__main__':
     
     print("... %d/%d objects in %s are in the valid area mask for %s ..." % (maxPossibleMatches, len(tab), 
                                                                              catFileName, config.rootOutDir))
+    
+    outFileName=os.path.split(catFileName)[-1].replace(".fits", "_inMask_%s.fits" % (outputLabel))
+    withinMaskTab=tab[inMask]
+    withinMaskTab.write(outFileName, overwrite = True)
 
     # Cross matching
     #xTab, xCheckAgainst, rDeg=catalogs.crossMatch(tab, checkAgainst, radiusArcmin=args.matchRadiusArcmin)
@@ -73,7 +80,18 @@ if __name__ == '__main__':
     print("... %d/%d maximum possible matches in %s are not found within %.1f arcmin of an object in the %s catalog" % (len(missTab), maxPossibleMatches, catFileName, args.matchRadiusArcmin, config.rootOutDir))
     
     # We could add mass limits at each location here if we wanted...
-    # Write to file
-    outFileName=os.path.split(catFileName)[-1].replace(".fits", "_missed_in_%s.fits" % (config.rootOutDir))
+    outFileName=os.path.split(catFileName)[-1].replace(".fits", "_missed_in_%s.fits" % (os.path.split(optimalCatalogFileName)[-1].replace(".fits", "")))
     missTab.write(outFileName, overwrite = True)
     print("... written missed objects table to %s" % (outFileName))
+    
+    regFileName=outFileName.replace(".fits", ".reg")
+    foundIDKey=False
+    for idKeyToUse in ['name', 'id', 'ID', 'Name', 'NAME', 'Cluster']:
+        if idKeyToUse in missTab.keys():
+            foundIDKey=True
+            break
+    if foundIDKey == True:
+        catalogs.catalog2DS9(missTab, outFileName.replace(".fits", ".reg"), idKeyToUse = idKeyToUse)
+        print("... written missed objects DS9 region file to %s" % (regFileName))
+    else:
+        print("... didn't write DS9 region file as could not find an 'id' or 'name' column to use for labels")

@@ -720,7 +720,7 @@ class RealSpaceMatchedFilter(MapFilter):
             self.applyRACentre=img[0].header['APP_RA']
             self.applyDecCentre=img[0].header['APP_DEC']
         self.kern2d=kern2d
-        self.signalNorm
+        self.signalNorm=signalNorm
         self.bckSubScaleArcmin=bckSubScaleArcmin
 
         

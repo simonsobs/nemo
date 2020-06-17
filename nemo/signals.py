@@ -520,17 +520,20 @@ def makeCombinedQTable(config):
 
 #------------------------------------------------------------------------------------------------------------
 def loadQ(source, tileNames = None):
-    """Load the filter mismatch function Q as a dictionary of spline fits.
+    """Load the filter mismatch function Q (see `Hasselfield et al. 2013 
+    <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_) as a dictionary of spline fits.
     
     Args:
-        source (NemoConfig or str): Either the path to a .fits table (containing Q fits for all tiles - this
-            is normally selFn/QFit.fits), or a NemoConfig object (from which the path and tiles to use will
-            be inferred).
-        tileNames (optional, list): A list of tiles for which the Q function will be extracted. If 
-            source is a NemoConfig object, this should be set to None.
+        source (:obj:`nemo.startUp.NemoConfig` or str): Either the path to a .fits table (containing Q fits
+            for all tiles - this is normally ``selFn/QFit.fits``), or a :obj:`nemo.startUp.NemoConfig` object 
+            (from which the path and tiles to use will be inferred).
+        tileNames (optional, list): A list of tiles for which the Q function spline fit coefficients 
+            will be extracted. If source is a :obj:`nemo.startUp.NemoConfig` object, this should be set to 
+            ``None``.
     
     Returns:
-        A dictionary (with tile names as keys), containing spline knots for the Q function for each tile.
+        A dictionary (with tilNames as keys), containing spline knots for the Q function for each tile.
+        Q values can then be obtained by using these with :func:`scipy.interpolate.splev`.
         
     """
 
@@ -665,7 +668,7 @@ def getM500FromP(P, log10M, calcErrors = True):
             if minIndex < 0 or maxIndex > fineP.shape[0]:
                 # This shouldn't happen; if it does, probably y0 is in the wrong units
                 # Previously we threw an exception here, but we can't if using this for forced photometry
-                print("WARNING: outside M500 range - check y0 units or for problem at cluster location in map (if not in forced photometry mode)")
+                #print("WARNING: outside M500 range - check y0 units or for problem at cluster location in map (if not in forced photometry mode)")
                 clusterM500MinusErr=0.
                 clusterM500PlusErr=0.
                 break

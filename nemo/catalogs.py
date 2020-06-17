@@ -1,6 +1,6 @@
 """
 
-This module contains tools for handling catalogs, which are (usually) astropy Table objects.
+This module contains tools for handling catalogs, which are usually :obj:`astropy.table.Table` objects.
 
 """
 
@@ -88,19 +88,71 @@ COLUMN_FORMATS=COLUMN_FORMATS+formatsToAdd
         
 if len(COLUMN_NAMES) != len(COLUMN_FORMATS):
     raise Exception("COLUMN_NAMES and COLUMN_FORMATS lists should be same length")
-        
+
 #------------------------------------------------------------------------------------------------------------
-def makeOptimalCatalog(catalogDict, constraintsList = []):
-    """Identifies common objects between catalogs in the imageDict and creates a master catalog with
-    one entry per object, keeping only the highest S/N detection details.
+def _posRecFitFunc(snr, snrFold, pedestal, norm):
+    """Fitting function used for position recovery offset (') in terms of fixed_SNR - see
+    positionRecovery/positionRecoveryTestDriver.py.
+    
+    NOTE: Don't use this directly - call checkCrossMatch instead.
+    
+    """
+    return norm*np.exp(-snr/snrFold)+pedestal
+    
+#------------------------------------------------------------------------------------------------------------
+def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
+                    fitNorm = 38.097):
+    """Checks the cross match offset between an ACT detection and an external catalog using a model derived
+    from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysis`). The position recovery test
+    itself only accounts for the effect of noise fluctuations in the maps on the recovered SZ positions.
     
     Args:
-        catalogDict (dict): Dictionary where each key corresponds to a catalog of objects extracted from a 
-            map, labeled 
-        constraintsList: an optional list of constraints (for format, see selectFromCatalog)
+        distArcmin (:obj:`bool`): Distance of the potential cross match from the ACT position in arcmin.
+        fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
+        z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift, and then added
+            in quadrature to the cross matching radius from the position recovery model.
+        addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown) 
+            in the external cross match catalog. This will be added in quadrature.
+        fitSNRFold (:obj:`float`, optional): Model fit parameter - e-folding 
+            (see :func:`nemo.maps.positionRecoveryAnalysis`).
+        fitPedestal (:obj:`float`, optional): Model fit parameter - pedestal level
+            (see :func:`nemo.maps.positionRecoveryAnalysis`).
+        fitNorm (:obj:`float`, optional): Model fit parameter - normalization
+            (see :func:`nemo.maps.positionRecoveryAnalysis`).
+    
+    Returns:
+        True if distArcmin < model offset (+ optional addRMpc in arcmin at z), False if not.
+
+    Note:
+        The default values for the fit parameters are from a run on the f090, f150 ACT-only co-added maps
+        to S18 (as used in the AdvACT S18 cluster catalog paper), and describe a function that recovers
+        99.7% of the inserted sources in the source injection simulations.
+        
+    """
+    
+    maxRadiusArcmin=_posRecFitFunc(fixedSNR, fitSNRFold, fitPedestal, fitNorm)
+    addArcmin=0.0
+    if z is not None and z > 0:
+        addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
+    maxRadiusArcmin=np.sqrt(maxRadiusArcmin**2 + addArcmin**2)
+    if distArcmin < maxRadiusArcmin:
+        return True
+    else:
+        return False
+
+#------------------------------------------------------------------------------------------------------------
+def makeOptimalCatalog(catalogDict, constraintsList = []):
+    """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a 
+    master catalog with one entry per object, keeping only the details of the highest signal-to-noise 
+    detection.
+    
+    Args:
+        catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
+        constraintsList (:obj:`list`, optional): A list of constraints (for the format, see 
+            :func:`selectFromCatalog`).
         
     Returns:
-        Nothing - an 'optimalCatalog' key is added to imageDict
+        None - an ``optimalCatalog`` key is added to ``catalogDict`` in place.
     
     """
     
@@ -135,24 +187,26 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
                 RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
                 writeNemoInfo = True, coordSys = 'fk5'):
-    """Converts a catalog containing object dictionaries into a DS9 region file. 
+    """Writes a DS9 region file corresponding to the given catalog. 
     
     Args:
-        catalog: An astropy Table where each row represents an object.
-        outFileName: A file name for the output DS9 region file.
-        constraintsList: A list of constraints in the same format as used by `selectFromCatalog`.
-        addInfo: A list of dictionaries with keys named `key` and `fmt` (e.g., ``{'key': "SNR", 'fmt': "%.3f"}``).
-            These will be added to the object label shown in DS9.
-        idKeyToUse: The name of the key in each object dictionary that defines the object's name. Used to 
-            label objects in the DS9 region file.
-        RAKeyToUse: The name of the key in each object dictionary that contains the RA (decimal degrees) of the
-            object.
-        decKeyToUse: The name of the key in each object dictionary that contains the declination (decimal 
-            degrees) of the object.
-        color: The color of the plot symbol used by DS9.
-        writeNemoInfo: If True, writes a line with the nemo version and date generated at the top of the 
-            DS9 .reg file.
-        coordSys: A string defining the coordinate system used for RA, dec, as understood by DS9.
+        catalog (:obj:`astropy.table.Table`): An astropy Table where each row represents an object.
+        outFileName (:obj:`str`): A file name for the output DS9 region file.
+        constraintsList (:obj:`list`, optional): A list of constraints in the same format as used by 
+            :func:`selectFromCatalog`.
+        addInfo (:obj:`list`, optional): A list of dictionaries with keys named `key` and `fmt` (e.g., 
+            ``{'key': "SNR", 'fmt': "%.3f"}``). These will be added to the object label shown in DS9.
+        idKeyToUse (:obj:`str`, optional): The name of the key in each object dictionary that defines the 
+            object's name. Used to label objects in the DS9 region file.
+        RAKeyToUse (:obj:`str`, optional): The name of the key in each object dictionary that contains the 
+            RA of the object in decimal degrees.
+        decKeyToUse (:obj:`str`, optional): The name of the key in each object dictionary that contains the
+            declination of the object in decimal degrees.
+        color (:obj:`str`, optional): The color of the plot symbol used by DS9.
+        writeNemoInfo (:obj:`bool`, optional): If ``True``, writes a line with the `nemo` version and date 
+            generated at the top of the DS9 .reg file.
+        coordSys (:obj:`str`, optional): A string defining the coordinate system used for RA, dec, as 
+            understood by DS9.
         
     Returns:
         None
@@ -193,27 +247,43 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                         % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
 
 #------------------------------------------------------------------------------------------------------------
-def makeACTName(RADeg, decDeg, prefix = 'ACT-CL'):
-    """Makes ACT cluster name from RADeg, decDeg
+def makeName(RADeg, decDeg, prefix = 'ACT-CL'):
+    """Makes an object name string from the given object coordinates, following the IAU convention.
+    
+    Args:
+        RADeg (:obj:`float`): Right ascension of the object in J2000 decimal degrees.
+        decDeg (:obj:`float`): Declination of the object in J2000 decimal degrees.
+        prefix (:obj:`str`, optional): Prefix for the object name.
+    
+    Returns:
+        Object name string in the format `prefix JHHMM.m+/-DDMM`.
     
     """
     
-    actName=prefix+" J"+makeRA(RADeg)+makeDec(decDeg)
+    actName=prefix+" J"+_makeRA(RADeg)+_makeDec(decDeg)
     
     return actName
 
 #------------------------------------------------------------------------------------------------------------
 def makeLongName(RADeg, decDeg, prefix = "ACT-CL"):
-    """Makes a long format object name from RADeg, decDeg
+    """Makes a long format object name string from the given object coordinates, following IAU convention.
+    
+    Args:
+        RADeg (:obj:`float`): Right ascension of the object in J2000 decimal degrees.
+        decDeg (:obj:`float`): Declination of the object in J2000 decimal degrees.
+        prefix (:obj:`str`, optional): Prefix for the object name.
+    
+    Returns:
+        Object name string in the format `prefix JHHMMSS.s+/-DDMMSS`.
     
     """
     
-    actName=prefix+" J"+makeLongRA(RADeg)+makeLongDec(decDeg)
+    actName=prefix+" J"+_makeLongRA(RADeg)+_makeLongDec(decDeg)
     
     return actName
     
 #------------------------------------------------------------------------------------------------------------
-def makeRA(myRADeg):
+def _makeRA(myRADeg):
     """Makes RA part of ACT names.
     
     """
@@ -232,7 +302,7 @@ def makeRA(myRADeg):
     return (sHours+sMins)#[:-2] # Trims off .x as not used in ACT names
         
 #------------------------------------------------------------------------------------------------------------
-def makeDec(myDecDeg):
+def _makeDec(myDecDeg):
     """Makes dec part of ACT names
     
     """
@@ -266,7 +336,7 @@ def makeDec(myDecDeg):
         return str(sDeg+sMins)
 
 #-------------------------------------------------------------------------------------------------------------
-def makeLongRA(myRADeg):
+def _makeLongRA(myRADeg):
     """Make a long RA string, i.e. in style of long XCS names
     
     """
@@ -292,7 +362,7 @@ def makeLongRA(myRADeg):
     return sHours+sMins+sSecs
         
 #-------------------------------------------------------------------------------------------------------------
-def makeLongDec(myDecDeg):
+def _makeLongDec(myDecDeg):
     """Make a long dec sting i.e. in style of long XCS names
     
     """
@@ -338,12 +408,16 @@ def makeLongDec(myDecDeg):
         
 #-------------------------------------------------------------------------------------------------------------
 def selectFromCatalog(catalog, constraintsList):
-    """Given a catalog (an astropy Table), return a table of objects matching the
-    given constraintsList. Each item in constraintsList is a string in the form:
+    """Return a table of objects matching the given constraints from the catalog. 
     
-    "key < value", "key > value", etc.
+    Args:
+        catalog (:obj:`astropy.table.Table`): The catalog from which objects will be selected.
+        constraintsList (:obj:`list`): A list of constraints, where each item is a string of the form
+            "key < value", "key > value", etc.. Note that the spaces between the key, operator 
+            (e.g. '<'), and value are essential.
     
-    Note that the spaces between key, operator (e.g. '<') and value are essential!
+    Returns:
+        An astropy Table object.
     
     """
             
@@ -356,9 +430,15 @@ def selectFromCatalog(catalog, constraintsList):
 
 #------------------------------------------------------------------------------------------------------------
 def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
-    """Converts catalog (as a list of dictionaries) into an astropy Table.
+    """Converts a catalog in the form of a list of dictionaries (where each dictionary holds the object
+    properties) into an astropy Table.
     
-    Returns astropy Table object
+    Args:
+        catalogList (:obj:`list`): Catalog in the form of a list of dictionaries.
+        keysToWrite (:obj:`list`, optional): Keys to convert into columns in the output table.
+    
+    Returns:
+        An astropy Table object.
     
     """
     
@@ -490,21 +570,27 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources):
 
 #------------------------------------------------------------------------------------------------------------
 def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_y_c', 
-                        amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None):
+                        amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None,
+                        avoidanceRadiusArcmin = 20.0):
     """Generate a catalog of objects with random positions and amplitudes. This is for testing purposes - 
-    see, e.g., :meth:`maps.positionRecoveryTest`.
+    see, e.g., :meth:`nemo.maps.sourceInjectionTest`.
     
     Args:
-        config (:obj: `startup.NemoConfig`): Nemo configuration object.
-        numSourcesPerTile (int): Number of sources to insert into each tile.
-        amplitudeColumnName (str): Name of the column in the output catalog in which source (or cluster) 
+        config (:obj:`nemo.startup.NemoConfig`): Nemo configuration object.
+        numSourcesPerTile (:obj:`int`): The maximum number of sources to insert into each tile. The number 
+            of sources actually inserted may be less than this depending on the value of 
+            ``avoidanceRadiusArcmin``.
+        amplitudeColumnName (:obj:`str`): Name of the column in the output catalog in which source (or cluster) 
             amplitudes will be stored. Typically this should be "deltaT_c" for sources, and "fixed_y_c" for
             clusters.
-        amplitudeRange (list): Range for the random amplitudes, in the form [minimum, maximum].
-        amplitudeDistribution (str): Either 'linear' or 'log'.
-        selFn (:obj: `SelFn`, optional): Nemo selection function object, used to access area masks and 
-            coordinates info. If not given, will be created using the info in the config. Providing this 
-            saves time, as the area mask files don't have to be read from disk.
+        amplitudeRange (:obj:`list`): Range for the random amplitudes, in the form [minimum, maximum].
+        amplitudeDistribution (:obj:`str`): Either 'linear' or 'log'.
+        selFn (:obj:`nemo.completeness.SelFn`, optional): Nemo selection function object, used to access 
+            area masks and coordinates info. If not given, a selFn object will be created using the info 
+            in the config. Providing this saves time, as the area mask files don't have to be read from 
+            disk.
+        avoidanceRadiusArcmin (:obj:`float`): Minimum separation between two objects in the output catalog.
+            This should be set large enough to avoid crowding and spurious cross-matching problems.
 
     Returns:
         An astropy Table object containing the catalog.
@@ -523,20 +609,39 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
         if mapData.sum() == 0:  # Skip any empty/blank tile
             continue
         wcs=selFn.WCSDict[tileName]
-        if amplitudeDistribution == 'linear':
-            amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], numSourcesPerTile)
-        elif amplitudeDistribution == 'log':
-            amp=np.power(10, np.random.uniform(np.log10(amplitudeRange)[0], np.log10(amplitudeRange)[1], numSourcesPerTile))
-        else:
-            raise Exception("Must be either 'linear' or 'log'.")
         ys, xs=np.where(mapData != 0)
         ys=ys+np.random.uniform(0, 1, len(ys))
         xs=xs+np.random.uniform(0, 1, len(xs))
-        indices=np.random.randint(0, len(ys), numSourcesPerTile)
+        indices=np.random.randint(0, len(ys), len(ys))
         coords=wcs.pix2wcs(xs[indices], ys[indices])
         coords=np.array(coords)
-        RAs=RAs+coords[:, 0].tolist()
-        decs=decs+coords[:, 1].tolist()
+        tileRAs=[]
+        tileDecs=[]
+        keepIndices=[]
+        for i in indices:
+            rai=coords[i, 0]
+            deci=coords[i, 1]
+            rDeg=astCoords.calcAngSepDeg(rai, deci, tileRAs, tileDecs)
+            keepObj=False
+            if len(rDeg) > 0:
+                if rDeg.min()*60 > avoidanceRadiusArcmin:
+                    keepObj=True
+            else:
+                keepObj=True
+            if keepObj == True:
+                tileRAs.append(rai)
+                tileDecs.append(deci)
+                keepIndices.append(i)
+            if len(keepIndices) == numSourcesPerTile:
+                break
+        RAs=RAs+coords[keepIndices, 0].tolist()
+        decs=decs+coords[keepIndices, 1].tolist()
+        if amplitudeDistribution == 'linear':
+            amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], len(keepIndices))
+        elif amplitudeDistribution == 'log':
+            amp=np.power(10, np.random.uniform(np.log10(amplitudeRange)[0], np.log10(amplitudeRange)[1], len(keepIndices)))
+        else:
+            raise Exception("Must be either 'linear' or 'log'.")
         amps=amps+amp.tolist()
     
     tab=atpy.Table()
@@ -621,7 +726,7 @@ def getTableRADecKeys(tab):
     
     """
     RAKeysToTry=['ra', 'RA', 'RADeg']
-    decKeysToTry=['dec', 'DEC', 'decDeg']
+    decKeysToTry=['dec', 'DEC', 'decDeg', 'Dec']
     RAKey, decKey=None, None
     for key in RAKeysToTry:
         if key in tab.keys():

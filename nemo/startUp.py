@@ -139,8 +139,9 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, selFnDir = None, 
-                 MPIEnabled = False, verbose = True, strictMPIExceptions = True):
+    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, selFnDir = None,
+                 calcSelFn = True, sourceInjectionTest = False, MPIEnabled = False, 
+                 divideTilesByProcesses = True, verbose = True, strictMPIExceptions = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
@@ -151,9 +152,14 @@ class NemoConfig(object):
                 (inc. breaking into tiles if wanted).
             selFnDir (:obj:`str`, optional): Path to the selFn directory (use to override the 
                 default location).
+            calcSelFn (:obj:`bool`, optional): Overrides the value given in the config file if True.
+            sourceInjectionTest (:obj:`bool`, optional): Overrides the value given in the config file
+                if True.
             MPIEnabled (:obj:`bool`, optional): If True, use MPI to divide the map into tiles, 
                 distributed among processes. This requires `tileDefinitions` and `tileNoiseRegions` 
                 to be given in the .yml config file.
+            divideTilesByProcesses (:obj:`bool`, optional): If True, divides up the list of tiles
+                optimally among the available MPI processes.
             strictMPIExceptions (:obj:`bool`): If True, MPI will abort if an Exception is encountered
                 (the downside is that you will not get the full traceback, but at least you will not waste
                 CPU cycles). If False, MPI probably will not abort if an Exception is encountered, but you 
@@ -188,7 +194,13 @@ class NemoConfig(object):
 
         self.parDict=parseConfigFile(configFileName)
         self.configFileName=configFileName
-                        
+        
+        # Handle a couple of optional command-line args. These only override if set to True, otherwise ignored
+        if calcSelFn == True:
+            self.parDict['calcSelFn']=True
+        if sourceInjectionTest == True:
+            self.parDict['sourceInjectionTest']=True
+            
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
@@ -214,11 +226,11 @@ class NemoConfig(object):
                                 
         # Output dirs
         if 'outputDir' in list(self.parDict.keys()):
-            self.rootOutDir=self.parDict['outputDir']
+            self.rootOutDir=os.path.abspath(self.parDict['outputDir'])
         else:
             if configFileName.find(".yml") == -1:
                 raise Exception("File must have .yml extension")
-            self.rootOutDir=configFileName.replace(".yml", "")
+            self.rootOutDir=os.path.abspath(configFileName.replace(".yml", ""))
         self.filteredMapsDir=self.rootOutDir+os.path.sep+"filteredMaps"
         self.diagnosticsDir=self.rootOutDir+os.path.sep+"diagnostics"
         self.selFnDir=self.rootOutDir+os.path.sep+"selFn"
@@ -283,7 +295,7 @@ class NemoConfig(object):
         self.allTileNames=self.tileNames.copy()
         
         # MPI: just divide up tiles pointed at by tileNames among processes
-        if self.MPIEnabled == True:
+        if self.MPIEnabled == True and divideTilesByProcesses == True:
             # New - bit clunky but distributes more evenly
             rankExtNames={}
             rankCounter=0

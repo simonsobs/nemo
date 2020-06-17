@@ -32,6 +32,17 @@ if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemo")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("-S", "--calc-selection-function", dest="calcSelFn", action="store_true",
+                        help="""Calculate the completeness in terms of cluster mass, assuming the scaling
+                        relation parameters given in the .yml config file. Output will be written under the
+                        nemoOutput/selFn directory. This switch overrides the calcSelFn parameter in the
+                        .yml config file.""", default = False)
+    parser.add_argument("-I", "--run-source-injection-test", dest="sourceInjectionTest",
+                        action="store_true", help="""Run a source injection test, using the settings given
+                        in the .yml config file. Output will be written under the nemoOutput/diagnostics
+                        (raw data) and nemoOutput/selFn directories (position recovery model fits).
+                        This switch overrides the sourceInjectionTest parameter in the .yml config
+                        file.""", default = False)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
                         default = False)
@@ -49,7 +60,8 @@ if __name__ == '__main__':
         strictMPIExceptions=True
     
     parDictFileName=args.configFileName
-    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, 
+    config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
+                              sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions)
     
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
@@ -102,24 +114,26 @@ if __name__ == '__main__':
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
 
-    # Optional position recovery test (how well do we recovery positions as fn. of S/N?)
-    if 'positionRecoveryTest' in config.parDict.keys() and config.parDict['positionRecoveryTest'] == True:
-        posRecTable=maps.positionRecoveryTest(config)
+    # Source injection tests for quantifying position recovery accuracy and noise bias
+    if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
+        if config.MPIEnabled == True:
+            config.comm.barrier()   # Otherwise, some processes can begin before catalog written to disk and then crash
+        sourceInjTable=maps.sourceInjectionTest(config)
         if config.MPIEnabled == True:
             config.comm.barrier()
-            posRecTableList=config.comm.gather(posRecTable, root = 0)
+            sourceInjTableList=config.comm.gather(sourceInjTable, root = 0)
             if config.rank == 0:
-                print("... gathered position recovery test results ...")
+                print("... gathered source injection test results ...")
                 toStack=[]
-                for posRecTable in posRecTableList:
-                    if type(posRecTable) == astropy.table.table.Table and len(posRecTable) > 0:
-                        toStack.append(posRecTable)
+                for sourceInjTable in sourceInjTableList:
+                    if type(sourceInjTable) == astropy.table.table.Table and len(sourceInjTable) > 0:
+                        toStack.append(sourceInjTable)
                 if len(toStack) > 0:
-                    posRecTable=atpy.vstack(toStack)
+                    sourceInjTable=atpy.vstack(toStack)
                 else:
-                    posRecTable=None
+                    sourceInjTable=None
     else:
-        posRecTable=None
+        sourceInjTable=None
             
     ## Estimate of contamination from running cluster finding over inverted map
     #if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
@@ -172,11 +186,13 @@ if __name__ == '__main__':
     if config.rank == 0:
         
         # Plot tile-averaged position recovery test
-        if posRecTable is not None:
-            posRecTable.write(config.diagnosticsDir+os.path.sep+"positionRecoveryData.fits", overwrite = True) 
-            maps.positionRecoveryAnalysis(posRecTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
-                                          percentilesToPlot = [50, 90], plotRawData = False,
-                                          pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl')
+        if sourceInjTable is not None:
+            sourceInjTable.write(config.diagnosticsDir+os.path.sep+"sourceInjectionData.fits", overwrite = True) 
+            maps.positionRecoveryAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
+                                          percentiles = [50, 95, 99.7], plotRawData = False,
+                                          pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl',
+                                          selFnDir = config.selFnDir)
+            #maps.noiseBiasAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"noiseBias.pdf")
             
         ## Plot contamination together
         #if conTabDict != {}:

@@ -6,12 +6,9 @@ import os
 import glob
 from setuptools import setup
 from setuptools import Extension
-#from distutils.core import setup
-#from distutils.extension import Extension
 from Cython.Distutils import build_ext
 import numpy
 import versioneer
-#import popen2
 
 cmdclass=versioneer.get_cmdclass()
 cmdclass['build_ext']=build_ext

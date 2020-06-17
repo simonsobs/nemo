@@ -25,7 +25,6 @@ useInterpolator: False
 findCenterOfMass: True
 objIdent: 'ACT-CL'
 longNames: False
-catalogCuts: ['SNR > 4.0']
 
 # Photometry options
 # use photFilter to choose which filter to include in the catalog as fixed filter scale measurement (fixed_delta_T_c, fixed_y_c etc.) 
@@ -71,8 +70,9 @@ mapFilters:
                               symmetrize: True, 
                               noiseGridArcmin: 20.},
                 bckSub: True, 
-                saveHighPassMap: True,
-                saveRMSMap: True,
+                saveHighPassMap: False,
+                saveRMSMap: False,
+                saveFilteredMaps: True,
                 outputUnits: 'yc'}}
                 
 # Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination

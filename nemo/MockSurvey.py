@@ -322,7 +322,7 @@ class MockSurvey(object):
         if makeNames == True:
             names=[]
             for RADeg, decDeg in zip(RAs, decs):
-                names.append(catalogs.makeACTName(RADeg, decDeg, prefix = 'MOCK-CL'))
+                names.append(catalogs.makeName(RADeg, decDeg, prefix = 'MOCK-CL'))
         else:
             names=np.arange(numClusters)+1
         

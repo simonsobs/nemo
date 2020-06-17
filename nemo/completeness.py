@@ -40,21 +40,74 @@ plt.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
 class SelFn(object):
+    """An object that describes a survey selection function, and provides routines for calculating survey 
+    completeness for a given set of scaling relation and cosmological parameters.
+    
+    Attributes:
+        SNRCut (float): Completeness will be computed relative to this signal-to-noise selection cut 
+            (labelled as fixed_SNR in the catalogs produced by nemo).
+        footprintLabel (str): Use this to specify a footprint, if any are defined in the Nemo config used to
+            produce the selFn dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default of None uses the whole 
+            survey footprint.
+        applyMFDebiasCorrection (bool): Set to False to disable the Eddington bias correction of mass 
+            estimates. Probably only useful for debugging.
+        selFnDir (str): Path to a selFn/ directory, as produced by the nemo and nemoSelFn commands. This 
+            directory contains information such as the survey noise maps, area masks, and filter 
+            mismatch function (Q) fits for clusters.
+        zStep (float): Use this to set the binning in redshift for completeness calculations.
+        tileNames (list): The list of tiles used by the SelFn object (default of None uses all tiles).
+        WCSDict (dict): A dictionary indexed by tileName, containing WCS objects that describe the mapping
+            between pixel coords and (RA, dec) coords in each tile.
+        areaMaskDict (dict): A dictionary containing the survey area masks, indexed by tileName. Values > 0
+            in these masks define the cluster or source search area.
+        scalingRelationDict (dict): A dictionary of scaling relation parameters (see example Nemo config 
+            files for the format).
+        tckQFitDict (dict): A dictionary of interpolation spline knots indexed by tileName, that can be used 
+            to estimate Q, the filter mismatch function (see :func:`nemo.signals.loadQ`).
+        RMSDict (dict): A dictionary of RMS tables, indexed by tileName. Each RMSTable contains noise level
+            by area, as returned by getRMSTab.
+        totalAreaDeg2 (float): The total area, as measured from the survey mask, for the given set of tiles
+            and footprint.
+        fRelDict (dict): A dictionary of weights used for relativistic corrections, indexed by tileName.
+        mockSurvey (:obj: `MockSurvey`): A Nemo `MockSurvey` object, used for halo mass function 
+            calculations and generating mock catalogs.
+    
+    """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
                  tileNames = None, enableDrawSample = False, downsampleRMS = True, 
                  applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True):
-        """Initialise a SelFn object.
+        """Initialise an object that contains a survey selection function. 
         
-        This is a class that uses the output from nemoSelFn to re-calculate the selection function
-        (completeness fraction on (M, z) grid) with different cosmological / scaling relation parameters
-        (see SelFn.update).
+        This class uses the output in the selFn/ directory (produced by the nemo and nemoSelFn commands) to 
+        re-calculate the survey completeness for a given signal-to-noise cut on a (log10 M500c, z) grid for
+        a given set of cosmological and scaling relation parameters.
         
-        Use footprintLabel to specify a footprint (e.g., 'DES', 'HSC', 'KiDS' etc.) defined in 
-        selFnFootprints in the .yml config file. The default None uses the whole survey.
-        
-        Set downsampleRMS = True to speed up the completeness calculation (called each time update is called)
-        considerably.
+        Args:
+            selFnDir (str): Path to a selFn/ directory, as produced by the nemo and nemoSelFn commands. This 
+                directory contains information such as the survey noise maps, area masks, and filter 
+                mismatch function (Q) fits for clusters.
+            SNRCut (float): Completeness will be computed relative to this signal-to-noise selection cut 
+                (labelled as fixed_SNR in the catalogs produced by nemo).
+            configFileName (str, optional): Path to a Nemo configuration file. If not given, this will be
+                read from selFnDir/config.yml, which is the config file for the nemo run that produced the
+                selFn directory.
+            footprintLabel (str, optional): Use this to specify a footprint, if any are defined in the Nemo
+                config used to produce the selFn dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default of None
+                uses the whole survey footprint.
+            zStep (float, optional): Use this to set the binning in redshift for completeness calculations.
+            tileNames (list, optional): If given, restrict the SelFn object to use only these tiles.
+            enableDrawSample (bool, optional): This only needs to be set to True for generating mock 
+                catalogs.
+            downsampleRMS (float, optional): Downsample the resolution of the RMS tables by this factor. 
+                The RMS tables are generated from the noise maps, and are just a listing of noise level 
+                versus survey area. Downsampling speeds up completeness calculations considerably.
+            applyMFDebiasCorrection (bool, optional): Set to False to disable the Eddington bias correction
+                of mass estimates. Probably only useful for debugging.
+            setupAreaMask (bool, optional): If True, read in the area masks so that quick position checks
+                can be done (e.g., by checkCoordsAreInMask).
+            enableCompletenessCalc (bool, optional): If True, set up the machinery needed to do completeness
+                calculations.
         
         """
         
@@ -642,6 +695,32 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
     
     """
     
+    # Easiest way to get at contour for plotting later
+    # The smoothing may only be necessary if compMz is made by montecarlo method
+    contours=plt.contour(z, log10M, compMz.transpose(), levels = [0.9])
+    cont_z=[]
+    cont_log10M=[]
+    for p in contours.collections[0].get_paths():
+        v=p.vertices
+        cont_z=cont_z+v[:, 0].tolist()
+        cont_log10M=cont_log10M+v[:, 1].tolist()
+    plt.close()
+    contTab=atpy.Table()
+    contTab.add_column(atpy.Column(cont_z, 'z'))
+    contTab.add_column(atpy.Column(cont_log10M, 'log10M'))
+    contTab.sort('z')
+    cont_z=[]
+    cont_log10M=[]
+    for zi in z:
+        mask=np.equal(contTab['z'], zi)
+        if mask.sum() > 0:
+            cont_z.append(zi)
+            cont_log10M.append(np.median(contTab['log10M'][mask]))
+    cont_z=np.array(cont_z)
+    cont_log10M=np.array(cont_log10M)
+    #cont_log10M=ndimage.uniform_filter(cont_log10M, int(np.ceil(len(cont_log10M)/20)))
+    
+    # Actual plot
     plotSettings.update_rcParams()
     plt.figure(figsize=(9.5,6.5))
     ax=plt.axes([0.11, 0.11, 0.87, 0.80])
@@ -656,7 +735,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
         labels_log10M.append("%.2f" % (lm))
     plt.yticks(interpolate.splev(plot_log10M, y_tck), labels_log10M)
     plt.ylim(coords_log10M.min(), coords_log10M.max())
-    plt.ylabel("log$_{10}$ ($M / M_{\odot}$)")
+    plt.ylabel("log$_{10}$ ($M_{\\rm 500c} / M_{\odot}$)")
     
     x_tck=interpolate.splrep(z, np.arange(z.shape[0]))
     plot_z=np.linspace(0.0, 2.0, 11)
@@ -668,12 +747,18 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
     plt.xlim(coords_z.min(), coords_z.max())
     plt.xlabel("$z$")
     
+    coords_cont_z=interpolate.splev(cont_z, x_tck)
+    coords_cont_log10M=interpolate.splev(cont_log10M, y_tck)
+    plt.plot(coords_cont_z, coords_cont_log10M, 'k:', lw = 3)
+    
     plt.colorbar(pad = 0.03)
     cbLabel="Completeness (%)" 
     plt.figtext(0.96, 0.52, cbLabel, ha="center", va="center", family = "sans-serif", rotation = "vertical")
 
-    plt.title(title)
+    if title != 'full':
+        plt.title(title)    
     plt.savefig(outFileName)
+    plt.close()
 
 #------------------------------------------------------------------------------------------------------------
 def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
@@ -696,23 +781,33 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
 #------------------------------------------------------------------------------------------------------------
 def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, tckQFitDict,
                      plotFileName = None, z = None, method = "fast", numDraws = 2000000, numIterations = 100):
-    """Calculate completeness as a function of (log10 M500, z) on the mockSurvey grid for assumed fiducial
-    cosmology and scaling relation, at the given SNRCut and noise level. Intrinsic scatter in the scaling
-    relation is taken into account.
+    """Calculate completeness as a function of (log10 M500c, z) on the mockSurvey grid at the given SNRCut.
+    Intrinsic scatter in the scaling relation is taken into account.
     
-    If plotFileName is given, writes 90% completeness plot.
-    
-    Two methods for doing the calculation are available:
-    - "fast"        : applying measurement error and scatter to 'true' y0 on a grid to get (log10 M, z) 
-                      completeness 
-    - "Monte Carlo" : using samples drawn from mockSurvey to fill out the (log10 M, z) grid
-    
-    Adjust numDraws (per iteration) and numIterations to set the noise level of estimate when using the
-    "Monte Carlo" method. For the "fast" method, numDraws and numIterations are ignored.
-    
-    The calculation can be done at a single fixed z, if given.
+    Args:
+        RMSTab (astropy Table): Table containing noise level by area, as returned by getRMSTab.
+        SNRCut (float): Completeness will be calculated for objects relative to this cut in fixed_SNR.
+        tileName (str): Name of the map tile.
+        mockSurvey (MockSurvey): A Nemo MockSurvey object used for halo mass function calculations.
+        scalingRelationDict (dict): A dictionary of scaling relation parameters (see example Nemo config 
+            files for the format).
+        tckQFitDict (dict): A dictionary, with keys corresponding to tile names, containing the spline knots
+            used to obtain interpolated values from the filter mismatch function Q 
+            (see :func:`nemo.signals.loadQ`).
+        plotFileName (str, optional): If given, write a plot showing 90% completness limit.
+        z (array, optional): Redshift grid on which the completeness calculation will be performed. 
+            Alternatively, a single redshift can be specified as a float instead.
+        method (str, optional): Two methods for doing the calculation are available: "fast" (applies the 
+            measurement errors and scatter to 'true' y0 values on a grid) and "montecarlo" (uses samples
+            drawn from a mock catalog, generated on the fly, to estimate the completeness). Both methods 
+            should give consistent results.
+        numDraws (int, optional): Used by the "montecarlo" method - sets the number of draws from the 
+            halo mass function on each iteration.
+        numIterations (int, optional): Used by the "montecarlo" method - sets the number of iterations,
+            i.e., the number of mock catalogs from which the completeness is estimated.
 
-    Returns 2d array of (log10 M500, z) completeness
+    Returns:
+        2d array of (log10 M500c, z) completeness
     
     """
         
@@ -722,24 +817,30 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     else:
         zRange=mockSurvey.z
     
-    if method == "Monte Carlo":
-        # Monte-carlo sims approach: slow - but can use to verify the other approach below
-        halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
-        binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
-        halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
-        binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
-        allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-        detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-        for i in range(numIterations):
-            tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, tileName = tileName, 
-                                    SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
-            allMz=allMz+np.histogram2d(np.log10(tab['true_M500']*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
-            detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
-            detMz=detMz+np.histogram2d(np.log10(tab['true_M500'][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
-        mask=np.not_equal(allMz, 0)
-        compMz=np.ones(detMz.shape)
-        compMz[mask]=detMz[mask]/allMz[mask]
-        compMz=compMz.transpose()
+    if method == "montecarlo":
+        # Need area-weighted average noise in the tile - we could change this to use entire RMS map instead
+        areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
+        if areaWeights.sum() > 0:
+            y0Noise=np.average(RMSTab['y0RMS'].data, weights = areaWeights)
+            # Monte-carlo sims approach: slow - but can use to verify the other approach below
+            halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
+            binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
+            halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
+            binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
+            allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
+            detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
+            for i in range(numIterations):
+                tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, tileName = tileName, 
+                                        SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
+                allMz=allMz+np.histogram2d(np.log10(tab['true_M500']*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
+                detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
+                detMz=detMz+np.histogram2d(np.log10(tab['true_M500'][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
+            mask=np.not_equal(allMz, 0)
+            compMz=np.ones(detMz.shape)
+            compMz[mask]=detMz[mask]/allMz[mask]
+            compMz=compMz.transpose()
+        else:
+            compMz=np.zeros([mockSurvey.clusterCount.shape[0], mockSurvey.clusterCount.shape[1]])
         #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
 
     elif method == "fast":
