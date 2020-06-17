@@ -124,7 +124,7 @@ mapFilters:
 
 # Source injection test - this can also be enabled with the nemo -I switch
 #sourceInjectionTest: True
-sourceInjectionIterations: 200
+sourceInjectionIterations: 50
 sourcesPerTile: 50
 sourceInjectionModels:
     - {redshift: 0.8, M500: 2.0e+14}
