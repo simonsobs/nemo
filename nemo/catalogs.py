@@ -100,8 +100,8 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     return norm*np.exp(-snr/snrFold)+pedestal
     
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.682,
-                    fitNorm = 37.709):
+def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
+                    fitNorm = 38.097):
     """Checks the cross match offset between an ACT detection and an external catalog using a model derived
     from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysis`). The position recovery test
     itself only accounts for the effect of noise fluctuations in the maps on the recovered SZ positions.
