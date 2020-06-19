@@ -11,6 +11,7 @@ import yaml
 import copy
 import astropy.io.fits as pyfits
 from astLib import astWCS
+from nemo import signals
 import pickle
 import time
 #import IPython
@@ -315,7 +316,7 @@ class NemoConfig(object):
                 self.tileNames=list(tileCoordsDict.keys())
             # Loading via Q might be able to be retired?
             elif os.path.exists(self.selFnDir+os.path.sep+"QFit.fits") == True:
-                tckQFitDict=signals.loadQ(QFitFileName)
+                tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
                 self.tileNames=list(tckQFitDict.keys())
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (self.selFnDir+os.path.sep+"QFit.fits"))
