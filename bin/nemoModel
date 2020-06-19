@@ -74,8 +74,11 @@ if __name__ == '__main__':
         shape=(config.tileCoordsDict[tileName]['clippedSection'][3], 
                config.tileCoordsDict[tileName]['clippedSection'][1])
         wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
-        modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
-                                                 obsFreqGHz = args.obsFreqGHz)
+        try:
+            modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
+                                                     obsFreqGHz = args.obsFreqGHz)
+        except:
+            raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
     # Gathering
     if config.MPIEnabled == True:

@@ -1404,7 +1404,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             parameters can be given here (see gnfw.py).
         override (dict, optional): Used only by cluster catalogs. If a dictionary containing keys
             {'M500', 'redshift'} is given, all objects in the model image are forced to have the 
-            corresponding angular size. Used by :meth:`positionRecoveryTest`.
+            corresponding angular size. Used by :meth:`sourceInjectionTest`.
         applyPixelWindow (bool, optional): If True, apply the pixel window function to the map.
             
     Returns:
