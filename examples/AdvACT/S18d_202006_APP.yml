@@ -4,7 +4,7 @@
 #
 # YAML format 
 # - use null to return None in Python
-# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+# - YAML is fussy about exp numbers: use e.g. 1.0e+14 for M500MSun (not 1e14), 1.0e-07 for tol
 
 # Valid units are uK or Jy/sr
 # this should be a list of maps at different frequencies
@@ -42,7 +42,7 @@ photFilter: 'Arnaud_M2e14_z0p4'
 
 # Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
 # The example below is for the Averaged Pressure Profile (name TBC; from Yizhou)
-GNFWParams: {P0: 4.48, c500: 1.34, gamma: 0.45, alpha: 1.24, beta: 5.29, tol: 1e-7, npts: 100}
+GNFWParams: {P0: 4.48, c500: 1.34, gamma: 0.45, alpha: 1.24, beta: 5.29, tol: 1.0e-7, npts: 100}
 
 # Mass measurement options - used by nemoMass and nemoSelFn scripts
 # Writes out .fits file to nemoOutDir/nemoOutDir_M500.fits
