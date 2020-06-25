@@ -315,11 +315,15 @@ if __name__ == '__main__':
         Ob0=massOptions['Ob0']
     else:
         Ob0=0.05
-    if 'sigma_8' in list(massOptions.keys()):
-        sigma_8=massOptions['sigma_8']
+    if 'sigma8' in list(massOptions.keys()):
+        sigma8=massOptions['sigma8']
     else:
-        sigma_8=0.8
-    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8)
+        sigma8=0.8
+    if 'ns' in list(massOptions.keys()):
+        ns=massOptions['ns']
+    else:
+        ns=0.95
+    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns)
     
     colsToAdd=['M500', 'M500Uncorr', 'M200m', 'M200mUncorr',
                'M500NoRel', 'M500UncorrNoRel', 'M200mNoRel', 'M200mUncorrNoRel']
