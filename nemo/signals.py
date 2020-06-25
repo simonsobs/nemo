@@ -587,7 +587,7 @@ def calcWeightedFRel(z, M500, fRelWeightsDict):
     return fRel
     
 #------------------------------------------------------------------------------------------------------------
-def calcFRel(z, M500, cosmoModel, obsFreqGHz = 148.0):
+def calcFRel(z, M500, Ez, obsFreqGHz = 148.0):
     """Calculates relativistic correction to SZ effect at specified frequency, given z, M500 in MSun.
        
     This assumes the Arnaud et al. (2005) M-T relation, and applies formulae of Itoh et al. (1998)
@@ -608,7 +608,8 @@ def calcFRel(z, M500, cosmoModel, obsFreqGHz = 148.0):
     A=3.84e14
     B=1.71
     #TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)   # HMF/Astropy
-    TkeV=5.*np.power(((cosmoModel.Ez(z)*M500)/A), 1/B)   # Colossus
+    #TkeV=5.*np.power(((cosmoModel.Ez(z)*M500)/A), 1/B)   # Colossus
+    TkeV=5.*np.power(((Ez*M500)/A), 1/B)
     TKelvin=TkeV*((1000*e)/kB)
 
     # Itoh et al. (1998) eqns. 2.25 - 2.30

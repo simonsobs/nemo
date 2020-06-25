@@ -19,7 +19,7 @@ from scipy import ndimage
 from scipy import optimize
 from . import signals
 from . import maps
-from . import MockSurvey
+from . import MockSurveyCCL
 from . import plotSettings
 from . import startUp
 from collections import OrderedDict
@@ -76,7 +76,8 @@ class SelFn(object):
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
                  tileNames = None, enableDrawSample = False, downsampleRMS = True, 
-                 applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True):
+                 applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True,
+                 delta = 500, rhoType = 'critical'):
         """Initialise an object that contains a survey selection function. 
         
         This class uses the output in the selFn/ directory (produced by the nemo and nemoSelFn commands) to 
@@ -197,9 +198,11 @@ class SelFn(object):
             Om0=0.30
             Ob0=0.05
             sigma_8=0.8
-            self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, 
-                                                  zStep = self.zStep, enableDrawSample = enableDrawSample)
-            self.update(H0, Om0, Ob0, sigma_8)
+            ns=0.95
+            self.mockSurvey=MockSurveyCCL.MockSurveyCCL(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, ns,
+                                                  zStep = self.zStep, enableDrawSample = enableDrawSample,
+                                                  delta = delta, rhoType = rhoType)
+            self.update(H0, Om0, Ob0, sigma_8, ns)
 
 
     def _setUpAreaMask(self):
@@ -295,7 +298,7 @@ class SelFn(object):
             sys.exit()            
         
 
-    def update(self, H0, Om0, Ob0, sigma_8, scalingRelationDict = None):
+    def update(self, H0, Om0, Ob0, sigma_8, ns, scalingRelationDict = None):
         """Re-calculates survey-average selection function given new set of cosmological / scaling relation parameters.
         
         This updates self.mockSurvey at the same time - i.e., this is the only thing that needs to be updated.
@@ -313,7 +316,7 @@ class SelFn(object):
         if scalingRelationDict is not None:
             self.scalingRelationDict=scalingRelationDict
         
-        self.mockSurvey.update(H0, Om0, Ob0, sigma_8)
+        self.mockSurvey.update(H0, Om0, Ob0, sigma_8, ns)
         
         compMzCube=[]
         for tileName in self.RMSDict.keys():
