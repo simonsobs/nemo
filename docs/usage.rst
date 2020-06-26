@@ -1,8 +1,8 @@
 .. _UsagePage:
 
-======================
-Installation and Usage
-======================
+=============================
+Introduction and Installation
+=============================
 
 
 .. mdinclude:: ../README.md

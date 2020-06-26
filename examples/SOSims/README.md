@@ -88,8 +88,9 @@ SO survey footprint, by breaking the map into tiles (see below).
 
 # Extracting the survey mass limit
 
-If the `calcSelFn` parameter set to True in the Nemo configuration file, the
-main `nemo` script will calculate and output estimates of the 90% mass 
+If the `calcSelFn` parameter set to `True` in the Nemo configuration file, 
+or if `nemo` is run using the `-S` switch, the main `nemo` script will 
+calculate and output estimates of the 90% mass 
 completeness threshold at some user-set signal-to-noise level (e.g., S/N > 5). 
 You will find various plots related to the survey completeness as a 
 function of redshift under `MFMF_SOSim_3freq_small/diagnostics/`, including a
@@ -171,7 +172,7 @@ again, replacing `$NUM_PROCESSES` with the number of cores you want to run on. T
 `slurm_mass.sh` scripts shows to run this using [Slurm](https://slurm.schedmd.com/overview.html) 
 (this takes less than 3 minutes for a catalog of ~30,000 clusters with the settings given).
 
-Note `rescaleFactor` in `massOptions` in the `MFMF_SOSim_3freq_tiles.yml` configuration file
-has been set such that the "calibrated" masses produced by `nemoMass` (`M500Cal`, `M200mCal`) are on
-approximately the same scale as the WebSky halo catalog (the slope of the mass scaling
-relation in the simulations is slightly different though).
+Note that the cosmological and scaling relation parameters set in the  `massOptions` section of
+both of the example configuration files given here (`MFMF_SOSim_3freq_tiles.yml` and 
+`MFMF_SOSim_3freq_small.yml`) have been set to approximately reproduce those
+used in the WebSky simulations.

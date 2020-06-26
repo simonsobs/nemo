@@ -11,6 +11,8 @@ import yaml
 import copy
 import astropy.io.fits as pyfits
 from astLib import astWCS
+from nemo import signals
+import pickle
 import time
 #import IPython
 from . import maps
@@ -139,17 +141,20 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, configFileName, makeOutputDirs = True, setUpMaps = True, selFnDir = None,
-                 calcSelFn = True, sourceInjectionTest = False, MPIEnabled = False, 
+    def __init__(self, config, makeOutputDirs = True, setUpMaps = True, writeTileDir = True, 
+                 selFnDir = None, calcSelFn = True, sourceInjectionTest = False, MPIEnabled = False, 
                  divideTilesByProcesses = True, verbose = True, strictMPIExceptions = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
         Args:
-            configFileName (:obj:`str`): Path to a nemo .yml configuration file.
+            config (:obj:`str` or :obj:`dict`): Either the path to a nemo .yml configuration
+                file, or a dictionary containing nemo configuration parameters.
             makeOutputDirs (:obj:`bool`, optional): If True, create output directories (where maps, 
                 catalogs are stored).
             setUpMaps (:obj:`bool`, optional): If True, set-up data structures for handling maps 
                 (inc. breaking into tiles if wanted).
+            writeTileDir (:obj:`bool`, optional): If True and set-up to break maps into tiles, write
+                the tiles to disk with a subdirectory for each tile.
             selFnDir (:obj:`str`, optional): Path to the selFn directory (use to override the 
                 default location).
             calcSelFn (:obj:`bool`, optional): Overrides the value given in the config file if True.
@@ -192,8 +197,14 @@ class NemoConfig(object):
             self.comm=None
             self.size=1
 
-        self.parDict=parseConfigFile(configFileName)
-        self.configFileName=configFileName
+        if type(config) == str:
+            self.parDict=parseConfigFile(config)
+            self.configFileName=config
+        elif type(config) == dict:
+            self.parDict=config
+            self.configFileName=''
+        else:
+            raise Exception("'config' must be either a path to a .yml file, or a dictionary of parameters.")
         
         # Handle a couple of optional command-line args. These only override if set to True, otherwise ignored
         if calcSelFn == True:
@@ -228,9 +239,9 @@ class NemoConfig(object):
         if 'outputDir' in list(self.parDict.keys()):
             self.rootOutDir=os.path.abspath(self.parDict['outputDir'])
         else:
-            if configFileName.find(".yml") == -1:
+            if self.configFileName.find(".yml") == -1 and makeOutputDirs == True:
                 raise Exception("File must have .yml extension")
-            self.rootOutDir=os.path.abspath(configFileName.replace(".yml", ""))
+            self.rootOutDir=os.path.abspath(self.configFileName.replace(".yml", ""))
         self.filteredMapsDir=self.rootOutDir+os.path.sep+"filteredMaps"
         self.diagnosticsDir=self.rootOutDir+os.path.sep+"diagnostics"
         self.selFnDir=self.rootOutDir+os.path.sep+"selFn"
@@ -254,23 +265,38 @@ class NemoConfig(object):
 
         if setUpMaps == True:
             if self.rank == 0:
-                maps.addAutoTileDefinitions(self.parDict, DS9RegionFileName = self.selFnDir+os.path.sep+"tiles.reg",
-                                            cacheFileName = self.selFnDir+os.path.sep+"tileDefinitions.yml")
-                bcastUnfilteredMapsDictList, bcastTileNames=maps.makeTileDir(self.parDict)
+                if writeTileDir == True:
+                    DS9RegionFileName=self.selFnDir+os.path.sep+"tiles.reg"
+                    cacheFileName=self.selFnDir+os.path.sep+"tileDefinitions.yml"
+                else:
+                    DS9RegionFileName=None
+                    cacheFileName=None
+                maps.addAutoTileDefinitions(self.parDict, DS9RegionFileName = DS9RegionFileName,
+                                            cacheFileName = cacheFileName)
+                bcastUnfilteredMapsDictList, bcastTileNames, tileCoordsDict=maps.makeTileDir(self.parDict, 
+                                                                                             writeToDisk = writeTileDir)
                 bcastParDict=self.parDict
+                bcastTileCoordsDict=tileCoordsDict
+                if writeTileDir == True:
+                    with open(self.selFnDir+os.path.sep+"tileCoordsDict.pkl", "wb") as pickleFile:
+                        pickler=pickle.Pickler(pickleFile)
+                        pickler.dump(tileCoordsDict)
             else:
                 bcastUnfilteredMapsDictList=None
                 bcastTileNames=None
                 bcastParDict=None
+                bcastTileCoordsDict=None
             if self.MPIEnabled == True:
                 #self.comm.barrier()
                 bcastParDict=self.comm.bcast(bcastParDict, root = 0)
                 bcastUnfilteredMapsDictList=self.comm.bcast(bcastUnfilteredMapsDictList, root = 0)
                 bcastTileNames=self.comm.bcast(bcastTileNames, root = 0)
+                bcastTileCoordsDict=self.comm.bcast(bcastTileCoordsDict, root = 0)
                 self.comm.barrier()
             self.unfilteredMapsDictList=bcastUnfilteredMapsDictList
             self.tileNames=bcastTileNames
             self.parDict=bcastParDict
+            self.tileCoordsDict=bcastTileCoordsDict
             # For when we want to test on only a subset of tiles
             if 'tileNameList' in list(self.parDict.keys()):
                 newList=[]
@@ -282,13 +308,18 @@ class NemoConfig(object):
                 self.tileNames=newList
         else:
             # If we don't have maps, we would still want the list of tile names
-            from . import signals
-            QFitFileName=self.selFnDir+os.path.sep+"QFit.fits"
-            if os.path.exists(QFitFileName) == True:
-                tckQFitDict=signals.loadQ(QFitFileName)
+            if os.path.exists(self.selFnDir+os.path.sep+"tileCoordsDict.pkl") == True:
+                with open(self.selFnDir+os.path.sep+"tileCoordsDict.pkl", "rb") as pickleFile:
+                    unpickler=pickle.Unpickler(pickleFile)
+                    tileCoordsDict=unpickler.load()
+                self.tileCoordsDict=tileCoordsDict
+                self.tileNames=list(tileCoordsDict.keys())
+            # Loading via Q might be able to be retired?
+            elif os.path.exists(self.selFnDir+os.path.sep+"QFit.fits") == True:
+                tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
                 self.tileNames=list(tckQFitDict.keys())
             else:
-                raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (QFitFileName))
+                raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (self.selFnDir+os.path.sep+"QFit.fits"))
         
         # For convenience, keep the full list of tile names 
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)

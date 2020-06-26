@@ -350,8 +350,9 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     H0=70.
     Om0=0.30
     Ob0=0.05
-    sigma_8=0.8
-    mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma_8, enableDrawSample = True)
+    sigma8=0.8
+    ns=0.95
+    mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, enableDrawSample = True)
     
     if verbose: print(">>> Making mock catalogs ...")
     catList=[]

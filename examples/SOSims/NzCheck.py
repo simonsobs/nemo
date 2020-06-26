@@ -2,6 +2,8 @@
 
 N(z) check - for comparing across codes using different mass function implementations etc..
 
+NOTE: We messed up when setting this task, so the mass limit is M500c > 5e13 MSun/h
+
 """
 
 import os
@@ -45,21 +47,22 @@ if __name__ == '__main__':
                              footprintLabel = footprintLabel, zStep = zStep)
 
     scalingRelationDict=selFn.scalingRelationDict
-    H0, Om0, Ob0, sigma_8 = 70.0, 0.30, 0.05, 0.80    
-    selFn.update(H0, Om0, Ob0, sigma_8, scalingRelationDict = scalingRelationDict)
+    H0, Om0, Ob0, sigma8, ns = 70.0, 0.30, 0.05, 0.80, 0.95
+    h=H0/100.0
+    selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict = scalingRelationDict)
     print("Total area = %.3f square degrees" % (selFn.totalAreaDeg2))
     
     # N(z) with M500c > 5e13 MSun - no selection function applied
-    countsByRedshift=selFn.mockSurvey.clusterCount[:, np.greater(selFn.mockSurvey.log10M, np.log10(5e13))].sum(axis = 1)
+    countsByRedshift=selFn.mockSurvey.clusterCount[:, np.greater(selFn.mockSurvey.log10M, np.log10(5e13/h))].sum(axis = 1)
     with open("NzCheck_noSelFn.csv", "w") as outFile:
         for i in range(len(selFn.mockSurvey.z)):
-            outFile.write("%.1f <= z < %.1f\t%d\n" % (selFn.mockSurvey.zBinEdges[i], selFn.mockSurvey.zBinEdges[i+1], countsByRedshift[i]))
+            outFile.write("%.1f <= z < %.1f\t%.3f\n" % (selFn.mockSurvey.zBinEdges[i], selFn.mockSurvey.zBinEdges[i+1], countsByRedshift[i]))
     
     # N(z) with M500c > 5e13 MSun - with S/N > 5 selection function applied
     predMz=selFn.compMz*selFn.mockSurvey.clusterCount
-    countsByRedshift=predMz[:, np.greater(selFn.mockSurvey.log10M, np.log10(5e13))].sum(axis = 1)
+    countsByRedshift=predMz[:, np.greater(selFn.mockSurvey.log10M, np.log10(5e13/h))].sum(axis = 1)
     with open("NzCheck_withSelFn.csv", "w") as outFile:
         for i in range(len(selFn.mockSurvey.z)):
-            outFile.write("%.1f <= z < %.1f\t%d\n" % (selFn.mockSurvey.zBinEdges[i], selFn.mockSurvey.zBinEdges[i+1], countsByRedshift[i]))
+            outFile.write("%.1f <= z < %.1f\t%.3f\n" % (selFn.mockSurvey.zBinEdges[i], selFn.mockSurvey.zBinEdges[i+1], countsByRedshift[i]))
 
        

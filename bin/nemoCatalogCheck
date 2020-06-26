@@ -39,7 +39,7 @@ if __name__ == '__main__':
     configFileName=args.configFileName
     catFileName=args.catalogFileName
     config=startUp.NemoConfig(configFileName, setUpMaps = False, MPIEnabled = False, verbose = False)
-    outputLabel=os.path.split(parDictFileName)[-1].replace(".yml", "")
+    outputLabel=os.path.split(configFileName)[-1].replace(".yml", "")
     
     print(">>> Checking catalog %s against nemo output:" % (catFileName))
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])

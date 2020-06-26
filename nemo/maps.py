@@ -215,7 +215,8 @@ def addAutoTileDefinitions(parDict, DS9RegionFileName = None, cacheFileName = No
                                              parDict['tileDefinitions']['targetTileWidthDeg'],
                                              parDict['tileDefinitions']['targetTileHeightDeg'])
         print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
-        saveTilesDS9RegionsFile(parDict, DS9RegionFileName)
+        if DS9RegionFileName is not None:
+            saveTilesDS9RegionsFile(parDict, DS9RegionFileName)
     
         if cacheFileName is not None:
             stream=yaml.dump(parDict['tileDefinitions'])
@@ -254,7 +255,7 @@ def loadTile(pathToTileImages, tileName, returnWCS = False):
         return data
 
 #-------------------------------------------------------------------------------------------------------------
-def makeTileDir(parDict):
+def makeTileDir(parDict, writeToDisk = True):
     """Update this later. Revised version. Instead of making a MEF, makes a directory for each map and puts
     individual tile images there. We'll only need to edit preprocessMapDict to handle the difference. Why
     are we doing this? Just in case reading from the same file is gumming up MPI runs on hippo when using lots
@@ -270,7 +271,7 @@ def makeTileDir(parDict):
     only the I (temperature) part and save that in the tileDir file. This will need changing if hunting for
     polarized sources...
     
-    Returns unfilteredMapsDictList [input for filterMaps], list of extension names
+    Returns unfilteredMapsDictList [input for filterMaps], list of extension names, dictionary of clip coords
     
     NOTE: Under MPI, this should only be called by the rank = 0 process
     
@@ -281,6 +282,7 @@ def makeTileDir(parDict):
     
     # Some of this is rather clunky...
     unfilteredMapsDictList=[]
+    clipCoordsDict={}
     if parDict['makeTileDir'] == False:
         tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
@@ -289,6 +291,8 @@ def makeTileDir(parDict):
             if tileNames == []:
                 for ext in img:
                     tileNames.append(ext.name)
+                    clipCoordsDict[ext.name]={'clippedSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']],
+                                              'header': ext.header}
             else:
                 for ext in img:
                     if ext.name not in tileNames:
@@ -348,10 +352,11 @@ def makeTileDir(parDict):
             tileOverlapDeg=parDict['tileOverlapDeg']
             for mapType, inMapFileName, outMapFileName in zip(mapTypeList, inFileNames, outFileNames):
                 mapData=None    # only load the map if we have to
-                os.makedirs(outMapFileName, exist_ok = True)
+                if writeToDisk == True:
+                    os.makedirs(outMapFileName, exist_ok = True)
                 for c, name in zip(coordsList, tileNames):
                     tileFileName=outMapFileName+os.path.sep+name+".fits"
-                    if os.path.exists(tileFileName) == True:
+                    if os.path.exists(tileFileName) == True and writeToDisk == True:
                         continue
                     if mapData is None:
                         #deckImg=pyfits.HDUList()
@@ -395,6 +400,10 @@ def makeTileDir(parDict):
                         count=count+1
                         if count > 100:
                             raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
+                    if name not in clipCoordsDict:
+                        clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header}
+                    else:
+                        assert(clipCoordsDict[name]['clippedSection'] == clip['clippedSection'])
                     # Old
                     #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                     print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
@@ -434,7 +443,8 @@ def makeTileDir(parDict):
                         zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                         clip['data']=clip['data']*zapMask
                         #astImages.saveFITS("test.fits", zapMask, clip['wcs'])
-                    astImages.saveFITS(tileFileName, clip['data'], clip['wcs'])
+                    if writeToDisk == True:
+                        astImages.saveFITS(tileFileName, clip['data'], clip['wcs'])
                     #hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = header, name = name)
                     #deckImg.append(hdu)    
                 #deckImg.writeto(outMapFileName)
@@ -444,8 +454,8 @@ def makeTileDir(parDict):
             for key, outFileName in zip(mapTypeList, outFileNames):
                 mapDict[key]=outFileName
             unfilteredMapsDictList.append(mapDict.copy())
-    
-    return unfilteredMapsDictList, tileNames
+        
+    return unfilteredMapsDictList, tileNames, clipCoordsDict
 
 #-------------------------------------------------------------------------------------------------------------
 def shrinkWCS(origShape, origWCS, scaleFactor):
@@ -1394,7 +1404,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             parameters can be given here (see gnfw.py).
         override (dict, optional): Used only by cluster catalogs. If a dictionary containing keys
             {'M500', 'redshift'} is given, all objects in the model image are forced to have the 
-            corresponding angular size. Used by :meth:`positionRecoveryTest`.
+            corresponding angular size. Used by :meth:`sourceInjectionTest`.
         applyPixelWindow (bool, optional): If True, apply the pixel window function to the map.
             
     Returns:
@@ -1850,9 +1860,9 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False):
     
     Args:
         outputFileName (str): Filename of output FITS image.
-        mapData (:obj:`np.ndarray`): Map data array
-        wcs (:obj:`astWCS.WCS`): Map WCS object
-        compressed (bool): If True, writes a compressed image
+        mapData (:obj:`np.ndarray`): Map data array.
+        wcs (:obj:`astWCS.WCS`): Map WCS object.
+        compressed (bool): If True, writes a compressed image.
     
     """
     

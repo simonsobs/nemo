@@ -1,15 +1,18 @@
 Nemo is a map filtering and source detection and characterization pipeline, designed to find
 galaxy clusters using the Sunyaev-Zel'dovich effect. It can also be used to find sources. 
 
-* Documentation: <https://acru.ukzn.ac.za/~mjh/nemo/>
+* Documentation: <https://astro.ukzn.ac.za/~mjh/nemo/>
 * License: Will be BSD 2-clause when released (this is a currently a private repository: for 
 now Nemo cannot be used for non-ACT, non-SO approved projects; however, the aim is to make the 
-code fully public by the time the first AdvACT cluster catalog is published)
+code fully public by the time the first AdvACT cluster catalog is published).
+* Authors: Matt Hilton, with contributions from Simone Aiola, David Alonso, Matthew Hasselfield, 
+Toby Marriage, Sigurd Naess, and Cristóbal Sifón.
 
 Nemo is *not* the pipeline used for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), 
 but implements many of the ideas presented there, and should give similar results, given 
 the same map (or at least it did in the past). *It is* the pipeline, that has been used for the
-[two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H).
+[two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H),
+and the AdvACT S18 cluster catalog paper.
 
 A slightly modified version of Matthew Hasselfield's `gnfw.py` code (used for modeling cluster
 pressure profiles) is included in Nemo.
@@ -30,24 +33,25 @@ removed, except for the version used for the
 # Software needed
 
 Nemo itself is written in Python (3.6+), and requires the following additional modules to be installed 
-(currently used versions are given in brackets, earlier and later versions also probably work):
+(currently used versions are given in brackets, later versions also probably work):
 
 * numpy (1.13.3)
 * scipy (1.3.0)
 * matplotlib (2.1.1)
 * astLib (0.11.3)
-* [pixell](https://github.com/simonsobs/pixell/) (0.5.3 or git version)
+* [pixell](https://github.com/simonsobs/pixell/) (0.6.3 or git version)
 * Pillow (5.1.0)
 * astropy (3.2.1)
-* IPython (7.2.0)
 * Cython (0.24.1)
 * PyYAML (3.12)
 * Colossus (1.2.9)
+* [CCL](https://github.com/LSSTDESC/CCL) (2.1 or later)
 * mpi4py (3.0.0)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 
 All of the dependencies can be installed using `pip`, and should be installed automatically as needed
-by the `setup.py` script.
+by the `setup.py` script (your mileage may vary in terms of how successful `pip` is at building
+some of the external dependencies, depending on your set up).
 
 # Installation
 
@@ -82,7 +86,8 @@ export PYTHONPATH=$HOME/local/lib/python3.6/site-packages:$PYTHONPATH
 
 # Running Nemo
 
-Documentation is available at <https://acru.ukzn.ac.za/~mjh/nemo/>.
+Documentation is available at <https://astro.ukzn.ac.za/~mjh/nemo/>, including a number of
+tutorials.
 
 See [examples/equD56/README.md](examples/equD56/README.md) for a tutorial on how to re-create 
 the ACTPol two-season cluster catalog (including mass estimates). 
