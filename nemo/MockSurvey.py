@@ -37,8 +37,8 @@ class MockSurvey(object):
         areaDeg2 (:obj:`float`): Survey area in square degrees.
         zBinEdges (:obj:`np.ndarray`): Defines the redshift bins for the cluster counts.
         z (:obj:`np.ndarray`): Centers of the redshift bins.
-        log10M (:obj:`np.ndarray`): Centers of the log10 mass bins for the cluster counts (in MSun,
-            with mass defined according to `delta` and `rhoType`).
+        log10M (:obj:`np.ndarray`): Centers of the log10 mass bins for the cluster counts
+            (in MSun, with mass defined according to `delta` and `rhoType`).
         a (:obj:`np.ndarray`): Scale factor (1/(1+z)).
         delta (:obj:``float`): Overdensity parameter, used for mass definition (e.g., 200, 500).
         rhoType (:obj:`str`): Density definition, either 'matter' or 'critical', used for mass definition.
