@@ -1,7 +1,7 @@
 """
 
-This module defines the MockSurvey class, used for obtaining de-biased cluster mass estimates and
-selection function calculations.
+This module defines the MockSurvey class, used for mass function calculations, obtaining de-biased cluster
+mass estimates, selection function calculations, and generating mock catalogs.
 
 """
 
@@ -14,8 +14,8 @@ import pylab as plt
 import subprocess
 from astropy.cosmology import FlatLambdaCDM
 import pyccl as ccl
-from colossus.cosmology import cosmology
-from colossus.lss import mass_function
+#from colossus.cosmology import cosmology
+#from colossus.lss import mass_function
 from . import signals
 from . import catalogs
 import pickle
@@ -28,37 +28,65 @@ import time
     
 #------------------------------------------------------------------------------------------------------------
 class MockSurvey(object):
-    def _get_new_cosmo(self, H0, Om0, Ob0, sigma8, ns):
-        if ((self.H0 != H0) or (self.Om0 != Om0) or
-            (self.Ob0 != Ob0) or (self.sigma8 != sigma8)):
-            self.H0=H0
-            self.Om0=Om0
-            self.Ob0=Ob0
-            self.sigma8=sigma8
-            self.ns=ns
-            self.cosmoModel = ccl.Cosmology(Omega_c=Om0-Ob0,
-                                            Omega_b=Ob0,
-                                            h=0.01*H0,
-                                            sigma8=sigma8,
-                                            n_s=ns,
-                                            #transfer_function='eisenstein_hu')
-                                            transfer_function=self.transferFunction)
-            self.mfunc = ccl.halos.MassFuncTinker08(self.cosmoModel,
-                                                    self.mdef)
-            
-
+    """An object that provides routines calculating cluster counts (using `CCL <https://github.com/LSSTDESC/CCL>`_) 
+    and generating mock catalogs for a given set of cosmological and mass scaling relation parameters.
+    The Tinker et al. (2008) halo mass function is used (hardcoded at present, but in principle this can
+    easily be swapped for any halo mass function supported by CCL).
+    
+    Attributes:
+        areaDeg2 (:obj:`float`): Survey area in square degrees.
+        zBinEdges (:obj:`np.ndarray`): Defines the redshift bins for the cluster counts.
+        z (:obj:`np.ndarray`): Centers of the redshift bins.
+        log10M (:obj:`np.ndarray`): Centers of the log10 mass bins for the cluster counts (in MSun,
+            with mass defined according to `delta` and `rhoType`).
+        a (:obj:`np.ndarray`): Scale factor (1/(1+z)).
+        delta (:obj:``float`): Overdensity parameter, used for mass definition (e.g., 200, 500).
+        rhoType (:obj:`str`): Density definition, either 'matter' or 'critical', used for mass definition.
+        mdef (:obj:`pyccl.halos.massdef.MassDef`): CCL mass definition object, defined by `delta` and `rhoType`.
+        transferFunction (:obj:`str`): Transfer function to use, as understood by CCL (e.g., 'eisenstein_hu', 
+            'boltzmann_camb').
+        H0 (:obj:`float`): The Hubble constant at redshift 0, in km/s/Mpc.
+        Om0 (:obj:`float`): Dimensionless total (dark + baryonic) matter density parameter at redshift 0.
+        Ob0 (:obj:`float`): Dimensionless baryon matter density parameter at redshift 0.
+        sigma8 (:obj:`float`): Defines the amplitude of the matter power spectrum.
+        ns (:obj:`float`): Scalar spectral index of matter power spectrum.
+        volumeMpc3 (:obj:`float`): Co-moving volume in Mpc3 for the given survey area and cosmological
+            parameters.
+        numberDensity (:obj:`np.ndarray`): Number density of clusters (per cubic Mpc) on the 
+            (z, log10M) grid.
+        clusterCount (:obj:`np.ndarray`): Cluster counts on the (z, log10M) grid.
+        numClusters (:obj:`float`): Total number of clusters in the survey area above the minimum mass
+            limit.
+        numClustersByRedshift (:obj:`np.ndarray`): Number of clusters in the survey area above the
+            minimum mass limit, as a function of redshift.
+    
+    """
     def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, zStep = 0.01, 
                  enableDrawSample = False, delta = 500, rhoType = 'critical', 
                  transferFunction = 'boltzmann_camb'):
-        """Initialise a MockSurvey object. This first calculates the probability of drawing a cluster of 
-        given M500, z, assuming the Tinker mass function, and the given (generous) selection limits. 
-        An additional selection function can be dialled in later when using drawSample.
+        """Create a MockSurvey object, for performing calculations of cluster counts or generating mock
+        catalogs. The Tinker et al. (2008) halo mass function is used (hardcoded at present, but in 
+        principle this can easily be swapped for any halo mass function supported by CCL).
         
-        NOTE: We've hard coded everything to use M500 wrt critical density at this point.
-        
-        transferFunction can be any CCL supports, e.g., 'eisenstein_hu', 'boltzmann_camb'
-        
-        NOTE: MockSurvey.mf.m has factor of h^-1 in it.
+        Args:
+            minMass (:obj:`float`): The minimum mass, in MSun. This should be set considerably lower than
+                the actual survey completeness limit, otherwise completeness calculations will be wrong.
+            areaDeg2 (:obj:`float`): Specifies the survey area in square degrees, which scales the
+                resulting cluster counts accordingly.
+            zMin (:obj:`float`): Minimum redshift for the (z, log10M) grid.
+            zMax (:obj:`float`): Maximum redshift for the (z, log10M) grid.
+            H0 (:obj:`float`): The Hubble constant at redshift 0, in km/s/Mpc.
+            Om0 (:obj:`float`): Dimensionless total (dark + baryonic) matter density parameter at redshift 0.
+            Ob0 (:obj:`float`): Dimensionless baryon matter density parameter at redshift 0.
+            sigma8 (:obj:`float`): Defines the amplitude of the matter power spectrum.
+            ns (:obj:`float`): Scalar spectral index of matter power spectrum.  
+            zStep (:obj:`float`, optional): Sets the linear spacing between redshift bins.
+            enableDrawSample (:obj:`bool`, optional): This needs to be set to True to enable use of the
+                :func:`self.drawSample` function. Setting this to False avoids some overhead.
+            delta (:obj:``float`): Overdensity parameter, used for mass definition (e.g., 200, 500).
+            rhoType (:obj:`str`): Density definition, either 'matter' or 'critical', used for mass definition.
+            transferFunction (:obj:`str`): Transfer function to use, as understood by CCL (e.g., 'eisenstein_hu', 
+                'boltzmann_camb').
                 
         """
 
@@ -82,17 +110,41 @@ class MockSurvey(object):
         self.ns=-1
         self._get_new_cosmo(H0, Om0, Ob0, sigma8, ns)
 
-        # NOTE: log10M doesn't have h^-1 in it, but self.M does...
+        # NOTE: This is just MSun now (NOT MSun/h)
         self.log10M=np.arange(13, 16, 0.01)
-        #self.M=np.power(10, self.log10M)/(0.01*H0)
-        self.M=np.power(10, self.log10M)#/(0.01*H0)
+        self.M=np.power(10, self.log10M)
 
         self.enableDrawSample=enableDrawSample
         self.update(H0, Om0, Ob0, sigma8, ns)
-        
+
+
+    def _get_new_cosmo(self, H0, Om0, Ob0, sigma8, ns):
+        if ((self.H0 != H0) or (self.Om0 != Om0) or
+            (self.Ob0 != Ob0) or (self.sigma8 != sigma8)):
+            self.H0=H0
+            self.Om0=Om0
+            self.Ob0=Ob0
+            self.sigma8=sigma8
+            self.ns=ns
+            self.cosmoModel = ccl.Cosmology(Omega_c=Om0-Ob0,
+                                            Omega_b=Ob0,
+                                            h=0.01*H0,
+                                            sigma8=sigma8,
+                                            n_s=ns,
+                                            transfer_function=self.transferFunction)
+            self.mfunc = ccl.halos.MassFuncTinker08(self.cosmoModel,
+                                                    self.mdef)
+
             
     def update(self, H0, Om0, Ob0, sigma8, ns):
-        """Recalculate cluster counts if cosmological parameters updated.
+        """Recalculate cluster counts for the updated cosmological parameters given.
+        
+        Args:
+            H0 (:obj:`float`): The Hubble constant at redshift 0, in km/s/Mpc.
+            Om0 (:obj:`float`): Dimensionless total (dark + baryonic) matter density parameter at redshift 0.
+            Ob0 (:obj:`float`): Dimensionless baryon matter density parameter at redshift 0.
+            sigma8 (:obj:`float`): Defines the amplitude of the matter power spectrum.
+            ns (:obj:`float`): Scalar spectral index of matter power spectrum.  
                 
         """
 
@@ -180,8 +232,7 @@ class MockSurvey(object):
 
         zRange=self.zBinEdges
         h = self.cosmoModel['h']
-        #self.M=np.power(10, self.log10M)/h # in M_sun
-        self.M=np.power(10, self.log10M)#/h # in M_sun
+        self.M=np.power(10, self.log10M) # in M_sun
         norm_mfunc=1. / np.log(10)
 
         # Number density by z and total cluster count (in redshift shells)
@@ -212,29 +263,45 @@ class MockSurvey(object):
         self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
 
 
-    def calcNumClustersExpected(self, M500Limit = 0.1, zMin = 0.0, zMax = 2.0, selFn = None):
-        """Calculate the number of clusters expected above a given mass limit. If selFn is not None, apply
-        the selection function (in which case M500Limit isn't important, so long as it is low).
+    def calcNumClustersExpected(self, MLimit = 1e13, zMin = 0.0, zMax = 2.0, compMz = None):
+        """Calculate the number of clusters expected above a given mass limit, for the
+        mass definition set when the MockSurvey object was constructed.
         
-        selFn should be an (M, z) grid that corresponds with self.log10M, self.z
+        Args:
+            MLimit (:obj:`float`, optional): Mass limit above which to count clusters, in MSun.
+            zMin (:obj:`float`, optional): Count clusters above this minimum redshift.
+            zMax (:obj:`float`, optional): Count clusters below this maximum redshift.
+            compMz (:obj:`np.ndarray`, optional): If given, a 2d array with the same dimensions
+                and binning as the (z, log10M) grid, as calculated by the
+                :class:`nemo.completeness.SelFn` class, that describes the completeness as
+                a function of mass and redshift.
         
-        NOTE: units of M500Limit are 1e14 MSun.
+        Returns:
+            The number of clusters in the survey area, according to the chose sample selection
+            cuts.
         
         """
         
-        if type(selFn) == np.ndarray:
-            numClusters=selFn*self.clusterCount
+        if type(compMz) == np.ndarray:
+            numClusters=compMz*self.clusterCount
         else:
             numClusters=self.clusterCount
         
         zMask=np.logical_and(np.greater(self.z, zMin), np.less(self.z, zMax))
-        mMask=np.greater(self.M, M500Limit*1e14)
+        mMask=np.greater(self.M, MLimit)
         
         return numClusters[:, mMask][zMask].sum()
         
 
     def getPLog10M(self, z):
-        """Returns P(log10M) at given z, which corresponds to self.log10M.
+        """Returns the log10(mass) probability distribution at the given z, for the logarithmic mass
+        binning and mass definition set when the MockSurvey object was constructed.
+        
+        Args:
+            z (:obj:`float`): Redshift at which to calculate P(log10(M)).
+        
+        Returns:
+            Array corresponding to the log10(mass) probability distribution.
         
         """
         numberDensity=self._cumulativeNumberDensity(z)
@@ -246,48 +313,69 @@ class MockSurvey(object):
     def drawSample(self, y0Noise, scalingRelationDict, tckQFitDict, wcs = None, photFilterLabel = None, 
                    tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
                    areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
-                   applyIntrinsicScatter = True, applyNoiseScatter = True):
-        """Draw a cluster sample from the mass function, generate mock y0~ values by applying the given 
-        scaling relation parameters, and then (optionally, if both SNRLimit is given and applySNRCut 
-        is True) apply the survey selection function.
+                   applyIntrinsicScatter = True, applyNoiseScatter = True, seed = None):
+        """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
+        Nemo catalogs) by applying the given scaling relation parameters, and then (optionally) applying
+        a survey selection function.
         
-        Here, y0Noise can be either a single number (if using e.g. survey average) or an RMSMap
-        (2d array). Coords will be generated if an RMSMap and a wcs are supplied.
+        Args:
+            y0Noise (:obj:`float` or :obj:`np.ndarray`): Either a single number (if using e.g., a survey
+                average) or a noise map (2d array). A noise map must be provided here if you want the
+                output catalog to contain RA, dec coordinates (in addition, a WCS object must also be
+                provided - see below).
+            scalingRelationDict (:obj:`dict`): A dictionary containing keys 'tenToA0', 'B0', 'Mpivot',
+                'sigma_int' that describes the scaling relation between y0~ and mass (this is the
+                format of `massOptions` in Nemo .yml config files).
+            tckQFitDict (:obj:`dict`): A dictionary of interpolation spline knots indexed by tileName,
+                that can be used to estimate Q, the filter mismatch function (see 
+                :func:`nemo.signals.loadQ`).
+            wcs (:obj:`astWCS.WCS`, optional): WCS object corresponding to `y0Noise`, if `y0Noise` is
+                as noise map (2d image array). Needed if you want the output catalog to contain RA, dec
+                coordinates.
+            photFilterLabel (:obj:`str`, optional): Name of the reference filter (as defined in the
+                Nemo .yml config file) that is used to define y0~ (`fixed_y_c`) and the filter mismatch 
+                function, Q.
+            tileName (:obj:`str`, optional): Name of the tile for which the sample will be generated.
+            SNRLimit (:obj:`float`, optional): Signal-to-noise detection threshold used for the
+                output catalog (corresponding to a cut on `fixed_SNR` in Nemo catalogs). Only applied
+                if `applySNRCut` is also True (yes, this can be cleaned up).
+            makeNames (:obj:`bool`, optional): If True, add names of the form MOCK CL JHHMM.m+/-DDMM
+                to the output catalog.
+            z (:obj:`float`, optional): If given produce a sample at the nearest z in the MockSurvey
+                z grid. The default behaviour is to use the full redshift grid specified by `self.z`.
+            numDraws (:obj:`int`, optional): If given, the number of draws to perform from the mass
+                function, divided equally among the redshift bins. The default is to use the values
+                contained in `self.numClustersByRedshift`.
+            areaDeg2 (:obj:`float`, optional): If given, the cluster counts will be scaled to this
+                area. Otherwise, they correspond to `self.areaDeg2`. This parameter will be ignored
+                if `numDraws` is also given.
+            applySNRCut (:obj:`bool`, optional): If True, cut the output catalog according to the
+                `fixed_SNR` threshold set by `SNRLimit`.
+            applyPoissonScatter (:obj:`bool`, optional): If True, add Poisson noise to the cluster
+                counts (implemented by modifiying the number of draws from the mass function).
+            applyIntrinsicScatter (:obj:`bool`, optional): If True, apply intrinsic scatter to the
+                SZ measurements (`fixed_y_c`), as set by the `sigma_int` parameter in 
+                `scalingRelationDict`.
+            applyNoiseScatter (:obj:`bool`, optional): If True, apply measurement noise, generated
+                from the given noise level or noise map (`y0Noise`), to the output SZ measurements
+                (`fixed_y_c`).
+            seed (:obj:`int`): If given, use this value for the random seed (may be useful for
+                testing).
+                
+        Returns:
+            A catalog as an :obj:`astropy.table.Table` object, in the same format as produced by
+            the main `nemo` script.
         
-        scalingRelationDict should contain keys 'tenToA0', 'B0', 'Mpivot', 'sigma_int' (this is the
-        contents of massOptions in nemo .yml config files).
-        
-        Most likely you should set SNRLimit to thresholdSigma, as given in the nemo .yml config file
-        (the resulting catalog could be cut in z, fixed_SNR afterwards anyway).
-        
-        photFilterLabel and tileName are only used for adding a 'template' key to each object: useful
-        for quickly checking which tile (tileName) an object is in.
-        
-        If z is given, the sample is drawn from only that redshift. The default (z = None) is to use
-        the range given by self.z
-        
-        If numDraws = None, the number of draws is set by self.numClustersByRedshift. If numDraws is
-        given, the number of draws will be divided equally between each z.
-        
-        If areaDeg2 is given, the cluster counts will be scaled accordingly (otherwise, they 
-        correspond to self.areaDeg2). This will be ignored if numDraws is also set.
-        
-        Use applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter to control whether Poisson 
-        noise (in the expected counts / number of draws from the mass function), intrinsic scatter, 
-        and/or measurement noise scatter will be applied (i.e., if all three options are set to False,
-        fixed_y_c values will be the same as true_y_c, although each object will still have an error 
-        bar in the output catalog, corresponding to where it is found in the RMS map).
-        
-        This routine is used in the nemoMock script.
-
-        Returns catalog as an astropy Table (and an array of length self.z corresponding to low mass limit
-        if numDraws is used).
+        Notes:
+            If both `applyIntrinsicScatter`, `applyNoiseScatter` are set to False, then the output
+            catalog `fixed_y_c` values will be exactly the same as `true_y_c`, although each object
+            will still have an error bar listed in the output catalog, corresponding to its location
+            in the noise map (if given).
                 
         """
         
-        # WARNING: testing only!
-        #print("WARNING: np.random.seed set to fixed value in drawSample - you don't want this if not testing!")
-        #np.random.seed(100)
+        if seed is not None:
+            np.random.seed(seed)
                 
         if z is None:
             zRange=self.z
@@ -344,7 +432,7 @@ class MockSurvey(object):
         if makeNames == True:
             names=[]
             for RADeg, decDeg in zip(RAs, decs):
-                names.append(catalogs.makeACTName(RADeg, decDeg, prefix = 'MOCK-CL'))
+                names.append(catalogs.makeName(RADeg, decDeg, prefix = 'MOCK-CL'))
         else:
             names=np.arange(numClusters)+1
         

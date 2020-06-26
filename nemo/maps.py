@@ -1860,9 +1860,9 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False):
     
     Args:
         outputFileName (str): Filename of output FITS image.
-        mapData (:obj:`np.ndarray`): Map data array
-        wcs (:obj:`astWCS.WCS`): Map WCS object
-        compressed (bool): If True, writes a compressed image
+        mapData (:obj:`np.ndarray`): Map data array.
+        wcs (:obj:`astWCS.WCS`): Map WCS object.
+        compressed (bool): If True, writes a compressed image.
     
     """
     
