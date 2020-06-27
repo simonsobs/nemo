@@ -375,6 +375,9 @@ class SelFn(object):
         """Returns a mock catalog (with no coordinate info) using whatever our current settings are in this 
         object.
         
+        NOTE: This currently uses the average noise in each tile, rather than the noise distribution in the
+        tile.
+        
         """
         mockTabsList=[]
         for tileName, areaDeg2 in zip(self.tileNames, self.tileAreas):
