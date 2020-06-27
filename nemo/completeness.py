@@ -126,7 +126,7 @@ class SelFn(object):
         parDict=startUp.parseConfigFile(configFileName)
         maps.addAutoTileDefinitions(parDict, DS9RegionFileName = self.selFnDir+os.path.sep+"tiles.reg",
                                     cacheFileName = self.selFnDir+os.path.sep+"tileDefinitions.yml")
-                
+
         if tileNames == None:
             self.tileNames=[]
             if 'tileDefinitions' not in parDict.keys():
@@ -136,6 +136,9 @@ class SelFn(object):
                     self.tileNames.append(tileDef['tileName'])
         else:
             self.tileNames=tileNames
+        
+        # Needed for generating mock samples directly
+        self.photFilterLabel=parDict['photFilter']
             
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
@@ -155,7 +158,7 @@ class SelFn(object):
             self.tileTab=None
             self.WCSDict=None
             self.areaMaskDict=None
-                        
+                
         if enableCompletenessCalc == True:
             
             self.scalingRelationDict=parDict['massOptions']
@@ -186,7 +189,18 @@ class SelFn(object):
                 tileAreas.append(areaDeg2)
             self.tileAreas=np.array(tileAreas)
             self.fracArea=self.tileAreas/self.totalAreaDeg2
-            
+
+            # For quick sample generation
+            self.y0NoiseAverageDict={}
+            for tileName in self.tileNames:
+                RMSTab=self.RMSDict[tileName]
+                areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
+                if areaWeights.sum() > 0:
+                    self.y0NoiseAverageDict[tileName]=np.average(RMSTab['y0RMS'].data, 
+                                                                 weights = areaWeights)            
+            assert(len(self.tileNames) == len(self.tileAreas))
+            assert(len(self.tileNames) == len(self.y0NoiseAverageDict.keys()))
+
             # For relativistic corrections
             self.fRelDict=signals.loadFRelWeights(self.selFnDir+os.path.sep+"fRelWeights.fits")
             
@@ -355,6 +369,29 @@ class SelFn(object):
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
         
         return catProjectedMz
+    
+    
+    def generateMockSample(self):
+        """Returns a mock catalog (with no coordinate info) using whatever our current settings are in this 
+        object.
+        
+        """
+        mockTabsList=[]
+        for tileName, areaDeg2 in zip(self.tileNames, self.tileAreas):
+            mockTab=self.mockSurvey.drawSample(self.y0NoiseAverageDict[tileName], self.scalingRelationDict, 
+                                               self.tckQFitDict, wcs = None, 
+                                               photFilterLabel = self.photFilterLabel, tileName = tileName, 
+                                               makeNames = False,
+                                               SNRLimit = self.SNRCut, applySNRCut = True,
+                                               areaDeg2 = areaDeg2,
+                                               applyPoissonScatter = True, 
+                                               applyIntrinsicScatter = True,
+                                               applyNoiseScatter = True)
+            if mockTab is not None:
+                mockTabsList.append(mockTab)
+        tab=atpy.vstack(mockTabsList)
+
+        return tab
     
 #------------------------------------------------------------------------------------------------------------
 def loadAreaMask(tileName, selFnDir):
