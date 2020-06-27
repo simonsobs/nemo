@@ -382,24 +382,24 @@ class MockSurvey(object):
         else:
             # Pick the nearest z on the grid
             zIndex=np.argmin(abs(z-self.z))
-            zRange=[self.z[zIndex]] 
+            zRange=[self.z[zIndex]]
         
         # Add Poisson noise (we do by z to keep things simple on the z grid later)
         numClustersByRedshift=np.zeros(len(zRange), dtype = int)
         for k in range(len(zRange)):
             zk=zRange[k]
-            zIndex=np.argmin(abs(zk-self.z))  
+            zIndex=np.argmin(abs(zk-self.z))
             if applyPoissonScatter == False:
                 numClustersByRedshift[k]=int(round(self.numClustersByRedshift[zIndex]))
             else:
                 numClustersByRedshift[k]=np.random.poisson(int(round(self.numClustersByRedshift[zIndex])))
 
-        if areaDeg2 != None:
-            numClustersByRedshift=int(round(numClustersByRedshift*(areaDeg2/self.areaDeg2)))
+        if areaDeg2 is not None:
+            numClustersByRedshift=np.array(numClustersByRedshift*(areaDeg2/self.areaDeg2), dtype = int)
         
         numClusters=numClustersByRedshift.sum()
             
-        if numDraws != None:
+        if numDraws is not None:
             numClusters=numDraws            
 
         tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
@@ -449,7 +449,7 @@ class MockSurvey(object):
             
             zk=zRange[k]
             zIndex=np.argmin(abs(zk-self.z))      
-            if numDraws != None:
+            if numDraws is not None:
                 numClusters_zk=int(round(numDraws/len(zRange)))
             else:
                 numClusters_zk=numClustersByRedshift[k]
