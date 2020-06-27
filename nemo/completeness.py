@@ -75,9 +75,9 @@ class SelFn(object):
     """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
-                 tileNames = None, enableDrawSample = False, downsampleRMS = True, 
-                 applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True,
-                 delta = 500, rhoType = 'critical'):
+                 tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0, 
+                 downsampleRMS = True, applyMFDebiasCorrection = True, setUpAreaMask = False, 
+                 enableCompletenessCalc = True, delta = 500, rhoType = 'critical'):
         """Initialise an object that contains a survey selection function. 
         
         This class uses the output in the selFn/ directory (produced by the nemo and nemoSelFn commands) to 
@@ -100,6 +100,8 @@ class SelFn(object):
             tileNames (list, optional): If given, restrict the SelFn object to use only these tiles.
             enableDrawSample (bool, optional): This only needs to be set to True for generating mock 
                 catalogs.
+            mockOversampleFactor (float, optional): Used only by :func:generateMockSample. Sets oversampling
+                of generated mock sample.
             downsampleRMS (float, optional): Downsample the resolution of the RMS tables by this factor. 
                 The RMS tables are generated from the noise maps, and are just a listing of noise level 
                 versus survey area. Downsampling speeds up completeness calculations considerably.
@@ -191,6 +193,7 @@ class SelFn(object):
             self.fracArea=self.tileAreas/self.totalAreaDeg2
 
             # For quick sample generation
+            self.mockOversampleFactor=mockOversampleFactor
             self.y0NoiseAverageDict={}
             for tileName in self.tileNames:
                 RMSTab=self.RMSDict[tileName]
@@ -386,7 +389,7 @@ class SelFn(object):
                                                photFilterLabel = self.photFilterLabel, tileName = tileName, 
                                                makeNames = False,
                                                SNRLimit = self.SNRCut, applySNRCut = True,
-                                               areaDeg2 = areaDeg2,
+                                               areaDeg2 = areaDeg2*self.mockOversampleFactor,
                                                applyPoissonScatter = True, 
                                                applyIntrinsicScatter = True,
                                                applyNoiseScatter = True)
