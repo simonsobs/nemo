@@ -356,8 +356,6 @@ def makeTileDir(parDict, writeToDisk = True):
                     os.makedirs(outMapFileName, exist_ok = True)
                 for c, name in zip(coordsList, tileNames):
                     tileFileName=outMapFileName+os.path.sep+name+".fits"
-                    if os.path.exists(tileFileName) == True and writeToDisk == True:
-                        continue
                     if mapData is None:
                         #deckImg=pyfits.HDUList()
                         # Special handling for case where surveyMask = None in the .par file (tidy later...)
@@ -443,12 +441,8 @@ def makeTileDir(parDict, writeToDisk = True):
                         zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                         clip['data']=clip['data']*zapMask
                         #astImages.saveFITS("test.fits", zapMask, clip['wcs'])
-                    if writeToDisk == True:
+                    if os.path.exists(tileFileName) == False and writeToDisk == True:
                         astImages.saveFITS(tileFileName, clip['data'], clip['wcs'])
-                    #hdu=pyfits.ImageHDU(data = clip['data'].copy(), header = header, name = name)
-                    #deckImg.append(hdu)    
-                #deckImg.writeto(outMapFileName)
-                #deckImg.close()
                                 
             # Replace entries in unfilteredMapsDictList in place
             for key, outFileName in zip(mapTypeList, outFileNames):

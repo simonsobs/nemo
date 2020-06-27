@@ -275,6 +275,7 @@ class NemoConfig(object):
                                             cacheFileName = cacheFileName)
                 bcastUnfilteredMapsDictList, bcastTileNames, tileCoordsDict=maps.makeTileDir(self.parDict, 
                                                                                              writeToDisk = writeTileDir)
+                assert(tileCoordsDict != {})
                 bcastParDict=self.parDict
                 bcastTileCoordsDict=tileCoordsDict
                 if writeTileDir == True:
@@ -312,6 +313,7 @@ class NemoConfig(object):
                 with open(self.selFnDir+os.path.sep+"tileCoordsDict.pkl", "rb") as pickleFile:
                     unpickler=pickle.Unpickler(pickleFile)
                     tileCoordsDict=unpickler.load()
+                assert(tileCoordsDict != {})
                 self.tileCoordsDict=tileCoordsDict
                 self.tileNames=list(tileCoordsDict.keys())
             # Loading via Q might be able to be retired?
@@ -321,7 +323,7 @@ class NemoConfig(object):
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (self.selFnDir+os.path.sep+"QFit.fits"))
         
-        # For convenience, keep the full list of tile names 
+        # For convenience, keep the full list of tile names
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
         self.allTileNames=self.tileNames.copy()
         

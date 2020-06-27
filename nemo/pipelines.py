@@ -341,7 +341,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
         areaMap.close()
     t1=time.time()
     if verbose: print("... took %.3f sec ..." % (t1-t0))
-   
+    
     # We're now using one MockSurvey object for the whole survey
     # For a mock, we could vary the input cosmology...
     minMass=5e13

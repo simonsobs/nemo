@@ -89,6 +89,9 @@ class MockSurvey(object):
                 'boltzmann_camb').
                 
         """
+        
+        if areaDeg2 == 0:
+            raise Exception("Cannot create a MockSurvey object with zero area")
 
         zRange=np.arange(zMin, zMax+zStep, zStep)
         areaSr=np.radians(np.sqrt(areaDeg2))**2
