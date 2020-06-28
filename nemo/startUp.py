@@ -352,9 +352,10 @@ class NemoConfig(object):
                     maps.checkMask(self.parDict[key])
         
         # We're now writing maps per tile into their own dir (friendlier for Lustre)
-        for tileName in self.tileNames:
-            for d in [self.diagnosticsDir, self.filteredMapsDir]:
-                os.makedirs(d+os.path.sep+tileName, exist_ok = True)
+        if makeOutputDirs == True:
+            for tileName in self.tileNames:
+                for d in [self.diagnosticsDir, self.filteredMapsDir]:
+                    os.makedirs(d+os.path.sep+tileName, exist_ok = True)
         
         # For debugging...
         if verbose: print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
