@@ -51,7 +51,7 @@ massOptions: {tenToA0: 4.95e-5,
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
               relativisticCorrection: True,
-              rescaleFactor: 0.69, 
+              rescaleFactor: 0.70,
               rescaleFactorErr: 0.07,
               redshiftCatalog: "S18Clusters/AdvACT_confirmed.fits"}
 
