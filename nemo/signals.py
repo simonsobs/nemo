@@ -805,16 +805,26 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
     log10Ms=mockSurvey.log10M
     #log10MStep=mockSurvey.log10M[1]-mockSurvey.log10M[0]
     #log10Ms=np.arange(-100.0, 100.0, log10MStep)
-        
+            
     PArr=[]
     for k in range(len(zRange)):
         
-        zk=zRange[k]        
+        zk=zRange[k]
+        
+        # We've generalised mockSurvey to be able to use e.g. M200m, but Q defined for theta500c
+        # So, need a mapping between M500c and whatever mass definition used in mockSurvey
+        # This only needed for extracting Q, fRel values
+        if mockSurvey.delta != 500 or mockSurvey.rhoType != "critical":
+            log10M500c_zk=np.log10(mockSurvey.mdef.translate_mass(mockSurvey.cosmoModel, 
+                                                                  np.power(10, log10Ms),
+                                                                  1/(1+zk), mockSurvey._M500cDef))
+        else:
+            log10M500c_zk=log10Ms
+                
         mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-zk))
-
-        theta500s=interpolate.splev(log10Ms, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
+        theta500s=interpolate.splev(log10M500c_zk, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
         Qs=interpolate.splev(theta500s, tckQFit, ext = 3)
-        fRels=interpolate.splev(log10Ms, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)   
+        fRels=interpolate.splev(log10M500c_zk, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)   
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
         y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
         if applyRelativisticCorrection == True:

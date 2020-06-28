@@ -390,7 +390,7 @@ class SelFn(object):
                                                makeNames = False,
                                                SNRLimit = self.SNRCut, applySNRCut = True,
                                                areaDeg2 = areaDeg2*self.mockOversampleFactor,
-                                               applyPoissonScatter = True, 
+                                               applyPoissonScatter = True,
                                                applyIntrinsicScatter = True,
                                                applyNoiseScatter = True)
             if mockTab is not None:

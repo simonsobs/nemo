@@ -342,17 +342,35 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     t1=time.time()
     if verbose: print("... took %.3f sec ..." % (t1-t0))
     
+    # Useful for testing:
+    if 'seed' in config.parDict.keys():
+        seed=config.parDict['seed']
+    else:
+        seed=None
+        
     # We're now using one MockSurvey object for the whole survey
-    # For a mock, we could vary the input cosmology...
+    massOptions=config.parDict['massOptions']
     minMass=5e13
     zMin=0.0
     zMax=2.0
-    H0=70.
-    Om0=0.30
-    Ob0=0.05
-    sigma8=0.8
-    ns=0.95
-    mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, enableDrawSample = True)
+    defCosmo={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95, 'delta': 500, 'rhoType': 'critical'}
+    for key in defCosmo:
+        if key not in massOptions.keys():
+            massOptions[key]=defCosmo[key]
+    H0=massOptions['H0']
+    Om0=massOptions['Om0']
+    Ob0=massOptions['Ob0']
+    sigma8=massOptions['sigma8']
+    ns=massOptions['ns']
+    delta=massOptions['delta']
+    rhoType=massOptions['rhoType']
+    mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, 
+                                     delta = delta, rhoType = rhoType, enableDrawSample = True)
+    print("... mock survey parameters:")
+    for key in defCosmo.keys():
+        print("    %s = %s" % (key, str(massOptions[key])))
+    print("    total area = %.1f square degrees" % (totalAreaDeg2))
+    print("    random seed = %s" % (str(seed)))
     
     if verbose: print(">>> Making mock catalogs ...")
     catList=[]
@@ -369,7 +387,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                                           areaDeg2 = areaDeg2Dict[tileName],
                                           applyPoissonScatter = applyPoissonScatter, 
                                           applyIntrinsicScatter = applyIntrinsicScatter,
-                                          applyNoiseScatter = applyNoiseScatter)
+                                          applyNoiseScatter = applyNoiseScatter,
+                                          seed = seed)
             if mockTab is not None:
                 mockTabsList.append(mockTab)
         tab=atpy.vstack(mockTabsList)
