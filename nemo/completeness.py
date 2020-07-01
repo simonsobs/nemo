@@ -372,8 +372,29 @@ class SelFn(object):
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
         
         return catProjectedMz
-    
-    
+
+
+    def addPDetToCatalog(self, tab):
+        """Given a catalog, add a column Pdet, containing the detection probability.
+        
+        Returns:
+            Catalog with 'Pdet' column added (:obj:`astropy.table.Table`)
+        
+        """
+
+        log_y0Lim=np.log(self.SNRCut*tab['fixed_err_y_c']*1e-4)
+        log_y0=np.log(tab['fixed_y_c']*1e-4)
+        log_y0Err=1/tab['fixed_SNR']
+        sigma_int=self.scalingRelationDict['sigma_int']
+        log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+        Pdet=np.zeros(len(tab))
+        for i in range(len(Pdet)):
+            Pdet[i]=stats.norm.sf(log_y0Lim[i], loc = log_y0[i], scale = log_totalErr[i])
+        tab['Pdet']=Pdet
+        
+        return tab
+
+
     def generateMockSample(self):
         """Returns a mock catalog (with no coordinate info) using whatever our current settings are in this 
         object.

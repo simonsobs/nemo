@@ -327,7 +327,7 @@ class MockSurvey(object):
     def drawSample(self, y0Noise, scalingRelationDict, tckQFitDict, wcs = None, photFilterLabel = None, 
                    tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
                    areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
-                   applyIntrinsicScatter = True, applyNoiseScatter = True, seed = None):
+                   applyIntrinsicScatter = True, applyNoiseScatter = True):
         """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
         Nemo catalogs) by applying the given scaling relation parameters, and then (optionally) applying
         a survey selection function.
@@ -373,8 +373,6 @@ class MockSurvey(object):
             applyNoiseScatter (:obj:`bool`, optional): If True, apply measurement noise, generated
                 from the given noise level or noise map (`y0Noise`), to the output SZ measurements
                 (`fixed_y_c`).
-            seed (:obj:`int`): If given, use this value for the random seed (may be useful for
-                testing).
                 
         Returns:
             A catalog as an :obj:`astropy.table.Table` object, in the same format as produced by
@@ -387,10 +385,7 @@ class MockSurvey(object):
             in the noise map (if given).
                 
         """
-        
-        if seed is not None:
-            np.random.seed(seed)
-                
+                        
         if z is None:
             zRange=self.z
         else:

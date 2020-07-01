@@ -348,6 +348,9 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     else:
         seed=None
         
+    if seed is not None:
+        np.random.seed(seed)
+        
     # We're now using one MockSurvey object for the whole survey
     massOptions=config.parDict['massOptions']
     minMass=5e13
@@ -387,8 +390,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                                           areaDeg2 = areaDeg2Dict[tileName],
                                           applyPoissonScatter = applyPoissonScatter, 
                                           applyIntrinsicScatter = applyIntrinsicScatter,
-                                          applyNoiseScatter = applyNoiseScatter,
-                                          seed = seed)
+                                          applyNoiseScatter = applyNoiseScatter)
             if mockTab is not None:
                 mockTabsList.append(mockTab)
         tab=atpy.vstack(mockTabsList)
