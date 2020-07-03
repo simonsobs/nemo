@@ -21,8 +21,10 @@ if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoModel")
     parser.add_argument("catalogFileName", help = """A catalog (FITS table format) as produced by nemo.""")
-    parser.add_argument("templateFileName", help = """A FITS image file. The output sky model image will
-                        have the same pixelization.""")
+    parser.add_argument("maskFileName", help = """A FITS image file, containing a mask of the desired sky
+                        area. Non-zero values in the mask are used to define tiles (typically 10 x 5 deg),
+                        which are processed in parallel if MPI is enabled (see -M switch). The output sky
+                        model image will have the same pixelization as the mask image.""")
     parser.add_argument("beamFileName", help = """A file containing the beam profile, in the standard format
                         used by ACT.""")
     parser.add_argument("outputFileName", help = """The name of the output file that will contain the sky
@@ -49,18 +51,20 @@ if __name__ == '__main__':
         strictMPIExceptions=True
 
     # Create a stub config (then we can use existing start-up stuff to dish out the tiles)
+    print(">>> Setting up ...")
     parDict={}
     mapDict={}
-    mapDict['mapFileName']=args.templateFileName
+    mapDict['mapFileName']=args.maskFileName
     mapDict['obsFreqGHz']=args.obsFreqGHz
     mapDict['beamFileName']=args.beamFileName
     parDict['unfilteredMaps']=[mapDict]
     parDict['mapFilters']=[]
-    if args.MPIEnabled == True:
-        parDict['makeTileDir']=True
-        parDict['tileOverlapDeg']=1.0
-        parDict['tileDefLabel']='auto'
-        parDict['tileDefinitions']={'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
+    #if args.MPIEnabled == True:
+    parDict['makeTileDir']=True
+    parDict['tileOverlapDeg']=1.0
+    parDict['tileDefLabel']='auto'
+    parDict['tileDefinitions']={'mask': args.maskFileName,
+                                'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
 
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
                               makeOutputDirs = False, setUpMaps = True, writeTileDir = False, 
@@ -69,14 +73,17 @@ if __name__ == '__main__':
     tab=atpy.Table().read(args.catalogFileName)
     
     # Build a dictionary containing the model images which we'll stich together at the end
+    print(">>> Building models in tiles ...")
     modelsDict={}
     for tileName in config.tileNames:
-        shape=(config.tileCoordsDict[tileName]['clippedSection'][3], 
-               config.tileCoordsDict[tileName]['clippedSection'][1])
+        print("... %s ..." % (tileName))
+        shape=(config.tileCoordsDict[tileName]['clippedSection'][3]-config.tileCoordsDict[tileName]['clippedSection'][2], 
+               config.tileCoordsDict[tileName]['clippedSection'][1]-config.tileCoordsDict[tileName]['clippedSection'][0])
         wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
         try:
             modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
-                                                     obsFreqGHz = args.obsFreqGHz)
+                                                     obsFreqGHz = args.obsFreqGHz,
+                                                     validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'])
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
@@ -91,10 +98,13 @@ if __name__ == '__main__':
                     modelsDict[tileName]=tileModelDict[tileName]
 
     # Stitching
+    print(">>> Stitching tiles ...")
     if config.rank == 0:
         d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
         wcs=config.origWCS
         for tileName in modelsDict.keys():
+            print("... %s ..." % (tileName))
             minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
-        d[minY:maxY, minX:maxX]=modelsDict[tileName]
+            if modelsDict[tileName] is not None:
+                d[minY:maxY, minX:maxX]=modelsDict[tileName]
         astImages.saveFITS(args.outputFileName, d, wcs)

@@ -292,7 +292,8 @@ def makeTileDir(parDict, writeToDisk = True):
                 for ext in img:
                     tileNames.append(ext.name)
                     clipCoordsDict[ext.name]={'clippedSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']],
-                                              'header': ext.header}
+                                              'header': ext.header,
+                                              'areaMaskInClipSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']]}
             else:
                 for ext in img:
                     if ext.name not in tileNames:
@@ -398,8 +399,19 @@ def makeTileDir(parDict, writeToDisk = True):
                         count=count+1
                         if count > 100:
                             raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
+                    # Storing clip coords etc. so can stitch together later
+                    # areaMaskSection here is used to define the region that would be kept (takes out overlap)
+                    ra0, dec0=wcs.pix2wcs(x0, y0)
+                    ra1, dec1=wcs.pix2wcs(x1, y1)
+                    clip_x0, clip_y0=clip['wcs'].wcs2pix(ra0, dec0)
+                    clip_x1, clip_y1=clip['wcs'].wcs2pix(ra1, dec1)
+                    clip_x0=int(round(clip_x0))
+                    clip_x1=int(round(clip_x1))
+                    clip_y0=int(round(clip_y0))
+                    clip_y1=int(round(clip_y1))
                     if name not in clipCoordsDict:
-                        clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header}
+                        clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
+                                              'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
                     else:
                         assert(clipCoordsDict[name]['clippedSection'] == clip['clippedSection'])
                     # Old
@@ -429,18 +441,10 @@ def makeTileDir(parDict, writeToDisk = True):
                         header['NDEMAX']=noiseDecMax
                     # Survey mask is special: zap overlap regions outside of tile definitions
                     if mapType == 'surveyMask':
-                        ra0, dec0=wcs.pix2wcs(x0, y0)
-                        ra1, dec1=wcs.pix2wcs(x1, y1)
-                        clip_x0, clip_y0=clip['wcs'].wcs2pix(ra0, dec0)
-                        clip_x1, clip_y1=clip['wcs'].wcs2pix(ra1, dec1)
-                        clip_x0=int(round(clip_x0))
-                        clip_x1=int(round(clip_x1))
-                        clip_y0=int(round(clip_y0))
-                        clip_y1=int(round(clip_y1))
+                        clip_x0, clip_x1, clip_y0, clip_y1=clipCoordsDict[name]['areaMaskInClipSection']
                         zapMask=np.zeros(clip['data'].shape)
                         zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                         clip['data']=clip['data']*zapMask
-                        #astImages.saveFITS("test.fits", zapMask, clip['wcs'])
                     if os.path.exists(tileFileName) == False and writeToDisk == True:
                         astImages.saveFITS(tileFileName, clip['data'], clip['wcs'])
                                 
@@ -1376,7 +1380,8 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
-                   cosmoModel = None, applyPixelWindow = True, override = None):
+                   cosmoModel = None, applyPixelWindow = True, override = None,
+                   validAreaSection = None):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1400,9 +1405,12 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             {'M500', 'redshift'} is given, all objects in the model image are forced to have the 
             corresponding angular size. Used by :meth:`sourceInjectionTest`.
         applyPixelWindow (bool, optional): If True, apply the pixel window function to the map.
+        validAreaSection (list, optional): Pixel coordinates within the wcs in the format
+            [xMin, xMax, yMin, yMax] that define valid area within the model map. Pixels outside this 
+            region will be set to zero. Use this to remove overlaps between tile boundaries.
             
     Returns:
-        Map containing injected sources.
+        Map containing injected sources, or None if there are no objects within the map dimensions.
     
     """
     
@@ -1410,6 +1418,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     # This works per-tile, so throw out objects that aren't in it
     catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
+    if len(catalog) == 0:
+        return None
 
     if cosmoModel is None:
         cosmoModel=signals.FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = signals.TCMB)
@@ -1437,14 +1447,14 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                       wcs, beam, GNFWParams = GNFWParams,
                                                       maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
             modelMap=modelMap*fluxScaleMap
-            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+            if modelMap.sum() > 0:
+                modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
         # Clusters - insert one at a time (with different scales etc.) - currently taking ~1.6 sec per object
         else:
             count=0
             for row in catalog:
                 count=count+1
-                print("... %d/%d ..." % (count, len(catalog)))
                 # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
                 if 'true_M500' in catalog.keys():
                     M500=row['true_M500']*1e14
@@ -1459,14 +1469,15 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
                 theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
-                degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
                 degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
                                                                             row['RADeg'], row['decDeg'], 
                                                                             maxSizeDeg)
-                modelMap=modelMap+signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
-                                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
-            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+                signalMap=signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
+                                                           GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                                           maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+                modelMap=modelMap+signalMap
+            if modelMap.sum() > 0:
+                modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
     else:
         # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
@@ -1489,6 +1500,13 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     if applyPixelWindow == True:
         modelMap=enmap.apply_window(modelMap, pow = 1.0)
 
+    # Optional trimming of boundaries (e.g., tile overlap regions)
+    if validAreaSection is not None:
+        zapMask=np.zeros(modelMap.shape)
+        x0, x1, y0, y1=validAreaSection
+        zapMask[y0:y1, x0:x1]=1.0
+        modelMap=modelMap*zapMask
+        
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
