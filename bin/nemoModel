@@ -84,6 +84,9 @@ if __name__ == '__main__':
             modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
                                                      obsFreqGHz = args.obsFreqGHz,
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'])
+            os.makedirs("debugModelImage", exist_ok = True)
+            if modelsDict[tileName] is not None:
+                astImages.saveFITS("debugModelImage/%s.fits" % (tileName), modelsDict[tileName], wcs)
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
@@ -106,5 +109,5 @@ if __name__ == '__main__':
             print("... %s ..." % (tileName))
             minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
             if modelsDict[tileName] is not None:
-                d[minY:maxY, minX:maxX]=modelsDict[tileName]
+                d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+modelsDict[tileName]
         astImages.saveFITS(args.outputFileName, d, wcs)

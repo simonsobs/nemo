@@ -1447,13 +1447,19 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                       wcs, beam, GNFWParams = GNFWParams,
                                                       maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
             modelMap=modelMap*fluxScaleMap
-            if modelMap.sum() > 0:
-                modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
         # Clusters - insert one at a time (with different scales etc.) - currently taking ~1.6 sec per object
         else:
             count=0
             for row in catalog:
+                # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
+                # NOTE: Should move this out of this switch so applied to all catalog types
+                if validAreaSection is not None:
+                    x0, x1, y0, y1=validAreaSection
+                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                    if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
+                        continue
                 count=count+1
                 # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
                 if 'true_M500' in catalog.keys():
@@ -1469,6 +1475,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
                 theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
+                degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
                 degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
                                                                             row['RADeg'], row['decDeg'], 
                                                                             maxSizeDeg)
@@ -1476,8 +1483,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 modelMap=modelMap+signalMap
-            if modelMap.sum() > 0:
-                modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
     else:
         # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
@@ -1499,13 +1505,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
     if applyPixelWindow == True:
         modelMap=enmap.apply_window(modelMap, pow = 1.0)
-
-    # Optional trimming of boundaries (e.g., tile overlap regions)
-    if validAreaSection is not None:
-        zapMask=np.zeros(modelMap.shape)
-        x0, x1, y0, y1=validAreaSection
-        zapMask[y0:y1, x0:x1]=1.0
-        modelMap=modelMap*zapMask
         
     return modelMap
         

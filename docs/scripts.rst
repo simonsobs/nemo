@@ -44,6 +44,17 @@ in the ``nemo`` configuration file. Forced photometry on sources of any kind can
 method.
 
 
+Making model images
+-------------------
+
+The nemoModel script can make model images from a Nemo catalog. If run using MPI, it will break the map
+into tiles to speed up processing, based on the given mask file. For example,::
+
+    mpiexec nemoModel S18d_202003_test/S18d_202003_test_optimalCatalog.fits maps/Mar2020/AdvACTSurveyMask_v7_S18.fits Beams/190809/b20190809_s16_pa2_f150_nohwp_night_beam_profile_jitter_cmb.txt testModel_f150.fits -f 149.6 -M
+
+will make a model image over the whole AdvACT footprint.
+
+
 Using the selection function
 ----------------------------
 
