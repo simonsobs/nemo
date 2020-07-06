@@ -84,18 +84,32 @@ if __name__ == '__main__':
             modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
                                                      obsFreqGHz = args.obsFreqGHz,
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'])
-            os.makedirs("debugModelImage", exist_ok = True)
-            if modelsDict[tileName] is not None:
-                astImages.saveFITS("debugModelImage/%s.fits" % (tileName), modelsDict[tileName], wcs)
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
     # Gathering
+    #if config.MPIEnabled == True:
+        #config.comm.barrier()
+        #gathered_modelsDicts=config.comm.gather(modelsDict, root = 0)
+        #if config.rank == 0:
+            #print("... gathered sky model tiles ...")
+            #for tileModelDict in gathered_modelsDicts:
+                #for tileName in tileModelDict.keys():
+                    #modelsDict[tileName]=tileModelDict[tileName]
+    
+    # We can't just gather as that triggers a 32-bit overflow (?)
+    # So, sending one object at a time
     if config.MPIEnabled == True:
         config.comm.barrier()
-        gathered_modelsDicts=config.comm.gather(modelsDict, root = 0)
-        if config.rank == 0:
-            print("... gathered sky model tiles ...")
+        if config.rank > 0:
+            print("... rank = %d sending sky model tiles ..." % (config.rank))
+            config.comm.send(modelsDict, dest = 0)
+        elif config.rank == 0:
+            print("... gathering sky model tiles ...")
+            gathered_modelsDicts=[]
+            gathered_modelsDicts.append(modelsDict)
+            for source in range(1, config.size):
+                gathered_modelsDicts.append(config.comm.recv(source = source))
             for tileModelDict in gathered_modelsDicts:
                 for tileName in tileModelDict.keys():
                     modelsDict[tileName]=tileModelDict[tileName]
