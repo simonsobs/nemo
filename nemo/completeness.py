@@ -75,9 +75,9 @@ class SelFn(object):
     """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
-                 tileNames = None, enableDrawSample = False, downsampleRMS = True, 
-                 applyMFDebiasCorrection = True, setUpAreaMask = False, enableCompletenessCalc = True,
-                 delta = 500, rhoType = 'critical'):
+                 tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0, 
+                 downsampleRMS = True, applyMFDebiasCorrection = True, setUpAreaMask = False, 
+                 enableCompletenessCalc = True, delta = 500, rhoType = 'critical'):
         """Initialise an object that contains a survey selection function. 
         
         This class uses the output in the selFn/ directory (produced by the nemo and nemoSelFn commands) to 
@@ -100,6 +100,8 @@ class SelFn(object):
             tileNames (list, optional): If given, restrict the SelFn object to use only these tiles.
             enableDrawSample (bool, optional): This only needs to be set to True for generating mock 
                 catalogs.
+            mockOversampleFactor (float, optional): Used only by :func:generateMockSample. Sets oversampling
+                of generated mock sample.
             downsampleRMS (float, optional): Downsample the resolution of the RMS tables by this factor. 
                 The RMS tables are generated from the noise maps, and are just a listing of noise level 
                 versus survey area. Downsampling speeds up completeness calculations considerably.
@@ -126,7 +128,7 @@ class SelFn(object):
         parDict=startUp.parseConfigFile(configFileName)
         maps.addAutoTileDefinitions(parDict, DS9RegionFileName = self.selFnDir+os.path.sep+"tiles.reg",
                                     cacheFileName = self.selFnDir+os.path.sep+"tileDefinitions.yml")
-                
+
         if tileNames == None:
             self.tileNames=[]
             if 'tileDefinitions' not in parDict.keys():
@@ -136,6 +138,9 @@ class SelFn(object):
                     self.tileNames.append(tileDef['tileName'])
         else:
             self.tileNames=tileNames
+        
+        # Needed for generating mock samples directly
+        self.photFilterLabel=parDict['photFilter']
             
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
@@ -155,7 +160,7 @@ class SelFn(object):
             self.tileTab=None
             self.WCSDict=None
             self.areaMaskDict=None
-                        
+                
         if enableCompletenessCalc == True:
             
             self.scalingRelationDict=parDict['massOptions']
@@ -186,7 +191,19 @@ class SelFn(object):
                 tileAreas.append(areaDeg2)
             self.tileAreas=np.array(tileAreas)
             self.fracArea=self.tileAreas/self.totalAreaDeg2
-            
+
+            # For quick sample generation
+            self.mockOversampleFactor=mockOversampleFactor
+            self.y0NoiseAverageDict={}
+            for tileName in self.tileNames:
+                RMSTab=self.RMSDict[tileName]
+                areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
+                if areaWeights.sum() > 0:
+                    self.y0NoiseAverageDict[tileName]=np.average(RMSTab['y0RMS'].data, 
+                                                                 weights = areaWeights)            
+            assert(len(self.tileNames) == len(self.tileAreas))
+            assert(len(self.tileNames) == len(self.y0NoiseAverageDict.keys()))
+
             # For relativistic corrections
             self.fRelDict=signals.loadFRelWeights(self.selFnDir+os.path.sep+"fRelWeights.fits")
             
@@ -355,6 +372,53 @@ class SelFn(object):
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
         
         return catProjectedMz
+
+
+    def addPDetToCatalog(self, tab):
+        """Given a catalog, add a column Pdet, containing the detection probability.
+        
+        Returns:
+            Catalog with 'Pdet' column added (:obj:`astropy.table.Table`)
+        
+        """
+
+        log_y0Lim=np.log(self.SNRCut*tab['fixed_err_y_c']*1e-4)
+        log_y0=np.log(tab['fixed_y_c']*1e-4)
+        log_y0Err=1/tab['fixed_SNR']
+        sigma_int=self.scalingRelationDict['sigma_int']
+        log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+        Pdet=np.zeros(len(tab))
+        for i in range(len(Pdet)):
+            Pdet[i]=stats.norm.sf(log_y0Lim[i], loc = log_y0[i], scale = log_totalErr[i])
+        tab['Pdet']=Pdet
+        
+        return tab
+
+
+    def generateMockSample(self):
+        """Returns a mock catalog (with no coordinate info) using whatever our current settings are in this 
+        object.
+        
+        NOTE: This currently uses the average noise in each tile, rather than the noise distribution in the
+        tile.
+        
+        """
+        mockTabsList=[]
+        for tileName, areaDeg2 in zip(self.tileNames, self.tileAreas):
+            mockTab=self.mockSurvey.drawSample(self.y0NoiseAverageDict[tileName], self.scalingRelationDict, 
+                                               self.tckQFitDict, wcs = None, 
+                                               photFilterLabel = self.photFilterLabel, tileName = tileName, 
+                                               makeNames = False,
+                                               SNRLimit = self.SNRCut, applySNRCut = True,
+                                               areaDeg2 = areaDeg2*self.mockOversampleFactor,
+                                               applyPoissonScatter = True,
+                                               applyIntrinsicScatter = True,
+                                               applyNoiseScatter = True)
+            if mockTab is not None:
+                mockTabsList.append(mockTab)
+        tab=atpy.vstack(mockTabsList)
+
+        return tab
     
 #------------------------------------------------------------------------------------------------------------
 def loadAreaMask(tileName, selFnDir):

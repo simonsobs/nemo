@@ -275,6 +275,7 @@ class NemoConfig(object):
                                             cacheFileName = cacheFileName)
                 bcastUnfilteredMapsDictList, bcastTileNames, tileCoordsDict=maps.makeTileDir(self.parDict, 
                                                                                              writeToDisk = writeTileDir)
+                assert(tileCoordsDict != {})
                 bcastParDict=self.parDict
                 bcastTileCoordsDict=tileCoordsDict
                 if writeTileDir == True:
@@ -312,6 +313,7 @@ class NemoConfig(object):
                 with open(self.selFnDir+os.path.sep+"tileCoordsDict.pkl", "rb") as pickleFile:
                     unpickler=pickle.Unpickler(pickleFile)
                     tileCoordsDict=unpickler.load()
+                assert(tileCoordsDict != {})
                 self.tileCoordsDict=tileCoordsDict
                 self.tileNames=list(tileCoordsDict.keys())
             # Loading via Q might be able to be retired?
@@ -321,7 +323,7 @@ class NemoConfig(object):
             else:
                 raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (self.selFnDir+os.path.sep+"QFit.fits"))
         
-        # For convenience, keep the full list of tile names 
+        # For convenience, keep the full list of tile names
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
         self.allTileNames=self.tileNames.copy()
         
@@ -350,9 +352,10 @@ class NemoConfig(object):
                     maps.checkMask(self.parDict[key])
         
         # We're now writing maps per tile into their own dir (friendlier for Lustre)
-        for tileName in self.tileNames:
-            for d in [self.diagnosticsDir, self.filteredMapsDir]:
-                os.makedirs(d+os.path.sep+tileName, exist_ok = True)
+        if makeOutputDirs == True:
+            for tileName in self.tileNames:
+                for d in [self.diagnosticsDir, self.filteredMapsDir]:
+                    os.makedirs(d+os.path.sep+tileName, exist_ok = True)
         
         # For debugging...
         if verbose: print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))

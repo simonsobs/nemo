@@ -1,0 +1,39 @@
+params:
+  ns: 0.965
+  Ob0: 0.049
+  tenToA0: 2.65e-05
+  B0: 0.0
+  Mpivot: 300000000000000.0
+  sigma_int: 0.2
+  H0:
+    latex: H_0
+    prior:
+      dist: norm
+      loc: 70.0
+      scale: 4.0
+    proposal: 5.0
+  Om0:
+    latex: \Omega_{\rm m0}
+    prior:
+      max: 0.5
+      min: 0.1
+    proposal: 0.05
+    ref:
+      dist: norm
+      loc: 0.3
+      scale: 0.1
+  sigma8:
+    latex: \sigma_8
+    prior:
+      max: 0.9
+      min: 0.6
+    proposal: 0.02
+    ref:
+      dist: norm
+      loc: 0.8
+      scale: 0.1
+sampler:
+  mcmc:
+    burn_in: 50
+    max_samples: 3000
+    max_tries: .inf
