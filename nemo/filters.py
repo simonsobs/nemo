@@ -616,14 +616,15 @@ class MatchedFilter(MapFilter):
         # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
             trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-        elif 'noiseGridArcmin' in self.params['noiseParams']:
-            try:
-                gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-            except:
-                gridSize=int(round((40./60.)/self.wcs.getPixelSizeDeg()))
+        elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart":
             trimSizePix=int(round(gridSize*3.0))
-        edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
-        edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        else:
+            trimSizePix=0.0
+        if trimSizePix  > 0:
+            edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
+            edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        else:
+            edgeCheck=np.ones(filteredMap.shape)
         filteredMap=filteredMap*edgeCheck
         apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask

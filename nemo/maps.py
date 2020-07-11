@@ -522,9 +522,58 @@ def checkMask(fileName):
             if hdu.data is not None:
                 if np.less(hdu.data, 0).sum() > 0:
                     raise Exception("Mask file '%s' contains negative values - please fix your mask." % (fileName))
-    
+
 #-------------------------------------------------------------------------------------------------------------
-def stitchTiles(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
+def stitchTiles(config):
+    """Stitches together full size filtered maps, SN maps, area maps, and noise maps that have been previously
+    been saved as tiles.
+    
+    """
+    
+    # Defining the maps to stitch together and where they will go
+    stitchDictList=[{'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_filteredMap.fits",
+                     'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_filteredMap.fits",
+                     'compressed': False},
+                    {'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_filteredMap.fits",
+                     'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_SNMap.fits",
+                     'compressed': False},
+                    {'pattern': config.selFnDir+os.path.sep+"areaMask#$TILENAME.fits",
+                     'outFileName': config.selFnDir+os.path.sep+"stitched_areaMask.fits",
+                     'compressed': True},
+                    {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
+                     'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
+                     'compressed': True}]
+
+    tileCoordsDict=config.tileCoordsDict
+    for filterDict in config.parDict['mapFilters']:
+        if filterDict['params']['saveFilteredMaps'] == True:
+            for stitchDict in stitchDictList:
+                pattern=stitchDict['pattern']
+                outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
+                compressed=stitchDict['compressed']
+                d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
+                wcs=config.origWCS
+                for tileName in tileCoordsDict.keys():
+                    f=pattern.replace("$TILENAME", tileName).replace("$FILTLABEL", filterDict['label'])
+                    if os.path.exists(f) == True:
+                        # Handle compressed or otherwise
+                        with pyfits.open(f) as img:
+                            tileData=img[0].data
+                            if tileData is None:
+                                for extName in img:
+                                    tileData=img[extName].data
+                                    if tileData is not None:
+                                        break
+                            assert tileData is not None
+                    else:
+                        continue
+                    areaMask, areaWCS=completeness.loadAreaMask(tileName, config.selFnDir)
+                    minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
+                    d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask*tileData
+                saveFITS(outFileName, d, wcs, compressed = compressed)
+
+#-------------------------------------------------------------------------------------------------------------
+def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
     """Fast routine for stitching map tiles back together. Since this uses interpolation, you probably don't 
     want to do analysis on the output - this is just for checking / making plots etc.. This routine sums 
     images as it pastes them into the larger map grid. So, if the zeroed (overlap) borders are not handled,

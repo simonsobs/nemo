@@ -1119,9 +1119,9 @@ def makeFullSurveyMassLimitMapPlot(z, config):
         config.quicklookShape, config.quicklookWCS=maps.shrinkWCS(config.origShape, config.origWCS, config.quicklookScale)
 
     outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
-    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"*"+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")), 
-                     outFileName, config.quicklookWCS, config.quicklookShape, 
-                     fluxRescale = config.quicklookScale)
+    maps.stitchTilesQuickLook(config.diagnosticsDir+os.path.sep+"*"+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")),
+                              outFileName, config.quicklookWCS, config.quicklookShape,
+                              fluxRescale = config.quicklookScale)
 
     # Make plot
     if os.path.exists(outFileName) == True:
