@@ -135,6 +135,7 @@ sourceInjectionModels:
 # tileDir options - cut-up each map into smaller sections
 makeTileDir: True
 makeQuickLookMaps: True
+stitchTiles: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
 tileDefinitions: {mask: 'maps/Jun2020/AdvACTSurveyMask_v7_S18.fits',
