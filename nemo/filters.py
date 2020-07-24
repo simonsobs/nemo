@@ -308,39 +308,31 @@ class MapFilter(object):
         """Estimate the noise map using local RMS measurements on a grid, over the whole filtered map.
         
         """
-        
-        # Grid method
-        #print "... making SN map ..."
-        gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-        #gridSize=rIndex*3
-        overlapPix=int(gridSize/2)
-        numXChunks=mapData.shape[1]/gridSize
-        numYChunks=mapData.shape[0]/gridSize
-        yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
-        xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
-        #SNMap=np.zeros(mapData.shape)
-        apodMask=np.not_equal(mapData, 0)
-        # We could make below behaviour default if match photFilter? Would need to see photFilter though...
-        #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
-        RMSMap=np.zeros(mapData.shape)
-        for i in range(len(yChunks)-1):
-            for k in range(len(xChunks)-1):
-                y0=yChunks[i]-overlapPix
-                y1=yChunks[i+1]+overlapPix
-                x0=xChunks[k]-overlapPix
-                x1=xChunks[k+1]+overlapPix
-                if y0 < 0:
-                    y0=0
-                if y1 > mapData.shape[0]:
-                    y1=mapData.shape[0]
-                if x0 < 0:
-                    x0=0
-                if x1 > mapData.shape[1]:
-                    x1=mapData.shape[1]
-                chunkValues=mapData[y0:y1, x0:x1]
 
-                goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
-                
+        # 'smart option' - measure noise in areas with similar weights (however weights defined)
+        if self.params['noiseParams']['noiseGridArcmin'] == "smart":
+            # average all weight maps
+            # doesn't matter about spectral weighting, we just want areas with similar characteristics
+            medWeights=[]
+            for mapDict in self.unfilteredMapsDictList:
+                medWeights.append(mapDict['weights'])
+            medWeights=np.median(np.array(medWeights), axis = 0)
+            # Binning by weights - should make numBins adjustable
+            try:
+                numBins=self.params['noiseParams']['numNoiseBins']
+            except:
+                raise Exception("Need to give numNoiseBins in noiseParams when using noiseGridArcmin = 'smart'")
+            binEdges=np.linspace(medWeights.min(), medWeights.max(), numBins)
+            RMSMap=np.zeros(medWeights.shape)
+            apodMask=np.not_equal(mapData, 0)
+            for i in range(len(binEdges)-1):
+                # Find area of similar weight
+                binMin=binEdges[i]
+                binMax=binEdges[i+1]
+                weightMask=np.logical_and(medWeights > binMin, medWeights < binMax)
+                # Measure noise in that area from filtered map, and fill in noise map
+                chunkValues=mapData[weightMask]
+                goodAreaMask=np.greater_equal(apodMask[weightMask], 1.0)
                 if 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'biweight':
                     if goodAreaMask.sum() >= 10:
                         # Astropy version is faster but gives identical results
@@ -353,7 +345,7 @@ class MapFilter(object):
                 else:
                     # Default: 3-sigma clipped stdev
                     if np.not_equal(chunkValues, 0).sum() != 0:
-                        goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                        goodAreaMask=np.greater_equal(apodMask[weightMask], 1.0)
                         chunkMean=np.mean(chunkValues[goodAreaMask])
                         chunkRMS=np.std(chunkValues[goodAreaMask])
                         sigmaClip=3.0
@@ -365,9 +357,69 @@ class MapFilter(object):
                                 chunkRMS=np.std(chunkValues[mask])
                     else:
                         chunkRMS=0.
-                
                 if chunkRMS > 0:
-                    RMSMap[y0:y1, x0:x1]=chunkRMS
+                    RMSMap[weightMask]=chunkRMS
+        
+        else:
+            # Grid method
+            #print "... making SN map ..."
+            gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+            #gridSize=rIndex*3
+            overlapPix=int(gridSize/2)
+            numXChunks=mapData.shape[1]/gridSize
+            numYChunks=mapData.shape[0]/gridSize
+            yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
+            xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
+            #SNMap=np.zeros(mapData.shape)
+            apodMask=np.not_equal(mapData, 0)
+            # We could make below behaviour default if match photFilter? Would need to see photFilter though...
+            #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
+            RMSMap=np.zeros(mapData.shape)
+            for i in range(len(yChunks)-1):
+                for k in range(len(xChunks)-1):
+                    y0=yChunks[i]-overlapPix
+                    y1=yChunks[i+1]+overlapPix
+                    x0=xChunks[k]-overlapPix
+                    x1=xChunks[k+1]+overlapPix
+                    if y0 < 0:
+                        y0=0
+                    if y1 > mapData.shape[0]:
+                        y1=mapData.shape[0]
+                    if x0 < 0:
+                        x0=0
+                    if x1 > mapData.shape[1]:
+                        x1=mapData.shape[1]
+                    chunkValues=mapData[y0:y1, x0:x1]
+
+                    goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                    
+                    if 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'biweight':
+                        if goodAreaMask.sum() >= 10:
+                            # Astropy version is faster but gives identical results
+                            chunkRMS=apyStats.biweight_scale(chunkValues[goodAreaMask], c = 9.0, modify_sample_size = True)
+                            #chunkRMS=astStats.biweightScale(chunkValues[goodAreaMask], 6.0)
+                        else:
+                            chunkRMS=0.
+                    elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'percentile':
+                        chunkRMS=np.percentile(abs(chunkValues[goodAreaMask]), 68.3)
+                    else:
+                        # Default: 3-sigma clipped stdev
+                        if np.not_equal(chunkValues, 0).sum() != 0:
+                            goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                            chunkMean=np.mean(chunkValues[goodAreaMask])
+                            chunkRMS=np.std(chunkValues[goodAreaMask])
+                            sigmaClip=3.0
+                            for c in range(10):
+                                mask=np.less(abs(chunkValues), abs(chunkMean+sigmaClip*chunkRMS))
+                                mask=np.logical_and(goodAreaMask, mask)
+                                if mask.sum() > 0:
+                                    chunkMean=np.mean(chunkValues[mask])
+                                    chunkRMS=np.std(chunkValues[mask])
+                        else:
+                            chunkRMS=0.
+                    
+                    if chunkRMS > 0:
+                        RMSMap[y0:y1, x0:x1]=chunkRMS
         
         return RMSMap
     
@@ -564,11 +616,16 @@ class MatchedFilter(MapFilter):
         # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
             trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-        else:
+        elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart":
             gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
             trimSizePix=int(round(gridSize*3.0))
-        edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
-        edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        else:
+            trimSizePix=0.0
+        if trimSizePix  > 0:
+            edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
+            edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+        else:
+            edgeCheck=np.ones(filteredMap.shape)
         filteredMap=filteredMap*edgeCheck
         apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask

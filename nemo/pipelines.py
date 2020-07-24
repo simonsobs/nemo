@@ -144,9 +144,10 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                                                DS9RegionsPath = DS9RegionsPath)
             
             # We write area mask here, because it gets modified by findObjects if removing rings
+            # NOTE: condition added to stop writing tile maps again when running nemoMass in forced photometry mode
             maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
             surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
-            if os.path.exists(maskFileName) == False:
+            if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
                 maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True)
             
             if measureFluxes == True:

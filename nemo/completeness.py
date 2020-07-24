@@ -652,7 +652,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     RMSTab.add_column(atpy.Column(tileArea, 'areaDeg2'))
     RMSTab.add_column(atpy.Column(RMSValues, 'y0RMS'))
     # Sanity checks - these should be impossible but we have seen (e.g., when messed up masks)
-    tol=1e-3
+    tol=0.003
     if abs(RMSTab['areaDeg2'].sum()-areaMapSqDeg.sum()) > tol:
         raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))
     if np.less(RMSTab['areaDeg2'], 0).sum() > 0:
@@ -1119,9 +1119,9 @@ def makeFullSurveyMassLimitMapPlot(z, config):
         config.quicklookShape, config.quicklookWCS=maps.shrinkWCS(config.origShape, config.origWCS, config.quicklookScale)
 
     outFileName=config.diagnosticsDir+os.path.sep+"reproj_massLimitMap_z%s.fits" % (str(z).replace(".", "p"))
-    maps.stitchTiles(config.diagnosticsDir+os.path.sep+"*"+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")), 
-                     outFileName, config.quicklookWCS, config.quicklookShape, 
-                     fluxRescale = config.quicklookScale)
+    maps.stitchTilesQuickLook(config.diagnosticsDir+os.path.sep+"*"+os.path.sep+"massLimitMap_z%s#*.fits" % (str(z).replace(".", "p")),
+                              outFileName, config.quicklookWCS, config.quicklookShape,
+                              fluxRescale = config.quicklookScale)
 
     # Make plot
     if os.path.exists(outFileName) == True:
