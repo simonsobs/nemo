@@ -309,15 +309,16 @@ class MapFilter(object):
         
         """
 
+        # average all weight maps
+        # doesn't matter about spectral weighting, we just want areas with similar characteristics
+        # now using this for both 'smart' and original noise grid option
+        medWeights=[]
+        for mapDict in self.unfilteredMapsDictList:
+            medWeights.append(mapDict['weights'])
+        medWeights=np.median(np.array(medWeights), axis = 0)
+        
         # 'smart option' - measure noise in areas with similar weights (however weights defined)
         if self.params['noiseParams']['noiseGridArcmin'] == "smart":
-            # average all weight maps
-            # doesn't matter about spectral weighting, we just want areas with similar characteristics
-            medWeights=[]
-            for mapDict in self.unfilteredMapsDictList:
-                medWeights.append(mapDict['weights'])
-            medWeights=np.median(np.array(medWeights), axis = 0)
-            # Binning by weights - should make numBins adjustable
             try:
                 numBins=self.params['noiseParams']['numNoiseBins']
             except:
@@ -359,22 +360,22 @@ class MapFilter(object):
                         chunkRMS=0.
                 if chunkRMS > 0:
                     RMSMap[weightMask]=chunkRMS
-        
-        else:
-            # Grid method
-            #print "... making SN map ..."
+
+        # The grid method now recognises numNoiseBins in cells
+        else:  
             gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-            #gridSize=rIndex*3
             overlapPix=int(gridSize/2)
             numXChunks=mapData.shape[1]/gridSize
             numYChunks=mapData.shape[0]/gridSize
             yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
             xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
-            #SNMap=np.zeros(mapData.shape)
             apodMask=np.not_equal(mapData, 0)
-            # We could make below behaviour default if match photFilter? Would need to see photFilter though...
-            #if 'saveRMSMap' in self.params['noiseParams'] and self.params['noiseParams']['saveRMSMap'] == True:
             RMSMap=np.zeros(mapData.shape)
+            # For this mode, interpreted as number of noise bins per cell
+            if 'numNoiseBins' in self.params['noiseParams'].keys():
+                numBins=self.params['noiseParams']['numNoiseBins']
+            else:
+                numBins=1
             for i in range(len(yChunks)-1):
                 for k in range(len(xChunks)-1):
                     y0=yChunks[i]-overlapPix
@@ -390,36 +391,38 @@ class MapFilter(object):
                     if x1 > mapData.shape[1]:
                         x1=mapData.shape[1]
                     chunkValues=mapData[y0:y1, x0:x1]
-
                     goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
-                    
-                    if 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'biweight':
-                        if goodAreaMask.sum() >= 10:
-                            # Astropy version is faster but gives identical results
-                            chunkRMS=apyStats.biweight_scale(chunkValues[goodAreaMask], c = 9.0, modify_sample_size = True)
-                            #chunkRMS=astStats.biweightScale(chunkValues[goodAreaMask], 6.0)
+                    # Binning inside cell by weights - to handle sudden noise changes
+                    weightValues=medWeights[y0:y1, x0:x1]
+                    binEdges=np.linspace(weightValues[goodAreaMask].min(), weightValues[goodAreaMask].max(), numBins)
+                    for b in range(len(binEdges)-1):
+                        binMin=binEdges[b]
+                        binMax=binEdges[b+1]
+                        binMask=np.logical_and(weightValues >= binMin, weightValues < binMax)
+                        binValues=chunkValues[binMask*goodAreaMask]
+                        if 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'biweight':
+                            if (binMask*goodAreaMask).sum() >= 10:
+                                # Astropy version is faster but gives identical results
+                                chunkRMS=apyStats.biweight_scale(binValues, c = 9.0, modify_sample_size = True)
+                            else:
+                                chunkRMS=0.
+                        elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'percentile':
+                            chunkRMS=np.percentile(abs(binValues), 68.3)
                         else:
-                            chunkRMS=0.
-                    elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'percentile':
-                        chunkRMS=np.percentile(abs(chunkValues[goodAreaMask]), 68.3)
-                    else:
-                        # Default: 3-sigma clipped stdev
-                        if np.not_equal(chunkValues, 0).sum() != 0:
-                            goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
-                            chunkMean=np.mean(chunkValues[goodAreaMask])
-                            chunkRMS=np.std(chunkValues[goodAreaMask])
-                            sigmaClip=3.0
-                            for c in range(10):
-                                mask=np.less(abs(chunkValues), abs(chunkMean+sigmaClip*chunkRMS))
-                                mask=np.logical_and(goodAreaMask, mask)
-                                if mask.sum() > 0:
-                                    chunkMean=np.mean(chunkValues[mask])
-                                    chunkRMS=np.std(chunkValues[mask])
-                        else:
-                            chunkRMS=0.
-                    
-                    if chunkRMS > 0:
-                        RMSMap[y0:y1, x0:x1]=chunkRMS
+                            # Default: 3-sigma clipped stdev
+                            if np.not_equal(binValues, 0).sum() != 0:
+                                chunkMean=np.mean(binValues)
+                                chunkRMS=np.std(binValues)
+                                sigmaClip=3.0
+                                for c in range(10):
+                                    mask=np.less(abs(binValues), abs(chunkMean+sigmaClip*chunkRMS))
+                                    if mask.sum() > 0:
+                                        chunkMean=np.mean(binValues[mask])
+                                        chunkRMS=np.std(binValues[mask])
+                            else:
+                                chunkRMS=0.
+                        if chunkRMS > 0:
+                            RMSMap[y0:y1, x0:x1][binMask]=chunkRMS
         
         return RMSMap
     
