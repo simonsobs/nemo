@@ -394,7 +394,7 @@ class MapFilter(object):
                     goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
                     # Binning inside cell by weights - to handle sudden noise changes
                     weightValues=medWeights[y0:y1, x0:x1]
-                    binEdges=np.linspace(weightValues[goodAreaMask].min(), weightValues[goodAreaMask].max(), numBins)
+                    binEdges=np.linspace(weightValues[goodAreaMask].min(), weightValues[goodAreaMask].max(), numBins+1)
                     for b in range(len(binEdges)-1):
                         binMin=binEdges[b]
                         binMax=binEdges[b+1]
