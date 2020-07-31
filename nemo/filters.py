@@ -394,7 +394,11 @@ class MapFilter(object):
                     goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
                     # Binning inside cell by weights - to handle sudden noise changes
                     weightValues=medWeights[y0:y1, x0:x1]
-                    binEdges=np.linspace(weightValues[goodAreaMask].min(), weightValues[goodAreaMask].max(), numBins+1)
+                    percentiles=np.arange(0, 100, 100/numBins)
+                    binEdges=[]
+                    for p in percentiles:
+                        binEdges.append(np.percentile(weightValues[goodAreaMask], p))
+                    binEdges.append(weightValues[goodAreaMask].max()+1e-6)
                     for b in range(len(binEdges)-1):
                         binMin=binEdges[b]
                         binMax=binEdges[b+1]
@@ -402,7 +406,6 @@ class MapFilter(object):
                         binValues=chunkValues[binMask*goodAreaMask]
                         if 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'biweight':
                             if (binMask*goodAreaMask).sum() >= 10:
-                                # Astropy version is faster but gives identical results
                                 chunkRMS=apyStats.biweight_scale(binValues, c = 9.0, modify_sample_size = True)
                             else:
                                 chunkRMS=0.
