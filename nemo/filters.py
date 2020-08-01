@@ -392,6 +392,8 @@ class MapFilter(object):
                         x1=mapData.shape[1]
                     chunkValues=mapData[y0:y1, x0:x1]
                     goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
+                    if goodAreaMask.sum() == 0:
+                        continue
                     # Binning inside cell by weights - to handle sudden noise changes
                     weightValues=medWeights[y0:y1, x0:x1]
                     percentiles=np.arange(0, 100, 100/numBins)
@@ -548,6 +550,7 @@ class MatchedFilter(MapFilter):
                         deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
                         signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], 
                                                              amplitude = deltaT0)
+                    #signalMap=enmap.apply_window(signalMap, pow=1.0) # NOTE: ~1.5% effect, constant
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)
@@ -574,6 +577,7 @@ class MatchedFilter(MapFilter):
                 fSignalMaps=[]
                 for mapDict in self.unfilteredMapsDictList:
                     signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])
+                    #signalMap=enmap.apply_window(signalMap, pow=1.0)
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)
