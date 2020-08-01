@@ -155,6 +155,7 @@ posRecModels:
 # tileDir options - cut-up each map into smaller sections
 makeTileDir: True
 makeQuickLookMaps: True
+stitchTiles: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
 tileDefinitions: {mask: 'surveyMask.fits',
