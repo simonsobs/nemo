@@ -883,6 +883,8 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
         zRange=mockSurvey.z[zIndex:zIndex+1]
     else:
         zRange=mockSurvey.z
+
+    trueMassCol="true_M%d%s" % (mockSurvey.delta, mockSurvey.rhoType[0])
     
     if method == "montecarlo":
         # Need area-weighted average noise in the tile - we could change this to use entire RMS map instead
@@ -899,9 +901,9 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
             for i in range(numIterations):
                 tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, tileName = tileName, 
                                         SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
-                allMz=allMz+np.histogram2d(np.log10(tab['true_M500']*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
+                allMz=allMz+np.histogram2d(np.log10(tab[trueMassCol]*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
                 detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
-                detMz=detMz+np.histogram2d(np.log10(tab['true_M500'][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
+                detMz=detMz+np.histogram2d(np.log10(tab[trueMassCol][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
             mask=np.not_equal(allMz, 0)
             compMz=np.ones(detMz.shape)
             compMz[mask]=detMz[mask]/allMz[mask]
@@ -969,7 +971,8 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
         makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, plotFileName, 
-                                   title = "%s: $M_{\\rm 500c}$ / $10^{14}$ M$_{\odot}$ > %.2f (0.2 < $z$ < 1)" % (tileName, averageMassLimit_90Complete)) 
+                                   title = "%s: $M_{\\rm %d%s}$ / $10^{14}$ M$_{\odot}$ > %.2f (0.2 < $z$ < 1)" % (tileName,
+                                   mockSurvey.delta, mockSurvey.rhoType[0], averageMassLimit_90Complete))
             
     return compMz
       
