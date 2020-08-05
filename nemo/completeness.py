@@ -789,10 +789,9 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
     
     # Actual plot
     plotSettings.update_rcParams()
-    plt.figure(figsize=(9.5,6.5))
-    ax=plt.axes([0.11, 0.11, 0.87, 0.80])
+    fig, ax = plt.subplots(figsize=(9.5,6.5))
 
-    plt.imshow((compMz*100).transpose(), cmap = colorcet.m_rainbow, origin = 'lower', aspect = 0.8)
+    plt.imshow((compMz*100).transpose(), cmap = colorcet.m_rainbow, origin = 'lower', aspect = 'auto')
     
     y_tck=interpolate.splrep(log10M, np.arange(log10M.shape[0]))
     plot_log10M=np.linspace(13.5, 15.5, 9)
@@ -821,6 +820,8 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
     plt.colorbar(pad = 0.03)
     cbLabel="Completeness (%)" 
     plt.figtext(0.96, 0.52, cbLabel, ha="center", va="center", family = "sans-serif", rotation = "vertical")
+
+    plt.tight_layout()
 
     if title != 'full':
         plt.title(title)    
