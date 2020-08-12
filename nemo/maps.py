@@ -546,7 +546,7 @@ def stitchTiles(config):
 
     tileCoordsDict=config.tileCoordsDict
     for filterDict in config.parDict['mapFilters']:
-        if filterDict['params']['saveFilteredMaps'] == True:
+        if 'saveFilteredMaps' in filterDict['params'].keys() and filterDict['params']['saveFilteredMaps'] == True:
             for stitchDict in stitchDictList:
                 pattern=stitchDict['pattern']
                 outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
