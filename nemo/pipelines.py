@@ -47,7 +47,84 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         Optimal catalog (keeps the highest S/N detection when filtering at multiple scales).
     
     Note:
-        See bin/nemo for how this pipeline is applied to real data, and maps.estimateContaminationFromSkySim
+        See bin/nemo for how this pipeline is applied to real data, and maps.sourceInjectionTest
+        for how this is applied to source-free sims that are generated on the fly.
+        
+    """
+    
+    if config.parDict['twoPass'] == False:
+        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, 
+                                           measureFluxes = True, invertMap = False, verbose = True, 
+                                           useCachedMaps = True)
+    
+    else:
+        
+        # Two pass pipeline
+        # On 1st pass, find sources (and maybe clusters) with canned settings, masking nothing.
+        # On 2nd pass, the 1st pass catalog will be used to mask or subtract sources from maps used for 
+        # noise estimation only.
+        
+        # Sanity checks first
+        # No point doing this if point source masks or catalogs are used
+        if 'maskPointSourcesFromCatalog' in config.parDict.keys():
+            raise Exception("There is no point running in two-pass mode if maskPointSourcesFromCatalog is set.")
+        # No point doing this if we're not using the map itself for the noise term in the filter
+        for f in config.parDict['mapFilters']:
+            for key in f.keys():
+                if key == 'noiseParams' and f['noiseParams']['method'] != 'dataMap':
+                    raise Exception("There is no point running if filter noise method != 'dataMap'.")
+        
+        # Pass 1 - find point sources, save nothing
+        # NOTE: We need to do this for each map in the list, if we have a multi-frequency filter
+        pass1PtSrcSettings={'label': "Beam",
+                            'class': "BeamMatchedFilter",
+                            'params': {'noiseParams': {'method': "model",
+                                                       'noiseGridArcmin': 40.0,
+                                                       'numNoiseBins': 2},
+                            'saveFilteredMaps': False,
+                            'outputUnits': 'uK',
+                            'edgeTrimArcmin': 0.0}}
+        config.parDict['mapFilters']=[pass1PtSrcSettings]
+        config.parDict['photFilter']=None
+        orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
+        catalogsList=[]
+        for mapDict in orig_unfilteredMapsDictList:
+            config.unfilteredMapsDictList=[mapDict]
+            catalogsList.append(_filterMapsAndMakeCatalogs(config, verbose = False))
+
+        # Pass 2 - subtract point sources in the maps used for noise term in filter only
+        config.restoreConfig()
+        for mapDict, catalog in zip(orig_unfilteredMapsDictList, catalogsList):
+            mapDict['noiseMaskCatalog']=catalog
+        config.unfilteredMapsDictList=orig_unfilteredMapsDictList
+        catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
+    
+    return catalog
+    
+#------------------------------------------------------------------------------------------------------------
+def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
+                               invertMap = False, verbose = True, useCachedMaps = True):
+    """Runs the map filtering and catalog construction steps according to the given configuration.
+    
+    Args:
+        config (:obj: 'startup.NemoConfig'): Nemo configuration object.
+        rootOutDir (str): If None, use the default given by config. Otherwise, use this to override where the
+            output filtered maps and catalogs are written.
+        copyFilters (bool, optional): If True, and rootOutDir is given (not None), then filters will be
+            copied from the default output location (from a pre-existing nemo run) to the appropriate
+            directory under rootOutDir. This is used by, e.g., contamination tests based on sky sims, where
+            the same kernels as used on the real data are applied to simulated maps. If rootOutDir = None,
+            setting copyKernels = True has no effect.
+        measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
+            detected objects.
+        invertMap (bool, optional): If True, multiply all maps by -1; needed by 
+            :meth:maps.estimateContaminationFromInvertedMaps).
+    
+    Returns:
+        Optimal catalog (keeps the highest S/N detection when filtering at multiple scales).
+    
+    Note:
+        See bin/nemo for how this pipeline is applied to real data, and maps.sourceInjectionTest
         for how this is applied to source-free sims that are generated on the fly.
         
     """
@@ -98,8 +175,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         tileFilteredMapsDir=filteredMapsDir+os.path.sep+tileName
         tileDiagnosticsDir=diagnosticsDir+os.path.sep+tileName
         for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
-            if os.path.exists(d) == False:
-                os.makedirs(d, exist_ok = True)
+            os.makedirs(d, exist_ok = True)
         if verbose == True: print(">>> Making filtered maps - tileName = %s ..." % (tileName))
         # We could load the unfiltered map only once here?
         # We could also cache 'dataMap' noise as it will always be the same

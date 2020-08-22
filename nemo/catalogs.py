@@ -186,7 +186,7 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
                 RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
-                writeNemoInfo = True, coordSys = 'fk5'):
+                writeNemoInfo = True, coordSys = 'fk5', regionShape = 'point', width = 1):
     """Writes a DS9 region file corresponding to the given catalog. 
     
     Args:
@@ -223,7 +223,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
         else:
             comment=comment+"\n"
         outFile.write(comment)
-        outFile.write('global dashlist=8 3 width=1 font="helvetica 10 normal" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+        outFile.write('global dashlist=8 3 width=%d font="helvetica 10 normal" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n' % (width))
         for obj in cutCatalog:
             if len(addInfo) > 0:
                 infoString=""
@@ -243,8 +243,12 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                 colorString=color
             if showNames == True:
                 infoString=str(obj[idKeyToUse])+infoString
-            outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
-                        % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
+            if regionShape == 'point':
+                outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
+                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
+            elif regionShape == 'circle':
+                outFile.write('%s;circle(%.6f,%.6f,360") # color={%s} text={%s}\n' \
+                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))                
 
 #------------------------------------------------------------------------------------------------------------
 def makeName(RADeg, decDeg, prefix = 'ACT-CL'):
