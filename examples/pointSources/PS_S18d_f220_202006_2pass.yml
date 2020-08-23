@@ -150,6 +150,7 @@ posRecModels:
 
 # tileDir options - cut-up each map into smaller sections
 makeTileDir: True
+stitchTiles: True
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
