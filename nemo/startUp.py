@@ -127,6 +127,9 @@ def parseConfigFile(parDictFileName):
             parDict['GNFWParams']='default'
         for filtDict in parDict['mapFilters']:
             filtDict['params']['GNFWParams']=parDict['GNFWParams']
+        # Used for finding and removing rings around bright sources
+        if 'ringThresholdSigma' not in parDict.keys():
+            parDict['ringThresholdSigma']=3
     
     return parDict
 

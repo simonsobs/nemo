@@ -7,10 +7,10 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f220_daynight_map.fits",
-       weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f220_daynight_ivar.fits",
-       obsFreqGHz: 220.0, units: 'uK',
-       beamFileName: "maps/Jun2020/beams/s17_pa4_f220_nohwp_night_beam_profile_jitter.txt"}
+    - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f090_daynight_map.fits",
+       weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f090_daynight_ivar.fits",
+       obsFreqGHz: 97.8, units: 'uK',
+       beamFileName: "maps/Jun2020/beams/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}
 
 # Masks
 surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_S18.fits"

@@ -7,10 +7,10 @@
 # this should be a list of maps at different frequencies
 # NOTE: surveyMask is optional
 unfilteredMaps:
-    - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f220_daynight_map.fits",
-       weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f220_daynight_ivar.fits",
-       obsFreqGHz: 220.0, units: 'uK',
-       beamFileName: "maps/Jun2020/beams/s17_pa4_f220_nohwp_night_beam_profile_jitter.txt"}
+    - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_map.fits",
+       weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_ivar.fits",
+       obsFreqGHz: 149.6, units: 'uK',
+       beamFileName: "maps/Jun2020/beams/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"}
 
 # Masks
 surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_S18.fits"
@@ -47,7 +47,7 @@ posRecModels:
 
 # tileDir options - cut-up each map into smaller sections
 makeTileDir: True
-stitchTiles: True
+stitchTiles: False
 makeQuickLookMaps: True
 tileOverlapDeg: 1.0
 tileDefLabel: 'auto'
