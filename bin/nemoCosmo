@@ -218,8 +218,12 @@ if __name__ == '__main__':
     print("Setting up SNR > %.2f selection function (footprint: %s)" % (SNRCut, footprintLabel))
     selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1,
                              enableDrawSample = True, mockOversampleFactor = 10)
-    tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
     
+    # Cut catalog according to given SNR cut and survey footprint
+    tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
+    inMask=selFn.checkCoordsInAreaMask(tab['RADeg'], tab['decDeg'])
+    tab=tab[inMask]
+
     # NOTE: Since we use such coarse z binning, we completely ignore photo-z errors here
     # Otherwise, signals.calcPM500 throws exception when z grid is not fine enough
     tab['redshiftErr'][:]=0.0
