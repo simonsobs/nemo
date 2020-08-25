@@ -423,7 +423,7 @@ class MockSurvey(object):
             coordIndices=np.random.randint(0, len(xsInMask), numClusters)
             ys=ysInMask[coordIndices]
             xs=xsInMask[coordIndices]
-            if wcs != None:
+            if wcs is not None:
                 RADecCoords=wcs.pix2wcs(xs, ys)
                 RADecCoords=np.array(RADecCoords)
                 RAs=RADecCoords[:, 0]
@@ -472,6 +472,8 @@ class MockSurvey(object):
                 nextIndex=len(y0Noise)-1
             mask=np.arange(currentIndex, nextIndex)
             numClusters_zk=len(mask)
+            if numClusters_zk == 0:
+                continue
             y0Noise_zk=y0Noise[mask]
             currentIndex=nextIndex
                                 
