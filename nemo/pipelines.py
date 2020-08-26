@@ -88,14 +88,25 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         config.parDict['photFilter']=None
         orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
         catalogsList=[]
+        surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
         for mapDict in orig_unfilteredMapsDictList:
+            # We use whole tile area (i.e., don't trim overlaps) so that we get everything if under MPI
+            # Otherwise, powerful sources in overlap regions mess things up under MPI
+            # Serial mode doesn't have this issue as it can see the whole catalog over all tiles
+            # But since we now use full area, we may double subtract ovelap sources when in serial mode
+            # So the removeDuplicates call fixes that, and doesn't impact anything else here
+            surveyMasksList.append(mapDict['surveyMask'])
+            mapDict['surveyMask']=None
             config.unfilteredMapsDictList=[mapDict]
-            catalogsList.append(_filterMapsAndMakeCatalogs(config, verbose = False))
+            catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
+            catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)
+            catalogsList.append(catalog)
 
         # Pass 2 - subtract point sources in the maps used for noise term in filter only
         config.restoreConfig()
-        for mapDict, catalog in zip(orig_unfilteredMapsDictList, catalogsList):
+        for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, catalogsList, surveyMasksList):
             mapDict['noiseMaskCatalog']=catalog
+            mapDict['surveyMask']=surveyMask
         config.unfilteredMapsDictList=orig_unfilteredMapsDictList
         catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
     
@@ -450,6 +461,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     print("... mock survey parameters:")
     for key in defCosmo.keys():
         print("    %s = %s" % (key, str(massOptions[key])))
+    for key in ['tenToA0', 'B0', 'Mpivot', 'sigma_int']:
+        print("    %s = %s" % (key, str(scalingRelationDict[key])))
     print("    total area = %.1f square degrees" % (totalAreaDeg2))
     print("    random seed = %s" % (str(seed)))
     

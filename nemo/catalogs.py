@@ -760,7 +760,7 @@ def getCatalogWithinImage(tab, shape, wcs):
     
     """
     
-    xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
+    xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist())
     xyCoords=np.array(xyCoords, dtype = int)
     mask=[]
     for i in range(len(tab)):
