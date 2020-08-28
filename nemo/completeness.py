@@ -374,6 +374,40 @@ class SelFn(object):
         return catProjectedMz
 
 
+    def projectCatalogToMz_simple(self, tab):
+        """Project a catalog (as astropy Table) into the (log10 M500, z) grid. This version doesn't take into
+        account any uncertainties (which is ok if your binning is coarse enough)
+                
+        Returns:
+            counts on (log10 M500, z) grid
+        
+        """
+        
+        tenToA0, B0, Mpivot, sigma_int=self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'], \
+                                       self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']
+                                           
+        obs_log10Ms=[]
+        for row in tab:
+            tileName=row['tileName']
+            z=row['redshift']
+            zErr=row['redshiftErr']
+            y0=row['fixed_y_c']*1e-4
+            y0Err=row['fixed_err_y_c']*1e-4
+            massDict=signals.calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
+                                            sigma_int = sigma_int, tckQFit = self.tckQFitDict[tileName], 
+                                            mockSurvey = self.mockSurvey, 
+                                            applyMFDebiasCorrection = self.applyMFDebiasCorrection,
+                                            fRelWeightsDict = self.fRelDict[tileName],
+                                            calcErrors = False)
+            obs_log10Ms.append(14+np.log10(massDict['M500']))
+        obsGrid, obs_log10MBinEdges, obs_zBinEdges=np.histogram2d(obs_log10Ms, tab['redshift'], 
+                                                                  bins = [self.mockSurvey.log10MBinEdges, 
+                                                                          self.mockSurvey.zBinEdges])
+        obsGrid=obsGrid.transpose()
+            
+        return obsGrid
+
+
     def addPDetToCatalog(self, tab):
         """Given a catalog, add a column Pdet, containing the detection probability.
         
@@ -403,6 +437,7 @@ class SelFn(object):
         tile.
         
         """
+        
         mockTabsList=[]
         for tileName, areaDeg2 in zip(self.tileNames, self.tileAreas):
             mockTab=self.mockSurvey.drawSample(self.y0NoiseAverageDict[tileName], self.scalingRelationDict, 
@@ -947,6 +982,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
             log_y0Err[SNRGrid < SNRCut]=1/SNRCut
             log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
             compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
+        
         #t1=time.time()
         
         # For sanity checking figure-of-merit

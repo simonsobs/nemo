@@ -17,12 +17,12 @@ surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_S18.fits"
 
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
-thresholdSigma: 4.0
+thresholdSigma: 5.0
 minObjPix: 1
 findCenterOfMass: True
 useInterpolator: True
 rejectBorder: 0
-ringThresholdSigma: 1
+ringThresholdSigma: 3
 objIdent: 'ACT-S'
 longNames: False
 
@@ -58,7 +58,7 @@ tileDefinitions: {mask: 'maps/Jun2020/AdvACTSurveyMask_v7_S18.fits',
 # Filter definitions:
 twoPass: True
 mapFilters:
-        - {label: "Beam",
+        - {label: "Beam220",
            class: "BeamMatchedFilter",
            params: {noiseParams: {method: "dataMap",
                                   noiseGridArcmin: 40.0,

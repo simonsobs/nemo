@@ -73,7 +73,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             for key in f.keys():
                 if key == 'noiseParams' and f['noiseParams']['method'] != 'dataMap':
                     raise Exception("There is no point running if filter noise method != 'dataMap'.")
-        
+
         # Pass 1 - find point sources, save nothing
         # NOTE: We need to do this for each map in the list, if we have a multi-frequency filter
         pass1PtSrcSettings={'label': "Beam",
@@ -87,7 +87,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         config.parDict['mapFilters']=[pass1PtSrcSettings]
         config.parDict['photFilter']=None
         orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
-        catalogsList=[]
+        pass1CatalogsList=[]
         surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
         for mapDict in orig_unfilteredMapsDictList:
             # We use whole tile area (i.e., don't trim overlaps) so that we get everything if under MPI
@@ -98,23 +98,35 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             surveyMasksList.append(mapDict['surveyMask'])
             mapDict['surveyMask']=None
             config.unfilteredMapsDictList=[mapDict]
-            catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
-            catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)
-            catalogsList.append(catalog)
+            catalog=_filterMapsAndMakeCatalogs(config, verbose = False, writeAreaMasks = False)
+            catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)       
+            pass1CatalogsList.append(catalog)
 
         # Pass 2 - subtract point sources in the maps used for noise term in filter only
+        # To avoid ringing in the pass 2, we siphon off the super bright things found in pass 1
+        # We subtract those from the maps used in pass 2 - we then need to add them back at the end
         config.restoreConfig()
-        for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, catalogsList, surveyMasksList):
-            mapDict['noiseMaskCatalog']=catalog
+        siphonSNR=50
+        for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
+            mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]
+            mapDict['subtractPointSourcesFromCatalog']=[catalog[catalog['SNR'] > siphonSNR]]
+            mapDict['maskSubtractedPointSources']=True
             mapDict['surveyMask']=surveyMask
         config.unfilteredMapsDictList=orig_unfilteredMapsDictList
         catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
+        
+        # Merge back in the bright sources that were subtracted in pass 1
+        mergeList=[catalog]
+        for pass1Catalog in pass1CatalogsList:
+            mergeList.append(pass1Catalog[pass1Catalog['SNR'] > siphonSNR])
+        catalog=atpy.vstack(mergeList)
     
     return catalog
     
 #------------------------------------------------------------------------------------------------------------
 def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                               invertMap = False, verbose = True, useCachedMaps = True):
+                               invertMap = False, verbose = True, useCachedMaps = True,
+                               writeAreaMasks = True):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -235,8 +247,9 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
             # NOTE: condition added to stop writing tile maps again when running nemoMass in forced photometry mode
             maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
             surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
-            if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
-                maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True)
+            if writeAreaMasks == True:
+                if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
+                    maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True)
             
             if measureFluxes == True:
                 photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,

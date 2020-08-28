@@ -986,6 +986,35 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]#+np.random.normal(0, rms[np.where(psMask == 0)]) 
             #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
     
+    # Optional subtraction of point sources based on a catalog
+    # We'll also (optionally) add a small mask at these locations to the survey mask
+    if 'subtractPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['subtractPointSourcesFromCatalog'] is not None:
+        if type(mapDict['subtractPointSourcesFromCatalog']) is not list:
+            mapDict['subtractPointSourcesFromCatalog']=[mapDict['subtractPointSourcesFromCatalog']]
+        for tab in mapDict['subtractPointSourcesFromCatalog']:
+            if type(tab) != atpy.Table:
+                tab=atpy.Table().read(catalogPath)
+            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs) 
+            model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'], obsFreqGHz = None)
+            if model is not None:
+                data=data-model
+            # Optionally blank small exclusion zone around these sources in survey mask
+            # (this is only needed for SZ searches, to avoid any issue with possible oversubtraction)
+            if 'maskSubtractedPointSources' in list(mapDict.keys()) and mapDict['maskSubtractedPointSources'] == True: 
+                for row in tab:
+                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                    if surveyMask[int(y), int(x)] != 0:
+                        rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                        if row['SNR'] > 1000:
+                            maskRadiusArcmin=10.0
+                        else:
+                            maskRadiusArcmin=4.0
+                        rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                                    row['RADeg'], row['decDeg'], 
+                                                                                    maskRadiusArcmin/60)
+                        rArcminMap=rArcminMap*60
+                        surveyMask[rArcminMap < maskRadiusArcmin]=0
+    
     # Add the map data to the dict
     mapDict['data']=data
     mapDict['weights']=weights

@@ -623,11 +623,7 @@ class MatchedFilter(MapFilter):
         validMask=np.greater(RMSMap, 0)
         SNMap=np.zeros(filteredMap.shape)+filteredMap
         SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
-        
-        # If we did a good job of subtracting / filling mask holes, we could apply mask after noise estimates
-        #filteredMap=filteredMap*psMask
-        #SNMap=SNMap*psMask
-        
+                
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
@@ -645,6 +641,7 @@ class MatchedFilter(MapFilter):
         filteredMap=filteredMap*edgeCheck
         apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask
+        filteredMap=filteredMap*surveyMask
         del edgeCheck
 
         # Apply final survey mask to signal-to-noise map and RMS map
