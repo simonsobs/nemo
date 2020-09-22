@@ -335,14 +335,60 @@ class SelFn(object):
         
         self.mockSurvey.update(H0, Om0, Ob0, sigma8, ns)
         
+        #---
+        # New - as well as completeness, get y0 grid to map between cluster counts <-> y0
+        zRange=self.mockSurvey.z
+        y0GridCube=[]
         compMzCube=[]
         for tileName in self.RMSDict.keys():
-            compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName, 
-                                               self.mockSurvey, self.scalingRelationDict, self.tckQFitDict))
-            if np.any(np.isnan(compMzCube[-1])) == True:
-                raise Exception("NaNs in compMz for tile '%s'" % (tileName))
+            tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'], 
+                                            self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+            y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+            for i in range(len(zRange)):
+                zk=zRange[i]
+                k=np.argmin(abs(self.mockSurvey.z-zk))
+                theta500s_zk=interpolate.splev(self.mockSurvey.log10M, self.mockSurvey.theta500Splines[k])
+                Qs_zk=interpolate.splev(theta500s_zk, self.tckQFitDict[tileName])
+                fRels_zk=interpolate.splev(self.mockSurvey.log10M, self.mockSurvey.fRelSplines[k])
+                true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
+                                                                                1+B0)*Qs_zk*fRels_zk
+                #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
+                y0Grid[i]=true_y0s_zk
+                
+            # For some cosmological parameters, we can still get the odd -ve y0
+            y0Grid[y0Grid <= 0] = 1e-9
+        
+            # Calculate completeness using area-weighted average
+            # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
+            RMSTab=self.RMSDict[tileName]
+            areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+            log_y0Lim=np.log(self.SNRCut*RMSTab['y0RMS'])
+            log_y0=np.log(y0Grid)
+            compMz=np.zeros(log_y0.shape)
+            for i in range(len(RMSTab)):
+                SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+                SNRGrid=SNRGrid
+                log_y0Err=1/SNRGrid
+                log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
+                log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+                compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
+            compMzCube.append(compMz)
+            y0GridCube.append(y0Grid)
         compMzCube=np.array(compMzCube)
+        y0GridCube=np.array(y0GridCube)
         self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+        self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
+
+        #---
+        # Old
+        #compMzCube=[]
+        #for tileName in self.RMSDict.keys():
+            #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName, 
+                                               #self.mockSurvey, self.scalingRelationDict, self.tckQFitDict))
+            #if np.any(np.isnan(compMzCube[-1])) == True:
+                #raise Exception("NaNs in compMz for tile '%s'" % (tileName))
+        #compMzCube=np.array(compMzCube)
+        #self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
         
 
     def projectCatalogToMz(self, tab):
@@ -428,7 +474,7 @@ class SelFn(object):
         
         return tab
 
-
+    
     def generateMockSample(self):
         """Returns a mock catalog (with no coordinate info) using whatever our current settings are in this 
         object.
