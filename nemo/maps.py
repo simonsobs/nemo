@@ -172,7 +172,7 @@ def saveTilesDS9RegionsFile(parDict, DS9RegionFileName):
         outFile.write('global color=blue dashlist=8 3 width=1 font="helvetica 10 normal roman" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
         outFile.write("fk5\n")
         for c, name in zip(coordsList, tileNames):
-            outFile.write('polygon(%d, %d, %d, %d, %d, %d, %d, %d) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))  
+            outFile.write('polygon(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))  
                 
 #------------------------------------------------------------------------------------------------------------
 def addAutoTileDefinitions(parDict, DS9RegionFileName = None, cacheFileName = None):
