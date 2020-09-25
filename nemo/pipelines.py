@@ -107,6 +107,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         # To avoid ringing in the pass 2, we siphon off the super bright things found in pass 1
         # We subtract those from the maps used in pass 2 - we then need to add them back at the end
         config.restoreConfig()
+        config.parDict['measureShapes']=True    # We'll keep this for pass 2 as well
         siphonSNR=50
         for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
             mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]

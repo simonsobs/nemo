@@ -501,8 +501,7 @@ def writeCatalog(catalog, outFileName, constraintsList = []):
 #------------------------------------------------------------------------------------------------------------
 def removeDuplicates(tab):
     """Removes duplicate objects from the catalog - keeping the highest SNR detection for each duplicate. 
-    This routine is used to clean up the output of MPI runs (where we have overlapping tiles). This might not
-    be necessary if the tile area masks are used correctly, but can't hurt...
+    This routine is used to clean up the output of MPI runs (where we have overlapping tiles).
     
     Args:
         tab (:obj:`astropy.table.Table`): The object catalog to be checked for duplicates.
