@@ -970,11 +970,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                     selectedRows.append(False)
             tab=tab[np.where(selectedRows)]
             
-            # Subtract sources (if there are small residuals, doesn't matter, as masked later anyway)
-            # NOTE: Doesn't work very well at the moment
-            #model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'])
-            #data=data-model
-            # Or fill holes with smoothed map
+            # Fill holes with smoothed map
             # NOTE: We were filling with white noise - this is bad for repeatability (since we use as noise term in filter)
             pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
@@ -999,8 +995,12 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             if model is not None:
                 data=data-model
             # Optionally blank small exclusion zone around these sources in survey mask
-            # (this is only needed for SZ searches, to avoid any issue with possible oversubtraction)
-            if 'maskSubtractedPointSources' in list(mapDict.keys()) and mapDict['maskSubtractedPointSources'] == True: 
+            # (this is needed for SZ searches, to avoid any issue with possible oversubtraction)
+            # NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
+            if 'maskSubtractedPointSources' in list(mapDict.keys()) and mapDict['maskSubtractedPointSources'] == True:
+                # For hole filling extended sources
+                pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+                bckData=ndimage.median_filter(data, int(pixRad))
                 for row in tab:
                     x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                     if surveyMask[int(y), int(x)] != 0:
@@ -1009,11 +1009,23 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                             maskRadiusArcmin=10.0
                         else:
                             maskRadiusArcmin=4.0
+                        # Extended sources - identify by measured size > masking radius
+                        # These will mess up noise term in filter, so add to psMask also and fill + smooth
+                        # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
+                        if 'ellipse_A' and 'ellipse_B' in tab.keys():
+                            xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
+                            ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
+                            if ASizeArcmin > maskRadiusArcmin:
+                                extendedSource=True
+                                masksRadiusArcmin=ASizeArcmin
                         rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
                                                                                     row['RADeg'], row['decDeg'], 
                                                                                     maskRadiusArcmin/60)
                         rArcminMap=rArcminMap*60
                         surveyMask[rArcminMap < maskRadiusArcmin]=0
+                        if extendedSource == True:
+                            psMask[rArcminMap < maskRadiusArcmin]=0
+                            data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
     
     # Add the map data to the dict
     mapDict['data']=data
@@ -1028,10 +1040,6 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         raise Exception("Map and point source mask dimensions are not the same (they should also have same WCS)")
     if mapDict['data'].shape != mapDict['surveyMask'].shape:
         raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
-    
-    ## Save trimmed weights - this isn't necessary
-    #if os.path.exists(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName)) == False:
-        #astImages.saveFITS(diagnosticsDir+os.path.sep+"weights#%s.fits" % (tileName), weights, wcs)
     
     return mapDict
 

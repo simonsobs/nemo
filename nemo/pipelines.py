@@ -86,6 +86,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                             'edgeTrimArcmin': 0.0}}
         config.parDict['mapFilters']=[pass1PtSrcSettings]
         config.parDict['photFilter']=None
+        config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
         orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
         pass1CatalogsList=[]
         surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
