@@ -82,6 +82,7 @@ if __name__ == '__main__':
                 if len(optimalCatalog) > 0:
                     optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
         if config.rank == 0:
+            optimalCatalog=catalogs.flagTileBoundarySplits(optimalCatalog)
             optimalCatalog.sort('name')
             catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName)
             catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"))
