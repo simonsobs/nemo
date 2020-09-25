@@ -1012,6 +1012,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                         # Extended sources - identify by measured size > masking radius
                         # These will mess up noise term in filter, so add to psMask also and fill + smooth
                         # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
+                        extendedSource=False
                         if 'ellipse_A' and 'ellipse_B' in tab.keys():
                             xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
                             ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
