@@ -186,7 +186,7 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
                 RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
-                writeNemoInfo = True, coordSys = 'fk5'):
+                writeNemoInfo = True, coordSys = 'fk5', regionShape = 'point', width = 1):
     """Writes a DS9 region file corresponding to the given catalog. 
     
     Args:
@@ -223,7 +223,7 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
         else:
             comment=comment+"\n"
         outFile.write(comment)
-        outFile.write('global dashlist=8 3 width=1 font="helvetica 10 normal" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n')
+        outFile.write('global dashlist=8 3 width=%d font="helvetica 10 normal" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1\n' % (width))
         for obj in cutCatalog:
             if len(addInfo) > 0:
                 infoString=""
@@ -243,8 +243,12 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                 colorString=color
             if showNames == True:
                 infoString=str(obj[idKeyToUse])+infoString
-            outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
-                        % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
+            if regionShape == 'point':
+                outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
+                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
+            elif regionShape == 'circle':
+                outFile.write('%s;circle(%.6f,%.6f,360") # color={%s} text={%s}\n' \
+                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))                
 
 #------------------------------------------------------------------------------------------------------------
 def makeName(RADeg, decDeg, prefix = 'ACT-CL'):
@@ -496,11 +500,15 @@ def writeCatalog(catalog, outFileName, constraintsList = []):
 
 #------------------------------------------------------------------------------------------------------------
 def removeDuplicates(tab):
-    """Given an astropy Table object, remove duplicate objects - keeping the highest SNR detection for each
-    duplicate. This routine is used to clean up output of MPI runs (where we have overlapping tiles). This
-    method could be applied elsewhere, if we re-did how we handled catalogs everywhere in nemo.
+    """Removes duplicate objects from the catalog - keeping the highest SNR detection for each duplicate. 
+    This routine is used to clean up the output of MPI runs (where we have overlapping tiles).
     
-    Returns table with duplicates removed, number of duplicates found, names of duplicates
+    Args:
+        tab (:obj:`astropy.table.Table`): The object catalog to be checked for duplicates.
+
+    Returns:
+        Table with duplicates removed (:obj:`astropy.table.Table`), the number of duplicates found, and a
+        list of names for the duplicated objects.
     
     """
     
@@ -534,7 +542,59 @@ def removeDuplicates(tab):
     keepTab.sort('RADeg')
     
     return keepTab, len(dupTab), dupTab['name']
+
+#------------------------------------------------------------------------------------------------------------
+def flagTileBoundarySplits(tab, xMatchRadiusArcmin = 2.5):
+    """Flag objects that are closer than some matching radius but which appear in different tiles. These are
+    potentially objects that have been de-blended across tile boundaries (in which case one entry in the
+    catalog should be kept and the other discarded), but some objects in this category are genuine close
+    pairs. At the moment, this is best resolved by visual inspection. This routine adds a flag column named
+    `tileBoundarySplit` to the catalog to make it easy to spot these cases.
+        
+    Args:
+        tab (:obj:`astropy.table.Table`): The object catalog to be checked.
+        xMatchRadiusArcmin (float, optional): Cross-match radius in arcmin.
+
+    Returns:
+        Catalog (:obj:`astropy.table.Table`) with `tileBoundarySplit` column added - this is True for objects
+        that may have been deblended across tiles, and require visual inspection.
     
+    """
+    
+    xMatchRadiusDeg=xMatchRadiusArcmin/60.
+    
+    # Find all potential duplicates within a given matching radius
+    cat=SkyCoord(ra = tab['RADeg'].data, dec = tab['decDeg'].data, unit = 'deg')
+    xIndices, rDeg, sep3d = match_coordinates_sky(cat, cat, nthneighbor = 2)
+    mask=np.less(rDeg.value, xMatchRadiusDeg)
+    noDupMask=np.greater_equal(rDeg.value, xMatchRadiusDeg)
+    dupTab=tab[mask]
+    noDupTab=tab[noDupMask]
+        
+    # Identify pairs split across tile boundaries
+    tileBoundarySplit=np.zeros(len(dupTab), dtype = bool)
+    for i in range(len(dupTab)):
+        # NOTE: astCoords does not like atpy.Columns sometimes...
+        rDeg=astCoords.calcAngSepDeg(dupTab['RADeg'][i], dupTab['decDeg'][i], dupTab['RADeg'].data, dupTab['decDeg'].data)
+        mask=np.less_equal(rDeg, xMatchRadiusDeg)
+        if mask.sum() == 0:	# This ought not to be possible but catch anyway
+            bestIndex=i
+        else:
+            indices=np.where(mask == True)[0]
+            bestIndex=indices[np.equal(dupTab['SNR'][mask], dupTab['SNR'][mask].max())][0]
+            if np.unique(dupTab['tileName'][indices]).shape[0] > 1:
+                tileBoundarySplit[indices]=True
+    dupTab['tileBoundarySplit']=tileBoundarySplit
+    dupTab=dupTab[tileBoundarySplit]
+    
+    # Flag in the main table
+    tab['tileBoundarySplit']=np.zeros(len(tab), dtype = bool)
+    for row in dupTab:
+        mask=(tab['name'] == row['name'])
+        tab['tileBoundarySplit'][mask]=True
+        
+    return tab
+
 #------------------------------------------------------------------------------------------------------------
 def generateRandomSourcesCatalog(mapData, wcs, numSources):
     """Generate a random source catalog (with amplitudes in deltaT uK), with random positions within the 
@@ -756,7 +816,7 @@ def getCatalogWithinImage(tab, shape, wcs):
     
     """
     
-    xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()) 
+    xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist())
     xyCoords=np.array(xyCoords, dtype = int)
     mask=[]
     for i in range(len(tab)):

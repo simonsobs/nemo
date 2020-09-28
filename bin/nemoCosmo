@@ -50,18 +50,27 @@ def lnprob_yc(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
     except:
         return -np.inf
     
-    mockTab=selFn.generateMockSample()
-    mockGrid, mock_log10ycBinEdges, mock_zBinEdges=np.histogram2d(np.log10(mockTab['fixed_y_c']), mockTab['redshift'], 
-                                                                  bins = [log10ycBinEdges, selFn.mockSurvey.zBinEdges])
-    mockGrid=mockGrid/selFn.mockOversampleFactor
+    # Transform cluster counts to binned y0 grid
+    corrGrid=selFn.mockSurvey.clusterCount*selFn.compMz
+    predGrid=np.zeros(obsGrid.shape)
+    for i in range(len(obs_zBinEdges)-1):
+        zMin=obs_zBinEdges[i]
+        zMax=obs_zBinEdges[i+1]
+        zMask=np.logical_and(selFn.mockSurvey.z >= zMin, selFn.mockSurvey.z < zMax)
+        zMask=np.array([zMask]*selFn.mockSurvey.clusterCount.shape[1]).transpose() 
+        for j in range(len(obs_ycBinEdges)-1):
+            ycMin=obs_ycBinEdges[j]
+            ycMax=obs_ycBinEdges[j+1]
+            ycMask=np.logical_and(selFn.y0Grid >= ycMin, selFn.y0Grid < ycMax)
+            predGrid[j, i]=corrGrid[zMask*ycMask].sum()
 
     # Poisson probability in (log10(y0~), z) grid
-    mask=np.logical_and(np.greater(obsGrid, 0), np.greater(mockGrid, 0))
+    mask=np.greater(obsGrid, 0)
     if mask.sum() > 0:
-        lnlike=np.sum(obsGrid[mask]*np.log(mockGrid[mask])-mockGrid[mask]-np.log(factorial(obsGrid[mask])))
+        lnlike=np.sum(obsGrid[mask]*np.log(predGrid[mask])-predGrid[mask]-np.log(factorial(obsGrid[mask])))
     else:
         lnlike=-np.inf
-
+    
     return lnlike
 
 #-------------------------------------------------------------------------------------------------------------
@@ -80,21 +89,62 @@ def lnprob_M500(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
     # Apply completeness only to predicted counts (selection is already applied to observed)
     predMz=selFn.compMz*selFn.mockSurvey.clusterCount
     
-    # Do we really need to do this step? We'd gain > factor 2 in speed if we didn't
-    # (i.e., if we just splatted onto the grid as a straight 2d histogram)
-    try:
-        obsMz=selFn.projectCatalogToMz(tab)
-    except:
-        return -np.inf
-    
-    # Poisson probability in (M, z) grid
-    # (this is the similar to what Planck does, e.g., Planck 2015 XXIV eqn. 15)
-    # NOTE: Planck only has 10 x 5 bins, and bins by z, S/N (q in Planck paper)
-    #mask=np.greater(predMz, 0)
-    mask=np.logical_and(np.greater(obsMz, 0), np.greater(predMz, 0))
-    lnlike=np.sum(obsMz[mask]*np.log(predMz[mask])-predMz[mask]-np.log(factorial(obsMz[mask])))
-        
+    # Now 2d histogram with few cells - more stable?
+    masses=calcMass(tab, selFn.scalingRelationDict, selFn.tckQFitDict, selFn.fRelDict, selFn.mockSurvey, verbose = False)  
+    log10MBinEdges=np.linspace(np.log10(masses.min()), np.log10(masses.max()), 6)
+    obsGrid, obsGrid_log10MBinEdges, obsGrid_zBinEdges=np.histogram2d(np.log10(masses), tab['redshift'], 
+                                                                      bins = [log10MBinEdges, selFn.mockSurvey.zBinEdges])
+    predGrid=np.zeros(obsGrid.shape)
+    for i in range(len(obsGrid_log10MBinEdges)-1):
+        mBinMin=obsGrid_log10MBinEdges[i]
+        mBinMax=obsGrid_log10MBinEdges[i+1]
+        mMask=np.logical_and(selFn.mockSurvey.log10M >= mBinMin, selFn.mockSurvey.log10M < mBinMax)
+        for j in range(len(obsGrid_zBinEdges)-1):
+            zBinMin=obsGrid_zBinEdges[j]
+            zBinMax=obsGrid_zBinEdges[j+1]
+            zMask=np.logical_and(selFn.mockSurvey.z >= zBinMin, selFn.mockSurvey.z < zBinMax)
+            predGrid[i, j]=predMz[zMask][0][mMask].sum()
+
+    # Poisson probability in (log10M, z) grid
+    mask=np.logical_and(np.greater(obsGrid, 0), np.greater(predGrid, 0))
+    if mask.sum() > 0:
+        lnlike=np.sum(obsGrid[mask]*np.log(predGrid[mask])-predGrid[mask]-np.log(factorial(obsGrid[mask])))
+    else:
+        lnlike=-np.inf
+
     return lnlike
+
+#------------------------------------------------------------------------------------------------------------
+def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey, verbose = False):
+    """Calculates masses (M500 and M200m) using fixed_y_c, redshift columns in the given table.
+    
+    """
+
+    masses=np.zeros(len(tab))
+    for i in range(len(tab)):
+        row=tab[i]
+        if verbose: print("... %d/%d; %s (%.3f +/- %.3f) ..." % (count, len(tab), row['name'], 
+                                                              row['redshift'], row['redshiftErr']))
+
+        tileName=row['tileName']
+        
+        # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
+        if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
+            # Corrected for mass function steepness
+            massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+                                            row['redshift'], row['redshiftErr'],
+                                            tenToA0 = massOptions['tenToA0'],
+                                            B0 = massOptions['B0'], 
+                                            Mpivot = massOptions['Mpivot'], 
+                                            sigma_int = massOptions['sigma_int'],
+                                            tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
+                                            applyMFDebiasCorrection = True,
+                                            applyRelativisticCorrection = True,
+                                            fRelWeightsDict = fRelWeightsDict[tileName],
+                                            calcErrors = False)
+            masses[i]=massDict['M500']
+    
+    return masses*1e14
 
 #------------------------------------------------------------------------------------------------------------
 def makeGetDistPlot(cosmoOutDir):
@@ -217,18 +267,23 @@ if __name__ == '__main__':
 
     print("Setting up SNR > %.2f selection function (footprint: %s)" % (SNRCut, footprintLabel))
     selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1,
-                             enableDrawSample = True, mockOversampleFactor = 10)
-    tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
+                             enableDrawSample = True, mockOversampleFactor = 1)
     
+    # Cut catalog according to given SNR cut and survey footprint
+    tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
+    inMask=selFn.checkCoordsInAreaMask(tab['RADeg'], tab['decDeg'])
+    tab=tab[inMask]
+
     # NOTE: Since we use such coarse z binning, we completely ignore photo-z errors here
     # Otherwise, signals.calcPM500 throws exception when z grid is not fine enough
     tab['redshiftErr'][:]=0.0
    
     # Define binning on (log10(fixed_y_c), redshift) grid
-    log10ycBinEdges=np.linspace(np.log10(tab['fixed_y_c'].min()*0.8), np.log10(tab['fixed_y_c'].max()*1.1), 30)
-    obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(tab['fixed_y_c']), tab['redshift'], 
+    log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()*0.8), np.log10(1e-4*tab['fixed_y_c'].max()*1.1), 6)
+    obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(1e-4*tab['fixed_y_c']), tab['redshift'], 
                                                                bins = [log10ycBinEdges, selFn.mockSurvey.zBinEdges])
-
+    obs_ycBinEdges=np.power(10, obs_log10ycBinEdges)
+    
     # Testing
     if args.testLikelihood == True:
 
@@ -242,11 +297,13 @@ if __name__ == '__main__':
             plt.ylim(minP, maxP)
             plt.savefig("testLikelihood_%s_%s.png" % (label, args.likelihoodType))
             plt.close()
-
+        
         H0, Om0, Ob0, sigma8, ns = 68.0, 0.31, 0.049, 0.81, 0.965       # WebSky cosmology
-        tenToA0, B0, Mpivot, sigma_int = 2.65e-05, 0.0, 3.0e+14, 0.2    # WebSky scaling relation
+        #tenToA0, B0, Mpivot, sigma_int = 2.65e-05, 0.0, 3.0e+14, 0.2    # WebSky scaling relation - assumed scatter
+        tenToA0, B0, Mpivot, sigma_int = 3.02e-05, 0.0, 3.0e+14, 0.0    # WebSky scaling relation - no scatter
         #lnprob(H0, Om0, sigma8, Ob0, ns, p, B0, Mpivot, sigma_int)
-        testsToRun=['H0', 'Om0', 'sigma8', 'tenToA0']
+        testsToRun=['H0', 'Om0', 'sigma8', 'tenToA0', 'B0', 'sigma_int']
+        #testsToRun=['tenToA0', 'B0', 'sigma_int']
         print("Running likelihood tests")
         if 'H0' in testsToRun:
             label="H0"; var=H0
@@ -261,6 +318,7 @@ if __name__ == '__main__':
                 probs.append(lnprob(p, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int))
             t1=time.time()
             print("time per step = %.3f" % ((t1-t0)/len(probs)))
+            print("diff (input - max likelihood) = %.2f" % (var-pRange[np.argmax(probs)]))
             makeTestPlot(pRange, probs, var, label)
         if 'Om0' in testsToRun:
             label="Om0"; var=Om0
@@ -275,6 +333,7 @@ if __name__ == '__main__':
                 probs.append(lnprob(H0, p, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int))
             t1=time.time()
             print("time per step = %.3f" % ((t1-t0)/len(probs)))
+            print("diff (input - max likelihood) = %.2f" % (var-pRange[np.argmax(probs)]))
             makeTestPlot(pRange, probs, var, label)
         if 'sigma8' in testsToRun:
             label="sigma8"; var=sigma8
@@ -289,6 +348,7 @@ if __name__ == '__main__':
                 probs.append(lnprob(H0, Om0, p, Ob0, ns, tenToA0, B0, Mpivot, sigma_int))
             t1=time.time()
             print("time per step = %.3f" % ((t1-t0)/len(probs)))
+            print("diff (input - max likelihood) = %.2f" % (var-pRange[np.argmax(probs)]))
             makeTestPlot(pRange, probs, var, label)
         if 'tenToA0' in testsToRun:
             label="tenToA0"; var=tenToA0
@@ -303,6 +363,37 @@ if __name__ == '__main__':
                 probs.append(lnprob(H0, Om0, sigma8, Ob0, ns, p, B0, Mpivot, sigma_int))
             t1=time.time()
             print("time per step = %.3f" % ((t1-t0)/len(probs)))
+            print("diff (input - max likelihood) = %.2f" % (var-pRange[np.argmax(probs)]))
+            makeTestPlot(pRange, probs, var, label)
+        if 'B0' in testsToRun:
+            label="B0"; var=B0
+            pRange=np.linspace(0.0, 0.5, 21)
+            probs=[]
+            count=0
+            t0=time.time()
+            print("%s:" % (label))
+            for p in pRange:
+                count=count+1
+                print(count, len(pRange))
+                probs.append(lnprob(H0, Om0, sigma8, Ob0, ns, tenToA0, p, Mpivot, sigma_int))
+            t1=time.time()
+            print("time per step = %.3f" % ((t1-t0)/len(probs)))
+            print("diff (input - max likelihood) = %.2f" % (var-pRange[np.argmax(probs)]))
+            makeTestPlot(pRange, probs, var, label)
+        if 'sigma_int' in testsToRun:
+            label="sigma_int"; var=sigma_int
+            pRange=np.linspace(0.0, 0.5, 21)
+            probs=[]
+            count=0
+            t0=time.time()
+            print("%s:" % (label))
+            for p in pRange:
+                count=count+1
+                print(count, len(pRange))
+                probs.append(lnprob(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, p))
+            t1=time.time()
+            print("time per step = %.3f" % ((t1-t0)/len(probs)))
+            print("diff (input - max likelihood) = %.2f" % (var-pRange[np.argmax(probs)]))
             makeTestPlot(pRange, probs, var, label)
         sys.exit()
         

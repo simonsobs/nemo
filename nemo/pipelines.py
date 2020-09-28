@@ -47,7 +47,109 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         Optimal catalog (keeps the highest S/N detection when filtering at multiple scales).
     
     Note:
-        See bin/nemo for how this pipeline is applied to real data, and maps.estimateContaminationFromSkySim
+        See bin/nemo for how this pipeline is applied to real data, and maps.sourceInjectionTest
+        for how this is applied to source-free sims that are generated on the fly.
+        
+    """
+    
+    if config.parDict['twoPass'] == False:
+        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, 
+                                           measureFluxes = True, invertMap = False, verbose = True, 
+                                           useCachedMaps = True)
+    
+    else:
+        
+        # Two pass pipeline
+        # On 1st pass, find sources (and maybe clusters) with canned settings, masking nothing.
+        # On 2nd pass, the 1st pass catalog will be used to mask or subtract sources from maps used for 
+        # noise estimation only.
+        
+        # Sanity checks first
+        # No point doing this if point source masks or catalogs are used
+        if 'maskPointSourcesFromCatalog' in config.parDict.keys():
+            raise Exception("There is no point running in two-pass mode if maskPointSourcesFromCatalog is set.")
+        # No point doing this if we're not using the map itself for the noise term in the filter
+        for f in config.parDict['mapFilters']:
+            for key in f.keys():
+                if key == 'noiseParams' and f['noiseParams']['method'] != 'dataMap':
+                    raise Exception("There is no point running if filter noise method != 'dataMap'.")
+
+        # Pass 1 - find point sources, save nothing
+        # NOTE: We need to do this for each map in the list, if we have a multi-frequency filter
+        pass1PtSrcSettings={'label': "Beam",
+                            'class': "BeamMatchedFilter",
+                            'params': {'noiseParams': {'method': "model",
+                                                       'noiseGridArcmin': 40.0,
+                                                       'numNoiseBins': 2},
+                            'saveFilteredMaps': False,
+                            'outputUnits': 'uK',
+                            'edgeTrimArcmin': 0.0}}
+        config.parDict['mapFilters']=[pass1PtSrcSettings]
+        config.parDict['photFilter']=None
+        config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
+        orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
+        pass1CatalogsList=[]
+        surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
+        for mapDict in orig_unfilteredMapsDictList:
+            # We use whole tile area (i.e., don't trim overlaps) so that we get everything if under MPI
+            # Otherwise, powerful sources in overlap regions mess things up under MPI
+            # Serial mode doesn't have this issue as it can see the whole catalog over all tiles
+            # But since we now use full area, we may double subtract ovelap sources when in serial mode
+            # So the removeDuplicates call fixes that, and doesn't impact anything else here
+            surveyMasksList.append(mapDict['surveyMask'])
+            mapDict['surveyMask']=None
+            config.unfilteredMapsDictList=[mapDict]
+            catalog=_filterMapsAndMakeCatalogs(config, verbose = False, writeAreaMasks = False)
+            catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)       
+            pass1CatalogsList.append(catalog)
+
+        # Pass 2 - subtract point sources in the maps used for noise term in filter only
+        # To avoid ringing in the pass 2, we siphon off the super bright things found in pass 1
+        # We subtract those from the maps used in pass 2 - we then need to add them back at the end
+        config.restoreConfig()
+        config.parDict['measureShapes']=True    # We'll keep this for pass 2 as well
+        siphonSNR=50
+        for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
+            mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]
+            mapDict['subtractPointSourcesFromCatalog']=[catalog[catalog['SNR'] > siphonSNR]]
+            mapDict['maskSubtractedPointSources']=True
+            mapDict['surveyMask']=surveyMask
+        config.unfilteredMapsDictList=orig_unfilteredMapsDictList
+        catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
+        
+        # Merge back in the bright sources that were subtracted in pass 1
+        mergeList=[catalog]
+        for pass1Catalog in pass1CatalogsList:
+            mergeList.append(pass1Catalog[pass1Catalog['SNR'] > siphonSNR])
+        catalog=atpy.vstack(mergeList)
+    
+    return catalog
+    
+#------------------------------------------------------------------------------------------------------------
+def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
+                               invertMap = False, verbose = True, useCachedMaps = True,
+                               writeAreaMasks = True):
+    """Runs the map filtering and catalog construction steps according to the given configuration.
+    
+    Args:
+        config (:obj: 'startup.NemoConfig'): Nemo configuration object.
+        rootOutDir (str): If None, use the default given by config. Otherwise, use this to override where the
+            output filtered maps and catalogs are written.
+        copyFilters (bool, optional): If True, and rootOutDir is given (not None), then filters will be
+            copied from the default output location (from a pre-existing nemo run) to the appropriate
+            directory under rootOutDir. This is used by, e.g., contamination tests based on sky sims, where
+            the same kernels as used on the real data are applied to simulated maps. If rootOutDir = None,
+            setting copyKernels = True has no effect.
+        measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
+            detected objects.
+        invertMap (bool, optional): If True, multiply all maps by -1; needed by 
+            :meth:maps.estimateContaminationFromInvertedMaps).
+    
+    Returns:
+        Optimal catalog (keeps the highest S/N detection when filtering at multiple scales).
+    
+    Note:
+        See bin/nemo for how this pipeline is applied to real data, and maps.sourceInjectionTest
         for how this is applied to source-free sims that are generated on the fly.
         
     """
@@ -98,8 +200,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         tileFilteredMapsDir=filteredMapsDir+os.path.sep+tileName
         tileDiagnosticsDir=diagnosticsDir+os.path.sep+tileName
         for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
-            if os.path.exists(d) == False:
-                os.makedirs(d, exist_ok = True)
+            os.makedirs(d, exist_ok = True)
         if verbose == True: print(">>> Making filtered maps - tileName = %s ..." % (tileName))
         # We could load the unfiltered map only once here?
         # We could also cache 'dataMap' noise as it will always be the same
@@ -134,7 +235,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                 catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
                                                minObjPix = config.parDict['minObjPix'], 
                                                findCenterOfMass = config.parDict['findCenterOfMass'], 
-                                               removeRings = True,
+                                               removeRings = config.parDict['removeRings'],
+                                               ringThresholdSigma = config.parDict['ringThresholdSigma'],
                                                rejectBorder = config.parDict['rejectBorder'], 
                                                objIdent = config.parDict['objIdent'], 
                                                longNames = config.parDict['longNames'],
@@ -147,8 +249,9 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             # NOTE: condition added to stop writing tile maps again when running nemoMass in forced photometry mode
             maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
             surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
-            if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
-                maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True)
+            if writeAreaMasks == True:
+                if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
+                    maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True)
             
             if measureFluxes == True:
                 photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,
@@ -373,6 +476,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     print("... mock survey parameters:")
     for key in defCosmo.keys():
         print("    %s = %s" % (key, str(massOptions[key])))
+    for key in ['tenToA0', 'B0', 'Mpivot', 'sigma_int']:
+        print("    %s = %s" % (key, str(scalingRelationDict[key])))
     print("    total area = %.1f square degrees" % (totalAreaDeg2))
     print("    random seed = %s" % (str(seed)))
     
@@ -383,7 +488,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
         t0=time.time()
         for tileName in config.tileNames:
             # It's possible (depending on tiling) that blank tiles were included - so skip
-            if RMSMapDict[tileName].sum() == 0:
+            # We may also have some tiles that are almost but not quite blank
+            if RMSMapDict[tileName].sum() == 0 or areaDeg2Dict[tileName] < 0.5:
                 continue
             mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
                                           photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,

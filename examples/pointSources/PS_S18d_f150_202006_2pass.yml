@@ -1,0 +1,76 @@
+# Nemo config file
+# YAML format 
+# - use null to return None in Python
+# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+
+# Valid units are uK or Jy/sr
+# this should be a list of maps at different frequencies
+# NOTE: surveyMask is optional
+unfilteredMaps:
+    - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_map.fits",
+       weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_ivar.fits",
+       obsFreqGHz: 149.6, units: 'uK',
+       beamFileName: "maps/Jun2020/beams/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"}
+
+# Masks
+surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_S18.fits"
+
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 5.0
+minObjPix: 1
+findCenterOfMass: True
+useInterpolator: True
+rejectBorder: 0
+ringThresholdSigma: 3
+objIdent: 'ACT-S'
+longNames: False
+
+# Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
+# Set numSkySims to number required - we need to average over many as results vary a fair bit
+estimateContaminationFromSkySim: False
+numSkySims: 10
+
+# Set this to True to estimate contamination by running cluster finder over inverted maps
+# This is sensitive to how well point source masking is done
+estimateContaminationFromInvertedMaps: False
+
+# Run position recovery test
+positionRecoveryTest: False
+posRecIterations: 1
+posRecSourcesPerTile: 200
+posRecModels:
+    - {redshift: 0.8, M500: 2.0e+14}
+    - {redshift: 0.4, M500: 2.0e+14}
+    - {redshift: 0.2, M500: 2.0e+14}
+    - {redshift: 0.1, M500: 2.0e+14}
+
+# tileDir options - cut-up each map into smaller sections
+makeTileDir: True
+stitchTiles: True
+makeQuickLookMaps: True
+tileOverlapDeg: 1.0
+tileDefLabel: 'auto'
+tileDefinitions: {mask: 'maps/Jun2020/AdvACTSurveyMask_v7_S18.fits',
+                  targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
+
+# Filter definitions:
+twoPass: True
+mapFilters:
+        - {label: "Beam150",
+           class: "BeamMatchedFilter",
+           params: {noiseParams: {method: "dataMap",
+                                  noiseGridArcmin: 40.0,
+                                  numNoiseBins: 8},
+                    saveFilteredMaps: True,
+                    outputUnits: 'uK',
+                    edgeTrimArcmin: 0.0}}
+                                                                                                                               
+# If this is given, only the named tiles will be processed (useful for testing)
+#tileNameList:
+    #- '1_11_8'      # powerful f150 source; do as set - sensitive to point-source mask threshold
+    #- '1_10_8'     
+    #- '2_0_7'       # powerful f150 source
+    #- '2_2_8'       # powerful f150 source
+    #- '3_0_1'       # powerful f150 source

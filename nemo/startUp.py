@@ -34,7 +34,8 @@ def parseConfigFile(parDictFileName):
         # We've moved masks out of the individual map definitions in the config file
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
-        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask']
+        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
+                  'maskSubtractedPointSources']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -109,6 +110,9 @@ def parseConfigFile(parDictFileName):
             parDict['undoPixelWindow']=True
         if 'fitQ' not in parDict.keys():
             parDict['fitQ']=True
+        # New two-pass pipeline - easiest to include and set False here to preserve old behaviour
+        if 'twoPass' not in parDict.keys():
+            parDict['twoPass']=False
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
@@ -119,6 +123,16 @@ def parseConfigFile(parDictFileName):
                 if entry['tileName'] in checkList:
                     raise Exception("Duplicate tileName '%s' in tileDefinitions - fix in config file" % (entry['tileName']))
                 checkList.append(entry['tileName'])
+        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
+        if 'GNFWParams' not in list(parDict.keys()):
+            parDict['GNFWParams']='default'
+        for filtDict in parDict['mapFilters']:
+            filtDict['params']['GNFWParams']=parDict['GNFWParams']
+        # Used for finding and removing rings around bright sources
+        if 'removeRings' not in parDict.keys():
+            parDict['removeRings']=True
+        if 'ringThresholdSigma' not in parDict.keys():
+            parDict['ringThresholdSigma']=3
     
     return parDict
 
@@ -256,12 +270,6 @@ class NemoConfig(object):
         # Optional override of selFn directory location
         if selFnDir is not None:
             self.selFnDir=selFnDir
-
-        # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-        if 'GNFWParams' not in list(self.parDict.keys()):
-            self.parDict['GNFWParams']='default'
-        for filtDict in self.parDict['mapFilters']:
-            filtDict['params']['GNFWParams']=self.parDict['GNFWParams']
 
         if setUpMaps == True:
             if self.rank == 0:

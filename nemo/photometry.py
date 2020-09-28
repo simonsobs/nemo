@@ -23,9 +23,9 @@ np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
 def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                findCenterOfMass = True, removeRings = True, invertMap = False, objIdent = 'ACT-CL', 
-                longNames = False, verbose = True, useInterpolator = True, measureShapes = False, 
-                DS9RegionsPath = None):
+                findCenterOfMass = True, removeRings = True, ringThresholdSigma = 0, invertMap = False, 
+                objIdent = 'ACT-CL', longNames = False, verbose = True, useInterpolator = True, 
+                measureShapes = False, DS9RegionsPath = None):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
     (as we're using S/N images to detect objects). Catalogs get added to the imageDict.
         
@@ -58,7 +58,7 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
                                                                findCenterOfMass = findCenterOfMass)
     if removeRings == True:
         minRingPix=30
-        ringIDs, ringPositions, ringNumPix, ringSegMap=getObjectPositions(data, 3, 
+        ringIDs, ringPositions, ringNumPix, ringSegMap=getObjectPositions(data, ringThresholdSigma, 
                                                                           findCenterOfMass = True)    
         for i in range(len(ringIDs)):
             if type(ringNumPix) != float and ringNumPix[i] > minRingPix:
