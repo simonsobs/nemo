@@ -235,7 +235,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                 catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
                                                minObjPix = config.parDict['minObjPix'], 
                                                findCenterOfMass = config.parDict['findCenterOfMass'], 
-                                               removeRings = True, 
+                                               removeRings = config.parDict['removeRings'],
                                                ringThresholdSigma = config.parDict['ringThresholdSigma'],
                                                rejectBorder = config.parDict['rejectBorder'], 
                                                objIdent = config.parDict['objIdent'], 
