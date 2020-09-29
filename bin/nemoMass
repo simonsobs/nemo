@@ -97,9 +97,19 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
+def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
     """Calculates masses for cluster data in table.
+    
     """
+
+    label=mockSurvey.mdefLabel
+    colNames=['%s' % (label), '%sUncorr' % (label)]
+    if 'rescaleFactor' in massOptions.keys():
+        colNames.append('%sCal' % (label))
+    for c in colNames:
+        tab['%s' % (c)]=np.zeros(len(tab))
+        tab['%s_errPlus' % (c)]=np.zeros(len(tab))
+        tab['%s_errMinus' % (c)]=np.zeros(len(tab))
     
     count=0
     for row in tab:
@@ -112,7 +122,7 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
         if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
             # Corrected for mass function steepness
-            massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+            massDict=signals.calcMass(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                             row['redshift'], row['redshiftErr'],
                                             tenToA0 = massOptions['tenToA0'],
                                             B0 = massOptions['B0'], 
@@ -120,27 +130,13 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
                                             sigma_int = massOptions['sigma_int'],
                                             tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                             applyMFDebiasCorrection = True,
-                                            applyRelativisticCorrection = True,
+                                            applyRelativisticCorrection = massOptions['relativisticCorrection'],
                                             fRelWeightsDict = fRelWeightsDict[tileName])
-            row['M500']=massDict['M500']
-            row['M500_errPlus']=massDict['M500_errPlus']
-            row['M500_errMinus']=massDict['M500_errMinus']
-            # Without relativistic correction (may be useful)
-            massDict_noRel=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                            row['redshift'], row['redshiftErr'],
-                                            tenToA0 = massOptions['tenToA0'],
-                                            B0 = massOptions['B0'], 
-                                            Mpivot = massOptions['Mpivot'], 
-                                            sigma_int = massOptions['sigma_int'],
-                                            tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
-                                            applyMFDebiasCorrection = True,
-                                            applyRelativisticCorrection = False,
-                                            fRelWeightsDict = fRelWeightsDict[tileName])
-            row['M500NoRel']=massDict_noRel['M500']
-            row['M500NoRel_errPlus']=massDict_noRel['M500_errPlus']
-            row['M500NoRel_errMinus']=massDict_noRel['M500_errMinus']
+            row['%s' % (label)]=massDict['%s' % (label)]
+            row['%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
+            row['%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
             # Uncorrected for mass function steepness
-            unCorrMassDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+            unCorrMassDict=signals.calcMass(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                                     row['redshift'], row['redshiftErr'],
                                                     tenToA0 = massOptions['tenToA0'],
                                                     B0 = massOptions['B0'], 
@@ -148,57 +144,28 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict):
                                                     sigma_int = massOptions['sigma_int'],
                                                     tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                                     applyMFDebiasCorrection = False,
-                                                    applyRelativisticCorrection = True,
+                                                    applyRelativisticCorrection = massOptions['relativisticCorrection'],
                                                     fRelWeightsDict = fRelWeightsDict)
-            row['M500Uncorr']=unCorrMassDict['M500']
-            row['M500Uncorr_errPlus']=unCorrMassDict['M500_errPlus']
-            row['M500Uncorr_errMinus']=unCorrMassDict['M500_errMinus']
-            # Uncorrected for mass function steepness - without relativistic correction
-            unCorrMassDict_noRel=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                                    row['redshift'], row['redshiftErr'],
-                                                    tenToA0 = massOptions['tenToA0'],
-                                                    B0 = massOptions['B0'], 
-                                                    Mpivot = massOptions['Mpivot'], 
-                                                    sigma_int = massOptions['sigma_int'],
-                                                    tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
-                                                    applyMFDebiasCorrection = False,
-                                                    applyRelativisticCorrection = False,
-                                                    fRelWeightsDict = fRelWeightsDict)
-            row['M500UncorrNoRel']=unCorrMassDict_noRel['M500']
-            row['M500UncorrNoRel_errPlus']=unCorrMassDict_noRel['M500_errPlus']
-            row['M500UncorrNoRel_errMinus']=unCorrMassDict_noRel['M500_errMinus']
+            row['%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
+            row['%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
+            row['%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
             # Mass conversion
-            row['M200m']=signals.convertM500cToM200m(massDict['M500']*1e14, row['redshift'])/1e14
-            row['M200m_errPlus']=(row['M500_errPlus']/row['M500'])*row['M200m']
-            row['M200m_errMinus']=(row['M500_errMinus']/row['M500'])*row['M200m']
-            row['M200mUncorr']=signals.convertM500cToM200m(unCorrMassDict['M500']*1e14, row['redshift'])/1e14
-            row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
-            row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
-            # Mass conversion - no relativistic correction
-            row['M200mNoRel']=signals.convertM500cToM200m(massDict_noRel['M500']*1e14, row['redshift'])/1e14
-            row['M200mNoRel_errPlus']=(row['M500NoRel_errPlus']/row['M500NoRel'])*row['M200mNoRel']
-            row['M200mNoRel_errMinus']=(row['M500NoRel_errMinus']/row['M500NoRel'])*row['M200mNoRel']
-            row['M200mUncorrNoRel']=signals.convertM500cToM200m(unCorrMassDict_noRel['M500']*1e14, row['redshift'])/1e14
-            row['M200mUncorrNoRel_errPlus']=(row['M500UncorrNoRel_errPlus']/row['M500UncorrNoRel'])*row['M200mUncorrNoRel']
-            row['M200mUncorrNoRel_errMinus']=(row['M500UncorrNoRel_errMinus']/row['M500UncorrNoRel'])*row['M200mUncorrNoRel']
+            #row['M200m']=signals.convertM500cToM200m(massDict['M500']*1e14, row['redshift'])/1e14
+            #row['M200m_errPlus']=(row['M500_errPlus']/row['M500'])*row['M200m']
+            #row['M200m_errMinus']=(row['M500_errMinus']/row['M500'])*row['M200m']
+            #row['M200mUncorr']=signals.convertM500cToM200m(unCorrMassDict['M500']*1e14, row['redshift'])/1e14
+            #row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
+            #row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
             # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
-            row['M500Cal']=massDict['M500']/massOptions['rescaleFactor']        
-            row['M500Cal_errPlus']=np.sqrt(np.power(row['M500_errPlus']/row['M500'], 2) + \
-                                            np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
-            row['M500Cal_errMinus']=np.sqrt(np.power(row['M500_errMinus']/row['M500'], 2) + \
-                                            np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500Cal']
-            row['M200mCal']=signals.convertM500cToM200m(row['M500Cal']*1e14, row['redshift'])/1e14
-            row['M200mCal_errPlus']=(row['M500Cal_errPlus']/row['M500Cal'])*row['M200mCal']
-            row['M200mCal_errMinus']=(row['M500Cal_errMinus']/row['M500Cal'])*row['M200mCal']
-            # Re-scaling (e.g., using richness-based weak-lensing mass calibration) - no relativistic correction
-            row['M500CalNoRel']=massDict_noRel['M500']/massOptions['rescaleFactor']        
-            row['M500CalNoRel_errPlus']=np.sqrt(np.power(row['M500NoRel_errPlus']/row['M500NoRel'], 2) + \
-                                            np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500CalNoRel']
-            row['M500CalNoRel_errMinus']=np.sqrt(np.power(row['M500NoRel_errMinus']/row['M500NoRel'], 2) + \
-                                            np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['M500CalNoRel']
-            row['M200mCalNoRel']=signals.convertM500cToM200m(row['M500CalNoRel']*1e14, row['redshift'])/1e14
-            row['M200mCalNoRel_errPlus']=(row['M500CalNoRel_errPlus']/row['M500CalNoRel'])*row['M200mCalNoRel']
-            row['M200mCalNoRel_errMinus']=(row['M500CalNoRel_errMinus']/row['M500CalNoRel'])*row['M200mCalNoRel']
+            if 'rescaleFactor' in massOptions.keys():
+                row['%sCal' % (label)]=massDict['%s' % (label)]/massOptions['rescaleFactor']        
+                row['%sCal_errPlus' % (label)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
+                                                       np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
+                row['%sCal_errMinus' % (label)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
+                                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
+            #row['M200mCal']=signals.convertM500cToM200m(row['M500Cal']*1e14, row['redshift'])/1e14
+            #row['M200mCal_errPlus']=(row['M500Cal_errPlus']/row['M500Cal'])*row['M200mCal']
+            #row['M200mCal_errMinus']=(row['M500Cal_errMinus']/row['M500Cal'])*row['M200mCal']
 
     return tab
 
@@ -260,7 +227,7 @@ if __name__ == '__main__':
         nemoTab['redshiftErr']=zTab['redshiftErr']
         tab=nemoTab
         if outFileName is None:
-            outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_M500.fits")
+            outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_mass.fits")
 
     else:
         
@@ -268,7 +235,7 @@ if __name__ == '__main__':
         optimalCatalogFileName=catFileName
         tab=atpy.Table().read(optimalCatalogFileName)
         if outFileName is None:
-            outFileName=catFileName.replace(".fits", "_M500.fits")
+            outFileName=catFileName.replace(".fits", "_mass.fits")
         
         # Enter forced photometry mode if we can't find the columns we need
         # If we're doing forced photometry, we're going to need to set-up so we can find the filtered maps
@@ -324,16 +291,7 @@ if __name__ == '__main__':
     else:
         ns=0.95
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns)
-    
-    colsToAdd=['M500', 'M500Uncorr', 'M200m', 'M200mUncorr',
-               'M500NoRel', 'M500UncorrNoRel', 'M200mNoRel', 'M200mUncorrNoRel']
-    if 'rescaleFactor' in list(massOptions.keys()):
-        colsToAdd=colsToAdd+['M500Cal', 'M200mCal', 'M500CalNoRel', 'M200mCalNoRel']
-    for c in colsToAdd:
-        tab.add_column(atpy.Column(np.zeros(len(tab)), c))
-        tab.add_column(atpy.Column(np.zeros(len(tab)), c+"_errPlus"))
-        tab.add_column(atpy.Column(np.zeros(len(tab)), c+"_errMinus"))
-    
+        
     # Seems like multiprocessing doesn't work under slurm...   
     # So use MPI instead: just divide up catalog among processes
     tab.add_column(atpy.Column(np.arange(len(tab)), "sortIndex"))
@@ -345,7 +303,7 @@ if __name__ == '__main__':
             endIndex=len(tab)
         tab=tab[startIndex:endIndex]
         
-    tab=calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict)
+    tab=calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey)
     
     if config.MPIEnabled == True:
         tabList=config.comm.gather(tab, root = 0)

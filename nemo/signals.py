@@ -699,6 +699,8 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     
     Returns y0~, theta500Arcmin, Q
     
+    NOTE: Depreciated? Nothing we have uses this.
+    
     """
 
     if type(Mpivot) == str:
@@ -727,9 +729,9 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     return y0pred, theta500Arcmin, Q
             
 #------------------------------------------------------------------------------------------------------------
-def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
-                   sigma_int = 0.2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
-                   calcErrors = True, fRelWeightsDict = {148.0: 1.0}):
+def calcMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
+             sigma_int = 0.2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
+             calcErrors = True, fRelWeightsDict = {148.0: 1.0}):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
@@ -759,16 +761,18 @@ def calcM500Fromy0(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B
     if y0 > 1e-2:
         raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
             
-    P=calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
+    P=calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
                 sigma_int = sigma_int, applyMFDebiasCorrection = applyMFDebiasCorrection,
                 applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict)
     
     M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     
-    return {'M500': M500, 'M500_errPlus': errM500Plus, 'M500_errMinus': errM500Minus}
+    label=mockSurvey.mdefLabel
+    
+    return {'%s' % (label): M500, '%s_errPlus' % (label): errM500Plus, '%s_errMinus' % (label): errM500Minus}
 
 #------------------------------------------------------------------------------------------------------------
-def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
+def calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
               sigma_int = 0.2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True, 
               fRelWeightsDict = {148.0: 1.0}, return2D = False):
     """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
@@ -776,7 +780,7 @@ def calcPM500(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
     cosmological parameters.
     
-    This routine is used by calcM500Fromy0.
+    This routine is used by calcMass.
     
     If return2D == True, returns a grid of same dimensions / binning as mockSurvey.z, mockSurvey.log10M,
     normalised such that the sum of the values is 1.

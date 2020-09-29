@@ -20,6 +20,8 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
     
     """
     
+    label=mockSurvey.mdefLabel
+    
     count=0
     for row in tab:
         count=count+1
@@ -31,7 +33,7 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
         if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
             # Corrected for mass function steepness
-            massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+            massDict=signals.calcMass(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                             row['redshift'], row['redshiftErr'],
                                             tenToA0 = massOptions['tenToA0'],
                                             B0 = massOptions['B0'], 
@@ -41,9 +43,9 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
                                             applyMFDebiasCorrection = True,
                                             applyRelativisticCorrection = True,
                                             fRelWeightsDict = fRelWeightsDict[tileName])
-            row['M500']=massDict['M500']
-            row['M500_errPlus']=massDict['M500_errPlus']
-            row['M500_errMinus']=massDict['M500_errMinus']
+            row['%s' % (label)]=massDict['%s' % (label)]
+            row['%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
+            row['%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
 
     return tab
 
@@ -58,11 +60,12 @@ zMax=2.0
 H0, Om0, Ob0, sigma8, ns = 68.0, 0.049+0.261, 0.049, 0.81, 0.965
 TCMB=2.72548
 cosmoModel=FlatLambdaCDM(H0 = H0, Om0 = Om0, Ob0 = Ob0, Tcmb0 = TCMB)
-mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns)
-massOptions={'tenToA0': 2.65e-05,
+mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
+                                 rhoType = 'matter', delta = 200)
+massOptions={'tenToA0': 1.7e-05,
              'B0': 0.0,
              'Mpivot': 3.0e+14, 
-             'sigma_int': 0.2}
+             'sigma_int': 0.0}
 tckQFitDict=signals.loadQ("../MFMF_SOSim_3freq_tiles/selFn/QFit.fits")
 fRelWeightsDict=signals.loadFRelWeights("../MFMF_SOSim_3freq_tiles/selFn/fRelWeights.fits")
 
@@ -112,7 +115,7 @@ for i in range(len(zBinEdges)-1):
     x=fitTab['true_M200']
     result=stats.linregress(x, y)
     sumSqRes=np.sum((x-y)**2)
-    calibFactor=np.mean(fitTab['true_M500'])/np.mean(fitTab['M500'])
+    calibFactor=np.mean(fitTab['true_M200'])/np.mean(fitTab['M200m'])
     
     # Scaling relation plot
     plotSettings.update_rcParams()
