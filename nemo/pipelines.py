@@ -53,9 +53,9 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     """
     
     if config.parDict['twoPass'] == False:
-        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, 
-                                           measureFluxes = True, invertMap = False, verbose = True, 
-                                           useCachedMaps = True)
+        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters, 
+                                           measureFluxes = measureFluxes, invertMap = invertMap, 
+                                           verbose = verbose, useCachedMaps = useCachedMaps)
     
     else:
         

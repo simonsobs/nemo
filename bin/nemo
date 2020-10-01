@@ -196,7 +196,7 @@ if __name__ == '__main__':
         if sourceInjTable is not None:
             sourceInjTable.write(config.diagnosticsDir+os.path.sep+"sourceInjectionData.fits", overwrite = True) 
             maps.positionRecoveryAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
-                                          percentiles = [50, 95, 99.7], plotRawData = False,
+                                          percentiles = [50, 95, 99.7], plotRawData = True,
                                           pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl',
                                           selFnDir = config.selFnDir)
             #maps.noiseBiasAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"noiseBias.pdf")

@@ -917,9 +917,15 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     # For position recovery tests
     if 'injectSources' in list(mapDict.keys()):
         # NOTE: Need to add varying GNFWParams here
+        if 'GNFWParams' in mapDict['injectSources'].keys():
+            GNFWParams=mapDict['injectSources']['GNFWParams']
+            obsFreqGHz=mapDict['obsFreqGHz']
+        else:
+            GNFWParams=None
+            obsFreqGHz=None
         modelMap=makeModelImage(data.shape, wcs, mapDict['injectSources']['catalog'], 
-                                mapDict['beamFileName'], obsFreqGHz = mapDict['obsFreqGHz'], 
-                                GNFWParams = mapDict['injectSources']['GNFWParams'],
+                                mapDict['beamFileName'], obsFreqGHz = obsFreqGHz, 
+                                GNFWParams = GNFWParams,
                                 override = mapDict['injectSources']['override'])
         modelMap[weights == 0]=0
         data=data+modelMap
@@ -1621,6 +1627,7 @@ def sourceInjectionTest(config, writeRankTable = True):
     # We don't copy this, because it's complicated due to containing MPI-related things (comm)
     # So... we modify the config parameters in-place, and restore them before exiting this method
     simConfig=config
+    simConfig.parDict['twoPass']=False  # We re-use filters we already made, so no need to do full two pass
     
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
@@ -1653,11 +1660,11 @@ def sourceInjectionTest(config, writeRankTable = True):
         # Sources
         clusterMode=False
         sourceInjectionModelList=[{'label': 'pointSource'}]
-    #
-    if 'sourceInjectionSourcesPerTile' not in config.parDict.keys():
+    # This isn't really important as avoidance radius will stop us putting in too many sources
+    if 'sourcesPerTile' not in config.parDict.keys():
         numSourcesPerTile=300
     else:
-        numSourcesPerTile=config.parDict['sourceInjectionSourcesPerTile']
+        numSourcesPerTile=config.parDict['sourcesPerTile']
     
     # We need the actual catalog to throw out spurious 'recoveries'
     # i.e., we only want to cross-match with objects we injected
@@ -1711,6 +1718,7 @@ def sourceInjectionTest(config, writeRankTable = True):
             if filtDict['class'].find("ArnaudModel") != -1:
                 fluxCol='fixed_y_c'
                 noiseLevelCol='fixed_err_y_c'
+                SNRCol='fixed_SNR'
                 # Quick test catalog - takes < 1 sec to generate
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = 'fixed_y_c', 
@@ -1721,10 +1729,16 @@ def sourceInjectionTest(config, writeRankTable = True):
                 #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
                 injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'], 
                                'override': sourceInjectionModel}
-            elif filtDict['class'].find("BeamModel") != -1:
+            elif filtDict['class'].find("Beam") != -1:
                 fluxCol='deltaT_c'
                 noiseLevelCol='err_deltaT_c'
-                raise Exception("Haven't implemented generating mock source catalogs here yet")
+                SNRCol='SNR'
+                mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
+                                                         amplitudeColumnName = fluxCol, 
+                                                         amplitudeRange = [1, 1000], 
+                                                         amplitudeDistribution = 'log', 
+                                                         selFn = selFn)
+                injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
             for mapDict in simConfig.unfilteredMapsDictList:
@@ -1760,7 +1774,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                             mask=(x_recCatalog['tileName'] == tileName)
                             x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
                     # Store everything - analyse later
-                    SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog['fixed_SNR'].tolist()
+                    SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog[SNRCol].tolist()
                     rArcminDict[sourceInjectionModel['label']]=rArcminDict[sourceInjectionModel['label']]+(rDeg*60).tolist()
                     inFluxDict[sourceInjectionModel['label']]=inFluxDict[sourceInjectionModel['label']]+x_mockCatalog[fluxCol].tolist()
                     outFluxDict[sourceInjectionModel['label']]=outFluxDict[sourceInjectionModel['label']]+x_recCatalog[fluxCol].tolist()
@@ -1794,7 +1808,7 @@ def sourceInjectionTest(config, writeRankTable = True):
         tileNames=tileNames+tileNamesDict[label].tolist()
     resultsTable=atpy.Table()
     resultsTable.add_column(atpy.Column(models, 'sourceInjectionModel'))
-    resultsTable.add_column(atpy.Column(SNRs, 'fixed_SNR'))
+    resultsTable.add_column(atpy.Column(SNRs, SNRCol))
     resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
     resultsTable.add_column(atpy.Column(inFlux, 'inFlux'))
     resultsTable.add_column(atpy.Column(outFlux, 'outFlux'))
@@ -1814,14 +1828,14 @@ def sourceInjectionTest(config, writeRankTable = True):
 
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
-                             plotRawData = True, rawDataAlpha =  0.01, pickleFileName = None,
+                             plotRawData = True, rawDataAlpha = 1, pickleFileName = None,
                              selFnDir = None):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using
     the contents of posRecTable (see positionRecoveryTest).
     
     Args:
-        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus fixed_SNR
-            for various cluster/source models (produced by sourceInjectionTest).
+        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus SNR
+            or fixed_SNR for various cluster/source models (produced by sourceInjectionTest).
         plotFileName (str): Path where the plot file will be written.
         percentiles (list, optional): List of percentiles to plot (some interpolation will be done) and
             for which corresponding model fit parameters will be saved (if selFnDir is not None).
@@ -1833,17 +1847,33 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             
     """
 
+    # Sources or clusters table?
+    tab=posRecTable
+    if np.unique(tab['sourceInjectionModel'])[0] == 'pointSource':
+        SNRCol='SNR'
+        plotSNRLabel="SNR"
+        rArcminThreshold=np.linspace(0, 5, 201)
+        plotUnits="arcsec"
+        plotUnitsMultiplier=60
+        plotUnitsLabel="$^{\prime\prime}$"
+    else:
+        # Clusters
+        SNRCol='fixed_SNR'
+        plotSNRLabel="SNR$_{2.4}$"
+        rArcminThreshold=np.linspace(0, 10, 101)
+        plotUnits="arcmin"
+        plotUnitsMultiplier=1
+        plotUnitsLabel="$^\prime$"
+    
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
-    tab=posRecTable
     SNREdges=np.linspace(3.0, 10.0, 36)#np.linspace(0, 10, 101)
     SNRCentres=(SNREdges[1:]+SNREdges[:-1])/2.
-    rArcminThreshold=np.linspace(0, 10, 101)
     grid=np.zeros([rArcminThreshold.shape[0], SNREdges.shape[0]-1])
     totalGrid=np.zeros(grid.shape)
     withinRGrid=np.zeros(grid.shape)
     for i in range(SNREdges.shape[0]-1):
-        SNRMask=np.logical_and(tab['fixed_SNR'] >= SNREdges[i], tab['fixed_SNR'] < SNREdges[i+1])
+        SNRMask=np.logical_and(tab[SNRCol] >= SNREdges[i], tab[SNRCol] < SNREdges[i+1])
         for j in range(rArcminThreshold.shape[0]):
             total=SNRMask.sum()
             withinR=(tab['rArcmin'][SNRMask] < rArcminThreshold[j]).sum()
@@ -1864,21 +1894,22 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
     plt.figure(figsize=(9,6.5))
     ax=plt.axes([0.11, 0.11, 0.88, 0.87])
     if plotRawData == True:
-        plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', color = '#A0A0A0', alpha = rawDataAlpha)
+        plt.plot(posRecTable[SNRCol], posRecTable['rArcmin']*plotUnitsMultiplier, 
+                 '.', color = '#A0A0A0', alpha = rawDataAlpha)
     contoursDict={}
     for i in range(len(levelsList)):
         vertices=contours.collections[i].get_paths()[0].vertices
         SNRs=vertices[:, 0]
         rArcminAtProb=vertices[:, 1]
         labelStr="%.1f" % (percentiles[i]) + "%"
-        contoursDict[labelStr]={'fixed_SNR': SNRs, 'rArcmin': rArcminAtProb}
-        plt.plot(SNRs, rArcminAtProb, label = labelStr, lw = 3)
+        contoursDict[labelStr]={SNRCol: SNRs, 'rArcmin': rArcminAtProb}
+        plt.plot(SNRs, rArcminAtProb*plotUnitsMultiplier, label = labelStr, lw = 3)
     plt.xlim(minSNR, maxSNR)
     #plt.ylim(0, 5)
-    plt.ylim(0,3)
+    #plt.ylim(0,3)
     plt.legend(loc = 'upper right')
-    plt.xlabel("SNR$_{2.4}$")
-    plt.ylabel("Recovered Position Offset ($^\prime$)")
+    plt.xlabel(plotSNRLabel)
+    plt.ylabel("Recovered Position Offset (%s)" % (plotUnitsLabel))
     plt.savefig(plotFileName)
     plt.close()
     
@@ -1900,12 +1931,13 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         ax=plt.axes([0.11, 0.11, 0.88, 0.87])
         if plotRawData == True:
             posRecTable=tab
-            plt.plot(posRecTable['fixed_SNR'], posRecTable['rArcmin'], '.', color = '#A0A0A0', alpha = rawDataAlpha)
+            plt.plot(posRecTable[SNRCol], posRecTable['rArcmin']*plotUnitsMultiplier, 
+                     '.', color = '#A0A0A0', alpha = rawDataAlpha)
         for key in keys:
             a=contoursDict[key]
-            valid=np.where(a['fixed_SNR'] >= 4.1)
-            snr=a['fixed_SNR'][valid]
-            rArcmin=a['rArcmin'][valid]
+            valid=np.where(a[SNRCol] >= 4.1)
+            snr=a[SNRCol][valid]
+            rArcmin=a[SNRCol][valid]
             try:
                 results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
             except:
@@ -1914,12 +1946,14 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             bestFitSNRFold, bestFitPedestal, bestFitNorm=results[0]
             fitParamsDict[key]=np.array([bestFitSNRFold, bestFitPedestal, bestFitNorm])
             fitSNRs=np.linspace(4, 10, 100)
-            plt.plot(fitSNRs, catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm), '-', label = key)
-        plt.ylim(0, 3)
+            plt.plot(fitSNRs, 
+                     catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm)*plotUnitsMultiplier, 
+                     '-', label = key)
+        #plt.ylim(0, 3)
         plt.legend(loc = 'upper right')
         plt.xlim(snr.min(), snr.max())
-        plt.xlabel("SNR$_{2.4}$")
-        plt.ylabel("Recovered Position Offset ($^\prime$)")
+        plt.xlabel(plotSNRLabel)
+        plt.ylabel("Recovered Position Offset (%s)" % (plotUnitsLabel))
         plt.savefig(fitPlotFileName)
         plt.close()
         # Save the fits
