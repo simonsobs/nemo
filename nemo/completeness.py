@@ -76,8 +76,8 @@ class SelFn(object):
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
                  tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0, 
-                 downsampleRMS = True, applyMFDebiasCorrection = True, setUpAreaMask = False, 
-                 enableCompletenessCalc = True, delta = 500, rhoType = 'critical'):
+                 downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
+                 setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical'):
         """Initialise an object that contains a survey selection function. 
         
         This class uses the output in the selFn/ directory (produced by the nemo and nemoSelFn commands) to 
@@ -107,6 +107,8 @@ class SelFn(object):
                 versus survey area. Downsampling speeds up completeness calculations considerably.
             applyMFDebiasCorrection (bool, optional): Set to False to disable the Eddington bias correction
                 of mass estimates. Probably only useful for debugging.
+            applyRelativisticCorrection (bool, optional): Set to False to disable inclusion of relativistic
+                correction in completeness calculations.
             setupAreaMask (bool, optional): If True, read in the area masks so that quick position checks
                 can be done (e.g., by checkCoordsAreInMask).
             enableCompletenessCalc (bool, optional): If True, set up the machinery needed to do completeness
@@ -118,6 +120,7 @@ class SelFn(object):
         self.footprintLabel=footprintLabel
         self.downsampleRMS=downsampleRMS
         self.applyMFDebiasCorrection=applyMFDebiasCorrection
+        self.applyRelativisticCorrection=applyRelativisticCorrection
         self.selFnDir=selFnDir
         self.zStep=zStep
 
@@ -347,12 +350,20 @@ class SelFn(object):
             for i in range(len(zRange)):
                 zk=zRange[i]
                 k=np.argmin(abs(self.mockSurvey.z-zk))
-                theta500s_zk=interpolate.splev(self.mockSurvey.log10M, self.mockSurvey.theta500Splines[k])
+                if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
+                    log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel, 
+                                                                            self.mockSurvey.M, 
+                                                                            self.mockSurvey.a[k], 
+                                                                            self.mockSurvey._M500cDef))
+                else:
+                    log10M500s=self.mockSurvey.log10M
+                theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
                 Qs_zk=interpolate.splev(theta500s_zk, self.tckQFitDict[tileName])
-                fRels_zk=interpolate.splev(self.mockSurvey.log10M, self.mockSurvey.fRelSplines[k])
                 true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
-                                                                                1+B0)*Qs_zk*fRels_zk
-                #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
+                                                                                1+B0)*Qs_zk
+                if self.applyRelativisticCorrection == True:
+                    fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
+                    true_y0s_zk=true_y0s_zk*fRels_zk
                 y0Grid[i]=true_y0s_zk
                 
             # For some cosmological parameters, we can still get the odd -ve y0
@@ -409,7 +420,7 @@ class SelFn(object):
             zErr=row['redshiftErr']
             y0=row['fixed_y_c']*1e-4
             y0Err=row['fixed_err_y_c']*1e-4
-            P=signals.calcPM500(y0, y0Err, z, zErr, self.tckQFitDict[tileName], self.mockSurvey, 
+            P=signals.calcPMass(y0, y0Err, z, zErr, self.tckQFitDict[tileName], self.mockSurvey, 
                                   tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
                                   applyMFDebiasCorrection = self.applyMFDebiasCorrection, 
                                   fRelWeightsDict = self.fRelDict[tileName],
@@ -439,7 +450,7 @@ class SelFn(object):
             zErr=row['redshiftErr']
             y0=row['fixed_y_c']*1e-4
             y0Err=row['fixed_err_y_c']*1e-4
-            massDict=signals.calcM500Fromy0(y0, y0Err, z, zErr, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
+            massDict=signals.calcMass(y0, y0Err, z, zErr, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
                                             sigma_int = sigma_int, tckQFit = self.tckQFitDict[tileName], 
                                             mockSurvey = self.mockSurvey, 
                                             applyMFDebiasCorrection = self.applyMFDebiasCorrection,

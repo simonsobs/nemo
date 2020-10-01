@@ -63,7 +63,8 @@ for i in range(len(zBinEdges)-1):
     zMin=zBinEdges[i]
     zMax=zBinEdges[i+1]
     label='%.1f < z < %.1f' % (zMin, zMax)
-    shellVolumeMpc3=selFn.mockSurvey._comovingVolume(zMax)-selFn.mockSurvey._comovingVolume(zMin)
+    fSky=selFn.mockSurvey.areaDeg2/(4*np.pi*(180/np.pi)**2)
+    shellVolumeMpc3=fSky*(selFn.mockSurvey._comovingVolume(zMax)-selFn.mockSurvey._comovingVolume(zMin))
     zMask=np.logical_and(selFn.mockSurvey.z >= zMin, selFn.mockSurvey.z < zMax)
     countsByMass=predMz[zMask, :].sum(axis = 0)
     

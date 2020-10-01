@@ -110,6 +110,9 @@ class MockSurvey(object):
         self.mdef=ccl.halos.MassDef(self.delta, self.rhoType, c_m_relation = c_m_relation)
         self.transferFunction=transferFunction
         
+        # Just for convenience when used elsewhere
+        self.mdefLabel="M%d%s" % (self.delta, self.rhoType[0])
+        
         self.H0=-1
         self.Om0=-1
         self.Ob0=-1
@@ -173,7 +176,7 @@ class MockSurvey(object):
         self.criticalDensity=ccl.physical_constants.RHO_CRITICAL*(self.Ez*self.cosmoModel['h'])**2
         for k in range(len(self.z)):
             # NOTE: Q fit uses theta500, as does fRel (hardcoded M500 - T relation in there)
-            # This bit here is not be strictly necessary, since we don't need to map on to binning
+            # This bit here may not be strictly necessary, since we don't need to map on to binning
             if self.delta != 500 or self.rhoType != "critical":
                 interpLim_minLog10M500c=np.log10(self.mdef.translate_mass(self.cosmoModel, self.M.min(), 
                                                                           self.a[k], self._M500cDef))

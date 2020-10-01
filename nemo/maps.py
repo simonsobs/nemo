@@ -1018,10 +1018,10 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                             ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
                             if ASizeArcmin > maskRadiusArcmin:
                                 extendedSource=True
-                                masksRadiusArcmin=ASizeArcmin
+                                maskRadiusArcmin=ASizeArcmin
                         rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                                    row['RADeg'], row['decDeg'], 
-                                                                                    maskRadiusArcmin/60)
+                                                                                       row['RADeg'], row['decDeg'],
+                                                                                       maskRadiusArcmin/60)
                         rArcminMap=rArcminMap*60
                         surveyMask[rArcminMap < maskRadiusArcmin]=0
                         if extendedSource == True:
