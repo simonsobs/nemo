@@ -944,50 +944,44 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         if type(mapDict['maskPointSourcesFromCatalog']) is not list:
             mapDict['maskPointSourcesFromCatalog']=[mapDict['maskPointSourcesFromCatalog']]
         psMask=np.ones(data.shape)
-        for catalogPath in mapDict['maskPointSourcesFromCatalog']:
-            tab=atpy.Table().read(catalogPath)
-            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-            # Variable sized holes: based on inspecting sources by deltaT in f150 maps
-            # To avoid the problem of rings around sources, we sort the list and mask the brightest first
-            # If an object lands in an already masked area, we remove it from the catalog
-            # If we're given a catalog that already has rArcmin in it, we use that instead
-            if 'rArcmin' not in tab.keys():
-                tab.sort('deltaT_c', reverse = True)
-                tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
-                tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
-                tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
-            selectedRows=[]
-            for row in tab:
-                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                if psMask[int(y), int(x)] != 0:
-                    rArcminMap=np.ones(data.shape, dtype = float)*1e6
-                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                                   row['RADeg'], row['decDeg'], 
-                                                                                   row['rArcmin']/60.)
-                    rArcminMap=rArcminMap*60
-                    psMask[rArcminMap < row['rArcmin']]=0
-                    selectedRows.append(True)
-                else:
-                    selectedRows.append(False)
-            tab=tab[np.where(selectedRows)]
-            
-            # Fill holes with smoothed map
-            # NOTE: We were filling with white noise - this is bad for repeatability (since we use as noise term in filter)
-            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-            bckData=ndimage.median_filter(data, int(pixRad)) # Size chosen for max hole size... slow... but quite good
-            if mapDict['weightsType'] =='invVar':
-                rms=np.zeros(weights.shape)
-                rms[np.nonzero(weights)]=1.0/np.sqrt(weights[np.nonzero(weights)])
+        pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+        bckData=ndimage.median_filter(data, int(pixRad))
+        rArcminMap=np.ones(data.shape, dtype = float)*1e6
+        for catalogInfo in mapDict['maskPointSourcesFromCatalog']:
+            if type(catalogInfo) == str:
+                catalogPath=catalogInfo
+                fluxCutJy=0.0
+            elif type(catalogInfo) == dict:
+                catalogPath=catalogInfo['path']
+                fluxCutJy=catalogInfo['fluxCutJy']
             else:
-                raise Exception("Not implemented white noise estimate for non-inverse variance weights for masking sources from catalog")
-            data[np.where(psMask == 0)]=bckData[np.where(psMask == 0)]#+np.random.normal(0, rms[np.where(psMask == 0)]) 
-            #astImages.saveFITS("test_%s.fits" % (tileName), data, wcs)
-    
+                raise Exception("Didn't understand contents of 'maskPointSourcesFromCatalog' - should be a path, or a dict with 'path' key.")
+            tab=atpy.Table().read(catalogPath)
+            if 'fluxJy' in tab.keys():
+                tab=tab[tab['fluxJy'] > fluxCutJy]
+            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+            # If we're given a catalog that already has rArcmin in it, we use that to set hole size
+            # Otherwise, if we have shape measurements (ellipse_A at least), we can use that
+            for row in tab:
+                # Extended sources - identify by measured size > masking radius
+                # These will mess up noise term in filter, so add to psMask also and fill + smooth
+                # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
+                if 'rArcmin' in tab.keys():
+                    maskRadiusArcmin=row['rArcmin']
+                elif 'ellipse_A' in tab.keys():
+                    xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
+                    ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
+                    maskRadiusArcmin=ASizeArcmin/2
+                else:
+                    raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
+                rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
+                                                                                row['RADeg'], row['decDeg'],
+                                                                                maskRadiusArcmin/60)
+                rArcminMap=rArcminMap*60
+                surveyMask[rArcminMap < maskRadiusArcmin]=0
+                psMask[rArcminMap < maskRadiusArcmin]=0
+                data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
+        
     # Optional subtraction of point sources based on a catalog
     # We'll also (optionally) add a small mask at these locations to the survey mask
     if 'subtractPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['subtractPointSourcesFromCatalog'] is not None:
@@ -1021,7 +1015,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                         extendedSource=False
                         if 'ellipse_A' and 'ellipse_B' in tab.keys():
                             xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
-                            ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
+                            ASizeArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
                             if ASizeArcmin > maskRadiusArcmin:
                                 extendedSource=True
                                 maskRadiusArcmin=ASizeArcmin
