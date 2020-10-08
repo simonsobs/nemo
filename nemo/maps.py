@@ -40,7 +40,15 @@ np.random.seed()
               
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
-    """Converts mapData (in delta T) at given frequency to y.
+    """Converts an array (e.g., a map) in delta T (micro Kelvin) with respect to the CMB temperature to
+    Compton y parameter values at the given frequency.
+    
+    Args:
+        mapData (:obj:`np.ndarray`): An array containing delta T (micro Kelvin, with respect to CMB) values.
+        obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
+    
+    Returns:
+        An array of Compton y parameter values.
     
     """
     fx=signals.fSZ(obsFrequencyGHz)    
@@ -49,11 +57,22 @@ def convertToY(mapData, obsFrequencyGHz = 148):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
-def convertToDeltaT(mapData, obsFrequencyGHz = 148):
-    """Converts mapData (in yc) to deltaT (micro Kelvin) at given frequency.
+def convertToDeltaT(mapData, obsFrequencyGHz = 148, alpha = 0.0, z = None):
+    """Converts an array (e.g., a map) of Compton y parameter values to delta T (micro Kelvin) with respect to
+    the CMB temperature at the given frequency.
+    
+    Args:
+        mapData (:obj:`np.ndarray`): An array containing Compton y parameter values.
+        obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
+        alpha (float, optional): This should always be zero unless you want to make a model where CMB 
+            temperature evolves T0*(1+z)^{1-alpha}.
+        z (float, optional): Needed if alpha != 0.
+    
+    Returns:
+        An array of delta T (micro Kelvin) values.
     
     """
-    fx=signals.fSZ(obsFrequencyGHz)   
+    fx=signals.fSZ(obsFrequencyGHz, alpha = alpha, z = z)   
     mapData=mapData*fx*(signals.TCMB*1e6)   # into uK
     
     return mapData
@@ -1468,7 +1487,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
                    cosmoModel = None, applyPixelWindow = True, override = None,
-                   validAreaSection = None):
+                   validAreaSection = None, alpha = 0.0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1495,7 +1514,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         validAreaSection (list, optional): Pixel coordinates within the wcs in the format
             [xMin, xMax, yMin, yMax] that define valid area within the model map. Pixels outside this 
             region will be set to zero. Use this to remove overlaps between tile boundaries.
-            
+        alpha (float, optional): This should always be zero unless you want to make a cluster model image
+            where CMB temperature evolves as T0*(1+z)^{1-alpha}.
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
     
@@ -1569,6 +1589,12 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 signalMap=signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
                                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+                if obsFreqGHz is not None:
+                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz, alpha = alpha, z = z)
+                    print("check non-zero alpha signal map")
+                    import IPython
+                    IPython.embed()
+                    sys.exit()
                 modelMap=modelMap+signalMap
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
@@ -1582,11 +1608,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
         modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
         modelMap=modelMap*fluxScaleMap
-
-    # Optional: convert map to deltaT uK
-    # This should only be used if working with clusters - source amplitudes are fed in as delta T uK already
-    if obsFreqGHz is not None:
-        modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz)
     
     # Optional: apply pixel window function - generally this should be True
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)

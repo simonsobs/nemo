@@ -33,9 +33,12 @@ if __name__ == '__main__':
                         help = """If the nemo catalog contains SZ-selected clusters, the SZ signal will be
                         evaluted at the given frequency, ignoring relativistic effects 
                         (default: 150.0).""")
+    parser.add_argument("-a", "--alpha", dest = "alpha", type = float, default = 0.0,
+                        help = """Set to a non-zero value to generate a model where T(z) = T0 * (1+z)^{1-alpha}.
+                        Requires a 'redshift' column to be present in the input catalog.""")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If used,
                         the image will be broken into a number of tiles, with one tile per process. If you
-                        want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M""", 
+                        want to use this, run with e.g., mpiexec -np 4 nemoModel args -M""", 
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true",
                         help="""Disable strict exception handling (applies under MPI only, i.e., must be
@@ -83,7 +86,8 @@ if __name__ == '__main__':
         try:
             modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
                                                      obsFreqGHz = args.obsFreqGHz,
-                                                     validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'])
+                                                     validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
+                                                     alpha = args.alpha)
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 

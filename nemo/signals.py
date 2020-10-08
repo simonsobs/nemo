@@ -79,9 +79,18 @@ class BeamProfile(object):
             self.tck=interpolate.splrep(self.rDeg, self.profile1d)
 
 #------------------------------------------------------------------------------------------------------------
-def fSZ(obsFrequencyGHz):
+def fSZ(obsFrequencyGHz, alpha = 0.0, z = None):
     """Returns the frequency dependence of the (non-relativistic) Sunyaev-Zel'dovich effect.
     
+    Args:
+        obsFrequencyGHz (float): Frequency in GHz at which to calculate fSZ.
+        alpha (float, optional): This should always be zero unless you want to make a model where CMB 
+            temperature evolves T0*(1+z)^{1-alpha}.
+        z (float, optional): Needed if alpha != 0.
+    
+    Returns:
+        Value of SZ spectral shape at given frequency (neglecting relativistic corrections).
+        
     """
 
     h=6.63e-34
@@ -90,6 +99,9 @@ def fSZ(obsFrequencyGHz):
     me=9.11e-31
     c=3e8
     x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
+    if alpha != 0 and z is not None:
+        assert(z >= 0)
+        x=x*np.power(1+z, alpha)
     fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
     
     return fSZ
