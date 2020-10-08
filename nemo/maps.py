@@ -1591,10 +1591,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 if obsFreqGHz is not None:
                     signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz, alpha = alpha, z = z)
-                    print("check non-zero alpha signal map")
-                    import IPython
-                    IPython.embed()
-                    sys.exit()
                 modelMap=modelMap+signalMap
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
