@@ -116,9 +116,9 @@ def maskObject(mapToMask, degreesMap, wcs, RADeg, decDeg, maskRadiusDeg):
 mask1RegFileName="AdvACTSurveyMask_v7_S18.reg"                  # Defines survey geometry / tiling (no holes)
 mask2RegFileName="AdvACTSurveyMask_v7_galLatCut_S18.reg"        # Defines survey geometry (with holes)
 addDust=True                                                    # Add in dust from P353 map
-addArtifacts=True                                               # Mask anything in artifactRegFileName
+addArtifacts=False # was True                                   # Mask anything in artifactRegFileName
 addExtended=True                                                # Apply Simone's extended objects mask
-add10mJy=True                                                   # Post-processing masking of 10 mJy sources
+add10mJy=False # was True                                       # Post-processing masking of 10 mJy sources
 useThreads=True
 artifactsRegFileName="all_artifacts_20200405.reg"
 sourceCatalogFileName="PS_S18d_202003_optimalCatalog.fits"
