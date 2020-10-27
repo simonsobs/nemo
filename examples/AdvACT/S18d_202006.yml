@@ -20,8 +20,8 @@ unfilteredMaps:
 surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
 
 # Instead of giving point source mask, can give catalog instead
-maskPointSourcesFromCatalog: 
-    - "S18Clusters/PSCatalog_rArcmin/PS_S18_f150_auto_rArcmin.fits"
+maskPointSourcesFromCatalog:
+    - "PS_S18_f150_auto/PS_S18_f150_auto_optimalCatalog.fits"
     - "customPSMask_S18/customPSCatalog_S18.fits"
 
 # Detection/catalog options
