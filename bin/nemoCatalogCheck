@@ -49,14 +49,14 @@ if __name__ == '__main__':
     RAKey, decKey=catalogs.getTableRADecKeys(tab)
     mask=np.less(tab[RAKey], 0)     # Sigurd likes -ve RA
     tab[RAKey][mask]=360-abs(tab[RAKey][mask])
-
+    
     # Use selFn routines to determine if objects were in the valid area mask
     selFn=completeness.SelFn(config.selFnDir, args.fixedSNRCut, configFileName = args.configFileName,
                              setUpAreaMask = True, enableCompletenessCalc = False)
     inMask=selFn.checkCoordsInAreaMask(tab[RAKey], tab[decKey])
     maxPossibleMatches=inMask.sum()
     tab.add_column(atpy.Column(inMask, "inMask"))
-    
+
     print("... %d/%d objects in %s are in the valid area mask for %s ..." % (maxPossibleMatches, len(tab), 
                                                                              catFileName, config.rootOutDir))
     
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     missTab=tab[missing]
     missTab=missTab[np.where(missTab['inMask'] == True)]
     print("... %d/%d maximum possible matches in %s are found within %.1f arcmin of an object in the %s catalog" % (maxPossibleMatches-len(missTab), maxPossibleMatches, catFileName, args.matchRadiusArcmin, config.rootOutDir))
-    print("... %d/%d maximum possible matches in %s are not found within %.1f arcmin of an object in the %s catalog" % (len(missTab), maxPossibleMatches, catFileName, args.matchRadiusArcmin, config.rootOutDir))
+    print("... %d/%d maximum possible matches in %s are NOT found within %.1f arcmin of an object in the %s catalog" % (len(missTab), maxPossibleMatches, catFileName, args.matchRadiusArcmin, config.rootOutDir))
     
     # We could add mass limits at each location here if we wanted...
     outFileName=os.path.split(catFileName)[-1].replace(".fits", "_missed_in_%s.fits" % (os.path.split(optimalCatalogFileName)[-1].replace(".fits", "")))

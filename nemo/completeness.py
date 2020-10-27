@@ -269,7 +269,7 @@ class SelFn(object):
 
         if self.tileTab is None:
             self._setUpAreaMask()
-                    
+
         RADeg=np.array(RADeg)
         decDeg=np.array(decDeg)
         if RADeg.shape == ():
@@ -280,7 +280,10 @@ class SelFn(object):
         for ra, dec in zip(RADeg, decDeg):
             inMask=False
             # Inside footprint check
+            # NOTE: Tiles may have -ve RAMin coords
             raMask=np.logical_and(np.greater_equal(ra, self.tileTab['RAMin']), np.less(ra, self.tileTab['RAMax']))
+            negRAMask=np.logical_and(np.greater_equal(-(360-ra), self.tileTab['RAMin']), np.less(-(360-ra), self.tileTab['RAMax']))
+            raMask=np.logical_or(raMask, negRAMask)
             decMask=np.logical_and(np.greater_equal(dec, self.tileTab['decMin']), np.less(dec, self.tileTab['decMax']))
             tileMask=np.logical_and(raMask, decMask)
             # This is just dealing with bytes versus strings in python3
