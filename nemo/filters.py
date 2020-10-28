@@ -641,7 +641,7 @@ class MatchedFilter(MapFilter):
         filteredMap=filteredMap*edgeCheck
         apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask
-        filteredMap=filteredMap*surveyMask
+        filteredMap=filteredMap*surveyMask # NOTE: Needed for 2-pass (I think)
         del edgeCheck
 
         # Apply final survey mask to signal-to-noise map and RMS map

@@ -979,18 +979,6 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             if 'fluxJy' in tab.keys():
                 tab=tab[tab['fluxJy'] > fluxCutJy]
             tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-            # This is what was used in the DR5 catalog with an f150 source list
-            # Needs to be broken out into .yml parameters so we can take it out from here
-            if 'rArcmin' not in tab.keys():
-                tab.sort('deltaT_c', reverse = True)
-                tab.add_column(atpy.Column(np.zeros(len(tab)), 'rArcmin'))
-                tab['rArcmin'][tab['deltaT_c'] < 500]=3.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 500, tab['deltaT_c'] < 1000)]=4.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 1000, tab['deltaT_c'] < 2000)]=5.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 2000, tab['deltaT_c'] < 3000)]=5.5
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 3000, tab['deltaT_c'] < 10000)]=6.0
-                tab['rArcmin'][np.logical_and(tab['deltaT_c'] >= 10000, tab['deltaT_c'] < 40000)]=8.0
-                tab['rArcmin'][tab['deltaT_c'] >= 40000]=12.0
             # If we're given a catalog that already has rArcmin in it, we use that to set hole size
             # Otherwise, if we have shape measurements (ellipse_A at least), we can use that
             for row in tab:
@@ -1003,8 +991,8 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                     xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
                     ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
                     maskRadiusArcmin=ASizeArcmin/2
-                #else:
-                    #raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
+                else:
+                    raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
                 rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
                                                                                 row['RADeg'], row['decDeg'],
                                                                                 maskRadiusArcmin/60)
@@ -1012,7 +1000,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                 surveyMask[rArcminMap < maskRadiusArcmin]=0
                 psMask[rArcminMap < maskRadiusArcmin]=0
                 data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
-        
+
     # Optional subtraction of point sources based on a catalog
     # We'll also (optionally) add a small mask at these locations to the survey mask
     if 'subtractPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['subtractPointSourcesFromCatalog'] is not None:
