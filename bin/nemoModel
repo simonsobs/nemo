@@ -36,6 +36,8 @@ if __name__ == '__main__':
     parser.add_argument("-a", "--alpha", dest = "alpha", type = float, default = 0.0,
                         help = """Set to a non-zero value to generate a model where T(z) = T0 * (1+z)^{1-alpha}.
                         Requires a 'redshift' column to be present in the input catalog.""")
+    parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 0.0,
+                        help = """Scale the input y_c values of clusters in the catalog by this factor.""")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If used,
                         the image will be broken into a number of tiles, with one tile per process. If you
                         want to use this, run with e.g., mpiexec -np 4 nemoModel args -M""", 
@@ -74,6 +76,10 @@ if __name__ == '__main__':
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
     
     tab=atpy.Table().read(args.catalogFileName)
+    
+    # Optional signal scaling (useful for diff alpha sims)
+    if 'y_c' in tab.keys():
+        tab['y_c']=tab['y_c']*args.scale
     
     # Build a dictionary containing the model images which we'll stich together at the end
     print(">>> Building models in tiles ...")
