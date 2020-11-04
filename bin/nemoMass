@@ -21,6 +21,7 @@ import astropy.table as atpy
 from astLib import *
 from scipy import stats
 from scipy import interpolate
+import nemo
 from nemo import catalogs
 from nemo import signals
 from nemo import maps
@@ -102,6 +103,9 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
     
     """
 
+    if 'relativisticCorrection' not in massOptions.keys():
+        massOptions['relativisticCorrection']=True
+        
     label=mockSurvey.mdefLabel
     colNames=['%s' % (label), '%sUncorr' % (label)]
     if 'rescaleFactor' in massOptions.keys():
