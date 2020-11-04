@@ -12,7 +12,7 @@ Nemo is *not* the pipeline used for [Hasselfield et al. (2013)](http://adsabs.ha
 but implements many of the ideas presented there, and should give similar results, given 
 the same map (or at least it did in the past). *It is* the pipeline, that has been used for the
 [two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H),
-and the AdvACT S18 cluster catalog paper.
+and the [ACT DR5](https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract) cluster catalog paper.
 
 A slightly modified version of Matthew Hasselfield's `gnfw.py` code (used for modeling cluster
 pressure profiles) is included in Nemo.
