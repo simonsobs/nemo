@@ -15,6 +15,7 @@ from scipy import interpolate
 from scipy import stats
 import time
 import astropy.table as atpy
+import nemo
 from . import maps
 from . import catalogs
 from . import photometry
@@ -79,14 +80,11 @@ class BeamProfile(object):
             self.tck=interpolate.splrep(self.rDeg, self.profile1d)
 
 #------------------------------------------------------------------------------------------------------------
-def fSZ(obsFrequencyGHz, alpha = 0.0, z = None):
+def fSZ(obsFrequencyGHz):
     """Returns the frequency dependence of the (non-relativistic) Sunyaev-Zel'dovich effect.
     
     Args:
         obsFrequencyGHz (float): Frequency in GHz at which to calculate fSZ.
-        alpha (float, optional): This should always be zero unless you want to make a model where CMB 
-            temperature evolves T0*(1+z)^{1-alpha}.
-        z (float, optional): Needed if alpha != 0.
     
     Returns:
         Value of SZ spectral shape at given frequency (neglecting relativistic corrections).
@@ -99,9 +97,6 @@ def fSZ(obsFrequencyGHz, alpha = 0.0, z = None):
     me=9.11e-31
     c=3e8
     x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
-    if alpha != 0 and z is not None:
-        assert(z >= 0)
-        x=x*np.power(1+z, alpha)
     fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
     
     return fSZ
@@ -297,6 +292,7 @@ def getFRelWeights(config):
                         if freqGHz not in fRelTab.keys():
                             fRelTab.add_column(atpy.Column(np.zeros(len(config.allTileNames)), freqGHz))
                         fRelTab[freqGHz][tileCount]=img[0].header['RW%d' % (i)]
+        fRelTab.meta['NEMOVER']=nemo.__version__
         fRelTab.write(fRelWeightsFileName, overwrite = True)
     
     return loadFRelWeights(fRelWeightsFileName)
@@ -474,6 +470,7 @@ def fitQ(config):
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
         QTab.sort('theta500Arcmin')
+        QTab.meta['NEMOVER']=nemo.__version__
         QTab.write(tileQTabFileName, overwrite = True)
         #rank_QTabDict[tileName]=QTab
                     
@@ -526,6 +523,7 @@ def makeCombinedQTable(config):
                     combinedQTab.add_column(QTabDict[tabKey]['theta500Arcmin'], index = 0)
             else:
                 combinedQTab.add_column(atpy.Column(QTabDict[tabKey][colKey].data, tabKey))
+    combinedQTab.meta['NEMOVER']=nemo.__version__
     combinedQTab.write(outFileName, overwrite = True)
     
     return combinedQTab

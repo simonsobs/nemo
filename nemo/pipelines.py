@@ -527,9 +527,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             else:
                 tab=atpy.vstack([tab, stackTab])
         outFileName=config.mocksDir+os.path.sep+"mockCatalog_combined.fits"
-        if os.path.exists(outFileName) == True:
-            os.remove(outFileName)
-        tab.write(outFileName)
+        tab.meta['NEMOVER']=nemo.__version__
+        tab.write(outFileName, overwrite = True)
     
     # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)
     if writeInfo == True:

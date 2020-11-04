@@ -10,6 +10,7 @@ information at positions of missing clusters.
 
 import os
 import sys
+import nemo
 from nemo import startUp
 from nemo import completeness
 from nemo import catalogs
@@ -62,6 +63,7 @@ if __name__ == '__main__':
     
     outFileName=os.path.split(catFileName)[-1].replace(".fits", "_inMask_%s.fits" % (outputLabel))
     withinMaskTab=tab[inMask]
+    withinMaskTab.meta['NEMOVER']=nemo.__version__
     withinMaskTab.write(outFileName, overwrite = True)
 
     # Cross matching
@@ -81,6 +83,7 @@ if __name__ == '__main__':
     
     # We could add mass limits at each location here if we wanted...
     outFileName=os.path.split(catFileName)[-1].replace(".fits", "_missed_in_%s.fits" % (os.path.split(optimalCatalogFileName)[-1].replace(".fits", "")))
+    missTab.meta['NEMOVER']=nemo.__version__
     missTab.write(outFileName, overwrite = True)
     print("... written missed objects table to %s" % (outFileName))
     

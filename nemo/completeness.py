@@ -17,6 +17,7 @@ from scipy import interpolate
 from scipy.interpolate import InterpolatedUnivariateSpline as _spline
 from scipy import ndimage
 from scipy import optimize
+import nemo
 from . import signals
 from . import maps
 from . import MockSurvey
@@ -752,6 +753,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
         raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))
     if np.less(RMSTab['areaDeg2'], 0).sum() > 0:
         raise Exception("Negative area in tile '%s' - check your survey mask (and delete/remake tileDir files if necessary)." % (tileName))
+    RMSTab.meta['NEMOVER']=nemo.__version__
     RMSTab.write(RMSTabFileName)
 
     return RMSTab
@@ -1328,6 +1330,7 @@ def tidyUp(config):
         if len(tabList) > 0:
             tab=atpy.vstack(tabList)
             tab.sort('y0RMS')
+            tab.meta['NEMOVER']=nemo.__version__
             tab.write(outFileName, overwrite = True)
             for f in filesToRemove:
                 os.remove(f)

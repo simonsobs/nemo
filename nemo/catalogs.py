@@ -493,6 +493,7 @@ def writeCatalog(catalog, outFileName, constraintsList = []):
     if type(catalog) == list and len(catalog) == 0:
         return None
     cutCatalog=selectFromCatalog(catalog, constraintsList)
+    cutCatalog.meta['NEMOVER']=nemo.__version__
     if outFileName.split(".")[-1] == 'csv':
         cutCatalog.write(outFileName, format = 'ascii.csv', delimiter = '\t', overwrite = True)
     else:

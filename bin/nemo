@@ -194,6 +194,7 @@ if __name__ == '__main__':
         
         # Plot tile-averaged position recovery test
         if sourceInjTable is not None:
+            sourceInjTable.meta['NEMOVER']=nemo.__version__
             sourceInjTable.write(config.diagnosticsDir+os.path.sep+"sourceInjectionData.fits", overwrite = True) 
             maps.positionRecoveryAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
                                           percentiles = [50, 95, 99.7], plotRawData = True,

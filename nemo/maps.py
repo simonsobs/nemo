@@ -57,22 +57,19 @@ def convertToY(mapData, obsFrequencyGHz = 148):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
-def convertToDeltaT(mapData, obsFrequencyGHz = 148, alpha = 0.0, z = None):
+def convertToDeltaT(mapData, obsFrequencyGHz = 148):
     """Converts an array (e.g., a map) of Compton y parameter values to delta T (micro Kelvin) with respect to
     the CMB temperature at the given frequency.
     
     Args:
         mapData (:obj:`np.ndarray`): An array containing Compton y parameter values.
         obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
-        alpha (float, optional): This should always be zero unless you want to make a model where CMB 
-            temperature evolves T0*(1+z)^{1-alpha}.
-        z (float, optional): Needed if alpha != 0.
     
     Returns:
         An array of delta T (micro Kelvin) values.
     
     """
-    fx=signals.fSZ(obsFrequencyGHz, alpha = alpha, z = z)   
+    fx=signals.fSZ(obsFrequencyGHz)   
     mapData=mapData*fx*(signals.TCMB*1e6)   # into uK
     
     return mapData
@@ -465,7 +462,7 @@ def makeTileDir(parDict, writeToDisk = True):
                         zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                         clip['data']=clip['data']*zapMask
                     if os.path.exists(tileFileName) == False and writeToDisk == True:
-                        astImages.saveFITS(tileFileName, clip['data'], clip['wcs'])
+                        saveFITS(tileFileName, clip['data'], clip['wcs'])
                                 
             # Replace entries in unfilteredMapsDictList in place
             for key, outFileName in zip(mapTypeList, outFileNames):
@@ -929,9 +926,8 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         # ---
         data[mask]=np.random.normal(randMap[mask], bestBoostFactor*whiteNoiseLevel[mask], 
                                     whiteNoiseLevel[mask].shape)
-        # Sanity check
         outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], tileName) 
-        astImages.saveFITS(outFileName, data, wcs)
+        saveFITS(outFileName, data, wcs)
     
     # For position recovery tests
     if 'injectSources' in list(mapDict.keys()):
@@ -953,7 +949,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     if 'applyBeamConvolution' in mapDict.keys() and mapDict['applyBeamConvolution'] == True:
         data=convolveMapWithBeam(data, wcs, mapDict['beamFileName'], maxDistDegrees = 1.0)
         if diagnosticsDir is not None:
-            astImages.saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
+            saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
         
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
@@ -1332,6 +1328,7 @@ def estimateContaminationFromSkySim(config, imageDict):
     for k in list(avContaminTabDict.keys()):
         fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, tileNamesLabel)
         contaminTab=avContaminTabDict[k]
+        contaminTab.meta['NEMOVER']=nemo.__version__
         contaminTab.write(fitsOutFileName, overwrite = True)
     
     # Restore the original config parameters (which we overrode to make the sims here)
@@ -1830,6 +1827,7 @@ def sourceInjectionTest(config, writeRankTable = True):
     # So it's actually more reliable to write/read from disk
     if writeRankTable == True:
         fitsOutFileName=config.diagnosticsDir+os.path.sep+"sourceInjection_rank%d.fits" % (config.rank)
+        resultsTable.meta['NEMOVER']=nemo.__version__
         resultsTable.write(fitsOutFileName, overwrite = True)
     
     # Restore the original config parameters (which we overrode here)
@@ -2008,6 +2006,8 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False):
         compressed (bool): If True, writes a compressed image.
     
     """
+    
+    wcs.header['NEMOVER']=nemo.__version__
     
     if os.path.exists(outputFileName):
         os.remove(outputFileName)

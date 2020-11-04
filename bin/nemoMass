@@ -320,8 +320,8 @@ if __name__ == '__main__':
     tab.remove_column('sortIndex')
     
     outDir=os.path.split(outFileName)[0]
-    if outDir != '':
-        os.makedirs(outDir, exist_ok = True)
+    os.makedirs(outDir, exist_ok = True)
+    tab.meta['NEMOVER']=nemo.__version__
     tab.write(outFileName, overwrite = True)
     
     # Detect if testing a mock catalog, and write some stats on recovered masses
