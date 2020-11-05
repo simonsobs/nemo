@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-nemo - a Sunyaev-Zel'dovich effect galaxy cluster and source finder
+Nemo - a Sunyaev-Zel'dovich effect galaxy cluster and source finder
 ===================================================================
 
 .. toctree::
@@ -14,8 +14,6 @@ nemo - a Sunyaev-Zel'dovich effect galaxy cluster and source finder
    usage
    quickstart
    sosims
-   selfn
-   tilec
    scripts
    inputs
    outputs
