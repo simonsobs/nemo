@@ -1,34 +1,38 @@
 Nemo is a map filtering and source detection and characterization pipeline, designed to find
-galaxy clusters using the Sunyaev-Zel'dovich effect. It can also be used to find sources. 
+galaxy clusters using the Sunyaev-Zel'dovich effect.
 
 * Documentation: <https://astro.ukzn.ac.za/~mjh/nemo/>
-* License: Will be BSD 2-clause when released (this is a currently a private repository: for 
-now Nemo cannot be used for non-ACT, non-SO approved projects; however, the aim is to make the 
-code fully public by the time the first AdvACT cluster catalog is published).
-* Authors: Matt Hilton, with contributions from Simone Aiola, David Alonso, Matthew Hasselfield, 
-Toby Marriage, Sigurd Naess, and Cristóbal Sifón.
+* License: [BSD 3-Clause](LICENSE)
+* Authors: Matt Hilton, with contributions from Simone Aiola, David Alonso, Matthew Hasselfield,
+Toby Marriage, Sigurd Naess, and Cristóbal Sifón (not all reflected on GitHub).
 
-Nemo is *not* the pipeline used for [Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), 
-but implements many of the ideas presented there, and should give similar results, given 
-the same map (or at least it did in the past). *It is* the pipeline, that has been used for the
+Nemo is *not* the pipeline used for 
+[Hasselfield et al. (2013)](http://adsabs.harvard.edu/abs/2013JCAP...07..008H), but implements many
+of the ideas presented there, and should give similar results, given the same map (or at least it
+did in the past). *It is* the pipeline, that has been used for the
 [two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H),
-and the AdvACT S18 cluster catalog paper.
+and the [ACT DR5 cluster catalog paper](https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract).
 
-A slightly modified version of Matthew Hasselfield's `gnfw.py` code (used for modeling cluster
-pressure profiles) is included in Nemo.
-
-See [examples/equD56/](examples/equD56/) if you would like to re-create the 
-cluster catalog produced for the E-D56 field; [examples/AdvACT/](examples/AdvACT/) if you want to
-see example config files currently being used for the AdvACT cluster search; and 
+See [examples/equD56/](examples/equD56/) if you would like to (almost) re-create the 
+cluster catalog produced for the ACT DR3 E-D56 field; [examples/AdvACT/](examples/AdvACT/) if you
+want to see example config files currently being used for the ACT cluster search; and 
 [examples/pointSources/](examples/pointSources) for config files that can be used for detecting
 point sources.
+
+Nemo is under active development and not all documentation or example config files are up to date,
+amd some of the latter contain references to files that are not yet publicly available, though the
+aim is to complete this work by the time the 
+[ACT DR5 cluster catalog](https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract)
+is published. The package also contains some experimental things that are not well tested outside
+of the cluster/source finder itself.
 
 # Current status and previous internal releases
 
 We now tag releases using the format vMAJOR.MINOR.PATCH. The first tagged release using this 
 scheme is v0.1.0 (January 2020). The previously tagged internal releases of Nemo have been 
 removed, except for the version used for the 
-[two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H) - this is now tagged as ACTPol2018.
+[two-season ACTPol cluster catalog paper](http://adsabs.harvard.edu/abs/2017arXiv170905600H) 
+- this is now tagged as ACTPol2018.
 
 # Software needed
 
@@ -57,32 +61,23 @@ some of the external dependencies, depending on your set up).
 
 As root:
     
-```
-sudo python setup.py install
-```
+    sudo python setup.py install
 
 Alternatively, 
 
-```
-python setup.py install --user
-```
+    python setup.py install --user
 
 will install `nemo` under `$HOME/.local` (on Ubuntu), and in some other default location on Mac.
 
 You can also use the `--prefix` option, e.g.,
     
-```
-python setup.py install --prefix=$HOME/local
-```
+    python setup.py install --prefix=$HOME/local
 
 then add `$HOME/local/bin` to $PATH, and e.g., `$HOME/local/lib/python3.6/site-packages` to 
 $PYTHONPATH (adjust the path according to your Python version number).
 
-```
-export PATH=$HOME/local/bin:$PATH    
-export PYTHONPATH=$HOME/local/lib/python3.6/site-packages:$PYTHONPATH
-```
-
+    export PATH=$HOME/local/bin:$PATH    
+    export PYTHONPATH=$HOME/local/lib/python3.6/site-packages:$PYTHONPATH
 
 # Running Nemo
 

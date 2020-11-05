@@ -53,9 +53,9 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     """
     
     if config.parDict['twoPass'] == False:
-        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, 
-                                           measureFluxes = True, invertMap = False, verbose = True, 
-                                           useCachedMaps = True)
+        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters, 
+                                           measureFluxes = measureFluxes, invertMap = invertMap, 
+                                           verbose = verbose, useCachedMaps = useCachedMaps)
     
     else:
         
@@ -527,9 +527,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             else:
                 tab=atpy.vstack([tab, stackTab])
         outFileName=config.mocksDir+os.path.sep+"mockCatalog_combined.fits"
-        if os.path.exists(outFileName) == True:
-            os.remove(outFileName)
-        tab.write(outFileName)
+        tab.meta['NEMOVER']=nemo.__version__
+        tab.write(outFileName, overwrite = True)
     
     # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)
     if writeInfo == True:

@@ -33,9 +33,11 @@ if __name__ == '__main__':
                         help = """If the nemo catalog contains SZ-selected clusters, the SZ signal will be
                         evaluted at the given frequency, ignoring relativistic effects 
                         (default: 150.0).""")
+    parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 0.0,
+                        help = """Scale the input y_c values of clusters in the catalog by this factor.""")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If used,
                         the image will be broken into a number of tiles, with one tile per process. If you
-                        want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M""", 
+                        want to use this, run with e.g., mpiexec -np 4 nemoModel args -M""", 
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true",
                         help="""Disable strict exception handling (applies under MPI only, i.e., must be
@@ -71,6 +73,10 @@ if __name__ == '__main__':
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
     
     tab=atpy.Table().read(args.catalogFileName)
+    
+    # Optional signal scaling (useful for diff alpha sims)
+    if 'y_c' in tab.keys():
+        tab['y_c']=tab['y_c']*args.scale
     
     # Build a dictionary containing the model images which we'll stich together at the end
     print(">>> Building models in tiles ...")

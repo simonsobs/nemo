@@ -17,6 +17,7 @@ from scipy import interpolate
 from scipy.interpolate import InterpolatedUnivariateSpline as _spline
 from scipy import ndimage
 from scipy import optimize
+import nemo
 from . import signals
 from . import maps
 from . import MockSurvey
@@ -269,7 +270,7 @@ class SelFn(object):
 
         if self.tileTab is None:
             self._setUpAreaMask()
-                    
+
         RADeg=np.array(RADeg)
         decDeg=np.array(decDeg)
         if RADeg.shape == ():
@@ -280,7 +281,10 @@ class SelFn(object):
         for ra, dec in zip(RADeg, decDeg):
             inMask=False
             # Inside footprint check
+            # NOTE: Tiles may have -ve RAMin coords
             raMask=np.logical_and(np.greater_equal(ra, self.tileTab['RAMin']), np.less(ra, self.tileTab['RAMax']))
+            negRAMask=np.logical_and(np.greater_equal(-(360-ra), self.tileTab['RAMin']), np.less(-(360-ra), self.tileTab['RAMax']))
+            raMask=np.logical_or(raMask, negRAMask)
             decMask=np.logical_and(np.greater_equal(dec, self.tileTab['decMin']), np.less(dec, self.tileTab['decMax']))
             tileMask=np.logical_and(raMask, decMask)
             # This is just dealing with bytes versus strings in python3
@@ -749,6 +753,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
         raise Exception("Mismatch between area map and area in RMSTab for tile '%s'" % (tileName))
     if np.less(RMSTab['areaDeg2'], 0).sum() > 0:
         raise Exception("Negative area in tile '%s' - check your survey mask (and delete/remake tileDir files if necessary)." % (tileName))
+    RMSTab.meta['NEMOVER']=nemo.__version__
     RMSTab.write(RMSTabFileName)
 
     return RMSTab
@@ -1325,6 +1330,7 @@ def tidyUp(config):
         if len(tabList) > 0:
             tab=atpy.vstack(tabList)
             tab.sort('y0RMS')
+            tab.meta['NEMOVER']=nemo.__version__
             tab.write(outFileName, overwrite = True)
             for f in filesToRemove:
                 os.remove(f)

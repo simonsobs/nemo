@@ -15,6 +15,7 @@ from scipy import interpolate
 from scipy import stats
 import time
 import astropy.table as atpy
+import nemo
 from . import maps
 from . import catalogs
 from . import photometry
@@ -82,6 +83,12 @@ class BeamProfile(object):
 def fSZ(obsFrequencyGHz):
     """Returns the frequency dependence of the (non-relativistic) Sunyaev-Zel'dovich effect.
     
+    Args:
+        obsFrequencyGHz (float): Frequency in GHz at which to calculate fSZ.
+    
+    Returns:
+        Value of SZ spectral shape at given frequency (neglecting relativistic corrections).
+        
     """
 
     h=6.63e-34
@@ -285,6 +292,7 @@ def getFRelWeights(config):
                         if freqGHz not in fRelTab.keys():
                             fRelTab.add_column(atpy.Column(np.zeros(len(config.allTileNames)), freqGHz))
                         fRelTab[freqGHz][tileCount]=img[0].header['RW%d' % (i)]
+        fRelTab.meta['NEMOVER']=nemo.__version__
         fRelTab.write(fRelWeightsFileName, overwrite = True)
     
     return loadFRelWeights(fRelWeightsFileName)
@@ -462,6 +470,7 @@ def fitQ(config):
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
         QTab.sort('theta500Arcmin')
+        QTab.meta['NEMOVER']=nemo.__version__
         QTab.write(tileQTabFileName, overwrite = True)
         #rank_QTabDict[tileName]=QTab
                     
@@ -514,6 +523,7 @@ def makeCombinedQTable(config):
                     combinedQTab.add_column(QTabDict[tabKey]['theta500Arcmin'], index = 0)
             else:
                 combinedQTab.add_column(atpy.Column(QTabDict[tabKey][colKey].data, tabKey))
+    combinedQTab.meta['NEMOVER']=nemo.__version__
     combinedQTab.write(outFileName, overwrite = True)
     
     return combinedQTab

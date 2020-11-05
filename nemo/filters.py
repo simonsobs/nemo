@@ -90,8 +90,8 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
             filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
         if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
-            astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-            astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
+            maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+            maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
         # Uncomment for quicker testing/re-runs...
         #astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
         #astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])   
@@ -641,7 +641,7 @@ class MatchedFilter(MapFilter):
         filteredMap=filteredMap*edgeCheck
         apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask
-        filteredMap=filteredMap*surveyMask
+        filteredMap=filteredMap*surveyMask # NOTE: Needed for 2-pass (I think)
         del edgeCheck
 
         # Apply final survey mask to signal-to-noise map and RMS map
@@ -932,7 +932,8 @@ class RealSpaceMatchedFilter(MapFilter):
             count=count+1
             kernWCS.header['RW%d_GHZ' % (count)]=key
             kernWCS.header['RW%d' % (count)]=self.fRelWeights[key]
-        astImages.saveFITS(self.filterFileName, self.kern2d, kernWCS)
+        kernWCS.header['NEMOVER']=nemo.__version__
+        maps.saveFITS(self.filterFileName, self.kern2d, kernWCS)
         
         # Filter profile plot   
         # Save the stuff we plot first, in case we want to make a plot with multiple filters on later

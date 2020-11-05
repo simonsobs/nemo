@@ -21,6 +21,7 @@ import astropy.table as atpy
 from astLib import *
 from scipy import stats
 from scipy import interpolate
+import nemo
 from nemo import catalogs
 from nemo import signals
 from nemo import maps
@@ -102,10 +103,14 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
     
     """
 
+    if 'relativisticCorrection' not in massOptions.keys():
+        massOptions['relativisticCorrection']=True
+        
     label=mockSurvey.mdefLabel
     colNames=['%s' % (label), '%sUncorr' % (label)]
     if 'rescaleFactor' in massOptions.keys():
         colNames.append('%sCal' % (label))
+    colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
     for c in colNames:
         tab['%s' % (c)]=np.zeros(len(tab))
         tab['%s_errPlus' % (c)]=np.zeros(len(tab))
@@ -149,13 +154,13 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
             row['%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
             row['%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
             row['%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
-            # Mass conversion
-            #row['M200m']=signals.convertM500cToM200m(massDict['M500']*1e14, row['redshift'])/1e14
-            #row['M200m_errPlus']=(row['M500_errPlus']/row['M500'])*row['M200m']
-            #row['M200m_errMinus']=(row['M500_errMinus']/row['M500'])*row['M200m']
-            #row['M200mUncorr']=signals.convertM500cToM200m(unCorrMassDict['M500']*1e14, row['redshift'])/1e14
-            #row['M200mUncorr_errPlus']=(row['M500Uncorr_errPlus']/row['M500Uncorr'])*row['M200mUncorr']
-            #row['M200mUncorr_errMinus']=(row['M500Uncorr_errMinus']/row['M500Uncorr'])*row['M200mUncorr']
+            # Mass conversion -  remove later when fully generalized
+            row['M200m']=signals.convertM500cToM200m(massDict['M500c']*1e14, row['redshift'])/1e14
+            row['M200m_errPlus']=(row['M500c_errPlus']/row['M500c'])*row['M200m']
+            row['M200m_errMinus']=(row['M500c_errMinus']/row['M500c'])*row['M200m']
+            row['M200mUncorr']=signals.convertM500cToM200m(unCorrMassDict['M500c']*1e14, row['redshift'])/1e14
+            row['M200mUncorr_errPlus']=(row['M500cUncorr_errPlus']/row['M500cUncorr'])*row['M200mUncorr']
+            row['M200mUncorr_errMinus']=(row['M500cUncorr_errMinus']/row['M500cUncorr'])*row['M200mUncorr']
             # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
             if 'rescaleFactor' in massOptions.keys():
                 row['%sCal' % (label)]=massDict['%s' % (label)]/massOptions['rescaleFactor']        
@@ -319,8 +324,8 @@ if __name__ == '__main__':
     tab.remove_column('sortIndex')
     
     outDir=os.path.split(outFileName)[0]
-    if outDir != '':
-        os.makedirs(outDir, exist_ok = True)
+    os.makedirs(outDir, exist_ok = True)
+    tab.meta['NEMOVER']=nemo.__version__
     tab.write(outFileName, overwrite = True)
     
     # Detect if testing a mock catalog, and write some stats on recovered masses
