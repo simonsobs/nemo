@@ -43,7 +43,7 @@ setup(name='nemo-sz',
                         "cython",
                         "PyYAML",
                         #"colossus",
-                        #"pyccl >= 2.1",
+                        "pyccl >= 2.1",
                         #"mpi4py",
                         "colorcet >= 1.0",
                         "mahotas >= 1.4"]

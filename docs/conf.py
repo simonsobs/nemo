@@ -19,6 +19,21 @@ sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(0, os.path.abspath('../nemo'))
 from nemo import __version__
 
+on_rtd = os.environ.get('READTHEDOCS', None) == 'True'
+if on_rtd:
+    try:
+        from unittest.mock import MagicMock
+    except ImportError:
+        from mock import Mock as MagicMock
+
+    class Mock(MagicMock):
+        @classmethod
+        def __getattr__(cls, name):
+            return MagicMock()
+
+    MOCK_MODULES = ["pyccl", "mpi4py"]
+    sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+
 # -- My stuff ----------------------------------------------------------------
 autoclass_content = 'both'
 add_module_names = False
