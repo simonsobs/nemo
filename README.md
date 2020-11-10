@@ -20,7 +20,7 @@ want to see example config files currently being used for the ACT cluster search
 point sources.
 
 Nemo is under active development and not all documentation or example config files are up to date,
-amd some of the latter contain references to files that are not yet publicly available, though the
+and some of the latter contain references to files that are not yet publicly available, though the
 aim is to complete this work by the time the 
 [ACT DR5 cluster catalog](https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract)
 is published. The package also contains some experimental things that are not well tested outside
