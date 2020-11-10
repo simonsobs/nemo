@@ -13,7 +13,7 @@ import versioneer
 cmdclass=versioneer.get_cmdclass()
 cmdclass['build_ext']=build_ext
 
-setup(name='nemo-mattyowl',
+setup(name='nemo-sz',
       version=versioneer.get_version(),
       cmdclass=cmdclass,
       url="https://acru.ukzn.ac.za/~mjh/nemo",
