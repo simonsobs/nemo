@@ -5,6 +5,6 @@ Testing
 =======
 
 
-.. mdinclude:: ../tests/README.md
+.. include:: ../tests/README.rst
 
 

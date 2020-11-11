@@ -8,14 +8,13 @@ mass estimates, selection function calculations, and generating mock catalogs.
 import os
 import sys
 import numpy as np
-#import IPython
 import astropy.table as atpy
 import pylab as plt
 import subprocess
 from astropy.cosmology import FlatLambdaCDM
-import pyccl as ccl
-#from colossus.cosmology import cosmology
-#from colossus.lss import mass_function
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 from . import signals
 from . import catalogs
 import pickle

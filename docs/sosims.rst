@@ -5,6 +5,6 @@ Tutorial: Cluster Finding in Simulated Simons Observatory Maps
 ==============================================================
 
 
-.. mdinclude:: ../examples/SOSims/README.md
+.. include:: ../examples/SOSims/README.rst
 
 

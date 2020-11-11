@@ -19,30 +19,16 @@ sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(0, os.path.abspath('../nemo'))
 from nemo import __version__
 
-on_rtd = os.environ.get('READTHEDOCS', None) == 'True'
-if on_rtd:
-    try:
-        from unittest.mock import MagicMock
-    except ImportError:
-        from mock import Mock as MagicMock
-
-    class Mock(MagicMock):
-        @classmethod
-        def __getattr__(cls, name):
-            return MagicMock()
-
-    MOCK_MODULES = ["pyccl", "mpi4py"]
-    sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
-
 # -- My stuff ----------------------------------------------------------------
 autoclass_content = 'both'
 add_module_names = False
+autodoc_mock_imports = ["pyccl", "mpi4py"]
 
 # -- Project information -----------------------------------------------------
 
 project = 'nemo'
-copyright = '2020, Matt Hilton'
-author = 'Matt Hilton + Atacama Cosmology Telescope + Simons Observatory'
+copyright = '2020, Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
+author = 'Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
 
 # The short X.Y version
 version = __version__
@@ -63,7 +49,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
-    'm2r'
+    'readthedocs_ext.readthedocs',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -72,8 +58,8 @@ templates_path = ['_templates']
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 #
-source_suffix = ['.rst', '.md']
-#source_suffix = '.rst'
+#source_suffix = ['.rst', '.md']
+source_suffix = '.rst'
 
 # The master toctree document.
 master_doc = 'index'

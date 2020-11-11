@@ -5,6 +5,6 @@ Introduction and Installation
 =============================
 
 
-.. mdinclude:: ../README.md
+.. include:: ../README.rst
 
 
