@@ -52,7 +52,6 @@ Nemo itself is written in Python (3.6+), and requires the following additional m
 * astropy (3.2.1)
 * Cython (0.24.1)
 * PyYAML (3.12)
-* Colossus (1.2.9)
 * `CCL <https://github.com/LSSTDESC/CCL>`_ (2.1 or later)
 * mpi4py (3.0.0)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
