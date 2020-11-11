@@ -511,13 +511,18 @@ class MatchedFilter(MapFilter):
             w=[]
             for mapDict in self.unfilteredMapsDictList:
                 if mapDict['units'] != 'yc':
-                    if self.params['outputUnits'] == 'yc':
-                        w.append(signals.fSZ(mapDict['obsFreqGHz']))
-                    elif self.params['outputUnits'] == 'uK':
-                        # This is where variable spectral weighting for sources would be added...
-                        w.append(1.0)
+                    # Allows custom weighting in the config file
+                    if 'specWeight' in mapDict.keys():
+                        w.append(mapDict['specWeight'])
+                    # Or standard options (e.g., SZ weighting)
                     else:
-                        raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+                        if self.params['outputUnits'] == 'yc':
+                            w.append(signals.fSZ(mapDict['obsFreqGHz']))
+                        elif self.params['outputUnits'] == 'uK':
+                            # This is where variable spectral weighting for sources could be added...
+                            w.append(1.0)
+                        else:
+                            raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
                 else:
                     w.append(1.0)   # For TILe-C: there should only be one map if input units are yc anyway...
             w=np.array(w)
