@@ -251,7 +251,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
             surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
             if writeAreaMasks == True:
                 if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
-                    maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True)
+                    maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True, compressionType = 'PLIO')
             
             if measureFluxes == True:
                 photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,

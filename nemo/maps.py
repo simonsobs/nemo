@@ -549,16 +549,20 @@ def stitchTiles(config):
     # Defining the maps to stitch together and where they will go
     stitchDictList=[{'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_filteredMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_filteredMap.fits",
-                     'compressed': False},
+                     'compressed': False,
+                     'compressionType': None},
                     {'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_SNMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_SNMap.fits",
-                     'compressed': False},
+                     'compressed': False,
+                     'compressionType': None},
                     {'pattern': config.selFnDir+os.path.sep+"areaMask#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_areaMask.fits",
-                     'compressed': True},
+                     'compressed': True,
+                     'compressionType': 'PLIO'},
                     {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
-                     'compressed': True}]
+                     'compressed': True,
+                     'compressionType': 'RICE_1'}]
 
     tileCoordsDict=config.tileCoordsDict
     for filterDict in config.parDict['mapFilters']:
@@ -1837,8 +1841,8 @@ def sourceInjectionTest(config, writeRankTable = True):
 
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
-                             plotRawData = True, rawDataAlpha = 1, pickleFileName = None,
-                             selFnDir = None):
+                             sourceInjectionModel = None, plotRawData = True, rawDataAlpha = 1,
+                             pickleFileName = None, selFnDir = None):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using
     the contents of posRecTable (see positionRecoveryTest).
     
@@ -1848,9 +1852,12 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         plotFileName (str): Path where the plot file will be written.
         percentiles (list, optional): List of percentiles to plot (some interpolation will be done) and
             for which corresponding model fit parameters will be saved (if selFnDir is not None).
+        sourceInjectionModel (str, optional): If given, select only objects matching the given source
+            injection model name from the input table. This can be used to get results for individual
+            cluster scales, for example.
         plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background.
         pickleFileName (string, optional): Saves the percentile contours data as a pickle file if not None.
-            This is saved a dictionary with top-level keys named according to percentilesToPlot.
+            This is saved as a dictionary with top-level keys named according to percentilesToPlot.
         selFnDir (string, optional): If given, model fit parameters will be written to a file named
             posRecModelParameters.txt under the given selFn directory path.
             
@@ -1873,6 +1880,10 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         plotUnits="arcmin"
         plotUnitsMultiplier=1
         plotUnitsLabel="$^\prime$"
+    
+    # Optional cut on injected signal model
+    if sourceInjectionModel is not None:
+        tab=tab[tab['sourceInjectionModel'] == str(sourceInjectionModel)]
     
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
@@ -1946,7 +1957,7 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             a=contoursDict[key]
             valid=np.where(a[SNRCol] >= 4.1)
             snr=a[SNRCol][valid]
-            rArcmin=a[SNRCol][valid]
+            rArcmin=a['rArcmin'][valid]
             try:
                 results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
             except:
@@ -1996,14 +2007,16 @@ def noiseBiasAnalysis(sourceInjTable, plotFileName, sourceInjectionModel = None)
     return None
         
 #---------------------------------------------------------------------------------------------------
-def saveFITS(outputFileName, mapData, wcs, compressed = False):
+def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType = 'RICE_1'):
     """Writes a map (2d image array) to a new .fits file.
     
     Args:
         outputFileName (str): Filename of output FITS image.
         mapData (:obj:`np.ndarray`): Map data array.
         wcs (:obj:`astWCS.WCS`): Map WCS object.
-        compressed (bool): If True, writes a compressed image.
+        compressed (bool, optional): If True, writes a compressed image.
+        compressionType (str, optional): The type of compression to use ('PLIO' for masks and
+            'RICE_1' for images are recommended).
     
     """
     
@@ -2020,9 +2033,11 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False):
     
     if compressed == True:
         if wcs is not None:
-            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), wcs.header)
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), wcs.header, 
+                                    compression_type = compressionType)
         else:
-            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), None)
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), None,
+                                    compression_type = compressionType)
             
     newImg=pyfits.HDUList()
     newImg.append(hdu)
