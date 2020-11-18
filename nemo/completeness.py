@@ -854,14 +854,22 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
         print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (averageMassLimit_90Complete))
 
 #------------------------------------------------------------------------------------------------------------
-def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
-    """Makes a (M, z) plot. Here, compMz is a 2d array, and log10M and z are arrays corresponding to the axes.
+def calcCompletenessContour(compMz, log10M, z, level = 0.90):
+    """Calculate completeness contour on the (log10M, z) plane.
+    
+    Args:
+        compMz (2d array): Map of completeness on the (log10M, z) plane.
+        log10M (1d array): Array of log10 mass values corresponding to compMz.
+        z (1d array): Array of redshifts corresponding to compMz.
+        level (float, optional): Fractional completeness level (e.g., 0.90 is 90% completeness).
+    
+    Returns:
+        Contour values for the given completeness level (pair of arrays: redshifts, and log10 mass values).
     
     """
-    
     # Easiest way to get at contour for plotting later
     # The smoothing may only be necessary if compMz is made by montecarlo method
-    contours=plt.contour(z, log10M, compMz.transpose(), levels = [0.9])
+    contours=plt.contour(z, log10M, compMz.transpose(), levels = [level])
     cont_z=[]
     cont_log10M=[]
     for p in contours.collections[0].get_paths():
@@ -883,6 +891,16 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
     cont_z=np.array(cont_z)
     cont_log10M=np.array(cont_log10M)
     #cont_log10M=ndimage.uniform_filter(cont_log10M, int(np.ceil(len(cont_log10M)/20)))
+    
+    return cont_z, cont_log10M
+    
+#------------------------------------------------------------------------------------------------------------
+def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
+    """Makes a (M, z) plot. Here, compMz is a 2d array, and log10M and z are arrays corresponding to the axes.
+    
+    """
+    
+    cont_z, cont_log10M=calcCompletenessContour(compMz, log10M, z, level = 0.90)
     
     # Actual plot
     plotSettings.update_rcParams()
@@ -1275,10 +1293,12 @@ def tidyUp(config):
     
     # Make MEFs
     MEFsToBuild=["areaMask", "RMSMap_%s" % (config.parDict['photFilter'])]
+    compressionTypes=["PLIO_1", "RICE_1"]
+    dtypes=[np.int32, np.float]
     if 'selFnFootprints' in config.parDict.keys():
         for footprintDict in config.parDict['selFnFootprints']:
             MEFsToBuild.append("intersect_%s" % footprintDict['label'])
-    for MEFBaseName in MEFsToBuild:  
+    for MEFBaseName, compressionType, dtype in zip(MEFsToBuild, compressionTypes, dtypes):
         outFileName=config.selFnDir+os.path.sep+MEFBaseName+".fits"
         newImg=pyfits.HDUList()
         filesToRemove=[]
@@ -1292,7 +1312,8 @@ def tidyUp(config):
                         extName=tileName
                     if 'COMPRESSED_IMAGE' in img:
                         extName='COMPRESSED_IMAGE'                                          
-                    hdu=pyfits.CompImageHDU(np.array(img[extName].data, dtype = float), img[extName].header, name = tileName)
+                    hdu=pyfits.CompImageHDU(np.array(img[extName].data, dtype = dtype), img[extName].header, 
+                                            name = tileName, compression_type = compressionType)
                     data=img[extName].data
                 filesToRemove.append(fileName)
                 newImg.append(hdu)

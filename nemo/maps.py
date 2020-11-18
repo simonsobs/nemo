@@ -558,7 +558,7 @@ def stitchTiles(config):
                     {'pattern': config.selFnDir+os.path.sep+"areaMask#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_areaMask.fits",
                      'compressed': True,
-                     'compressionType': 'PLIO'},
+                     'compressionType': 'PLIO_1'},
                     {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
                      'compressed': True,
@@ -571,6 +571,7 @@ def stitchTiles(config):
                 pattern=stitchDict['pattern']
                 outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
                 compressed=stitchDict['compressed']
+                compressionType=stitchDict['compressionType']
                 d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
                 wcs=config.origWCS
                 for tileName in tileCoordsDict.keys():
@@ -590,7 +591,7 @@ def stitchTiles(config):
                     areaMask, areaWCS=completeness.loadAreaMask(tileName, config.selFnDir)
                     minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
                     d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask*tileData
-                saveFITS(outFileName, d, wcs, compressed = compressed)
+                saveFITS(outFileName, d, wcs, compressed = compressed, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
 def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
@@ -2015,7 +2016,7 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType =
         mapData (:obj:`np.ndarray`): Map data array.
         wcs (:obj:`astWCS.WCS`): Map WCS object.
         compressed (bool, optional): If True, writes a compressed image.
-        compressionType (str, optional): The type of compression to use ('PLIO' for masks and
+        compressionType (str, optional): The type of compression to use ('PLIO_1' for masks and
             'RICE_1' for images are recommended).
     
     """
@@ -2033,10 +2034,16 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType =
     
     if compressed == True:
         if wcs is not None:
-            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), wcs.header, 
+            if compressionType == 'PLIO_1':
+                #wcs.header['BITPIX']=8
+                #wcs.updateFromHeader()
+                dtype=np.int32
+            else:
+                dtype=np.float
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = dtype), wcs.header, 
                                     compression_type = compressionType)
         else:
-            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), None,
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = dtype), None,
                                     compression_type = compressionType)
             
     newImg=pyfits.HDUList()

@@ -1058,7 +1058,7 @@ class RealSpaceMatchedFilter(MapFilter):
         maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
         surveyMask=np.array(surveyMask, dtype = int)
         if os.path.exists(maskFileName) == False:
-            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True, compressionType = 'PLIO')
+            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True, compressionType = 'PLIO_1')
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
