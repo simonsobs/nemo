@@ -687,7 +687,7 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         for i in yOut[yMask]:
             intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
     intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
-    maps.saveFITS(intersectFileName, intersectMask, wcs, compressed = True)
+    maps.saveFITS(intersectFileName, intersectMask, wcs, compressed = True, compressionType = 'PLIO_1')
         
     return intersectMask
 
@@ -1298,6 +1298,8 @@ def tidyUp(config):
     if 'selFnFootprints' in config.parDict.keys():
         for footprintDict in config.parDict['selFnFootprints']:
             MEFsToBuild.append("intersect_%s" % footprintDict['label'])
+            compressionTypes.append("PLIO_1")
+            dtypes.append(np.int32)
     for MEFBaseName, compressionType, dtype in zip(MEFsToBuild, compressionTypes, dtypes):
         outFileName=config.selFnDir+os.path.sep+MEFBaseName+".fits"
         newImg=pyfits.HDUList()
