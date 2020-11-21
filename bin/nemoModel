@@ -33,8 +33,23 @@ if __name__ == '__main__':
                         help = """If the nemo catalog contains SZ-selected clusters, the SZ signal will be
                         evaluted at the given frequency, ignoring relativistic effects 
                         (default: 150.0).""")
-    parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 0.0,
+    parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 1.0,
                         help = """Scale the input y_c values of clusters in the catalog by this factor.""")
+    parser.add_argument("-C", "--add-cmb", dest = "addCMB", action = "store_true", default = False,
+                        help = """Add a realization of the cosmic microwave background to the map. Use
+                        --cmb-seed to set the random seed to the same value if creating sets of maps at
+                        different frequencies. Note that this is very memory intensive for large maps,
+                        and is a serial operation.""")
+    parser.add_argument("-S", "--cmb-seed", dest = "CMBSeed", type = int, default = None,
+                        help = """Random seed used only for generating (optional) cosmic microwave 
+                        background realizations.""")
+    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", type = float, default = 0.0,
+                        help = """If a random cosmic microwave background realization had been added, add
+                        uniform per-pixel white noise at the specified level.""")
+    parser.add_argument("-T", "--break-map-into-tiles", dest = "breakIntoTiles", action = "store_true",
+                        help = """Break large maps into tiles using the autotiler function in Nemo.
+                        This will be turned on automatically if MPI is enabled (using -M).""", 
+                        default = False)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If used,
                         the image will be broken into a number of tiles, with one tile per process. If you
                         want to use this, run with e.g., mpiexec -np 4 nemoModel args -M""", 
@@ -61,12 +76,12 @@ if __name__ == '__main__':
     mapDict['beamFileName']=args.beamFileName
     parDict['unfilteredMaps']=[mapDict]
     parDict['mapFilters']=[]
-    #if args.MPIEnabled == True:
-    parDict['makeTileDir']=True
-    parDict['tileOverlapDeg']=1.0
-    parDict['tileDefLabel']='auto'
-    parDict['tileDefinitions']={'mask': args.maskFileName,
-                                'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
+    if args.MPIEnabled == True or args.breakIntoTiles == True:
+        parDict['makeTileDir']=True
+        parDict['tileOverlapDeg']=1.0
+        parDict['tileDefLabel']='auto'
+        parDict['tileDefinitions']={'mask': args.maskFileName,
+                                    'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
 
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
                               makeOutputDirs = False, setUpMaps = True, writeTileDir = False, 
@@ -130,4 +145,9 @@ if __name__ == '__main__':
             minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
             if modelsDict[tileName] is not None:
                 d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+modelsDict[tileName]
+        # Optionally add CMB
+        if args.addCMB == True:
+            shape=(d.shape)
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = args.addWhiteNoise, beamFileName = args.beamFileName, 
+                               seed = args.CMBSeed)
         astImages.saveFITS(args.outputFileName, d, wcs)

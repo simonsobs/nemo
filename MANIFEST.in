@@ -1,4 +1,4 @@
 recursive-include examples *
-include README.md
+include README.rst
 include versioneer.py
 include nemo/_version.py

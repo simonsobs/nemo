@@ -1084,15 +1084,14 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
     
     """
     
-    from pixell import enmap, utils, powspec
-    import astropy.wcs as apywcs
-    enlibWCS=apywcs.WCS(wcs.header)
+    from pixell import curvedsky, utils, powspec
+    
     ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", 
                              scale = True)
-    randMap=enmap.rand_map(shape, enlibWCS, ps, seed = seed)
+    randMap=curvedsky.rand_map(shape, wcs.AWCS, ps=ps, spin=[0,2], seed = seed)
     np.random.seed()    # Otherwise, we will end up with identical white noise...
     
-    if beamFileName != None:
+    if beamFileName is not None:
         randMap=convolveMapWithBeam(randMap, wcs, beamFileName)
 
     if type(noiseLevel) == np.ndarray:
@@ -1489,7 +1488,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
                    cosmoModel = None, applyPixelWindow = True, override = None,
-                   validAreaSection = None, alpha = 0.0):
+                   validAreaSection = None):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1516,8 +1515,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         validAreaSection (list, optional): Pixel coordinates within the wcs in the format
             [xMin, xMax, yMin, yMax] that define valid area within the model map. Pixels outside this 
             region will be set to zero. Use this to remove overlaps between tile boundaries.
-        alpha (float, optional): This should always be zero unless you want to make a cluster model image
-            where CMB temperature evolves as T0*(1+z)^{1-alpha}.
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
     
@@ -1592,7 +1589,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 if obsFreqGHz is not None:
-                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz, alpha = alpha, z = z)
+                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz)
                 modelMap=modelMap+signalMap
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
