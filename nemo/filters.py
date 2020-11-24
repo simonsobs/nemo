@@ -497,7 +497,6 @@ class MatchedFilter(MapFilter):
                         iRMS=np.mean(1/np.sqrt(iMap['weights'][ivalid]))
                         jRMS=np.mean(1/np.sqrt(jMap['weights'][jvalid]))
                         NP=np.ones(self.shape)*(iRMS*jRMS)+NPCMB
-                        #NP=NPCMB+1 # We have to add something to avoid ringing
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
@@ -588,7 +587,7 @@ class MatchedFilter(MapFilter):
                 fSignalMaps=[]
                 for mapDict in self.unfilteredMapsDictList:
                     signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])
-                    #signalMap=enmap.apply_window(signalMap, pow=1.0)
+                    #signalMap=enmap.apply_window(signalMap, pow=1.0) # Tests with nemoModel show not needed
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)

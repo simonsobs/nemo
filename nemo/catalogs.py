@@ -597,7 +597,7 @@ def flagTileBoundarySplits(tab, xMatchRadiusArcmin = 2.5):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def generateRandomSourcesCatalog(mapData, wcs, numSources):
+def generateRandomSourcesCatalog(mapData, wcs, numSources, seed = None):
     """Generate a random source catalog (with amplitudes in deltaT uK), with random positions within the 
     footprint of the given map (areas where pixel values == 0 are ignored). The distribution of source 
     amplitudes is roughly similar to that seen in the 148 GHz ACT maps, but this routine should only be used
@@ -608,12 +608,18 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources):
             may be randomly placed (pixel values == 0 are ignored).
         wcs (:obj:`astWCS.WCS`): WCS corresponding to the map.
         numSources (int): Number of random sources to put into the output catalog.
+        seed (optional, int): If given, generate the catalog using this random seed value. This is useful
+            for generating the same realization across maps at different frequencies. The seed will be reset
+            after this routine exits.
     
     Returns:
         An astropy Table object containing the catalog.
         
     """
     
+    if seed is not None:
+        np.random.seed(seed)
+        
     deltaT=np.random.lognormal(np.log(600), 1.1, numSources)
     ys, xs=np.where(mapData != 0)
     ys=ys+np.random.uniform(0, 1, len(ys))
@@ -627,6 +633,9 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources):
     tab.add_column(atpy.Column(coords[:, 1], "decDeg"))
     tab.add_column(atpy.Column(deltaT, "deltaT_c"))
     
+    if seed is not None:
+        np.random.seed()
+        
     return tab
 
 #------------------------------------------------------------------------------------------------------------
