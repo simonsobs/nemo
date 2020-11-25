@@ -955,6 +955,10 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         data=convolveMapWithBeam(data, wcs, mapDict['beamFileName'], maxDistDegrees = 1.0)
         if diagnosticsDir is not None:
             saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
+            
+    # Optional smoothing with a Gaussian kernel (for approximate PSF-matching)
+    if 'smoothScaleDeg' in mapDict.keys():
+        data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
         
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)

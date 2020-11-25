@@ -65,6 +65,7 @@ class BeamProfile(object):
                 beam profile.
             tck (:obj: tuple): Spline knots for interpolating the beam onto different angular binning 
                 (in degrees), for use with interpolate.splev.
+            FWHMArcmin (float): Estimate of the beam FWHM in arcmin.
 
         """
         
@@ -78,6 +79,9 @@ class BeamProfile(object):
         
         if self.profile1d is not None and self.rDeg is not None:
             self.tck=interpolate.splrep(self.rDeg, self.profile1d)
+        
+        # This is really just for sorting a list of beams by resolution
+        self.FWHMArcmin=self.rDeg[np.argmin(abs(self.profile1d-0.5))]*60*2
 
 #------------------------------------------------------------------------------------------------------------
 def fSZ(obsFrequencyGHz):

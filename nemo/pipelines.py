@@ -540,3 +540,100 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                     outFile.write("%s: %s\n" % (m, config.parDict[m]))
     
     return catList
+
+#------------------------------------------------------------------------------------------------------------
+def extractSpec(config, tab, innerRadiusArcmin = 4.0, outerRadiusArcmin = 6.0):
+    """Returns a table containing the spectral energy distribution, extracted using aperture photometry at 
+    each object location in the input catalog. Maps at different frequencies will be matched to the lowest
+    resolution beam.
+    
+    Args:
+        config (:obj:`startup.NemoConfig`): Nemo configuration object.
+        tab (:obj:`astropy.table.Table`): Catalog containing input object positions. Must contain columns
+            'name', 'RADeg', 'decDeg'.
+        innerRadiusArcmin (float, optional): Inner aperture radius in arcmin, within which the signal is
+            measured.
+        outerRadiusArcmin (float, optional): Outer aperture radius in arcmin. The background will be
+            measured within the annulus between innerRadiusArcmin and outerRadiusArcmin.
+    
+    Returns:
+        Catalog containing spectral energy distribution measurements for each object.
+            
+    """
+
+    from scipy import ndimage
+    import nemoCython
+    
+    diagnosticsDir=config.diagnosticsDir
+        
+    # Choose lowest resolution as the reference beam - we match to that
+    refBeam=None
+    refFWHMArcmin=0
+    refIndex=0
+    beams=[]
+    for i in range(len(config.unfilteredMapsDictList)):
+        mapDict=config.unfilteredMapsDictList[i]
+        beam=signals.BeamProfile(mapDict['beamFileName'])
+        if beam.FWHMArcmin > refFWHMArcmin:
+            refBeam=beam
+            refFWHMArcmin=beam.FWHMArcmin
+            refIndex=i
+        beams.append(beam)
+    
+    # Figure out how much we need to Gaussian blur to match the reference beam
+    # (we're not doing full-blown PSF matching, this should be good enough for our purposes)
+    for i in range(len(config.unfilteredMapsDictList)):
+        mapDict=config.unfilteredMapsDictList[i]
+        beam=beams[i]
+        degPerPix=np.mean(np.diff(beam.rDeg))
+        assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
+        if i != refIndex:
+            resMin=1e6
+            smoothPix=0
+            for j in range(1, 100):
+                smoothProf=ndimage.gaussian_filter1d(beam.profile1d, j)
+                smoothProf=smoothProf/smoothProf.max()
+                res=np.sum(np.power(refBeam.profile1d-smoothProf, 2))
+                if res < resMin:
+                    resMin=res
+                    smoothPix=j
+            smoothScaleDeg=smoothPix*degPerPix
+            mapDict['smoothScaleDeg']=smoothScaleDeg
+    
+    catalogList=[]
+    for tileName in config.tileNames:
+        
+        # This loads the maps, applies any masks, and smooths to approx. same scale
+        mapDictList=[]
+        freqLabels=[]
+        for mapDict in config.unfilteredMapsDictList:           
+            mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
+            freqLabels.append(int(round(mapDict['obsFreqGHz'])))
+            mapDictList.append(mapDict)
+        wcs=mapDict['wcs']
+        shape=mapDict['data'].shape
+                
+        # Extract spectra - no error bars or units handling as yet...
+        maxSizeDeg=(outerRadiusArcmin*1.2)/60
+        tileTab=catalogs.getCatalogWithinImage(tab, shape, wcs)
+        for mapDict, label in zip(mapDictList, freqLabels):
+            d=mapDict['data']
+            flux=[]
+            for row in tileTab:                
+                degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
+                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                               row['RADeg'], row['decDeg'], 
+                                                                               maxSizeDeg)
+                innerMask=degreesMap < innerRadiusArcmin/60
+                outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin)
+                innerFlux=d[innerMask].sum()
+                outerFlux=d[outerMask].sum()
+                bck=(innerMask.sum()/outerMask.sum())*outerFlux
+                flux.append(innerFlux-bck)
+            tileTab['flux_%s' % (label)]=flux
+        
+        catalogList.append(tileTab)
+    
+    catalog=atpy.vstack(catalogList)
+        
+    return catalog
