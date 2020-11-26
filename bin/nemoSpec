@@ -1,0 +1,87 @@
+#!/usr/bin/env python
+
+"""
+
+nemoSpec: given a config file and a catalog of positions, extract average flux in apertures.
+
+"""
+
+import sys
+#print("Running under python: %s" % (sys.version))
+import os
+import datetime
+from nemo import *
+import nemo
+from nemo import MockSurvey
+import argparse
+import astropy
+import astropy.table as atpy
+import astropy.io.fits as pyfits
+from astLib import astWCS
+import numpy as np
+import pylab
+import pickle
+import types
+import yaml
+#import IPython
+pylab.matplotlib.interactive(False)
+plotSettings.update_rcParams()
+
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    parser=argparse.ArgumentParser("nemoSpec")
+    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("catFileName", help = """Catalog file name (.fits format).
+                        The catalog must contain at least the following columns: name, RADeg, decDeg.""")
+    parser.add_argument("-o", "--output", dest="outFileName", help = """Output catalog file name 
+                        (.fits format). If not given, the name of the output catalog file will be based on
+                        catFileName.""", default = None)
+    parser.add_argument("--radius-arcmin", dest = "diskRadiusArcmin", type = float, default = 4.0,
+                        help = """Disk aperture radius in arcmin, within which the signal is measured. The
+                        background will be estimated in an annulus between 
+                        diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin.""")
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
+                        want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
+                        default = False)
+    parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true", 
+                        help="""Disable strict exception handling (applies under MPI only, i.e., must be
+                        used with the -M switch). If you use this option, you will get the full traceback
+                        when a Python Exception is triggered, but the code may not terminate. This is due
+                        to the Exception handling in mpi4py.""", 
+                        default = False)
+    args=parser.parse_args()
+    
+    if args.noStrictMPIExceptions == True:
+        strictMPIExceptions=False
+    else:
+        strictMPIExceptions=True
+    
+    parDictFileName=args.configFileName
+    config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, strictMPIExceptions = strictMPIExceptions)
+    
+    catFileName=args.catFileName
+    outFileName=args.outFileName
+    tab=atpy.Table().read(catFileName)
+    if outFileName is None:
+        outFileName=catFileName.replace(".fits", "_spec.fits")
+            
+    specTab=pipelines.extractSpec(config, tab, diskRadiusArcmin = args.diskRadiusArcmin)
+    
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+        specTabList=config.comm.gather(specTab, root = 0)
+        if config.rank == 0:
+            print("... gathered catalogs ...")
+            toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
+            for collectedTab in specTabList:
+                if type(collectedTab) == astropy.table.table.Table:
+                    toStack.append(collectedTab)
+            specTab=atpy.vstack(toStack)
+            # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
+            if len(optimalCatalog) > 0:
+                specTab, numDuplicatesFound, names=catalogs.removeDuplicates(specTab)
+    if config.rank == 0:
+        specTab=catalogs.flagTileBoundarySplits(specTab)
+        specTab.sort('name')
+        specTab.write(outFileName, overwrite = True)  
