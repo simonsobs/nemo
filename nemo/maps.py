@@ -1496,7 +1496,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
                    cosmoModel = None, applyPixelWindow = True, override = None,
-                   validAreaSection = None):
+                   validAreaSection = None, minSNR = 0.0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1524,6 +1524,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         validAreaSection (list, optional): Pixel coordinates within the wcs in the format
             [xMin, xMax, yMin, yMax] that define valid area within the model map. Pixels outside this 
             region will be set to zero. Use this to remove overlaps between tile boundaries.
+        minSNR (float, optional): Only include objects with SNR > this value in the model.
+        
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
     
@@ -1536,6 +1538,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     # This works per-tile, so throw out objects that aren't in it
     catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
+    catalog=catalog[catalog['SNR'] > minSNR]
     if len(catalog) == 0:
         return None
 
