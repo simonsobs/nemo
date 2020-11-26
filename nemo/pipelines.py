@@ -438,7 +438,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
         if checkAreaConsistency == True:
             areaMask, wcsDict[tileName]=completeness.loadAreaMask(tileName, config.selFnDir)
             areaMask=areaMap[tileName].data
-            map_areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask, wcsDict[tileName])).sum()/(60**2)
+            map_areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask.shape, wcsDict[tileName])).sum()/(60**2)
             if abs(map_areaDeg2-areaDeg2) > 1e-4:
                 raise Exception("Area from areaMask.fits doesn't agree with area from RMSTab.fits")
     RMSMap.close()

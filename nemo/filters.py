@@ -242,7 +242,7 @@ class MapFilter(object):
         lmap=enmap.modlmap(self.unfilteredMapsDictList[0]['data'].shape, self.enwcs)
         l2p=interpolate.interp1d(tab['L'], tab['TT'], bounds_error=False, fill_value=0.0)
         fgPower=l2p(lmap)*lmap.shape[0]*lmap.shape[1]
-                            
+                        
         return fgPower
         
 
@@ -464,15 +464,28 @@ class MatchedFilter(MapFilter):
         if os.path.exists(self.filterFileName) == False:
                         
             fMapsForNoise=[]
-            for mapDict in self.unfilteredMapsDictList: 
+            for i in range(len(self.unfilteredMapsDictList)):
+                mapDict=self.unfilteredMapsDictList[i]
                 d=mapDict['data']
-                if 'noiseMaskCatalog' in mapDict.keys():
-                    # NOTE: This assumes noiseMaskCatalog is a point source catalog
-                    model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'], 
-                                              mapDict['beamFileName'], obsFreqGHz = None)
-                    if model is not None:
-                        d=d-model
-                fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
+                if self.params['noiseParams']['method'] == 'dataMap':
+                    if 'noiseMaskCatalog' in mapDict.keys():
+                        # NOTE: This assumes noiseMaskCatalog is a point source catalog
+                        model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'], 
+                                                mapDict['beamFileName'], obsFreqGHz = None)
+                        if model is not None:
+                            d=d-model
+                    fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
+                elif self.params['noiseParams']['method'] == 'model':
+                    # Assuming weights are actually inv var white noise level per pix
+                    # (which they are for Sigurd's maps)
+                    valid=np.nonzero(mapDict['weights'])
+                    RMS=np.mean(1/np.sqrt(mapDict['weights'][valid]))
+                    if RMS < 10.0:  # Minimum level to stop this blowing up
+                        RMS=10.0
+                    # Seeds fixed so that outputs are the same on repeated runs
+                    cmb=maps.simCMBMap(self.shape, self.wcs, beamFileName = mapDict['beamFileName'], 
+                                       seed = 3141592654+i, noiseLevel = RMS, fixNoiseSeed = True)
+                    fMapsForNoise.append(enmap.fft(enmap.apod(cmb, self.apodPix)))
             fMapsForNoise=np.array(fMapsForNoise)
         
             # Smoothing noise here is essential
@@ -483,24 +496,15 @@ class MatchedFilter(MapFilter):
                 row=[]
                 for j in range(len(self.unfilteredMapsDictList)):
                     jMap=self.unfilteredMapsDictList[j]
-                    if self.params['noiseParams']['method'] == 'dataMap':
+                    if self.params['noiseParams']['method'] in ['dataMap', 'model']:
                         NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                     elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
                         NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                         NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
                         NP=np.maximum.reduce([NP, NPCMB])
-                    elif self.params['noiseParams']['method'] == 'model':
-                        NPCMB=self.makeForegroundsPower()
-                        # Assuming weights are actually inv var white noise level
-                        ivalid=np.nonzero(iMap['weights'])
-                        jvalid=np.nonzero(jMap['weights'])
-                        iRMS=np.mean(1/np.sqrt(iMap['weights'][ivalid]))
-                        jRMS=np.mean(1/np.sqrt(jMap['weights'][jvalid]))
-                        NP=np.ones(self.shape)*(iRMS*jRMS)+NPCMB
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
-                    #astImages.saveFITS("test_%d_%d_%s.fits" % (i,  j, self.tileName), fft.fftshift(NP), None)
                     row.append(NP)
                 noiseCov.append(row)
             del fMapsForNoise
@@ -560,7 +564,7 @@ class MatchedFilter(MapFilter):
                         deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
                         signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], 
                                                              amplitude = deltaT0)
-                    #signalMap=enmap.apply_window(signalMap, pow=1.0) # NOTE: ~1.5% effect, constant
+                    signalMap=enmap.apply_window(signalMap, pow=1.0) # Needed for clusters, 1.5% effect
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)
@@ -587,7 +591,7 @@ class MatchedFilter(MapFilter):
                 fSignalMaps=[]
                 for mapDict in self.unfilteredMapsDictList:
                     signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])
-                    #signalMap=enmap.apply_window(signalMap, pow=1.0) # Tests with nemoModel show not needed
+                    #signalMap=enmap.apply_window(signalMap, pow=1.0) # Tests with nemoModel confirm not needed here
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)

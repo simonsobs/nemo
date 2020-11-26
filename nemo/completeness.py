@@ -605,7 +605,7 @@ def getTileTotalAreaDeg2(tileName, selFnDir, masksList = [], footprintLabel = No
     """
     
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
-    areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+    areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)
     totalAreaDeg2=areaMapSqDeg.sum()
     
     if footprintLabel != None:  
@@ -730,7 +730,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, diagnosticsDir = None, footpr
     print(("... making %s ..." % (RMSTabFileName)))
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
-    areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+    areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)
 
     if footprintLabel != None:  
         intersectMask=makeIntersectionMask(tileName, selFnDir, footprintLabel)
@@ -1166,7 +1166,7 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
     for tileName in tileNames:
         massLimMap, wcs=loadMassLimitMap(tileName, diagnosticsDir+os.path.sep+tileName, z)
         areaMap, wcs=loadAreaMask(tileName, selFnDir)
-        areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap, wcs)*areaMap)/(60**2)
+        areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)
         limits=np.unique(massLimMap).tolist()
         if limits[0] == 0:
             limits=limits[1:]

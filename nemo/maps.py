@@ -1069,7 +1069,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     return mapDict
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
+def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fixNoiseSeed = False):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1082,6 +1082,7 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
         beamFileName (:obj:`str`): The file name of the text file that describes the beam with which the map will be
             convolved. If None, no beam convolution is applied.
         seed (:obj:`int`): The seed used for the random CMB realisation.
+        fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
             
     Returns:
         A map (:obj:`numpy.ndarray`)
@@ -1093,7 +1094,8 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
     ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", 
                              scale = True)
     randMap=curvedsky.rand_map(shape, wcs.AWCS, ps=ps, spin=[0,2], seed = seed)
-    np.random.seed()    # Otherwise, we will end up with identical white noise...
+    if fixNoiseSeed == False:
+        np.random.seed()
     
     if beamFileName is not None:
         randMap=convolveMapWithBeam(randMap, wcs, beamFileName)
@@ -1107,7 +1109,9 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
         if noiseLevel > 0:
             generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
             randMap=randMap+generatedNoise
-
+    
+    np.random.seed()
+    
     return randMap
         
 #-------------------------------------------------------------------------------------------------------------
