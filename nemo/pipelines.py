@@ -542,22 +542,29 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     return catList
 
 #------------------------------------------------------------------------------------------------------------
-def extractSpec(config, tab, innerRadiusArcmin = 4.0, outerRadiusArcmin = 6.0):
-    """Returns a table containing the spectral energy distribution, extracted using aperture photometry at 
-    each object location in the input catalog. Maps at different frequencies will be matched to the lowest
-    resolution beam.
+def extractSpec(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False, estimateErrors = True):
+    """Returns a table containing the spectral energy distribution, extracted using compensated aperture
+    photometry at each object location in the input catalog. At each object location, the temperature
+    fluctuation is measured within a disk of radius diskRadiusArcmin, after subtracting the background
+    measured in an annulus between diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin (i.e., the method in
+    Schaan et al. 2020). Maps at different frequencies will first be matched to the lowest resolution beam.
     
     Args:
         config (:obj:`startup.NemoConfig`): Nemo configuration object.
         tab (:obj:`astropy.table.Table`): Catalog containing input object positions. Must contain columns
             'name', 'RADeg', 'decDeg'.
-        innerRadiusArcmin (float, optional): Inner aperture radius in arcmin, within which the signal is
-            measured.
-        outerRadiusArcmin (float, optional): Outer aperture radius in arcmin. The background will be
-            measured within the annulus between innerRadiusArcmin and outerRadiusArcmin.
+        diskRadiusArcmin (float, optional): Disk aperture radius in arcmin, within which the signal is
+            measured. The background will be estimated in an annulus between
+            diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin.
+        highPassFilter (bool, optional): If set, subtract the large scale background using 
+            maps.subtractBackground, with the smoothing scale set to 2 * sqrt(2) * diskRadiusArcmin.
+        estimateErrors (bool, optional): If set, estimate uncertainties by placing random apertures
+            throughout the map. For now, this is done on a tile-by-tile basis, and doesn't take into
+            account inhomogeneous noise within a tile.
     
     Returns:
-        Catalog containing spectral energy distribution measurements for each object.
+        Catalog containing spectral energy distribution measurements for each object. Units of extracted
+        signals are uK arcmin^2.
             
     """
 
@@ -565,6 +572,10 @@ def extractSpec(config, tab, innerRadiusArcmin = 4.0, outerRadiusArcmin = 6.0):
     import nemoCython
     
     diagnosticsDir=config.diagnosticsDir
+    
+    # Define apertures like Schaan et al. style compensated aperture photometry filter
+    innerRadiusArcmin=diskRadiusArcmin
+    outerRadiusArcmin=diskRadiusArcmin*np.sqrt(2)
         
     # Choose lowest resolution as the reference beam - we match to that
     refBeam=None
@@ -608,30 +619,84 @@ def extractSpec(config, tab, innerRadiusArcmin = 4.0, outerRadiusArcmin = 6.0):
         freqLabels=[]
         for mapDict in config.unfilteredMapsDictList:           
             mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
+            if highPassFilter == True:
+                mapDict['data']=maps.subtractBackground(mapDict['data'], mapDict['wcs'], 
+                                                        smoothScaleDeg = (2*outerRadiusArcmin)/60)
             freqLabels.append(int(round(mapDict['obsFreqGHz'])))
             mapDictList.append(mapDict)
         wcs=mapDict['wcs']
         shape=mapDict['data'].shape
                 
-        # Extract spectra - no error bars or units handling as yet...
+        # Extract spectra
+        pixAreaMap=maps.getPixelAreaArcmin2Map(shape, wcs)
         maxSizeDeg=(outerRadiusArcmin*1.2)/60
         tileTab=catalogs.getCatalogWithinImage(tab, shape, wcs)
-        for mapDict, label in zip(mapDictList, freqLabels):
-            d=mapDict['data']
-            flux=[]
-            for row in tileTab:                
+        for label in freqLabels:
+            tileTab['diskT_uKArcmin2_%s' % (label)]=np.zeros(len(tileTab))
+            tileTab['err_diskT_uKArcmin2_%s' % (label)]=np.zeros(len(tileTab))
+            tileTab['diskSNR_%s' % (label)]=np.zeros(len(tileTab))
+        for row in tileTab:
+            degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                            row['RADeg'], row['decDeg'], 
+                                                                            maxSizeDeg)
+            innerMask=degreesMap < innerRadiusArcmin/60
+            outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
+            for mapDict, label in zip(mapDictList, freqLabels):
+                d=mapDict['data'] 
+                diskFlux=(d[innerMask]*pixAreaMap[innerMask]).sum()-(d[outerMask]*pixAreaMap[outerMask]).sum()
+                row['diskT_uKArcmin2_%s' % (label)]=diskFlux
+                # Uncertainty from noise measured in the annulus
+                # BUT this doesn't look anything like a Gaussian...
+                #values=d[outerMask]
+                #sigma=np.std(values)
+                #mu=np.mean(values)
+                #nSigmaCut=3
+                #for i in range(10):
+                    #mask=np.logical_and(values > mu-nSigmaCut*sigma, values < mu+nSigmaCut*sigma)
+                    #sigma=np.std(values[mask])
+                    #mu=np.mean(values[mask])
+                #diskFluxErr=(sigma*pixAreaMap[innerMask]).sum()
+                #row['err_diskT_uKArcmin2_%s' % (label)]=diskFluxErr
+                #if signals.fSZ(mapDict['obsFreqGHz']) < 0:
+                    #SNRSign=-1
+                #else:
+                    #SNRSign=1
+                ##if row['name'] == 'ACT-CL J0014.9-0057':
+                    ##print("SNR hah")
+                    ##import IPython
+                    ##IPython.embed()
+                    ##sys.exit()
+                #row['diskSNR_%s' % (label)]=SNRSign*(diskFlux/diskFluxErr)
+            
+        # Estimate noise in every measurement (on average) from spatting down on random positions
+        # This will break if noise is inhomogeneous though. But at least it's done separately for each tile.
+        # We can later add something that scales / fits using the weight map?
+        if estimateErrors == True:
+            randTab=catalogs.generateRandomSourcesCatalog(mapDict['surveyMask'], wcs, 1000)
+            for label in freqLabels:
+                randTab['diskT_uKArcmin2_%s' % (label)]=np.zeros(len(randTab))
+            for row in randTab:
                 degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
                 degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                               row['RADeg'], row['decDeg'], 
-                                                                               maxSizeDeg)
+                                                                                row['RADeg'], row['decDeg'], 
+                                                                                maxSizeDeg)
                 innerMask=degreesMap < innerRadiusArcmin/60
-                outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin)
-                innerFlux=d[innerMask].sum()
-                outerFlux=d[outerMask].sum()
-                bck=(innerMask.sum()/outerMask.sum())*outerFlux
-                flux.append(innerFlux-bck)
-            tileTab['flux_%s' % (label)]=flux
-        
+                outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
+                for mapDict, label in zip(mapDictList, freqLabels):
+                    d=mapDict['data'] 
+                    diskFlux=(d[innerMask]*pixAreaMap[innerMask]).sum()-(d[outerMask]*pixAreaMap[outerMask]).sum()
+                    row['diskT_uKArcmin2_%s' % (label)]=diskFlux
+            noiseLevels={}
+            for label in freqLabels:
+                if signals.fSZ(float(label)) < 0:
+                    SNRSign=-1
+                else:
+                    SNRSign=1
+                noiseLevels[label]=np.percentile(abs(randTab['diskT_uKArcmin2_%s' % (label)]), 68.3)
+                tileTab['err_diskT_uKArcmin2_%s' % (label)]=noiseLevels[label]
+                tileTab['diskSNR_%s' % (label)]=SNRSign*(tileTab['diskT_uKArcmin2_%s' % (label)]/noiseLevels[label])
+                
         catalogList.append(tileTab)
     
     catalog=atpy.vstack(catalogList)

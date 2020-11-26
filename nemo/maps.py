@@ -1217,7 +1217,7 @@ def smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 5
     return smoothedData
     
 #-------------------------------------------------------------------------------------------------------------
-def getPixelAreaArcmin2Map(mapData, wcs):
+def getPixelAreaArcmin2Map(shape, wcs):
     """Returns a map of pixel area in arcmin2
     
     """
@@ -1227,7 +1227,7 @@ def getPixelAreaArcmin2Map(mapData, wcs):
     RACentre, decCentre=wcs.getCentreWCSCoords()
     x0, y0=wcs.wcs2pix(RACentre, decCentre)
     x1=x0+1
-    for y0 in range(mapData.shape[0]):
+    for y0 in range(shape[0]):
         y1=y0+1
         ra0, dec0=wcs.pix2wcs(x0, y0)
         ra1, dec1=wcs.pix2wcs(x1, y1)
@@ -1236,7 +1236,7 @@ def getPixelAreaArcmin2Map(mapData, wcs):
         pixAreasDeg2.append(xPixScale*yPixScale)
     pixAreasDeg2=np.array(pixAreasDeg2)
     pixAreasArcmin2=pixAreasDeg2*(60**2)
-    pixAreasArcmin2Map=np.array([pixAreasArcmin2]*mapData.shape[1]).transpose()
+    pixAreasArcmin2Map=np.array([pixAreasArcmin2]*shape[1]).transpose()
     
     return pixAreasArcmin2Map    
     
