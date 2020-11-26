@@ -469,9 +469,9 @@ class MatchedFilter(MapFilter):
                 d=mapDict['data']
                 if self.params['noiseParams']['method'] == 'dataMap':
                     if 'noiseMaskCatalog' in mapDict.keys():
-                        # NOTE: This assumes noiseMaskCatalog is a point source catalog
                         model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'], 
-                                                mapDict['beamFileName'], obsFreqGHz = None)
+                                                  mapDict['beamFileName'], 
+                                                  obsFreqGHz = mapDict['obsFreqGHz'])
                         if model is not None:
                             d=d-model
                     fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))

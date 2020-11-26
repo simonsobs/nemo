@@ -1504,7 +1504,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     Args:
         shape (tuple): The dimensions of the output map (height, width) that will contain the model sources.
         wcs (:obj:`astWCS.WCS`): A WCS object that defines the coordinate system of the map. 
-        catalog (:obj:`astropy.table.Table`): An astropy Table object containing the catalog. This must 
+        catalog (:obj:`astropy.table.Table` or str): An astropy Table object containing the catalog,
+            or a string containing the path to a catalog that astropy Table understands. The catalog must
             include columns named 'RADeg', 'decDeg' that give object coordinates. For point sources, the 
             amplitude in uK must be given in a column named 'deltaT_c'. For clusters, either 'M500' (in 
             units of 10^14 MSun), 'z', and 'fixed_y_c' must be given (as in a mock catalog), OR the 
@@ -1529,6 +1530,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     """
     
     modelMap=np.zeros(shape, dtype = float)
+    
+    if type(catalog) == str:
+        catalog=atpy.Table().read(catalog)
     
     # This works per-tile, so throw out objects that aren't in it
     catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
