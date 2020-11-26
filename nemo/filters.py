@@ -469,9 +469,15 @@ class MatchedFilter(MapFilter):
                 d=mapDict['data']
                 if self.params['noiseParams']['method'] == 'dataMap':
                     if 'noiseMaskCatalog' in mapDict.keys():
-                        model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'], 
-                                                  mapDict['beamFileName'], 
-                                                  obsFreqGHz = mapDict['obsFreqGHz'])
+                        modelPath=self.diagnosticsDir+os.path.sep+"noiseMaskModel_%.1f.fits" % (mapDict['obsFreqGHz'])
+                        if os.path.exists(modelPath) == True:
+                            with pyfits.open(modelPath) as img:
+                                model=img[0].data
+                        else:
+                            model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'],
+                                                      mapDict['beamFileName'],
+                                                      obsFreqGHz = mapDict['obsFreqGHz'])
+                            maps.saveFITS(modelPath, model, self.wcs)
                         if model is not None:
                             d=d-model
                     fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
