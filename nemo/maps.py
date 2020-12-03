@@ -1524,7 +1524,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         validAreaSection (list, optional): Pixel coordinates within the wcs in the format
             [xMin, xMax, yMin, yMax] that define valid area within the model map. Pixels outside this 
             region will be set to zero. Use this to remove overlaps between tile boundaries.
-        minSNR (float, optional): Only include objects with SNR > this value in the model.
+        minSNR (float, optional): Only include objects with SNR (or fixed_SNR) > this value in the model.
+            If found, the 'SNR' column will be used, otherwise the 'fixed_SNR' column will be used. If
+            neither is present, no cuts on the catalog will be performed.
         
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
@@ -1538,7 +1540,17 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     # This works per-tile, so throw out objects that aren't in it
     catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
-    catalog=catalog[catalog['SNR'] > minSNR]
+    
+    # Optional SNR cuts
+    if 'SNR' in catalog.keys():
+        SNRKey='SNR'
+    elif 'fixed_SNR' in catalog.keys():
+        SNRKey='fixed_SNR'
+    else:
+        SNRKey=None
+    if SNRKey is not None:
+        catalog=catalog[catalog[SNRKey] > minSNR]
+        
     if len(catalog) == 0:
         return None
 
@@ -1583,8 +1595,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                         continue
                 count=count+1
                 # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
-                if 'true_M500' in catalog.keys():
-                    M500=row['true_M500']*1e14
+                if 'true_M500c' in catalog.keys():
+                    M500=row['true_M500c']*1e14
                     z=row['redshift']
                     y0ToInsert=row['fixed_y_c']*1e-4
                 else:
