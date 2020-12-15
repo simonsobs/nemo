@@ -69,8 +69,13 @@ if __name__ == '__main__':
                               strictMPIExceptions = strictMPIExceptions)
     
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
-    
-    optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
+    if config.parDict['forcedPhotometryCatalog'] is not None:
+        label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]
+        label=os.path.basename(label)+"_"+os.path.basename(config.rootOutDir)+"_forcedCatalog"
+        optimalCatalogFileName=label+".csv"
+    else:
+        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
+
     if os.path.exists(optimalCatalogFileName) == False:
         optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
         #print("... rank = %d; catalog length = %d" % (config.rank, len(optimalCatalog)))
