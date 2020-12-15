@@ -73,6 +73,7 @@ The latest tagged version of Nemo can be installed using ``pip``:
 Note that you will need to have ``cython`` and ``numpy`` installed already (at the moment). Other dependencies
 will be installed by ``pip``, except for ``pyccl`` and ``mpi4py`` (at the moment).
 
+
 You may also install using the standard ``setup.py`` script, e.g., as root:
 
 .. code-block::

@@ -43,6 +43,10 @@ if __name__ == '__main__':
                         (raw data) and nemoOutput/selFn directories (position recovery model fits).
                         This switch overrides the sourceInjectionTest parameter in the .yml config
                         file.""", default = False)
+    parser.add_argument("-f", "--forced-photometry-catalog", dest="forcedCatalogFileName",
+                        help = """If given, instead of detecting objects, perform forced photometry in the
+                        filtered maps at object locations given in the catalog. The catalog must contain at
+                        least the following columns: name, RADeg, decDeg.""", default = None)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
                         default = False)
@@ -63,6 +67,8 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions)
+    
+    config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
     
     optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
     if os.path.exists(optimalCatalogFileName) == False:
