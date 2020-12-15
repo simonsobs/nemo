@@ -88,6 +88,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         config.parDict['photFilter']=None
         config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
         orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
+        orig_forcedPhotometryCatalog=config.parDict['forcedPhotometryCatalog']
+        config.parDict['forcedPhotometryCatalog']=None # If in this mode, only wanted on 2nd pass        
         pass1CatalogsList=[]
         surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
         for mapDict in orig_unfilteredMapsDictList:
@@ -108,6 +110,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         # We subtract those from the maps used in pass 2 - we then need to add them back at the end
         config.restoreConfig()
         config.parDict['measureShapes']=True    # We'll keep this for pass 2 as well
+        config.parDict['forcedPhotometryCatalog']=orig_forcedPhotometryCatalog
         siphonSNR=50
         for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
             mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]
@@ -118,9 +121,11 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
         
         # Merge back in the bright sources that were subtracted in pass 1
+        # (but we don't do that in forced photometry mode)
         mergeList=[catalog]
-        for pass1Catalog in pass1CatalogsList:
-            mergeList.append(pass1Catalog[pass1Catalog['SNR'] > siphonSNR])
+        if config.parDict['forcedPhotometryCatalog'] is None:
+            for pass1Catalog in pass1CatalogsList:
+                mergeList.append(pass1Catalog[pass1Catalog['SNR'] > siphonSNR])
         catalog=atpy.vstack(mergeList)
     
     return catalog

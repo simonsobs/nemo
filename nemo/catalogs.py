@@ -512,6 +512,9 @@ def removeDuplicates(tab):
         list of names for the duplicated objects.
     
     """
+
+    if len(tab) == 1:
+        return tab, 1, []
     
     # Find all duplicates
     cat=SkyCoord(ra = tab['RADeg'].data, dec = tab['decDeg'].data, unit = 'deg')
@@ -561,6 +564,9 @@ def flagTileBoundarySplits(tab, xMatchRadiusArcmin = 2.5):
         that may have been deblended across tiles, and require visual inspection.
     
     """
+    
+    if len(tab) == 1:
+        return tab
     
     xMatchRadiusDeg=xMatchRadiusArcmin/60.
     
