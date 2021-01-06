@@ -493,6 +493,8 @@ class MatchedFilter(MapFilter):
                     cmb=maps.simCMBMap(self.shape, self.wcs, beamFileName = mapDict['beamFileName'], 
                                        seed = 3141592654+i, noiseLevel = RMS, fixNoiseSeed = True)
                     fMapsForNoise.append(enmap.fft(enmap.apod(cmb, self.apodPix)))
+                else:
+                    raise Exception("'%s' is not a valid filter noise method name - fix the .yml config file" % (self.params['noiseParams']['method']))
             fMapsForNoise=np.array(fMapsForNoise)
         
             # Smoothing noise here is essential
@@ -529,8 +531,12 @@ class MatchedFilter(MapFilter):
                         if self.params['outputUnits'] == 'yc':
                             w.append(signals.fSZ(mapDict['obsFreqGHz']))
                         elif self.params['outputUnits'] == 'uK':
-                            # This is where variable spectral weighting for sources could be added...
-                            w.append(1.0)
+                            # alpha = spectral index (e.g., -0.8 ish for AGN, +3.8 ish for dusty)
+                            if 'alpha' in self.params.keys() and self.params['alpha'] is not None:
+                                w.append(np.power(mapDict['obsFreqGHz']/self.unfilteredMapsDictList[0]['obsFreqGHz'], 
+                                                  self.params['alpha']) )
+                            else:
+                                w.append(1.0)
                         else:
                             raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
                 else:
@@ -591,8 +597,8 @@ class MatchedFilter(MapFilter):
                 del fSignalMaps
                 self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
-                if len(self.unfilteredMapsDictList) > 1:
-                    raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+                #if len(self.unfilteredMapsDictList) > 1:
+                    #raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
                 combinedObsFreqGHz=float(list(self.beamSolidAnglesDict.keys())[0])  # Make less clunky...
                 signalMaps=[]
                 fSignalMaps=[]
@@ -622,8 +628,8 @@ class MatchedFilter(MapFilter):
             combinedObsFreqGHz='yc'
             beamSolidAngle_nsr=0.0   # not used for clusters...
         elif self.params['outputUnits'] == 'uK':
-            if len(self.unfilteredMapsDictList) > 1:
-                raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+            #if len(self.unfilteredMapsDictList) > 1:
+                #raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
             combinedObsFreqGHz=float(list(self.beamSolidAnglesDict.keys())[0])  # Make less clunky...
             mapUnits='uK'
             beamSolidAngle_nsr=self.beamSolidAnglesDict[combinedObsFreqGHz]

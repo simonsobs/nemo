@@ -25,10 +25,11 @@ longNames: False
 catalogCuts: ['SNR > 4.0']
 
 # Filter definitions
+twoPass: True
 mapFilters:
     - {label: "Beam",
        class: "BeamRealSpaceMatchedFilter",
-       params: {noiseParams: {method: "max(dataMap,CMB)",
+       params: {noiseParams: {method: "dataMap",
                               matchedFilterClass: 'BeamMatchedFilter',
                               RADecSection: [35.0, 40.0, -54.0, -51.0],
                               kernelMaxArcmin: 7.,
