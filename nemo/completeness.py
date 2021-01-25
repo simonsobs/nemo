@@ -516,6 +516,19 @@ class SelFn(object):
 
         return tab
     
+    
+    def getMassLimit(self, completenessFraction, zBinEdges = None):
+        """Return the mass limit (units of 10^14 MSun) as a function of redshift. By default, the same
+        binning used in the SelFn.mockSurvey object - this can be overridden by giving zBinEdges.
+        
+        """
+        
+        if zBinEdges is None:
+            zBinEdges=self.mockSurvey.zBinEdges
+            
+        return calcMassLimit(completenessFraction, self.compMz, self.mockSurvey, zBinEdges)
+
+    
 #------------------------------------------------------------------------------------------------------------
 def loadAreaMask(tileName, selFnDir):
     """Loads the survey area mask (i.e., after edge-trimming and point source masking, produced by nemo) for
@@ -946,7 +959,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
 #------------------------------------------------------------------------------------------------------------
 def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
     """Given a completeness (log10M, z) grid as made by calcCompleteness, return the mass limit (units of 
-    10^14 MSun) as a function of redshift. By defualt, the same binning used in the given mockSurvey object -
+    10^14 MSun) as a function of redshift. By default, the same binning used in the given mockSurvey object -
     this can be overridden by giving zBinEdges.
     
     """

@@ -104,7 +104,28 @@ def fSZ(obsFrequencyGHz):
     fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
     
     return fSZ
+
+#------------------------------------------------------------------------------------------------------------
+def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
+    """Given z, MDelta (in MSun), returns RDelta in Mpc, with respect to critical density or mean density.
     
+    """
+
+    if type(MDelta) == str:
+        raise Exception("MDelta is a string - use, e.g., 1.0e+14 (not 1e14 or 1e+14)")
+
+    Ez=cosmoModel.efunc(z)
+    if wrt == 'critical':
+        wrtDensity=cosmoModel.critical_density(z).value
+    elif wrt == 'mean':
+        wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z)
+    else:
+        raise Exception("wrt should be either 'critical' or 'mean'")
+    wrtDensity=(wrtDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
+    RDeltaMpc=np.power((3*MDelta)/(4*np.pi*delta*wrtDensity), 1.0/3.0)
+        
+    return RDeltaMpc
+
 #------------------------------------------------------------------------------------------------------------
 def calcR500Mpc(z, M500, cosmoModel):
     """Given z, M500 (in MSun), returns R500 in Mpc, with respect to critical density.
@@ -141,7 +162,8 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
     Use GNFWParams to specify a different shape. If GNFWParams = 'default', then the default parameters as listed
     in gnfw.py are used, i.e., 
     
-    GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905, 'tol': 1e-7, 'npts': 100}
+    GNFWParams = {'P0': 8.403, 'c500': 1.177, 'gamma': 0.3081, 'alpha': 1.0510, 'beta':  5.4905, 'tol': 1e-7,
+                  'npts': 100}
     
     Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
     GNFWParams in the filter params in the nemo .par file (see the example .par files).
