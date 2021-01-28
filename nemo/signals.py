@@ -7,7 +7,7 @@ This module contains routines for modeling cluster and source signals.
 from pixell import enmap
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
-import astropy.constants
+import astropy.constants as constants
 from astropy.cosmology import FlatLambdaCDM
 from astLib import *
 from scipy import ndimage
@@ -42,8 +42,8 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 # Global constants (we could move others here but then need to give chunky obvious names, not just e.g. h)
 TCMB=2.72548
-Mpc_in_cm=astropy.constants.pc.value*100*1e6
-MSun_in_g=astropy.constants.M_sun.value*1000
+Mpc_in_cm=constants.pc.value*100*1e6
+MSun_in_g=constants.M_sun.value*1000
 
 # Default cosmology (e.g., for fitQ)
 fiducialCosmoModel=FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = TCMB)
@@ -95,11 +95,11 @@ def fSZ(obsFrequencyGHz):
         
     """
 
-    h=6.63e-34
-    kB=1.38e-23
-    sigmaT=6.6524586e-29
-    me=9.11e-31
-    c=3e8
+    h=constants.h.value
+    kB=constants.k_B.value
+    sigmaT=constants.sigma_T.value
+    me=constants.m_e.value
+    c=constants.c.value
     x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
     fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
     

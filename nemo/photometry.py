@@ -6,6 +6,7 @@ This module contains source finding and photometry routines.
 
 import astropy.io.fits as pyfits
 import astropy.table as atpy
+import astropy.constants as constants
 import numpy as np
 import numpy.fft as fft
 from astLib import *
@@ -17,6 +18,7 @@ from scipy import interpolate
 from . import catalogs
 from . import maps
 from . import completeness
+from . import signals
 import sys
 #import IPython
 np.random.seed()
@@ -341,8 +343,8 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
                 obj[prefix+'deltaT_c']=deltaTc
                 obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']                        
                 if reportJyFluxes == True:
-                    obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
-                    obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                    obj[prefix+"fluxJy"]=deltaTToJyPerSr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                    obj[prefix+"err_fluxJy"]=deltaTToJyPerSr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
 
 #------------------------------------------------------------------------------------------------------------
 def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterpolator = True, 
@@ -444,22 +446,40 @@ def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
                         row['fixed_y_c_weight_%sGHz' % (freqStr)]=freqWeights[i]
 
 #------------------------------------------------------------------------------------------------------------
-def deltaTToJySr(temp, obsFreqGHz):
+def deltaTToJyPerSr(temp, obsFreqGHz):
     """Convert delta T (uK) to Jy/sr at the given frequency in GHz
     
     """
     
-    # We should enforce consistency of constants used in various places at some point...
-    kB=1.380658e-16
-    h=6.6260755e-27
-    c=29979245800.
+    kB=constants.k_B.cgs.value
+    h=constants.h.cgs.value
+    c=constants.c.cgs.value
     nu=obsFreqGHz*1.e9
-    T0=2.726
+    T0=signals.TCMB
     x=h*nu/(kB*T0)
     cNu=2*(kB*T0)**3/(h**2*c**2)*x**4/(4*(np.sinh(x/2.))**2)
     cNu*=1e23
     
     return temp*cNu*1e-6/T0
+
+#------------------------------------------------------------------------------------------------------------
+def JyPerSrToDeltaT(JySr, obsFreqGHz):
+    """Convert Jy/sr to delta T (uK) at the given frequency in GHz
+    
+    """
+    
+    kB=constants.k_B.cgs.value
+    h=constants.h.cgs.value
+    c=constants.c.cgs.value
+    nu=obsFreqGHz*1.e9
+    T0=signals.TCMB
+    x=h*nu/(kB*T0)
+    cNu=2*(kB*T0)**3/(h**2*c**2)*x**4/(4*(np.sinh(x/2.))**2)
+    cNu*=1e23
+    
+    temp_uK=(JySr*T0)/(cNu*1e-6)
+    
+    return temp_uK
 
 #------------------------------------------------------------------------------------------------------------
 def getRadialDistanceMap(objDict, data, wcs):
