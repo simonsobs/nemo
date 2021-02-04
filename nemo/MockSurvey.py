@@ -520,7 +520,7 @@ class MockSurvey(object):
             measured_y0s=np.random.normal(scattered_y0s, y0Noise)
         else:
             measured_y0s=scattered_y0s
-
+        
         # NOTE: We're now allowing user to specify mass definition rather than hardcoding M500c
         # So, label the output true mass column appropriately
         massColLabel="true_M%d%s" % (self.delta, self.rhoType[0])
@@ -531,6 +531,7 @@ class MockSurvey(object):
         tab.add_column(atpy.Column(np.power(10, log10Ms)/1e14, massColLabel))
         if 'true_M500c' not in tab.keys():
             tab.add_column(atpy.Column(np.power(10, log10M500c)/1e14, 'true_M500c'))
+        tab.add_column(atpy.Column(Qs, 'true_Q'))
         tab.add_column(atpy.Column(true_y0s/1e-4, 'true_fixed_y_c'))
         tab.add_column(atpy.Column(measured_y0s/1e-4, 'fixed_y_c'))
         tab.add_column(atpy.Column(y0Noise/1e-4, 'fixed_err_y_c'))

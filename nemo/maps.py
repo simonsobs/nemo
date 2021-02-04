@@ -1599,6 +1599,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     M500=row['true_M500c']*1e14
                     z=row['redshift']
                     y0ToInsert=row['fixed_y_c']*1e-4
+                    if 'true_Q' in catalog.keys():
+                        y0ToInsert=y0ToInsert/row['true_Q']
                 else:
                     if 'template' not in catalog.keys():
                         raise Exception("No M500, z, or template column found in catalog.")
