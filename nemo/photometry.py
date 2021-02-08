@@ -255,7 +255,8 @@ def getSNRValues(catalog, SNMap, wcs, useInterpolator = True, invertMap = False,
                 obj[prefix+'SNR']=SNMap[int(round(y)), int(round(x))] # read directly off of S/N map
            
 #------------------------------------------------------------------------------------------------------------
-def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict = None, useInterpolator = True):
+def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict = None,
+                  useInterpolator = True, ycObsFreqGHz = 148.0):
     """Add flux measurements to each catalog pointed to in the imageDict. Measured in 'outputUnits' 
     specified in the filter definition in the .par file (and written to the image header as 'BUNIT').
     
@@ -265,6 +266,9 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
     
     Use 'photFilter' to choose which filtered map in which to make flux measurements at fixed scale
     (fixed_delta_T_c, fixed_y_c etc.). Set to None if you don't want these.
+    
+    If the filtered map is in yc, then columns that contain the amplitude in in uK CMB delta temperature
+    will be added, named deltaT_c, assuming that the observing frequency is as set by ycObsFreqGHz
 
     """
         
@@ -332,9 +336,9 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
             # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
             if mapUnits == 'yc':
                 yc=mapValue
-                deltaTc=maps.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
                 obj[prefix+'y_c']=yc/1e-4                            # So that same units as H13 in output catalogs
                 obj[prefix+'err_y_c']=obj[prefix+'y_c']/obj[prefix+'SNR']
+                deltaTc=maps.convertToDeltaT(yc, obsFrequencyGHz = ycObsFreqGHz)
                 obj[prefix+'deltaT_c']=deltaTc
                 obj[prefix+'err_deltaT_c']=abs(deltaTc/obj[prefix+'SNR'])
             elif mapUnits == 'uK':
@@ -347,13 +351,20 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
                     obj[prefix+"err_fluxJy"]=deltaTToJyPerSr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
 
 #------------------------------------------------------------------------------------------------------------
-def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterpolator = True, 
+def makeForcedPhotometryCatalog(filteredMapDict, inputCatalog, useInterpolator = True,
                                 DS9RegionsPath = None):
     """Make a catalog on which we can do forced photometry at the locations of objects in it.
+    
+    inputCatalog is either a path or a table object.
         
     """
     
-    forcedTab=atpy.Table().read(inputCatalogFileName)
+    if type(inputCatalog) == str:
+        forcedTab=atpy.Table().read(inputCatalog)
+    elif type(inputCatalog) == atpy.Table:
+        forcedTab=inputCatalog
+    else:
+        raise Exception("Data type for inputCatalog should be a path, or an astropy Table object")
     RAKey, decKey=catalogs.getTableRADecKeys(forcedTab)
     mask=np.less(forcedTab[RAKey], 0)
     forcedTab[RAKey][mask]=360-abs(forcedTab[RAKey][mask])

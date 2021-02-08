@@ -49,7 +49,8 @@ import time
 
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
-               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True):
+               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True,
+               returnFilter = False):
     """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
     can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
     even if multifrequency (a change from previous behaviour).
@@ -111,6 +112,9 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
         filteredMapDict['surveyMask'], wcs=completeness.loadAreaMask(tileName, selFnDir)
         filteredMapDict['label']=f['label']
         filteredMapDict['tileName']=tileName
+    
+    if returnFilter == True:
+        return filteredMapDict, filterObj
     
     return filteredMapDict
     

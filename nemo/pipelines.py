@@ -547,29 +547,53 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     return catList
 
 #------------------------------------------------------------------------------------------------------------
-def extractSpec(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False, estimateErrors = True):
-    """Returns a table containing the spectral energy distribution, extracted using compensated aperture
-    photometry at each object location in the input catalog. At each object location, the temperature
-    fluctuation is measured within a disk of radius diskRadiusArcmin, after subtracting the background
-    measured in an annulus between diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin (i.e., the method in
-    Schaan et al. 2020). Maps at different frequencies will first be matched to the lowest resolution beam.
+def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFilter = False,
+                estimateErrors = True, saveFilteredMaps = False):
+    """Returns a table containing the spectral energy distribution, extracted using either compensated
+    aperture photometry (CAP) at each object location in the input catalog, or using a matched filter.
+    Maps at different frequencies will first be matched to the lowest resolution beam, using a Gaussian
+    kernel.
+    
+    For the CAP method, at each object location, the temperature fluctuation is measured within a disk of
+    radius diskRadiusArcmin, after subtracting the background measured in an annulus between
+    diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin (i.e., this should be similar to the method
+    described in Schaan et al. 2020).
+    
+    For the matched filter method, the catalog must contain a `template` column, as produced by the main
+    `nemo` script, with template names in the format Arnaud_M2e14_z0p4 (for example). This will be used to
+    set the signal scale used for each object. All definitions of filters in the config will be ignored,
+    in favour of a filter using a simple CMB + white noise model. Identical filters will be used for all
+    maps (i.e., the method of Saro et al. 2014).
+    
+    For the matched filter method, the output table contains metadata with keys in the format AF$FREQ,
+    where $FREQ is the (truncated) frequency in GHz of the associated map. These indicate the
+    amount by which the signal has been diluted in maps that have been smoothed to match the lowest
+    resolution beam. For example, `tab['deltaT_c_149']*tab.meta['AF149'] will correct the recorded
+    temperature decrements upwards to account for the additional smoothing, where `tab` is the catalog
+    returned by this function.
     
     Args:
         config (:obj:`startup.NemoConfig`): Nemo configuration object.
         tab (:obj:`astropy.table.Table`): Catalog containing input object positions. Must contain columns
             'name', 'RADeg', 'decDeg'.
-        diskRadiusArcmin (float, optional): Disk aperture radius in arcmin, within which the signal is
+        method (str, optional):
+        diskRadiusArcmin (float, optional): If using CAP method: disk aperture radius in arcmin, within which the signal is
             measured. The background will be estimated in an annulus between
             diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin.
-        highPassFilter (bool, optional): If set, subtract the large scale background using 
-            maps.subtractBackground, with the smoothing scale set to 2 * sqrt(2) * diskRadiusArcmin.
-        estimateErrors (bool, optional): If set, estimate uncertainties by placing random apertures
-            throughout the map. For now, this is done on a tile-by-tile basis, and doesn't take into
-            account inhomogeneous noise within a tile.
+        highPassFilter (bool, optional): If using CAP method: if set, subtract the large scale
+            background using maps.subtractBackground, with the smoothing scale set to 
+            2 * sqrt(2) * diskRadiusArcmin.
+        estimateErrors (bool, optional): If used CAP method: if set, estimate uncertainties by placing
+            random apertures throughout the map. For now, this is done on a tile-by-tile basis, and
+            doesn't take into account inhomogeneous noise within a tile.
+        saveFilteredMaps (bool, optional): If using matchedFilter method: save the filtered maps under
+            the `nemoSpecCache` directory (which is created in the current working directory, if it
+            doesn't already exist).
     
     Returns:
-        Catalog containing spectral energy distribution measurements for each object. Units of extracted
-        signals are uK arcmin^2.
+        Catalog containing spectral energy distribution measurements for each object.
+        For the CAP method, units of extracted signals are uK arcmin^2.
+        For the matchedFilter method, extracted signals are deltaT CMB amplitude in uK.
             
     """
 
@@ -577,10 +601,6 @@ def extractSpec(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False, est
     import nemoCython
     
     diagnosticsDir=config.diagnosticsDir
-    
-    # Define apertures like Schaan et al. style compensated aperture photometry filter
-    innerRadiusArcmin=diskRadiusArcmin
-    outerRadiusArcmin=diskRadiusArcmin*np.sqrt(2)
         
     # Choose lowest resolution as the reference beam - we match to that
     refBeam=None
@@ -597,7 +617,8 @@ def extractSpec(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False, est
         beams.append(beam)
     
     # Figure out how much we need to Gaussian blur to match the reference beam
-    # (we're not doing full-blown PSF matching, this should be good enough for our purposes)
+    # We're not doing full-blown PSF matching, this should be good enough for our purposes
+    # The attenuation factor stored here is only used by the matched filter method
     for i in range(len(config.unfilteredMapsDictList)):
         mapDict=config.unfilteredMapsDictList[i]
         beam=beams[i]
@@ -606,6 +627,7 @@ def extractSpec(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False, est
         if i != refIndex:
             resMin=1e6
             smoothPix=0
+            attFactor=1.0
             for j in range(1, 100):
                 smoothProf=ndimage.gaussian_filter1d(beam.profile1d, j)
                 smoothProf=smoothProf/smoothProf.max()
@@ -613,8 +635,138 @@ def extractSpec(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False, est
                 if res < resMin:
                     resMin=res
                     smoothPix=j
+                    attFactor=np.trapz(smoothProf)/np.trapz(beam.profile1d)
             smoothScaleDeg=smoothPix*degPerPix
             mapDict['smoothScaleDeg']=smoothScaleDeg
+            mapDict['smoothAttenuationFactor']=attFactor
+    
+    # Sort the list of maps so that the one with the reference beam is in index 0
+    config.unfilteredMapsDictList.insert(0, config.unfilteredMapsDictList.pop(refIndex)) 
+    
+    if method == 'CAP':
+        catalog=_extractSpecCAP(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False,
+                                estimateErrors = True)
+    elif method == 'matchedFilter':
+        catalog=_extractSpecMatchedFilter(config, tab, saveFilteredMaps = saveFilteredMaps)
+    else:
+        raise Exception("'method' should be 'CAP' or 'matchedFilter'")
+    
+    return catalog
+
+#------------------------------------------------------------------------------------------------------------
+def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilteredMaps = False):
+    """See extractSpec.
+    
+    """
+    
+    import copy
+    
+    # Build filter configs
+    allFilters={'class': 'ArnaudModelMatchedFilter',
+                'params': {'noiseParams': {'method': 'model', 'noiseGridArcmin': 40.0},
+                           'saveFilteredMaps': False,
+                           'saveRMSMap': False,
+                           'savePlots': False,
+                           'saveDS9Regions': False,
+                           'saveFilter': False,
+                           'outputUnits': 'yc',
+                           'edgeTrimArcmin': 0.0,
+                           'GNFWParams': 'default'}}
+    
+    filtersList=[]
+    templatesUsed=np.unique(tab['template']).tolist()
+    for t in templatesUsed:
+        newDict=copy.deepcopy(allFilters)
+        M500MSun=float(t.split("_M")[-1].split("_")[0])
+        z=float(t.split("_z")[-1].replace("p", "."))
+        newDict['params']['M500MSun']=M500MSun
+        newDict['params']['z']=z
+        newDict['label']=t
+        filtersList.append(newDict)
+    
+    os.makedirs(cacheDir, exist_ok = True)
+    
+    # Filter and extract
+    # NOTE: We assume index 0 of the unfiltered maps list is the reference for which the filter is made
+    catalogList=[]
+    for tileName in config.tileNames:
+        print("... rank %d: tileName = %s ..." % (config.rank, tileName))
+        for f in filtersList:
+            tempTileTab=None # catalogs are organised by tile and template
+            filterObj=None
+            for mapDict in config.unfilteredMapsDictList:
+                if tempTileTab is None:
+                    shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
+                           config.tileCoordsDict[tileName]['header']['NAXIS1'])
+                    wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+                    tempTileTab=catalogs.getCatalogWithinImage(tab, shape, wcs)
+                    tempTileTab=tempTileTab[tempTileTab['template'] == f['label']]
+                if tempTileTab is None or len(tempTileTab) == 0:
+                    continue
+                if mapDict['obsFreqGHz'] == config.unfilteredMapsDictList[0]['obsFreqGHz']:
+                    filteredMapDict, filterObj=filters.filterMaps([mapDict], f, tileName, 
+                                                                  filteredMapsDir = cacheDir,
+                                                                  diagnosticsDir = cacheDir, 
+                                                                  selFnDir = cacheDir, 
+                                                                  verbose = True, 
+                                                                  undoPixelWindow = True,
+                                                                  returnFilter = True)
+                else:
+                    mapDictToFilter=maps.preprocessMapDict(mapDict.copy(), tileName = tileName)
+                    filteredMapDict['data']=filterObj.applyFilter(mapDictToFilter['data'])
+                    RMSMap=filterObj.makeNoiseMap(filteredMapDict['data'])
+                    filteredMapDict['SNMap']=np.zeros(filterObj.shape)
+                    mask=np.greater(filteredMapDict['surveyMask'], 0)
+                    filteredMapDict['SNMap'][mask]=filteredMapDict['data'][mask]/RMSMap[mask]
+                if saveFilteredMaps == True:
+                    outFileName=cacheDir+os.path.sep+'%d_' % (mapDict['obsFreqGHz'])+f['label']+'#'+tileName+'.fits'
+                    # Add conversion to delta T in here?
+                    maps.saveFITS(outFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                freqTileTab=photometry.makeForcedPhotometryCatalog(filteredMapDict, 
+                                                                   tempTileTab,
+                                                                   useInterpolator = config.parDict['useInterpolator'])
+                photometry.measureFluxes(freqTileTab, filteredMapDict, cacheDir,
+                                         useInterpolator = config.parDict['useInterpolator'],
+                                         ycObsFreqGHz = mapDict['obsFreqGHz'])
+                # We don't take tileName from the catalog, some objects in overlap areas may only get cut here
+                if len(freqTileTab) == 0:
+                    tempTileTab=None
+                    continue
+                tempTileTab, freqTileTab, rDeg=catalogs.crossMatch(tempTileTab, freqTileTab, radiusArcmin = 2.5)
+                colNames=['deltaT_c', 'y_c', 'SNR']
+                suff='_%d' % (mapDict['obsFreqGHz'])
+                for colName in colNames:
+                    tempTileTab[colName+suff]=freqTileTab[colName]
+                    if 'err_'+colName in freqTileTab.keys():
+                        tempTileTab['err_'+colName+suff]=freqTileTab['err_'+colName]
+                for row in tempTileTab:
+                    if row['name'] == 'ACT-CL J0006.9-0041':
+                        print("now?")
+                        import IPython
+                        IPython.embed()
+                        sys.exit()
+            if tempTileTab is not None and len(tempTileTab) > 0:
+                catalogList.append(tempTileTab)
+    
+    catalog=atpy.vstack(catalogList)
+    
+    # Add meta data on attenuation factor (signal dilution) for each PSF-matched frequency band
+    for mapDict in config.unfilteredMapsDictList:
+        if 'smoothAttenuationFactor' in mapDict.keys():
+            catalog.meta['AF%d' % (mapDict['obsFreqGHz'])]=mapDict['smoothAttenuationFactor']
+    
+    return catalog
+    
+#------------------------------------------------------------------------------------------------------------
+def _extractSpecCAP(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFilter = False, 
+                    estimateErrors = True):
+    """See extractSpec.
+    
+    """
+        
+    # Define apertures like Schaan et al. style compensated aperture photometry filter
+    innerRadiusArcmin=diskRadiusArcmin
+    outerRadiusArcmin=diskRadiusArcmin*np.sqrt(2)
     
     catalogList=[]
     for tileName in config.tileNames:
@@ -651,28 +803,6 @@ def extractSpec(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False, est
                 d=mapDict['data'] 
                 diskFlux=(d[innerMask]*pixAreaMap[innerMask]).sum()-(d[outerMask]*pixAreaMap[outerMask]).sum()
                 row['diskT_uKArcmin2_%s' % (label)]=diskFlux
-                # Uncertainty from noise measured in the annulus
-                # BUT this doesn't look anything like a Gaussian...
-                #values=d[outerMask]
-                #sigma=np.std(values)
-                #mu=np.mean(values)
-                #nSigmaCut=3
-                #for i in range(10):
-                    #mask=np.logical_and(values > mu-nSigmaCut*sigma, values < mu+nSigmaCut*sigma)
-                    #sigma=np.std(values[mask])
-                    #mu=np.mean(values[mask])
-                #diskFluxErr=(sigma*pixAreaMap[innerMask]).sum()
-                #row['err_diskT_uKArcmin2_%s' % (label)]=diskFluxErr
-                #if signals.fSZ(mapDict['obsFreqGHz']) < 0:
-                    #SNRSign=-1
-                #else:
-                    #SNRSign=1
-                ##if row['name'] == 'ACT-CL J0014.9-0057':
-                    ##print("SNR hah")
-                    ##import IPython
-                    ##IPython.embed()
-                    ##sys.exit()
-                #row['diskSNR_%s' % (label)]=SNRSign*(diskFlux/diskFluxErr)
             
         # Estimate noise in every measurement (on average) from spatting down on random positions
         # This will break if noise is inhomogeneous though. But at least it's done separately for each tile.

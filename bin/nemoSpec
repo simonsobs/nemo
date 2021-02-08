@@ -37,10 +37,28 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--output", dest="outFileName", help = """Output catalog file name 
                         (.fits format). If not given, the name of the output catalog file will be based on
                         catFileName.""", default = None)
-    parser.add_argument("--radius-arcmin", dest = "diskRadiusArcmin", type = float, default = 4.0,
-                        help = """Disk aperture radius in arcmin, within which the signal is measured. The
-                        background will be estimated in an annulus between 
+    parser.add_argument("-m", "--method", dest = "method", type = str, default = "CAP",
+                        help = """Method used for extracting the spectrum. Options are: (i) 'CAP', which
+                        uses a compensated aperture photometry filter (use --radius-arcmin to set the
+                        aperture size); (ii) 'matchedFilter', which uses a simple single-frequency matched
+                        filter on each band, assuming a cluster signal template (this requires the input
+                        catalog to have been produced by nemo and contain template names in the format
+                        'Arnaud_M2e14_z0p4', for example, in order to choose an appropriate signal scale
+                        for each object in the catalog).""")
+    parser.add_argument("-r", "--radius-arcmin", dest = "diskRadiusArcmin", type = float, default = 4.0,
+                        help = """CAP method only. Disk aperture radius in arcmin, within which the signal
+                        is measured. The background will be estimated in an annulus between
                         diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin.""")
+    parser.add_argument("-w", "--write-maps", dest = "saveFilteredMaps", action = "store_true",
+                        help = """matchedFilter method only: If set, saves the filtered maps in the
+                        nemoSpecCache directory (which is created in the current working directory, if it
+                        doesn't already exist).""")
+    parser.add_argument("-z", "--redshift-catalog", dest = "redshiftCatFileName", type = str, default = None,
+                        help = """If given, this FITS table format catalog is cross matched (using 2.5
+                        arcmin radius) against the input catalog specified by catFileName. The analysis is
+                        then performed on the subset of objects with redshifts, and a redshift column is
+                        added to the output catalog. Note that redshift information is not used in the
+                        analysis; this feature is provided for convenience only.""")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
                         default = False)
@@ -63,10 +81,22 @@ if __name__ == '__main__':
     catFileName=args.catFileName
     outFileName=args.outFileName
     tab=atpy.Table().read(catFileName)
+    
+    if args.redshiftCatFileName is not None:
+        print("... cross matching against redshift catalog using 2.5 arcmin radius ...")
+        zTab=atpy.Table().read(args.redshiftCatFileName)
+        if 'redshift' not in zTab.keys():
+            raise Exception("No 'redshift' column found in '%s'" % (redshiftCatFileName))
+        tab, zTab, rDeg=catalogs.crossMatch(tab, zTab, radiusArcmin = 2.5)
+        tab['redshift']=zTab['redshift']
+        if 'redshiftErr' in zTab.keys():
+            tab['redshiftErr']=zTab['redshiftErr']
+    
     if outFileName is None:
         outFileName=catFileName.replace(".fits", "_spec.fits")
-            
-    specTab=pipelines.extractSpec(config, tab, diskRadiusArcmin = args.diskRadiusArcmin)
+    
+    specTab=pipelines.extractSpec(config, tab, diskRadiusArcmin = args.diskRadiusArcmin, method = args.method,
+                                  saveFilteredMaps = args.saveFilteredMaps)
     
     if config.MPIEnabled == True:
         config.comm.barrier()
@@ -79,7 +109,7 @@ if __name__ == '__main__':
                     toStack.append(collectedTab)
             specTab=atpy.vstack(toStack)
             # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
-            if len(optimalCatalog) > 0:
+            if len(specTab) > 0:
                 specTab, numDuplicatesFound, names=catalogs.removeDuplicates(specTab)
     if config.rank == 0:
         specTab=catalogs.flagTileBoundarySplits(specTab)
