@@ -750,13 +750,12 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
     
     if len(catalogList) > 0:
         catalog=atpy.vstack(catalogList)
+        # Add meta data on attenuation factor (signal dilution) for each PSF-matched frequency band
+        for mapDict in config.unfilteredMapsDictList:
+            if 'smoothAttenuationFactor' in mapDict.keys():
+                catalog.meta['AF%d' % (mapDict['obsFreqGHz'])]=mapDict['smoothAttenuationFactor']
     else:
         catalog=[]
-    
-    # Add meta data on attenuation factor (signal dilution) for each PSF-matched frequency band
-    for mapDict in config.unfilteredMapsDictList:
-        if 'smoothAttenuationFactor' in mapDict.keys():
-            catalog.meta['AF%d' % (mapDict['obsFreqGHz'])]=mapDict['smoothAttenuationFactor']
     
     return catalog
     
