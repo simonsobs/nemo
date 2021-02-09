@@ -748,7 +748,10 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
             if tempTileTab is not None and len(tempTileTab) > 0:
                 catalogList.append(tempTileTab)
     
-    catalog=atpy.vstack(catalogList)
+    if len(catalogList) > 0:
+        catalog=atpy.vstack(catalogList)
+    else:
+        catalog=[]
     
     # Add meta data on attenuation factor (signal dilution) for each PSF-matched frequency band
     for mapDict in config.unfilteredMapsDictList:
