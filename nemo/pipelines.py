@@ -739,12 +739,6 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
                     tempTileTab[colName+suff]=freqTileTab[colName]
                     if 'err_'+colName in freqTileTab.keys():
                         tempTileTab['err_'+colName+suff]=freqTileTab['err_'+colName]
-                for row in tempTileTab:
-                    if row['name'] == 'ACT-CL J0006.9-0041':
-                        print("now?")
-                        import IPython
-                        IPython.embed()
-                        sys.exit()
             if tempTileTab is not None and len(tempTileTab) > 0:
                 catalogList.append(tempTileTab)
     
