@@ -958,6 +958,8 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             
     # Optional smoothing with a Gaussian kernel (for approximate PSF-matching)
     if 'smoothScaleDeg' in mapDict.keys():
+        if 'smoothAttenuationFactor' in mapDict.keys():
+            data=data*mapDict['smoothAttenuationFactor']
         data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
         
     # Optional masking of point sources from external catalog
@@ -1043,6 +1045,8 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                             if ASizeArcmin > maskRadiusArcmin:
                                 extendedSource=True
                                 maskRadiusArcmin=ASizeArcmin
+                        if 'maskHoleDilationFactor' in mapDict.keys() and mapDict['maskHoleDilationFactor'] is not None:
+                            maskRadiusArcmin=maskRadiusArcmin*mapDict['maskHoleDilationFactor']
                         rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
                                                                                        row['RADeg'], row['decDeg'],
                                                                                        maskRadiusArcmin/60)
@@ -1060,7 +1064,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     mapDict['psMask']=psMask
     mapDict['tileName']=tileName
     
-    # Sanity check - no point continuing if masks are different shape to map (easier to tell user here)
+    # No point continuing if masks are different shape to map (easier to tell user here)
     if mapDict['data'].shape != mapDict['psMask'].shape:
         raise Exception("Map and point source mask dimensions are not the same (they should also have same WCS)")
     if mapDict['data'].shape != mapDict['surveyMask'].shape:

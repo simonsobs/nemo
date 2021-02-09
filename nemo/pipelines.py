@@ -64,7 +64,6 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         # On 2nd pass, the 1st pass catalog will be used to mask or subtract sources from maps used for 
         # noise estimation only.
         
-        # Sanity checks first
         # No point doing this if point source masks or catalogs are used
         if 'maskPointSourcesFromCatalog' in config.parDict.keys():
             raise Exception("There is no point running in two-pass mode if maskPointSourcesFromCatalog is set.")
@@ -113,6 +112,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         config.parDict['forcedPhotometryCatalog']=orig_forcedPhotometryCatalog
         siphonSNR=50
         for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
+            #catalogs.catalog2DS9(catalog[catalog['SNR'] > siphonSNR], config.diagnosticsDir+os.path.sep+"pass1_highSNR_siphoned.reg")
             mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]
             mapDict['subtractPointSourcesFromCatalog']=[catalog[catalog['SNR'] > siphonSNR]]
             mapDict['maskSubtractedPointSources']=True
@@ -565,13 +565,6 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
     in favour of a filter using a simple CMB + white noise model. Identical filters will be used for all
     maps (i.e., the method of Saro et al. 2014).
     
-    For the matched filter method, the output table contains metadata with keys in the format AF$FREQ,
-    where $FREQ is the (truncated) frequency in GHz of the associated map. These indicate the
-    amount by which the signal has been diluted in maps that have been smoothed to match the lowest
-    resolution beam. For example, `tab['deltaT_c_149']*tab.meta['AF149'] will correct the recorded
-    temperature decrements upwards to account for the additional smoothing, where `tab` is the catalog
-    returned by this function.
-    
     Args:
         config (:obj:`startup.NemoConfig`): Nemo configuration object.
         tab (:obj:`astropy.table.Table`): Catalog containing input object positions. Must contain columns
@@ -635,10 +628,10 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
                 if res < resMin:
                     resMin=res
                     smoothPix=j
-                    attFactor=np.trapz(smoothProf)/np.trapz(beam.profile1d)
+                    attFactor=1/smoothProf.max()
             smoothScaleDeg=smoothPix*degPerPix
             mapDict['smoothScaleDeg']=smoothScaleDeg
-            mapDict['smoothAttenuationFactor']=attFactor
+            mapDict['smoothAttenuationFactor']=1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max()
     
     # Sort the list of maps so that the one with the reference beam is in index 0
     config.unfilteredMapsDictList.insert(0, config.unfilteredMapsDictList.pop(refIndex)) 
@@ -744,10 +737,6 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
     
     if len(catalogList) > 0:
         catalog=atpy.vstack(catalogList)
-        # Add meta data on attenuation factor (signal dilution) for each PSF-matched frequency band
-        for mapDict in config.unfilteredMapsDictList:
-            if 'smoothAttenuationFactor' in mapDict.keys():
-                catalog.meta['AF%d' % (mapDict['obsFreqGHz'])]=mapDict['smoothAttenuationFactor']
     else:
         catalog=[]
     
