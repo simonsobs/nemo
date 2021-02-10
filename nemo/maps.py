@@ -261,10 +261,17 @@ def loadTile(pathToTileImages, tileName, returnWCS = False):
             data=img[0].data
     else:
         with pyfits.open(pathToTileImages) as img:
+            # Handle compressed full-size masks
+            if tileName == 'PRIMARY':
+                for ext in img:
+                    if img[ext].data is not None:
+                        break
+            else:
+                ext=tileName
             if returnWCS == True:
-                wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
-            data=img[tileName].data
-
+                wcs=astWCS.WCS(img[ext].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
+            data=img[ext].data
+        
     if returnWCS == True:
         return data, wcs
     else:
@@ -303,18 +310,18 @@ def makeTileDir(parDict, writeToDisk = True):
         tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
             unfilteredMapsDictList.append(mapDict.copy())
-            img=pyfits.open(mapDict['mapFileName'])
-            if tileNames == []:
-                for ext in img:
-                    tileNames.append(ext.name)
-                    clipCoordsDict[ext.name]={'clippedSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']],
-                                              'header': ext.header,
-                                              'areaMaskInClipSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']]}
-            else:
-                for ext in img:
-                    if ext.name not in tileNames:
-                        raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
-            img.close()
+            with pyfits.open(mapDict['mapFileName']) as img:
+                if tileNames == []:
+                    for ext in img:
+                        if img[ext].data is not None:
+                            tileNames.append(ext.name)
+                            clipCoordsDict[ext.name]={'clippedSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']],
+                                                      'header': ext.header,
+                                                      'areaMaskInClipSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']]}
+                else:
+                    for ext in img:
+                        if ext.name not in tileNames:
+                            raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
     else:
         tileNames=[]
         wcs=None
@@ -380,8 +387,13 @@ def makeTileDir(parDict, writeToDisk = True):
                             with pyfits.open(inFileNames[0]) as img:
                                 mapData=np.ones(img[0].data.shape)
                         else:
+                            # Allows compressed format masks
                             with pyfits.open(inMapFileName) as img:
-                                mapData=img[0].data
+                                for extName in img:
+                                    mapData=img[extName].data
+                                    if mapData is not None:
+                                        break
+                                mapData=img[extName].data
                         # Deal with Sigurd's maps which have T, Q, U as one 3d array
                         # If anyone wants to find polarized sources, this will need changing...
                         if mapData.ndim == 3:
@@ -1004,7 +1016,13 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                                                                                 row['RADeg'], row['decDeg'],
                                                                                 maskRadiusArcmin/60)
                 rArcminMap=rArcminMap*60
-                surveyMask[rArcminMap < maskRadiusArcmin]=0
+                try:
+                    surveyMask[rArcminMap < maskRadiusArcmin]=0
+                except:
+                    print("huh")
+                    import IPython
+                    IPython.embed()
+                    sys.exit()
                 psMask[rArcminMap < maskRadiusArcmin]=0
                 data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
 

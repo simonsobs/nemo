@@ -1325,6 +1325,12 @@ def tidyUp(config):
                         extName=0
                     else:
                         extName=tileName
+                    if tileName == 'PRIMARY':
+                        for extName in img:
+                            if img[extName].data is not None:
+                                break
+                    else:
+                        extName=tileName
                     if 'COMPRESSED_IMAGE' in img:
                         extName='COMPRESSED_IMAGE'                                          
                     hdu=pyfits.CompImageHDU(np.array(img[extName].data, dtype = dtype), img[extName].header, 
