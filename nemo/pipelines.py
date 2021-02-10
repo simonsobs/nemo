@@ -611,7 +611,6 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
     
     # Figure out how much we need to Gaussian blur to match the reference beam
     # We're not doing full-blown PSF matching, this should be good enough for our purposes
-    # The attenuation factor stored here is only used by the matched filter method
     for i in range(len(config.unfilteredMapsDictList)):
         mapDict=config.unfilteredMapsDictList[i]
         beam=beams[i]
@@ -653,6 +652,7 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
     """
     
     import copy
+    from pixell import enmap
     
     # Build filter configs
     allFilters={'class': 'ArnaudModelMatchedFilter',
@@ -711,6 +711,7 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
                     filteredMapDict['SNMap']=np.zeros(filterObj.shape)
                     mask=np.greater(filteredMapDict['surveyMask'], 0)
                     filteredMapDict['SNMap'][mask]=filteredMapDict['data'][mask]/RMSMap[mask]
+                    filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
                 if saveFilteredMaps == True:
                     outFileName=cacheDir+os.path.sep+'%d_' % (mapDict['obsFreqGHz'])+f['label']+'#'+tileName+'.fits'
                     # Add conversion to delta T in here?
