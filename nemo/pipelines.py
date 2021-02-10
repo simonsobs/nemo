@@ -64,9 +64,6 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         # On 2nd pass, the 1st pass catalog will be used to mask or subtract sources from maps used for 
         # noise estimation only.
         
-        # No point doing this if point source masks or catalogs are used
-        if 'maskPointSourcesFromCatalog' in config.parDict.keys():
-            raise Exception("There is no point running in two-pass mode if maskPointSourcesFromCatalog is set.")
         # No point doing this if we're not using the map itself for the noise term in the filter
         for f in config.parDict['mapFilters']:
             for key in f.keys():
@@ -85,6 +82,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                             'edgeTrimArcmin': 0.0}}
         config.parDict['mapFilters']=[pass1PtSrcSettings]
         config.parDict['photFilter']=None
+        config.parDict['maskPointSourcesFromCatalog']=[]    # This is only applied on the 2nd pass
         config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
         orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
         orig_forcedPhotometryCatalog=config.parDict['forcedPhotometryCatalog']
@@ -570,8 +568,8 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
         tab (:obj:`astropy.table.Table`): Catalog containing input object positions. Must contain columns
             'name', 'RADeg', 'decDeg'.
         method (str, optional):
-        diskRadiusArcmin (float, optional): If using CAP method: disk aperture radius in arcmin, within which the signal is
-            measured. The background will be estimated in an annulus between
+        diskRadiusArcmin (float, optional): If using CAP method: disk aperture radius in arcmin, within
+            which the signal is measured. The background will be estimated in an annulus between
             diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin.
         highPassFilter (bool, optional): If using CAP method: if set, subtract the large scale
             background using maps.subtractBackground, with the smoothing scale set to 
