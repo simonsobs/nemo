@@ -818,14 +818,19 @@ def getTableRADecKeys(tab):
     return RAKey, decKey
 
 #------------------------------------------------------------------------------------------------------------
-def getCatalogWithinImage(tab, shape, wcs):
-    """Returns the subset of the catalog with coordinates within the image defined by the given shape and wcs.
+def getCatalogWithinImage(tab, shape, wcs, mask = None):
+    """Returns the subset of the catalog with coordinates within the image defined by the given shape, wcs.
+    Optionally, a mask may also be applied.
     
     Args:
         tab (:obj:`astropy.table.Table`): Catalog, as an astropy Table object. Must have columns called 
             'RADeg', 'decDeg' that contain object coordinates in decimal degrees.
         shape (list): Shape of the array corresponding to the image / map.
         wcs (:obj:`astWCS.WCS`): WCS of the image.
+        mask (optional, :obj:`np.ndarray`): Mask with same dimensions and WCS as the image. Pixels with
+            value = 1 indicate valid area, and pixels with value = 0 are considered to be outside the mask.
+            If this is given, the returned catalog will contain only objects in the valid area defined by
+            this image mask.
     
     Returns:
         An astropy Table containing the subset of objects within the image.
@@ -834,12 +839,15 @@ def getCatalogWithinImage(tab, shape, wcs):
     
     xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist())
     xyCoords=np.array(xyCoords, dtype = int)
-    mask=[]
+    selected=[]
     for i in range(len(tab)):
         x, y=xyCoords[i][0], xyCoords[i][1]
         if x >= 0 and x < shape[1]-1 and y >= 0 and y < shape[0]-1:
-            mask.append(True)
+            if mask is not None and mask[int(round(y)), int(round(x))] == 1:
+                selected.append(True)
+            elif mask is None:
+                selected.append(True)
         else:
-            mask.append(False)
+            selected.append(False)
     
-    return tab[mask]
+    return tab[selected]
