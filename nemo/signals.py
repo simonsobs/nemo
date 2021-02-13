@@ -7,7 +7,7 @@ This module contains routines for modeling cluster and source signals.
 from pixell import enmap
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
-import astropy.constants
+import astropy.constants as constants
 from astropy.cosmology import FlatLambdaCDM
 from astLib import *
 from scipy import ndimage
@@ -42,8 +42,8 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 # Global constants (we could move others here but then need to give chunky obvious names, not just e.g. h)
 TCMB=2.72548
-Mpc_in_cm=astropy.constants.pc.value*100*1e6
-MSun_in_g=astropy.constants.M_sun.value*1000
+Mpc_in_cm=constants.pc.value*100*1e6
+MSun_in_g=constants.M_sun.value*1000
 
 # Default cosmology (e.g., for fitQ)
 fiducialCosmoModel=FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = TCMB)
@@ -65,6 +65,7 @@ class BeamProfile(object):
                 beam profile.
             tck (:obj: tuple): Spline knots for interpolating the beam onto different angular binning 
                 (in degrees), for use with interpolate.splev.
+            FWHMArcmin (float): Estimate of the beam FWHM in arcmin.
 
         """
         
@@ -78,6 +79,9 @@ class BeamProfile(object):
         
         if self.profile1d is not None and self.rDeg is not None:
             self.tck=interpolate.splrep(self.rDeg, self.profile1d)
+        
+        # This is really just for sorting a list of beams by resolution
+        self.FWHMArcmin=self.rDeg[np.argmin(abs(self.profile1d-0.5))]*60*2
 
 #------------------------------------------------------------------------------------------------------------
 def fSZ(obsFrequencyGHz):
@@ -91,16 +95,37 @@ def fSZ(obsFrequencyGHz):
         
     """
 
-    h=6.63e-34
-    kB=1.38e-23
-    sigmaT=6.6524586e-29
-    me=9.11e-31
-    c=3e8
+    h=constants.h.value
+    kB=constants.k_B.value
+    sigmaT=constants.sigma_T.value
+    me=constants.m_e.value
+    c=constants.c.value
     x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
     fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
     
     return fSZ
+
+#------------------------------------------------------------------------------------------------------------
+def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
+    """Given z, MDelta (in MSun), returns RDelta in Mpc, with respect to critical density or mean density.
     
+    """
+
+    if type(MDelta) == str:
+        raise Exception("MDelta is a string - use, e.g., 1.0e+14 (not 1e14 or 1e+14)")
+
+    Ez=cosmoModel.efunc(z)
+    if wrt == 'critical':
+        wrtDensity=cosmoModel.critical_density(z).value
+    elif wrt == 'mean':
+        wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z)
+    else:
+        raise Exception("wrt should be either 'critical' or 'mean'")
+    wrtDensity=(wrtDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
+    RDeltaMpc=np.power((3*MDelta)/(4*np.pi*delta*wrtDensity), 1.0/3.0)
+        
+    return RDeltaMpc
+
 #------------------------------------------------------------------------------------------------------------
 def calcR500Mpc(z, M500, cosmoModel):
     """Given z, M500 (in MSun), returns R500 in Mpc, with respect to critical density.
@@ -137,7 +162,8 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
     Use GNFWParams to specify a different shape. If GNFWParams = 'default', then the default parameters as listed
     in gnfw.py are used, i.e., 
     
-    GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905, 'tol': 1e-7, 'npts': 100}
+    GNFWParams = {'P0': 8.403, 'c500': 1.177, 'gamma': 0.3081, 'alpha': 1.0510, 'beta':  5.4905, 'tol': 1e-7,
+                  'npts': 100}
     
     Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
     GNFWParams in the filter params in the nemo .par file (see the example .par files).

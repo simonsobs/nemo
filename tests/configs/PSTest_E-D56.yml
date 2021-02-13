@@ -28,7 +28,7 @@ catalogCuts: ['SNR > 4.0']
 mapFilters:
     - {label: "Beam",
        class: "BeamRealSpaceMatchedFilter",
-       params: {noiseParams: {method: "max(dataMap,CMB)",
+       params: {noiseParams: {method: "model",
                               matchedFilterClass: 'BeamMatchedFilter',
                               RADecSection: [32.3, 38.2, -7.5, -2.5],
                               kernelMaxArcmin: 7.,

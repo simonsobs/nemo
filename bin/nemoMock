@@ -75,6 +75,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(configFileName, MPIEnabled = MPIEnabled, makeOutputDirs = False, 
                               selFnDir = selFnDir, setUpMaps = False, verbose = False)
     config.mocksDir=mocksDir
+    config.parDict['thresholdSigma']=args.SNRCut
     
     if numMocksToMake is None:
         if 'makeMockCatalogs' in config.parDict.keys():

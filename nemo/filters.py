@@ -49,7 +49,8 @@ import time
 
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
-               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True):
+               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True,
+               returnFilter = False):
     """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
     can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
     even if multifrequency (a change from previous behaviour).
@@ -111,6 +112,9 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
         filteredMapDict['surveyMask'], wcs=completeness.loadAreaMask(tileName, selFnDir)
         filteredMapDict['label']=f['label']
         filteredMapDict['tileName']=tileName
+    
+    if returnFilter == True:
+        return filteredMapDict, filterObj
     
     return filteredMapDict
     
@@ -242,7 +246,7 @@ class MapFilter(object):
         lmap=enmap.modlmap(self.unfilteredMapsDictList[0]['data'].shape, self.enwcs)
         l2p=interpolate.interp1d(tab['L'], tab['TT'], bounds_error=False, fill_value=0.0)
         fgPower=l2p(lmap)*lmap.shape[0]*lmap.shape[1]
-                            
+                        
         return fgPower
         
 
@@ -464,15 +468,37 @@ class MatchedFilter(MapFilter):
         if os.path.exists(self.filterFileName) == False:
                         
             fMapsForNoise=[]
-            for mapDict in self.unfilteredMapsDictList: 
+            for i in range(len(self.unfilteredMapsDictList)):
+                mapDict=self.unfilteredMapsDictList[i]
                 d=mapDict['data']
-                if 'noiseMaskCatalog' in mapDict.keys():
-                    # NOTE: This assumes noiseMaskCatalog is a point source catalog
-                    model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'], 
-                                              mapDict['beamFileName'], obsFreqGHz = None)
-                    if model is not None:
-                        d=d-model
-                fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
+                if self.params['noiseParams']['method'] == 'dataMap':
+                    if 'noiseMaskCatalog' in mapDict.keys() and mapDict['noiseMaskCatalog'] is not None:
+                        modelPath=self.diagnosticsDir+os.path.sep+"noiseMaskModel_%.1f.fits" % (mapDict['obsFreqGHz'])
+                        if os.path.exists(modelPath) == True:
+                            with pyfits.open(modelPath) as img:
+                                model=img[0].data
+                        else:
+                            model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'],
+                                                      mapDict['beamFileName'],
+                                                      obsFreqGHz = mapDict['obsFreqGHz'],
+                                                      minSNR = 5.0)
+                            maps.saveFITS(modelPath, model, self.wcs)
+                        if model is not None:
+                            d=d-model
+                    fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
+                elif self.params['noiseParams']['method'] == 'model':
+                    # Assuming weights are actually inv var white noise level per pix
+                    # (which they are for Sigurd's maps)
+                    valid=np.nonzero(mapDict['weights'])
+                    RMS=np.mean(1/np.sqrt(mapDict['weights'][valid]))
+                    if RMS < 10.0:  # Minimum level to stop this blowing up
+                        RMS=10.0
+                    # Seeds fixed so that outputs are the same on repeated runs
+                    cmb=maps.simCMBMap(self.shape, self.wcs, beamFileName = mapDict['beamFileName'], 
+                                       seed = 3141592654+i, noiseLevel = RMS, fixNoiseSeed = True)
+                    fMapsForNoise.append(enmap.fft(enmap.apod(cmb, self.apodPix)))
+                else:
+                    raise Exception("'%s' is not a valid filter noise method name - fix the .yml config file" % (self.params['noiseParams']['method']))
             fMapsForNoise=np.array(fMapsForNoise)
         
             # Smoothing noise here is essential
@@ -483,25 +509,15 @@ class MatchedFilter(MapFilter):
                 row=[]
                 for j in range(len(self.unfilteredMapsDictList)):
                     jMap=self.unfilteredMapsDictList[j]
-                    if self.params['noiseParams']['method'] == 'dataMap':
+                    if self.params['noiseParams']['method'] in ['dataMap', 'model']:
                         NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                     elif self.params['noiseParams']['method'] == 'max(dataMap,CMB)':
                         NP=np.real(fMapsForNoise[i]*fMapsForNoise[j].conj())
                         NPCMB=self.makeForegroundsPower() # This needs a beam convolution adding
                         NP=np.maximum.reduce([NP, NPCMB])
-                    elif self.params['noiseParams']['method'] == 'model':
-                        NPCMB=self.makeForegroundsPower()
-                        # Assuming weights are actually inv var white noise level
-                        ivalid=np.nonzero(iMap['weights'])
-                        jvalid=np.nonzero(jMap['weights'])
-                        iRMS=np.mean(1/np.sqrt(iMap['weights'][ivalid]))
-                        jRMS=np.mean(1/np.sqrt(jMap['weights'][jvalid]))
-                        NP=np.ones(self.shape)*(iRMS*jRMS)+NPCMB
-                        #NP=NPCMB+1 # We have to add something to avoid ringing
                     else:
                         raise Exception("Other noise models not yet re-implemented")
                     NP=ndimage.gaussian_filter(NP, kernelSize)
-                    #astImages.saveFITS("test_%d_%d_%s.fits" % (i,  j, self.tileName), fft.fftshift(NP), None)
                     row.append(NP)
                 noiseCov.append(row)
             del fMapsForNoise
@@ -511,13 +527,22 @@ class MatchedFilter(MapFilter):
             w=[]
             for mapDict in self.unfilteredMapsDictList:
                 if mapDict['units'] != 'yc':
-                    if self.params['outputUnits'] == 'yc':
-                        w.append(signals.fSZ(mapDict['obsFreqGHz']))
-                    elif self.params['outputUnits'] == 'uK':
-                        # This is where variable spectral weighting for sources would be added...
-                        w.append(1.0)
+                    # Allows custom weighting in the config file
+                    if 'specWeight' in mapDict.keys():
+                        w.append(mapDict['specWeight'])
+                    # Or standard options (e.g., SZ weighting)
                     else:
-                        raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
+                        if self.params['outputUnits'] == 'yc':
+                            w.append(signals.fSZ(mapDict['obsFreqGHz']))
+                        elif self.params['outputUnits'] == 'uK':
+                            # alpha = spectral index (e.g., -0.8 ish for AGN, +3.8 ish for dusty)
+                            if 'alpha' in self.params.keys() and self.params['alpha'] is not None:
+                                w.append(np.power(mapDict['obsFreqGHz']/self.unfilteredMapsDictList[0]['obsFreqGHz'], 
+                                                  self.params['alpha']) )
+                            else:
+                                w.append(1.0)
+                        else:
+                            raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
                 else:
                     w.append(1.0)   # For TILe-C: there should only be one map if input units are yc anyway...
             w=np.array(w)
@@ -556,7 +581,7 @@ class MatchedFilter(MapFilter):
                         deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
                         signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], 
                                                              amplitude = deltaT0)
-                    #signalMap=enmap.apply_window(signalMap, pow=1.0) # NOTE: ~1.5% effect, constant
+                    signalMap=enmap.apply_window(signalMap, pow=1.0) # Needed for clusters, 1.5% effect
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)
@@ -576,14 +601,14 @@ class MatchedFilter(MapFilter):
                 del fSignalMaps
                 self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
-                if len(self.unfilteredMapsDictList) > 1:
-                    raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+                #if len(self.unfilteredMapsDictList) > 1:
+                    #raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
                 combinedObsFreqGHz=float(list(self.beamSolidAnglesDict.keys())[0])  # Make less clunky...
                 signalMaps=[]
                 fSignalMaps=[]
                 for mapDict in self.unfilteredMapsDictList:
                     signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'])
-                    #signalMap=enmap.apply_window(signalMap, pow=1.0)
+                    #signalMap=enmap.apply_window(signalMap, pow=1.0) # Tests with nemoModel confirm not needed here
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)
@@ -607,8 +632,8 @@ class MatchedFilter(MapFilter):
             combinedObsFreqGHz='yc'
             beamSolidAngle_nsr=0.0   # not used for clusters...
         elif self.params['outputUnits'] == 'uK':
-            if len(self.unfilteredMapsDictList) > 1:
-                raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
+            #if len(self.unfilteredMapsDictList) > 1:
+                #raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
             combinedObsFreqGHz=float(list(self.beamSolidAnglesDict.keys())[0])  # Make less clunky...
             mapUnits='uK'
             beamSolidAngle_nsr=self.beamSolidAnglesDict[combinedObsFreqGHz]
@@ -1053,7 +1078,7 @@ class RealSpaceMatchedFilter(MapFilter):
         maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
         surveyMask=np.array(surveyMask, dtype = int)
         if os.path.exists(maskFileName) == False:
-            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
+            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True, compressionType = 'PLIO_1')
         
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)

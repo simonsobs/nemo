@@ -261,10 +261,17 @@ def loadTile(pathToTileImages, tileName, returnWCS = False):
             data=img[0].data
     else:
         with pyfits.open(pathToTileImages) as img:
+            # Handle compressed full-size masks
+            if tileName == 'PRIMARY':
+                for ext in img:
+                    if img[ext].data is not None:
+                        break
+            else:
+                ext=tileName
             if returnWCS == True:
-                wcs=astWCS.WCS(img[tileName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
-            data=img[tileName].data
-
+                wcs=astWCS.WCS(img[ext].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
+            data=img[ext].data
+        
     if returnWCS == True:
         return data, wcs
     else:
@@ -303,18 +310,18 @@ def makeTileDir(parDict, writeToDisk = True):
         tileNames=[]        
         for mapDict in parDict['unfilteredMaps']:
             unfilteredMapsDictList.append(mapDict.copy())
-            img=pyfits.open(mapDict['mapFileName'])
-            if tileNames == []:
-                for ext in img:
-                    tileNames.append(ext.name)
-                    clipCoordsDict[ext.name]={'clippedSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']],
-                                              'header': ext.header,
-                                              'areaMaskInClipSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']]}
-            else:
-                for ext in img:
-                    if ext.name not in tileNames:
-                        raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
-            img.close()
+            with pyfits.open(mapDict['mapFileName']) as img:
+                if tileNames == []:
+                    for ext in img:
+                        if img[ext].data is not None:
+                            tileNames.append(ext.name)
+                            clipCoordsDict[ext.name]={'clippedSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']],
+                                                      'header': ext.header,
+                                                      'areaMaskInClipSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']]}
+                else:
+                    for ext in img:
+                        if ext.name not in tileNames:
+                            raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
     else:
         tileNames=[]
         wcs=None
@@ -380,8 +387,13 @@ def makeTileDir(parDict, writeToDisk = True):
                             with pyfits.open(inFileNames[0]) as img:
                                 mapData=np.ones(img[0].data.shape)
                         else:
+                            # Allows compressed format masks
                             with pyfits.open(inMapFileName) as img:
-                                mapData=img[0].data
+                                for extName in img:
+                                    mapData=img[extName].data
+                                    if mapData is not None:
+                                        break
+                                mapData=img[extName].data
                         # Deal with Sigurd's maps which have T, Q, U as one 3d array
                         # If anyone wants to find polarized sources, this will need changing...
                         if mapData.ndim == 3:
@@ -549,16 +561,20 @@ def stitchTiles(config):
     # Defining the maps to stitch together and where they will go
     stitchDictList=[{'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_filteredMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_filteredMap.fits",
-                     'compressed': False},
+                     'compressed': False,
+                     'compressionType': None},
                     {'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_SNMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_SNMap.fits",
-                     'compressed': False},
+                     'compressed': False,
+                     'compressionType': None},
                     {'pattern': config.selFnDir+os.path.sep+"areaMask#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_areaMask.fits",
-                     'compressed': True},
+                     'compressed': True,
+                     'compressionType': 'PLIO_1'},
                     {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
-                     'compressed': True}]
+                     'compressed': True,
+                     'compressionType': 'RICE_1'}]
 
     tileCoordsDict=config.tileCoordsDict
     for filterDict in config.parDict['mapFilters']:
@@ -567,6 +583,7 @@ def stitchTiles(config):
                 pattern=stitchDict['pattern']
                 outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
                 compressed=stitchDict['compressed']
+                compressionType=stitchDict['compressionType']
                 d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
                 wcs=config.origWCS
                 for tileName in tileCoordsDict.keys():
@@ -586,7 +603,7 @@ def stitchTiles(config):
                     areaMask, areaWCS=completeness.loadAreaMask(tileName, config.selFnDir)
                     minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
                     d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask*tileData
-                saveFITS(outFileName, d, wcs, compressed = compressed)
+                saveFITS(outFileName, d, wcs, compressed = compressed, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
 def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
@@ -950,6 +967,12 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         data=convolveMapWithBeam(data, wcs, mapDict['beamFileName'], maxDistDegrees = 1.0)
         if diagnosticsDir is not None:
             saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
+            
+    # Optional smoothing with a Gaussian kernel (for approximate PSF-matching)
+    if 'smoothScaleDeg' in mapDict.keys():
+        if 'smoothAttenuationFactor' in mapDict.keys():
+            data=data*mapDict['smoothAttenuationFactor']
+        data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
         
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
@@ -993,7 +1016,13 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                                                                                 row['RADeg'], row['decDeg'],
                                                                                 maskRadiusArcmin/60)
                 rArcminMap=rArcminMap*60
-                surveyMask[rArcminMap < maskRadiusArcmin]=0
+                try:
+                    surveyMask[rArcminMap < maskRadiusArcmin]=0
+                except:
+                    print("huh")
+                    import IPython
+                    IPython.embed()
+                    sys.exit()
                 psMask[rArcminMap < maskRadiusArcmin]=0
                 data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
 
@@ -1034,6 +1063,8 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                             if ASizeArcmin > maskRadiusArcmin:
                                 extendedSource=True
                                 maskRadiusArcmin=ASizeArcmin
+                        if 'maskHoleDilationFactor' in mapDict.keys() and mapDict['maskHoleDilationFactor'] is not None:
+                            maskRadiusArcmin=maskRadiusArcmin*mapDict['maskHoleDilationFactor']
                         rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
                                                                                        row['RADeg'], row['decDeg'],
                                                                                        maskRadiusArcmin/60)
@@ -1051,7 +1082,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     mapDict['psMask']=psMask
     mapDict['tileName']=tileName
     
-    # Sanity check - no point continuing if masks are different shape to map (easier to tell user here)
+    # No point continuing if masks are different shape to map (easier to tell user here)
     if mapDict['data'].shape != mapDict['psMask'].shape:
         raise Exception("Map and point source mask dimensions are not the same (they should also have same WCS)")
     if mapDict['data'].shape != mapDict['surveyMask'].shape:
@@ -1060,7 +1091,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     return mapDict
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
+def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fixNoiseSeed = False):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1073,21 +1104,22 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
         beamFileName (:obj:`str`): The file name of the text file that describes the beam with which the map will be
             convolved. If None, no beam convolution is applied.
         seed (:obj:`int`): The seed used for the random CMB realisation.
+        fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
             
     Returns:
         A map (:obj:`numpy.ndarray`)
     
     """
     
-    from pixell import enmap, utils, powspec
-    import astropy.wcs as apywcs
-    enlibWCS=apywcs.WCS(wcs.header)
+    from pixell import curvedsky, utils, powspec
+    
     ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", 
                              scale = True)
-    randMap=enmap.rand_map(shape, enlibWCS, ps, seed = seed)
-    np.random.seed()    # Otherwise, we will end up with identical white noise...
+    randMap=curvedsky.rand_map(shape, wcs.AWCS, ps=ps, spin=[0,2], seed = seed)
+    if fixNoiseSeed == False:
+        np.random.seed()
     
-    if beamFileName != None:
+    if beamFileName is not None:
         randMap=convolveMapWithBeam(randMap, wcs, beamFileName)
 
     if type(noiseLevel) == np.ndarray:
@@ -1099,7 +1131,9 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None):
         if noiseLevel > 0:
             generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
             randMap=randMap+generatedNoise
-
+    
+    np.random.seed()
+    
     return randMap
         
 #-------------------------------------------------------------------------------------------------------------
@@ -1209,7 +1243,7 @@ def smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 5
     return smoothedData
     
 #-------------------------------------------------------------------------------------------------------------
-def getPixelAreaArcmin2Map(mapData, wcs):
+def getPixelAreaArcmin2Map(shape, wcs):
     """Returns a map of pixel area in arcmin2
     
     """
@@ -1219,7 +1253,7 @@ def getPixelAreaArcmin2Map(mapData, wcs):
     RACentre, decCentre=wcs.getCentreWCSCoords()
     x0, y0=wcs.wcs2pix(RACentre, decCentre)
     x1=x0+1
-    for y0 in range(mapData.shape[0]):
+    for y0 in range(shape[0]):
         y1=y0+1
         ra0, dec0=wcs.pix2wcs(x0, y0)
         ra1, dec1=wcs.pix2wcs(x1, y1)
@@ -1228,7 +1262,7 @@ def getPixelAreaArcmin2Map(mapData, wcs):
         pixAreasDeg2.append(xPixScale*yPixScale)
     pixAreasDeg2=np.array(pixAreasDeg2)
     pixAreasArcmin2=pixAreasDeg2*(60**2)
-    pixAreasArcmin2Map=np.array([pixAreasArcmin2]*mapData.shape[1]).transpose()
+    pixAreasArcmin2Map=np.array([pixAreasArcmin2]*shape[1]).transpose()
     
     return pixAreasArcmin2Map    
     
@@ -1484,7 +1518,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
                    cosmoModel = None, applyPixelWindow = True, override = None,
-                   validAreaSection = None, alpha = 0.0):
+                   validAreaSection = None, minSNR = 0.0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1492,7 +1526,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     Args:
         shape (tuple): The dimensions of the output map (height, width) that will contain the model sources.
         wcs (:obj:`astWCS.WCS`): A WCS object that defines the coordinate system of the map. 
-        catalog (:obj:`astropy.table.Table`): An astropy Table object containing the catalog. This must 
+        catalog (:obj:`astropy.table.Table` or str): An astropy Table object containing the catalog,
+            or a string containing the path to a catalog that astropy Table understands. The catalog must
             include columns named 'RADeg', 'decDeg' that give object coordinates. For point sources, the 
             amplitude in uK must be given in a column named 'deltaT_c'. For clusters, either 'M500' (in 
             units of 10^14 MSun), 'z', and 'fixed_y_c' must be given (as in a mock catalog), OR the 
@@ -1511,8 +1546,10 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         validAreaSection (list, optional): Pixel coordinates within the wcs in the format
             [xMin, xMax, yMin, yMax] that define valid area within the model map. Pixels outside this 
             region will be set to zero. Use this to remove overlaps between tile boundaries.
-        alpha (float, optional): This should always be zero unless you want to make a cluster model image
-            where CMB temperature evolves as T0*(1+z)^{1-alpha}.
+        minSNR (float, optional): Only include objects with SNR (or fixed_SNR) > this value in the model.
+            If found, the 'SNR' column will be used, otherwise the 'fixed_SNR' column will be used. If
+            neither is present, no cuts on the catalog will be performed.
+        
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
     
@@ -1520,8 +1557,22 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     modelMap=np.zeros(shape, dtype = float)
     
+    if type(catalog) == str:
+        catalog=atpy.Table().read(catalog)
+    
     # This works per-tile, so throw out objects that aren't in it
     catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
+    
+    # Optional SNR cuts
+    if 'SNR' in catalog.keys():
+        SNRKey='SNR'
+    elif 'fixed_SNR' in catalog.keys():
+        SNRKey='fixed_SNR'
+    else:
+        SNRKey=None
+    if SNRKey is not None:
+        catalog=catalog[catalog[SNRKey] > minSNR]
+        
     if len(catalog) == 0:
         return None
 
@@ -1566,10 +1617,12 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                         continue
                 count=count+1
                 # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
-                if 'true_M500' in catalog.keys():
-                    M500=row['true_M500']*1e14
+                if 'true_M500c' in catalog.keys():
+                    M500=row['true_M500c']*1e14
                     z=row['redshift']
                     y0ToInsert=row['fixed_y_c']*1e-4
+                    if 'true_Q' in catalog.keys():
+                        y0ToInsert=y0ToInsert/row['true_Q']
                 else:
                     if 'template' not in catalog.keys():
                         raise Exception("No M500, z, or template column found in catalog.")
@@ -1587,7 +1640,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 if obsFreqGHz is not None:
-                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz, alpha = alpha, z = z)
+                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz)
                 modelMap=modelMap+signalMap
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
@@ -1837,8 +1890,8 @@ def sourceInjectionTest(config, writeRankTable = True):
 
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
-                             plotRawData = True, rawDataAlpha = 1, pickleFileName = None,
-                             selFnDir = None):
+                             sourceInjectionModel = None, plotRawData = True, rawDataAlpha = 1,
+                             pickleFileName = None, selFnDir = None):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using
     the contents of posRecTable (see positionRecoveryTest).
     
@@ -1848,9 +1901,12 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         plotFileName (str): Path where the plot file will be written.
         percentiles (list, optional): List of percentiles to plot (some interpolation will be done) and
             for which corresponding model fit parameters will be saved (if selFnDir is not None).
+        sourceInjectionModel (str, optional): If given, select only objects matching the given source
+            injection model name from the input table. This can be used to get results for individual
+            cluster scales, for example.
         plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background.
         pickleFileName (string, optional): Saves the percentile contours data as a pickle file if not None.
-            This is saved a dictionary with top-level keys named according to percentilesToPlot.
+            This is saved as a dictionary with top-level keys named according to percentilesToPlot.
         selFnDir (string, optional): If given, model fit parameters will be written to a file named
             posRecModelParameters.txt under the given selFn directory path.
             
@@ -1873,6 +1929,10 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         plotUnits="arcmin"
         plotUnitsMultiplier=1
         plotUnitsLabel="$^\prime$"
+    
+    # Optional cut on injected signal model
+    if sourceInjectionModel is not None:
+        tab=tab[tab['sourceInjectionModel'] == str(sourceInjectionModel)]
     
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
@@ -1946,7 +2006,7 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             a=contoursDict[key]
             valid=np.where(a[SNRCol] >= 4.1)
             snr=a[SNRCol][valid]
-            rArcmin=a[SNRCol][valid]
+            rArcmin=a['rArcmin'][valid]
             try:
                 results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
             except:
@@ -1996,14 +2056,16 @@ def noiseBiasAnalysis(sourceInjTable, plotFileName, sourceInjectionModel = None)
     return None
         
 #---------------------------------------------------------------------------------------------------
-def saveFITS(outputFileName, mapData, wcs, compressed = False):
+def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType = 'RICE_1'):
     """Writes a map (2d image array) to a new .fits file.
     
     Args:
         outputFileName (str): Filename of output FITS image.
         mapData (:obj:`np.ndarray`): Map data array.
         wcs (:obj:`astWCS.WCS`): Map WCS object.
-        compressed (bool): If True, writes a compressed image.
+        compressed (bool, optional): If True, writes a compressed image.
+        compressionType (str, optional): The type of compression to use ('PLIO_1' for masks and
+            'RICE_1' for images are recommended).
     
     """
     
@@ -2020,9 +2082,17 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False):
     
     if compressed == True:
         if wcs is not None:
-            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), wcs.header)
+            if compressionType == 'PLIO_1':
+                #wcs.header['BITPIX']=8
+                #wcs.updateFromHeader()
+                dtype=np.int32
+            else:
+                dtype=np.float
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = dtype), wcs.header, 
+                                    compression_type = compressionType)
         else:
-            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = float), None)
+            hdu=pyfits.CompImageHDU(np.array(mapData, dtype = dtype), None,
+                                    compression_type = compressionType)
             
     newImg=pyfits.HDUList()
     newImg.append(hdu)

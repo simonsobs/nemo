@@ -10,9 +10,11 @@ import os
 import sys
 import numpy as np
 import astropy.table as atpy
+import astropy.io.fits as pyfits
 from astLib import *
 from nemo import startUp
 from nemo import maps
+from nemo import catalogs
 import argparse
 import astropy.io.fits as pyfits
 
@@ -20,7 +22,11 @@ import astropy.io.fits as pyfits
 if __name__ == '__main__':
 
     parser=argparse.ArgumentParser("nemoModel")
-    parser.add_argument("catalogFileName", help = """A catalog (FITS table format) as produced by nemo.""")
+    parser.add_argument("catalog", help = """Either the path to a Nemo FITS-table format catalog,
+                        or 'pointsources-N' (to generate a test catalog of N point sources that will be
+                        inserted into the map, e.g., pointsources-1000 will insert 1000 sources). If
+                        the latter, the catalog will be written to outputFileName_inputCatalog.fits
+                        (with the .fits extension stripped from outputFileName).""")
     parser.add_argument("maskFileName", help = """A FITS image file, containing a mask of the desired sky
                         area. Non-zero values in the mask are used to define tiles (typically 10 x 5 deg),
                         which are processed in parallel if MPI is enabled (see -M switch). The output sky
@@ -33,8 +39,27 @@ if __name__ == '__main__':
                         help = """If the nemo catalog contains SZ-selected clusters, the SZ signal will be
                         evaluted at the given frequency, ignoring relativistic effects 
                         (default: 150.0).""")
-    parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 0.0,
+    parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 1.0,
                         help = """Scale the input y_c values of clusters in the catalog by this factor.""")
+    parser.add_argument("-C", "--add-cmb", dest = "addCMB", action = "store_true", default = False,
+                        help = """Add a realization of the cosmic microwave background to the map. Use
+                        --cmb-seed to set the random seed to the same value if creating sets of maps at
+                        different frequencies. Note that this is very memory intensive for large maps,
+                        and is a serial operation.""")
+    parser.add_argument("-S", "--seed", dest = "seed", type = int, default = None,
+                        help = """Random seed used only for generating (optional) cosmic microwave 
+                        background or source catalog realizations (i.e., the seed is not used for
+                        noise realizations).""")
+    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", type = float, default = 0.0,
+                        help = """If a random cosmic microwave background realization had been added, add
+                        uniform per-pixel white noise at the specified level.""")
+    parser.add_argument("--split-noise-test", dest = "splitNoiseTest", action = "store_true",
+                        help = """If set, and -N and -C switches are used, split the map into two
+                        sections, with the white noise level doubled in one half of the map.""")
+    parser.add_argument("-T", "--break-map-into-tiles", dest = "breakIntoTiles", action = "store_true",
+                        help = """Break large maps into tiles using the autotiler function in Nemo.
+                        This will be turned on automatically if MPI is enabled (using -M).""", 
+                        default = False)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If used,
                         the image will be broken into a number of tiles, with one tile per process. If you
                         want to use this, run with e.g., mpiexec -np 4 nemoModel args -M""", 
@@ -61,18 +86,32 @@ if __name__ == '__main__':
     mapDict['beamFileName']=args.beamFileName
     parDict['unfilteredMaps']=[mapDict]
     parDict['mapFilters']=[]
-    #if args.MPIEnabled == True:
-    parDict['makeTileDir']=True
-    parDict['tileOverlapDeg']=1.0
-    parDict['tileDefLabel']='auto'
-    parDict['tileDefinitions']={'mask': args.maskFileName,
-                                'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
+    if args.MPIEnabled == True or args.breakIntoTiles == True:
+        parDict['makeTileDir']=True
+        parDict['tileOverlapDeg']=1.0
+        parDict['tileDefLabel']='auto'
+        parDict['tileDefinitions']={'mask': args.maskFileName,
+                                    'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
 
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
                               makeOutputDirs = False, setUpMaps = True, writeTileDir = False, 
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
     
-    tab=atpy.Table().read(args.catalogFileName)
+    if args.catalog[:12] == 'pointsources':
+        try:
+            numSources=int(args.catalog.split("-")[-1])
+        except:
+            raise Exception("Use format pointsources-N, e.g., pointsources-100 will generate a test catalog of 100 sources.")
+        with pyfits.open(args.maskFileName) as img:
+            for extName in img:
+                data=img[extName].data
+                if data is not None:
+                    break
+            wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
+            tab=catalogs.generateRandomSourcesCatalog(data, wcs, numSources, seed = args.seed)
+            tab.write(args.outputFileName.replace(".fits", "_inputCatalog.fits"), overwrite = True)
+    else:
+        tab=atpy.Table().read(args.catalog)
     
     # Optional signal scaling (useful for diff alpha sims)
     if 'y_c' in tab.keys():
@@ -130,4 +169,17 @@ if __name__ == '__main__':
             minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
             if modelsDict[tileName] is not None:
                 d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+modelsDict[tileName]
+        # Optionally add CMB
+        if args.addCMB == True:
+            shape=(d.shape)
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = args.addWhiteNoise, beamFileName = args.beamFileName, 
+                               seed = args.seed)
+            # For testing abrupt noise changes
+            if args.splitNoiseTest == True:
+                d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addWhiteNoise, [int(d.shape[0]/2), d.shape[1]])
+                # Doesn't really matter about absolute scaling of this
+                weights=np.ones(d.shape)*args.addWhiteNoise
+                weights[:int(d.shape[0]/2)]=weights[:int(d.shape[0]/2)]*2
+                weights=np.power(weights, -2)
+                astImages.saveFITS(args.outputFileName.replace(".fits", ".ivar.fits"), weights, wcs)
         astImages.saveFITS(args.outputFileName, d, wcs)

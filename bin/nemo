@@ -43,6 +43,10 @@ if __name__ == '__main__':
                         (raw data) and nemoOutput/selFn directories (position recovery model fits).
                         This switch overrides the sourceInjectionTest parameter in the .yml config
                         file.""", default = False)
+    parser.add_argument("-f", "--forced-photometry-catalog", dest="forcedCatalogFileName",
+                        help = """If given, instead of detecting objects, perform forced photometry in the
+                        filtered maps at object locations given in the catalog. The catalog must contain at
+                        least the following columns: name, RADeg, decDeg.""", default = None)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
                         default = False)
@@ -64,7 +68,14 @@ if __name__ == '__main__':
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions)
     
-    optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
+    config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
+    if config.parDict['forcedPhotometryCatalog'] is not None:
+        label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]
+        label=os.path.basename(label)+"_"+os.path.basename(config.rootOutDir)+"_forcedCatalog"
+        optimalCatalogFileName=label+".csv"
+    else:
+        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
+
     if os.path.exists(optimalCatalogFileName) == False:
         optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
         #print("... rank = %d; catalog length = %d" % (config.rank, len(optimalCatalog)))

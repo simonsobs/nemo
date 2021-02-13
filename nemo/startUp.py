@@ -35,7 +35,7 @@ def parseConfigFile(parDictFileName):
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
         maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources']
+                  'maskSubtractedPointSources', 'RADecSection', 'noiseMaskCatalog', 'maskHoleDilationFactor']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -230,8 +230,12 @@ class NemoConfig(object):
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
                 # NOTE: Zapping keywords here that appear in old ACT maps but which confuse astropy.wcs
-                self.origWCS=astWCS.WCS(img[0].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
-                self.origShape=(img[0].header['NAXIS2'], img[0].header['NAXIS1'])
+                # Also handling compressed maps
+                for ext in img:
+                    if img[ext].data is not None:
+                        break
+                self.origWCS=astWCS.WCS(img[ext].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
+                self.origShape=(img[ext].header['NAXIS2'], img[ext].header['NAXIS1'])
         except:
             # We don't always need or want this... should we warn by default if not found?
             self.origWCS=None

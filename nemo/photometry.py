@@ -6,6 +6,7 @@ This module contains source finding and photometry routines.
 
 import astropy.io.fits as pyfits
 import astropy.table as atpy
+import astropy.constants as constants
 import numpy as np
 import numpy.fft as fft
 from astLib import *
@@ -17,6 +18,7 @@ from scipy import interpolate
 from . import catalogs
 from . import maps
 from . import completeness
+from . import signals
 import sys
 #import IPython
 np.random.seed()
@@ -253,7 +255,8 @@ def getSNRValues(catalog, SNMap, wcs, useInterpolator = True, invertMap = False,
                 obj[prefix+'SNR']=SNMap[int(round(y)), int(round(x))] # read directly off of S/N map
            
 #------------------------------------------------------------------------------------------------------------
-def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict = None, useInterpolator = True):
+def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict = None,
+                  useInterpolator = True, ycObsFreqGHz = 148.0):
     """Add flux measurements to each catalog pointed to in the imageDict. Measured in 'outputUnits' 
     specified in the filter definition in the .par file (and written to the image header as 'BUNIT').
     
@@ -263,6 +266,9 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
     
     Use 'photFilter' to choose which filtered map in which to make flux measurements at fixed scale
     (fixed_delta_T_c, fixed_y_c etc.). Set to None if you don't want these.
+    
+    If the filtered map is in yc, then columns that contain the amplitude in in uK CMB delta temperature
+    will be added, named deltaT_c, assuming that the observing frequency is as set by ycObsFreqGHz
 
     """
         
@@ -330,9 +336,9 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
             # NOTE: remember, all normalisation should be done when constructing the filtered maps, i.e., not here!
             if mapUnits == 'yc':
                 yc=mapValue
-                deltaTc=maps.convertToDeltaT(yc, obsFrequencyGHz = 148.0)
                 obj[prefix+'y_c']=yc/1e-4                            # So that same units as H13 in output catalogs
                 obj[prefix+'err_y_c']=obj[prefix+'y_c']/obj[prefix+'SNR']
+                deltaTc=maps.convertToDeltaT(yc, obsFrequencyGHz = ycObsFreqGHz)
                 obj[prefix+'deltaT_c']=deltaTc
                 obj[prefix+'err_deltaT_c']=abs(deltaTc/obj[prefix+'SNR'])
             elif mapUnits == 'uK':
@@ -341,17 +347,24 @@ def measureFluxes(catalog, filteredMapDict, diagnosticsDir, photFilteredMapDict 
                 obj[prefix+'deltaT_c']=deltaTc
                 obj[prefix+'err_deltaT_c']=deltaTc/obj[prefix+'SNR']                        
                 if reportJyFluxes == True:
-                    obj[prefix+"fluxJy"]=deltaTToJySr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
-                    obj[prefix+"err_fluxJy"]=deltaTToJySr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                    obj[prefix+"fluxJy"]=deltaTToJyPerSr(obj[prefix+'deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
+                    obj[prefix+"err_fluxJy"]=deltaTToJyPerSr(obj[prefix+'err_deltaT_c'], obsFreqGHz)*beamSolidAngle_nsr*1.e-9
 
 #------------------------------------------------------------------------------------------------------------
-def makeForcedPhotometryCatalog(filteredMapDict, inputCatalogFileName, useInterpolator = True, 
+def makeForcedPhotometryCatalog(filteredMapDict, inputCatalog, useInterpolator = True,
                                 DS9RegionsPath = None):
     """Make a catalog on which we can do forced photometry at the locations of objects in it.
+    
+    inputCatalog is either a path or a table object.
         
     """
     
-    forcedTab=atpy.Table().read(inputCatalogFileName)
+    if type(inputCatalog) == str:
+        forcedTab=atpy.Table().read(inputCatalog)
+    elif type(inputCatalog) == atpy.Table:
+        forcedTab=inputCatalog
+    else:
+        raise Exception("Data type for inputCatalog should be a path, or an astropy Table object")
     RAKey, decKey=catalogs.getTableRADecKeys(forcedTab)
     mask=np.less(forcedTab[RAKey], 0)
     forcedTab[RAKey][mask]=360-abs(forcedTab[RAKey][mask])
@@ -444,22 +457,40 @@ def addFreqWeightsToCatalog(imageDict, photFilter, diagnosticsDir):
                         row['fixed_y_c_weight_%sGHz' % (freqStr)]=freqWeights[i]
 
 #------------------------------------------------------------------------------------------------------------
-def deltaTToJySr(temp, obsFreqGHz):
+def deltaTToJyPerSr(temp, obsFreqGHz):
     """Convert delta T (uK) to Jy/sr at the given frequency in GHz
     
     """
     
-    # We should enforce consistency of constants used in various places at some point...
-    kB=1.380658e-16
-    h=6.6260755e-27
-    c=29979245800.
+    kB=constants.k_B.cgs.value
+    h=constants.h.cgs.value
+    c=constants.c.cgs.value
     nu=obsFreqGHz*1.e9
-    T0=2.726
+    T0=signals.TCMB
     x=h*nu/(kB*T0)
     cNu=2*(kB*T0)**3/(h**2*c**2)*x**4/(4*(np.sinh(x/2.))**2)
     cNu*=1e23
     
     return temp*cNu*1e-6/T0
+
+#------------------------------------------------------------------------------------------------------------
+def JyPerSrToDeltaT(JySr, obsFreqGHz):
+    """Convert Jy/sr to delta T (uK) at the given frequency in GHz
+    
+    """
+    
+    kB=constants.k_B.cgs.value
+    h=constants.h.cgs.value
+    c=constants.c.cgs.value
+    nu=obsFreqGHz*1.e9
+    T0=signals.TCMB
+    x=h*nu/(kB*T0)
+    cNu=2*(kB*T0)**3/(h**2*c**2)*x**4/(4*(np.sinh(x/2.))**2)
+    cNu*=1e23
+    
+    temp_uK=(JySr*T0)/(cNu*1e-6)
+    
+    return temp_uK
 
 #------------------------------------------------------------------------------------------------------------
 def getRadialDistanceMap(objDict, data, wcs):

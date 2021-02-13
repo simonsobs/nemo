@@ -512,6 +512,9 @@ def removeDuplicates(tab):
         list of names for the duplicated objects.
     
     """
+
+    if len(tab) == 1:
+        return tab, 1, []
     
     # Find all duplicates
     cat=SkyCoord(ra = tab['RADeg'].data, dec = tab['decDeg'].data, unit = 'deg')
@@ -562,6 +565,9 @@ def flagTileBoundarySplits(tab, xMatchRadiusArcmin = 2.5):
     
     """
     
+    if len(tab) == 1:
+        return tab
+    
     xMatchRadiusDeg=xMatchRadiusArcmin/60.
     
     # Find all potential duplicates within a given matching radius
@@ -597,7 +603,7 @@ def flagTileBoundarySplits(tab, xMatchRadiusArcmin = 2.5):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def generateRandomSourcesCatalog(mapData, wcs, numSources):
+def generateRandomSourcesCatalog(mapData, wcs, numSources, seed = None):
     """Generate a random source catalog (with amplitudes in deltaT uK), with random positions within the 
     footprint of the given map (areas where pixel values == 0 are ignored). The distribution of source 
     amplitudes is roughly similar to that seen in the 148 GHz ACT maps, but this routine should only be used
@@ -608,12 +614,18 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources):
             may be randomly placed (pixel values == 0 are ignored).
         wcs (:obj:`astWCS.WCS`): WCS corresponding to the map.
         numSources (int): Number of random sources to put into the output catalog.
+        seed (optional, int): If given, generate the catalog using this random seed value. This is useful
+            for generating the same realization across maps at different frequencies. The seed will be reset
+            after this routine exits.
     
     Returns:
         An astropy Table object containing the catalog.
         
     """
     
+    if seed is not None:
+        np.random.seed(seed)
+        
     deltaT=np.random.lognormal(np.log(600), 1.1, numSources)
     ys, xs=np.where(mapData != 0)
     ys=ys+np.random.uniform(0, 1, len(ys))
@@ -627,6 +639,9 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources):
     tab.add_column(atpy.Column(coords[:, 1], "decDeg"))
     tab.add_column(atpy.Column(deltaT, "deltaT_c"))
     
+    if seed is not None:
+        np.random.seed()
+        
     return tab
 
 #------------------------------------------------------------------------------------------------------------
@@ -803,14 +818,19 @@ def getTableRADecKeys(tab):
     return RAKey, decKey
 
 #------------------------------------------------------------------------------------------------------------
-def getCatalogWithinImage(tab, shape, wcs):
-    """Returns the subset of the catalog with coordinates within the image defined by the given shape and wcs.
+def getCatalogWithinImage(tab, shape, wcs, mask = None):
+    """Returns the subset of the catalog with coordinates within the image defined by the given shape, wcs.
+    Optionally, a mask may also be applied.
     
     Args:
         tab (:obj:`astropy.table.Table`): Catalog, as an astropy Table object. Must have columns called 
             'RADeg', 'decDeg' that contain object coordinates in decimal degrees.
         shape (list): Shape of the array corresponding to the image / map.
         wcs (:obj:`astWCS.WCS`): WCS of the image.
+        mask (optional, :obj:`np.ndarray`): Mask with same dimensions and WCS as the image. Pixels with
+            value = 1 indicate valid area, and pixels with value = 0 are considered to be outside the mask.
+            If this is given, the returned catalog will contain only objects in the valid area defined by
+            this image mask.
     
     Returns:
         An astropy Table containing the subset of objects within the image.
@@ -819,12 +839,15 @@ def getCatalogWithinImage(tab, shape, wcs):
     
     xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist())
     xyCoords=np.array(xyCoords, dtype = int)
-    mask=[]
+    selected=[]
     for i in range(len(tab)):
         x, y=xyCoords[i][0], xyCoords[i][1]
         if x >= 0 and x < shape[1]-1 and y >= 0 and y < shape[0]-1:
-            mask.append(True)
+            if mask is not None and mask[int(round(y)), int(round(x))] == 1:
+                selected.append(True)
+            elif mask is None:
+                selected.append(True)
         else:
-            mask.append(False)
+            selected.append(False)
     
-    return tab[mask]
+    return tab[selected]
