@@ -6,18 +6,19 @@
 Nemo - a Sunyaev-Zel'dovich effect galaxy cluster and source finder
 ===================================================================
 
+.. include:: ../README.rst
+
 .. toctree::
-   :numbered:
-   :maxdepth: 2
    :caption: Contents:
    
-   usage
+   install
    quickstart
-   sosims
-   scripts
+   commands
+   advanced
    inputs
    outputs
    config
+   tutorials
    development
    testing
    reference

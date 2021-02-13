@@ -31,21 +31,22 @@ import pickle
 import astropy.io.fits as pyfits
 import time
 import yaml
-#import IPython
-plt.matplotlib.interactive(False)
 
-# If want to catch warnings as errors...
-#import warnings
-#warnings.filterwarnings('error')
-    
 #------------------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-
+def makeParser():
+    
     parser=argparse.ArgumentParser("nemoSelFn")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         want to use this, run with e.g., mpiexec -np 4 nemoSelFn configFile.yml -M""", 
                         default = False)
+    
+    return parser
+
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    parser=makeParser()
     args = parser.parse_args()
     
     parDictFileName=args.configFileName

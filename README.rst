@@ -1,138 +1,33 @@
-Nemo is a map filtering and source detection and characterization pipeline, designed to find
-galaxy clusters using the Sunyaev-Zel'dovich effect.
+**Nemo** is a millimeter-wave Sunyaev-Zel'dovich galaxy cluster and
+compact source detection package, originally developed for the
+`Atacama Cosmology Telescope <https://act.princeton.edu/>`_ project,
+and capable of analyzing maps that will be produced by the
+`Simons Observatory <https://simonsobservatory.org/>`_.
 
-* Documentation: https://nemo-sz.readthedocs.io
-* License: `BSD 3-Clause <LICENSE>`_
-* Authors: Matt Hilton, with contributions from Simone Aiola, David Alonso, Matthew Hasselfield,
-  Toby Marriage, Sigurd Naess, and Cristóbal Sifón (not all reflected on GitHub).
+* **Documentation:** https://nemo-sz.readthedocs.io
+* **License:** `BSD 3-Clause <LICENSE>`_
+* **Authors:** Matt Hilton, with contributions from Simone Aiola, David Alonso,
+  Matthew Hasselfield, Toby Marriage, Sigurd Naess, and Cristóbal Sifón
+  (not all reflected on GitHub).
+* **Installation:** ``pip install nemo-sz``
+* **Support:** Please use the `GitHub issues page <https://github.com/simonsobs/nemo/issues>`_, 
+  and/or contact `Matt Hilton <mailto:matt.hilton@mykolab.com>`_.
 
-Nemo has been used for the analysis of data from the 
-`Atacama Cosmology Telescope (ACT) <https://act.princeton.edu/>`_\. It is *not* the pipeline used for 
-`Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_\ , but implements many
-of the ideas presented there, and should give similar results, given the same map (or at least it
-did in the past). *It is* the pipeline, that has been used for the
-`two-season ACTPol cluster catalog paper <http://adsabs.harvard.edu/abs/2017arXiv170905600H>`_\ ,
-and the `ACT DR5 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_.
+**Nemo** is written in `Python <https://www.python.org/>`_ and
+provides `several modules <https://nemo-sz.readthedocs.io/en/latest/reference.html>`_ that
+may be useful for analyzing ACT/SO data, in addition to the command-line programs provided
+in the package.
 
-See `examples/equD56/ <examples/equD56/>`_ if you would like to (almost) re-create the 
-cluster catalog produced for the ACT DR3 E-D56 field; `examples/AdvACT/ <examples/AdvACT/>`_ if you
-want to see example config files currently being used for the ACT cluster search; and 
-`examples/pointSources/ <examples/pointSources>`_ for config files that can be used for detecting
-point sources.
+**Nemo** is *not* the pipeline used for 
+`Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_, but implements many
+of the ideas presented there. *It is* the package, that was used to produce the
+`ACT DR3 cluster catalog <https://ui.adsabs.harvard.edu/abs/2018ApJS..235...20H/abstract>`_,
+and the `ACT DR5 cluster catalog <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_.
+All ACT data products are available from `LAMBDA <https://lambda.gsfc.nasa.gov/product/act/actpol_prod_table.cfm>`_.
 
-Nemo is under active development, and not all documentation or example config files are up to date
-(some of the latter contain references to files that are not yet publicly available), though the
-aim is to complete this work by the time the 
-`ACT DR5 cluster catalog <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_
-is published. The package also contains some experimental things that are not well tested outside
-of the cluster/source finder itself.
+**Nemo** is under active development, and not all documentation or example config files are up to date
+(some may contain references to files that are not yet publicly available). The package also contains
+some experimental features that are not necessarily well tested. If you 
 
-
-Current status and previous internal releases
-=============================================
-
-We now tag releases using the format vMAJOR.MINOR.PATCH. The first tagged release using this 
-scheme is v0.1.0 (January 2020). The previously tagged internal releases of Nemo have been 
-removed, except for the version used for the 
-`two-season ACTPol cluster catalog paper <http://adsabs.harvard.edu/abs/2017arXiv170905600H>`_ - this is now tagged as ACTPol2018.
-
-
-Software needed
-===============
-
-Nemo itself is written in Python (3.6+), and requires the following additional modules to be installed 
-(currently used versions are given in brackets, later versions also probably work):
-
-* numpy (1.13.3)
-* scipy (1.3.0)
-* matplotlib (2.1.1)
-* astLib (0.11.3)
-* `pixell <https://github.com/simonsobs/pixell/>`_ (0.6.3 or git version)
-* Pillow (5.1.0)
-* astropy (3.2.1)
-* Cython (0.24.1)
-* PyYAML (3.12)
-* `CCL <https://github.com/LSSTDESC/CCL>`_ (2.1 or later)
-* mpi4py (3.0.0)
-* colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
-
-All of the dependencies can be installed using ``pip``\ , and should be installed automatically as needed
-by the ``setup.py`` script (your mileage may vary in terms of how successful ``pip`` is at building
-some of the external dependencies, depending on your set up).
-
-
-Installation
-============
-
-The latest tagged version of Nemo can be installed using ``pip``:
-    
-.. code-block::
-
-   pip install nemo-sz
-
-Note that you will need to have ``cython`` and ``numpy`` installed already (at the moment). Other dependencies
-will be installed by ``pip``, except for ``pyccl`` and ``mpi4py`` (at the moment).
-
-
-You may also install using the standard ``setup.py`` script, e.g., as root:
-
-.. code-block::
-
-   sudo python setup.py install
-
-
-Alternatively, 
-
-.. code-block::
-
-   python setup.py install --user
-
-
-will install ``nemo`` under ``$HOME/.local`` (on Ubuntu), and in some other default location on Mac.
-
-You can also use the ``--prefix`` option, e.g.,
-
-.. code-block::
-
-   python setup.py install --prefix=$HOME/local
-
-
-and then add ``$HOME/local/bin`` to $PATH, and e.g., ``$HOME/local/lib/python3.6/site-packages`` to 
-$PYTHONPATH (adjust the path according to your Python version number).
-
-.. code-block::
-
-   export PATH=$HOME/local/bin:$PATH    
-   export PYTHONPATH=$HOME/local/lib/python3.6/site-packages:$PYTHONPATH
-
-
-Running Nemo
-============
-
-Documentation is available at https://nemo-sz.readthedocs.io, including a number of
-tutorials. This is currently not complete.
-
-See `examples/equD56/README.md <examples/equD56/README.md>`_ for a tutorial on how to re-create 
-the ACTPol two-season cluster catalog (including mass estimates). 
-
-See `examples/AdvACT/ <examples/AdvACT/>`_ for example .yml config files for the current ACT DR5
-cluster search. Refer to the comments in the .yml config files themselves for information on what
-each parameter does.
-
-
-Related codes
-=============
-
-Catalogs produced by Nemo can be fed into:
-
-* `Sourcery <https://github.com/mattyowl/sourcery>`_ - a package that creates and serves a live,
-  editable web database with multi-wavelength imaging.
-* `zCluster <https://github.com/ACTCollaboration/zCluster>`_ - a code for estimating cluster
-  photometric redshifts.
-
-
-Comments, bug reports, help, suggestions etc.
-=============================================
-
-Please use the `GitHub issues page <https://github.com/simonsobs/nemo/issues>`_\, and/or
-contact Matt Hilton matt.hilton@mykolab.com.
+If you need to aknowledge the use of **Nemo**, please cite
+`Hilton et al. (2021) <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_.

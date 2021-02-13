@@ -28,34 +28,38 @@ pylab.matplotlib.interactive(False)
 plotSettings.update_rcParams()
 
 #------------------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-
+def makeParser():
     parser=argparse.ArgumentParser("nemo")
-    parser.add_argument("configFileName", help="""A .yml configuration file.""")
+    parser.add_argument("configFileName", help="A .yml configuration file.")
     parser.add_argument("-S", "--calc-selection-function", dest="calcSelFn", action="store_true",
-                        help="""Calculate the completeness in terms of cluster mass, assuming the scaling
-                        relation parameters given in the .yml config file. Output will be written under the
-                        nemoOutput/selFn directory. This switch overrides the calcSelFn parameter in the
-                        .yml config file.""", default = False)
+                        help="Calculate the completeness in terms of cluster mass, assuming the scaling\
+                        relation parameters given in the .yml config file. Output will be written under the\
+                        nemoOutput/selFn directory. This switch overrides the calcSelFn parameter in the\
+                        .yml config file.", default = False)
     parser.add_argument("-I", "--run-source-injection-test", dest="sourceInjectionTest",
-                        action="store_true", help="""Run a source injection test, using the settings given
-                        in the .yml config file. Output will be written under the nemoOutput/diagnostics
-                        (raw data) and nemoOutput/selFn directories (position recovery model fits).
-                        This switch overrides the sourceInjectionTest parameter in the .yml config
-                        file.""", default = False)
+                        action="store_true", help="Run a source injection test, using the settings given\
+                        in the .yml config file. Output will be written under the nemoOutput/diagnostics\
+                        (raw data) and nemoOutput/selFn directories (position recovery model fits).\
+                        This switch overrides the sourceInjectionTest parameter in the .yml config\
+                        file.", default = False)
     parser.add_argument("-f", "--forced-photometry-catalog", dest="forcedCatalogFileName",
-                        help = """If given, instead of detecting objects, perform forced photometry in the
-                        filtered maps at object locations given in the catalog. The catalog must contain at
-                        least the following columns: name, RADeg, decDeg.""", default = None)
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
-                        want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
+                        help = "If given, instead of detecting objects, perform forced photometry in the\
+                        filtered maps at object locations given in the catalog. The catalog must contain at\
+                        least the following columns: name, RADeg, decDeg.", default = None)
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
+                        want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M", 
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true", 
-                        help="""Disable strict exception handling (applies under MPI only, i.e., must be
-                        used with the -M switch). If you use this option, you will get the full traceback
-                        when a Python Exception is triggered, but the code may not terminate. This is due
-                        to the Exception handling in mpi4py.""", 
-                        default = False)
+                        help="Disable strict exception handling (applies under MPI only, i.e., must be\
+                        used with the -M switch). If you use this option, you will get the full traceback\
+                        when a Python Exception is triggered, but the code may not terminate. This is due\
+                        to the Exception handling in mpi4py.", default = False)
+    return parser
+    
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    parser=makeParser()
     args=parser.parse_args()
     
     if args.noStrictMPIExceptions == True:

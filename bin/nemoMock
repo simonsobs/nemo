@@ -35,29 +35,35 @@ import yaml
 plt.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-
+def makeParser():
+    
     parser=argparse.ArgumentParser("nemoMock")
-    parser.add_argument("selFnDir", help="""Directory containing files needed for computing the selection 
-                        function.""")
-    parser.add_argument("mocksDir", help="""Output directory where mock catalogs will be written.""")
-    parser.add_argument("-c", "--config", dest = "configFileName", help="""A .yml configuration file. If
-                        this is not given, the config.yml file in selFnDir will be used.""",
+    parser.add_argument("selFnDir", help="Directory containing files needed for computing the selection\
+                        function.")
+    parser.add_argument("mocksDir", help="Output directory where mock catalogs will be written.")
+    parser.add_argument("-c", "--config", dest = "configFileName", help="A .yml configuration file. If\
+                        this is not given, the config.yml file in selFnDir will be used.",
                         default = None)
-    parser.add_argument("-N", "--number-of-mocks", dest = "numMocks", help="""Number of mock catalogs to
-                        make. If this is not given, the value from makeMockCatalogs parameter in the 
-                        config file will be used.""", default = None, type = int)
+    parser.add_argument("-N", "--number-of-mocks", dest = "numMocks", help="Number of mock catalogs to\
+                        make. If this is not given, the value from makeMockCatalogs parameter in the\
+                        config file will be used.", default = None, type = int)
     parser.add_argument("-C", "--combine-mocks", dest="combineMocks", action="store_true", 
-                        help="""Combine the mocks into one large catalog (use this to make oversampled 
-                        mock catalogs).""",
-                        default = False)
+                        help="Combine the mocks into one large catalog (use this to make oversampled\
+                        mock catalogs).", default = False)
     #parser.add_argument("-f", "--footprint", dest = "footprint", help="""Footprint to use, e.g., DES,
                         #HSC, KiDS (default: full).""", default = None)
-    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="""Include only clusters with fixed_SNR > 
-                        this value.""", default = 4.0, type = float)
+    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="Include only clusters with\
+                        fixed_SNR > this value.", default = 4.0, type = float)
     #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         #want to use this, run with e.g., mpiexec -np 4 nemoMock selFnDir mocksDir -M""", 
                         #default = False)
+    
+    return parser
+    
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    parser = makeParser()
     args = parser.parse_args()
     
     selFnDir=args.selFnDir

@@ -28,46 +28,51 @@ pylab.matplotlib.interactive(False)
 plotSettings.update_rcParams()
 
 #------------------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-
+def makeParser():
+    
     parser=argparse.ArgumentParser("nemoSpec")
     parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    parser.add_argument("catFileName", help = """Catalog file name (.fits format).
-                        The catalog must contain at least the following columns: name, RADeg, decDeg.""")
-    parser.add_argument("-o", "--output", dest="outFileName", help = """Output catalog file name 
-                        (.fits format). If not given, the name of the output catalog file will be based on
-                        catFileName.""", default = None)
+    parser.add_argument("catFileName", help = "Catalog file name (.fits format).\
+                        The catalog must contain at least the following columns: name, RADeg, decDeg.")
+    parser.add_argument("-o", "--output", dest="outFileName", help = "Output catalog file name\
+                        (.fits format). If not given, the name of the output catalog file will be based on\
+                        catFileName.", default = None)
     parser.add_argument("-m", "--method", dest = "method", type = str, default = "CAP",
-                        help = """Method used for extracting the spectrum. Options are: (i) 'CAP', which
-                        uses a compensated aperture photometry filter (use --radius-arcmin to set the
-                        aperture size); (ii) 'matchedFilter', which uses a simple single-frequency matched
-                        filter on each band, assuming a cluster signal template (this requires the input
-                        catalog to have been produced by nemo and contain template names in the format
-                        'Arnaud_M2e14_z0p4', for example, in order to choose an appropriate signal scale
-                        for each object in the catalog).""")
+                        help = "Method used for extracting the spectrum. Options are: (i) 'CAP', which\
+                        uses a compensated aperture photometry filter (use --radius-arcmin to set the\
+                        aperture size); (ii) 'matchedFilter', which uses a simple single-frequency matched\
+                        filter on each band, assuming a cluster signal template (this requires the input\
+                        catalog to have been produced by nemo and contain template names in the format\
+                        'Arnaud_M2e14_z0p4', for example, in order to choose an appropriate signal scale\
+                        for each object in the catalog).")
     parser.add_argument("-r", "--radius-arcmin", dest = "diskRadiusArcmin", type = float, default = 4.0,
-                        help = """CAP method only. Disk aperture radius in arcmin, within which the signal
-                        is measured. The background will be estimated in an annulus between
-                        diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin.""")
+                        help = "CAP method only. Disk aperture radius in arcmin, within which the signal\
+                        is measured. The background will be estimated in an annulus between\
+                        diskRadiusArcmin < r < sqrt(2) * diskRadiusArcmin.")
     parser.add_argument("-w", "--write-maps", dest = "saveFilteredMaps", action = "store_true",
-                        help = """matchedFilter method only: If set, saves the filtered maps in the
-                        nemoSpecCache directory (which is created in the current working directory, if it
-                        doesn't already exist).""")
+                        help = "matchedFilter method only: If set, saves the filtered maps in the\
+                        nemoSpecCache directory (which is created in the current working directory, if it\
+                        doesn't already exist).")
     parser.add_argument("-z", "--redshift-catalog", dest = "redshiftCatFileName", type = str, default = None,
-                        help = """If given, this FITS table format catalog is cross matched (using 2.5
-                        arcmin radius) against the input catalog specified by catFileName. The analysis is
-                        then performed on the subset of objects with redshifts, and a redshift column is
-                        added to the output catalog. Note that redshift information is not used in the
-                        analysis; this feature is provided for convenience only.""")
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
-                        want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M""", 
+                        help = "If given, this FITS table format catalog is cross matched (using 2.5\
+                        arcmin radius) against the input catalog specified by catFileName. The analysis is\
+                        then performed on the subset of objects with redshifts, and a redshift column is\
+                        added to the output catalog. Note that redshift information is not used in the\
+                        analysis; this feature is provided for convenience only.")
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you\
+                        want to use this, run with e.g., mpiexec -np 4 nemoSpec configFile.yml -M",
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true", 
-                        help="""Disable strict exception handling (applies under MPI only, i.e., must be
-                        used with the -M switch). If you use this option, you will get the full traceback
-                        when a Python Exception is triggered, but the code may not terminate. This is due
-                        to the Exception handling in mpi4py.""", 
-                        default = False)
+                        help="Disable strict exception handling (applies under MPI only, i.e., must be\
+                        used with the -M switch). If you use this option, you will get the full traceback\
+                        when a Python Exception is triggered, but the code may not terminate. This is due\
+                        to the Exception handling in mpi4py.", default = False)
+    
+    return parser
+
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
     args=parser.parse_args()
     
     if args.noStrictMPIExceptions == True:

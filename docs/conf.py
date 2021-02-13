@@ -49,6 +49,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
     'readthedocs_ext.readthedocs',
+    'sphinxarg.ext'
 ]
 
 # Add any paths that contain templates here, relative to this directory.

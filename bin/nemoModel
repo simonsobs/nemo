@@ -19,57 +19,62 @@ import argparse
 import astropy.io.fits as pyfits
 
 #------------------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-
+def makeParser():
+    
     parser=argparse.ArgumentParser("nemoModel")
-    parser.add_argument("catalog", help = """Either the path to a Nemo FITS-table format catalog,
-                        or 'pointsources-N' (to generate a test catalog of N point sources that will be
-                        inserted into the map, e.g., pointsources-1000 will insert 1000 sources). If
-                        the latter, the catalog will be written to outputFileName_inputCatalog.fits
-                        (with the .fits extension stripped from outputFileName).""")
-    parser.add_argument("maskFileName", help = """A FITS image file, containing a mask of the desired sky
-                        area. Non-zero values in the mask are used to define tiles (typically 10 x 5 deg),
-                        which are processed in parallel if MPI is enabled (see -M switch). The output sky
-                        model image will have the same pixelization as the mask image.""")
-    parser.add_argument("beamFileName", help = """A file containing the beam profile, in the standard format
-                        used by ACT.""")
-    parser.add_argument("outputFileName", help = """The name of the output file that will contain the sky
-                        model image.""")
+    parser.add_argument("catalog", help = "Either the path to a Nemo FITS-table format catalog,\
+                        or 'pointsources-N' (to generate a test catalog of N point sources that will be\
+                        inserted into the map, e.g., pointsources-1000 will insert 1000 sources). If\
+                        the latter, the catalog will be written to outputFileName_inputCatalog.fits\
+                        (with the .fits extension stripped from outputFileName).")
+    parser.add_argument("maskFileName", help = "A FITS image file, containing a mask of the desired sky\
+                        area. Non-zero values in the mask are used to define tiles (typically 10 x 5 deg),\
+                        which are processed in parallel if MPI is enabled (see -M switch). The output sky\
+                        model image will have the same pixelization as the mask image.")
+    parser.add_argument("beamFileName", help = "A file containing the beam profile, in the standard format\
+                        used by ACT.")
+    parser.add_argument("outputFileName", help = "The name of the output file that will contain the sky\
+                        model image.")
     parser.add_argument("-f", "--frequency-GHz", dest = "obsFreqGHz", type = float, default = 150.0,
-                        help = """If the nemo catalog contains SZ-selected clusters, the SZ signal will be
-                        evaluted at the given frequency, ignoring relativistic effects 
-                        (default: 150.0).""")
+                        help = "If the nemo catalog contains SZ-selected clusters, the SZ signal will be\
+                        evaluted at the given frequency, ignoring relativistic effects (default: 150.0).")
     parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 1.0,
-                        help = """Scale the input y_c values of clusters in the catalog by this factor.""")
+                        help = "Scale the input y_c values of clusters in the catalog by this factor.")
     parser.add_argument("-C", "--add-cmb", dest = "addCMB", action = "store_true", default = False,
-                        help = """Add a realization of the cosmic microwave background to the map. Use
-                        --cmb-seed to set the random seed to the same value if creating sets of maps at
-                        different frequencies. Note that this is very memory intensive for large maps,
-                        and is a serial operation.""")
+                        help = "Add a realization of the cosmic microwave background to the map. Use\
+                        --cmb-seed to set the random seed to the same value if creating sets of maps at\
+                        different frequencies. Note that this is very memory intensive for large maps,\
+                        and is a serial operation.")
     parser.add_argument("-S", "--seed", dest = "seed", type = int, default = None,
-                        help = """Random seed used only for generating (optional) cosmic microwave 
-                        background or source catalog realizations (i.e., the seed is not used for
-                        noise realizations).""")
+                        help = "Random seed used only for generating (optional) cosmic microwave\
+                        background or source catalog realizations (i.e., the seed is not used for\
+                        noise realizations).")
     parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", type = float, default = 0.0,
-                        help = """If a random cosmic microwave background realization had been added, add
-                        uniform per-pixel white noise at the specified level.""")
+                        help = "If a random cosmic microwave background realization had been added, add\
+                        uniform per-pixel white noise at the specified level.")
     parser.add_argument("--split-noise-test", dest = "splitNoiseTest", action = "store_true",
-                        help = """If set, and -N and -C switches are used, split the map into two
-                        sections, with the white noise level doubled in one half of the map.""")
+                        help = "If set, and -N and -C switches are used, split the map into two\
+                        sections, with the white noise level doubled in one half of the map.")
     parser.add_argument("-T", "--break-map-into-tiles", dest = "breakIntoTiles", action = "store_true",
-                        help = """Break large maps into tiles using the autotiler function in Nemo.
-                        This will be turned on automatically if MPI is enabled (using -M).""", 
+                        help = "Break large maps into tiles using the autotiler function in Nemo.\
+                        This will be turned on automatically if MPI is enabled (using -M).", 
                         default = False)
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If used,
-                        the image will be broken into a number of tiles, with one tile per process. If you
-                        want to use this, run with e.g., mpiexec -np 4 nemoModel args -M""", 
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If used,\
+                        the image will be broken into a number of tiles, with one tile per process. If you\
+                        want to use this, run with e.g., mpiexec -np 4 nemoModel args -M", 
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true",
-                        help="""Disable strict exception handling (applies under MPI only, i.e., must be
-                        used with the -M switch). If you use this option, you will get the full traceback
-                        when a Python Exception is triggered, but the code may not terminate. This is due
-                        to the Exception handling in mpi4py.""",
-                        default = False)
+                        help="Disable strict exception handling (applies under MPI only, i.e., must be\
+                        used with the -M switch). If you use this option, you will get the full traceback\
+                        when a Python Exception is triggered, but the code may not terminate. This is due\
+                        to the Exception handling in mpi4py.", default = False)
+    
+    return parser
+
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    parser = makeParser()
     args = parser.parse_args()
     
     if args.noStrictMPIExceptions == True:

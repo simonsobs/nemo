@@ -1,10 +1,11 @@
 .. _QuickStartPage:
 
-======================================================
-Quickstart: Cluster Finding in the ACTPol E-D56 Field
-======================================================
+========================================
+Quickstart: Finding Sources and Clusters
+========================================
 
 
-.. include:: ../examples/equD56/README.rst
+.. 
+  This will be replaced.
 
 
