@@ -14,6 +14,9 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astLib import astWCS
 import numpy as np
+from scipy import ndimage
+import copy
+from pixell import enmap
 from . import startUp
 from . import filters
 from . import photometry
@@ -22,6 +25,7 @@ from . import maps
 from . import signals
 from . import completeness
 from . import MockSurvey
+import nemoCython
 #import IPython
 
 #------------------------------------------------------------------------------------------------------------
@@ -587,9 +591,6 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
         For the matchedFilter method, extracted signals are deltaT CMB amplitude in uK.
             
     """
-
-    from scipy import ndimage
-    import nemoCython
     
     diagnosticsDir=config.diagnosticsDir
         
@@ -648,10 +649,7 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
     """See extractSpec.
     
     """
-    
-    import copy
-    from pixell import enmap
-    
+        
     # Build filter configs
     allFilters={'class': 'ArnaudModelMatchedFilter',
                 'params': {'noiseParams': {'method': 'model', 'noiseGridArcmin': 40.0},
@@ -759,7 +757,7 @@ def _extractSpecCAP(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPas
         mapDictList=[]
         freqLabels=[]
         for mapDict in config.unfilteredMapsDictList:           
-            mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
+            mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName)
             if highPassFilter == True:
                 mapDict['data']=maps.subtractBackground(mapDict['data'], mapDict['wcs'], 
                                                         smoothScaleDeg = (2*outerRadiusArcmin)/60)
