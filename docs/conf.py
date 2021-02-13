@@ -14,9 +14,8 @@
 #
 import os
 import sys
-# sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('..'))
-sys.path.insert(0, os.path.abspath('../nemo'))
+#sys.path.insert(0, os.path.abspath('../nemo'))
 from nemo import __version__
 
 # -- My stuff ----------------------------------------------------------------

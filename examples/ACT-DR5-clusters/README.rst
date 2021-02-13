@@ -1,6 +1,7 @@
+Running the ACT DR5 Cluster Search
+==================================
 
-Running Nemo on AdvACT maps
-===========================
+This is in the process of being updated for the DR5 release.
 
 The `examples/AdvACT <https://github.com/simonsobs/nemo/tree/master/examples/AdvACT>`_
 directory contains config files used for the AdvACT cluster 
