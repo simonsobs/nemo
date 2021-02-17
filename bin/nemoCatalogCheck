@@ -22,19 +22,26 @@ import argparse
 #import IPython
 
 #------------------------------------------------------------------------------------------------------------
+def makeParser():
+        
+    parser=argparse.ArgumentParser("nemoCatalogCheck")
+    parser.add_argument("configFileName", help="A .yml configuration file. By default, the correspondng nemo\
+                        output is assumed to be in a directory named configFileName, minus the .yml\
+                        extension.")
+    parser.add_argument("catalogFileName", help = "Object catalog to check against nemo output (.fits format).\
+                        The catalog must contain at least the following columns (alternatives given in\
+                        brackets): name, RADeg (or ra, RA), decDeg (or dec, DEC).")
+    parser.add_argument("-r", "--match-radius", dest="matchRadiusArcmin", help = "Cross-matching radius in\
+                        arcmin.", default = 2.5)
+    parser.add_argument("-S", "--fixed-SNR-cut", dest="fixedSNRCut", help = "Cut in fixed_SNR used to select\
+                        nemo cluster candidates.", default = 4.0)
+    
+    return parser
+
+#------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
 
-    parser=argparse.ArgumentParser("nemoCatalogCheck")
-    parser.add_argument("configFileName", help="""A .yml configuration file. By default, the correspondng nemo 
-                        output is assumed to be in a directory named configFileName, minus the .yml 
-                        extension.""")
-    parser.add_argument("catalogFileName", help = """Object catalog to check against nemo output (.fits format).
-                        The catalog must contain at least the following columns (alternatives given in 
-                        brackets): name, RADeg (or ra, RA), decDeg (or dec, DEC).""")
-    parser.add_argument("-r", "--match-radius", dest="matchRadiusArcmin", help = """Cross-matching radius in 
-                        arcmin.""", default = 2.5)
-    parser.add_argument("-S", "--fixed-SNR-cut", dest="fixedSNRCut", help = """Cut in fixed_SNR used to select
-                        nemo cluster candidates.""", default = 4.0)
+    parser = makeParser()
     args = parser.parse_args()
     
     configFileName=args.configFileName

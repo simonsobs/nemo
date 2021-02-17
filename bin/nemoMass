@@ -175,38 +175,45 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-if __name__ == '__main__':
-
+def makeParser():
+    
     parser=argparse.ArgumentParser("nemoMass")
-    parser.add_argument("configFileName", help="""A .yml configuration file.""")
-    parser.add_argument("-c", "--catalog", dest="catFileName", help = """Catalog file name (.fits format).
-                        The catalog must contain at least the following columns: name, RADeg, decDeg, 
-                        redshift, redshiftErr. If the catalog contains fixed_y_c, fixed_err_y_c columns, 
-                        then these will be used to infer mass estimates. If not, "forced photometry" mode 
-                        will be enabled, and the fixed_y_c, fixed_err_y_c values will be extracted from the
-                        filtered maps.""", default = None)
-    parser.add_argument("-o", "--output", dest="outFileName", help = """Output catalog file name 
-                        (.fits format). If not given, the name of the output catalog file will be based on
-                        either configFileName or catFileName.""", default = None)
-    parser.add_argument("-z", "--z-column", dest="zColumnName", help = """Specify the name of the redshift
-                        column in the input catalog.""", default = None)
-    parser.add_argument("-e", "--z-error-column", dest="zErrColumnName", help = """Specify the name of the 
-                        redshift uncertainty column in the input catalog.""", default = None)
-    parser.add_argument("-F", "--forced-photometry", dest="forcedPhotometry", help = """Do forced photometry.
-                        This is automatically enabled if the catalog does not contain the fixed_y_c, 
-                        fixed_err_y_c columns. Use this switch to force using this mode even if the 
-                        catalog already contains fixed_y_c, fixed_err_y_c  columns (e.g., for doing forced
-                        photometry on one ACT map using positions of clusters found in another, deeper 
-                        map).""", default = False, action="store_true")
-    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
-                        want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M""", 
+    parser.add_argument("configFileName", help="A .yml configuration file.")
+    parser.add_argument("-c", "--catalog", dest="catFileName", help = "Catalog file name (.fits format).\
+                        The catalog must contain at least the following columns: name, RADeg, decDeg, \
+                        redshift, redshiftErr. If the catalog contains fixed_y_c, fixed_err_y_c columns,\
+                        then these will be used to infer mass estimates. If not, 'forced photometry' mode \
+                        will be enabled, and the fixed_y_c, fixed_err_y_c values will be extracted from the\
+                        filtered maps.", default = None)
+    parser.add_argument("-o", "--output", dest="outFileName", help = "Output catalog file name \
+                        (.fits format). If not given, the name of the output catalog file will be based on\
+                        either configFileName or catFileName.", default = None)
+    parser.add_argument("-z", "--z-column", dest="zColumnName", help = "Specifies the name of the redshift\
+                        column in the input catalog.", default = None)
+    parser.add_argument("-e", "--z-error-column", dest="zErrColumnName", help = "Specifies the name of the \
+                        redshift uncertainty column in the input catalog.", default = None)
+    parser.add_argument("-F", "--forced-photometry", dest="forcedPhotometry", help = "Perform forced photometry.\
+                        This is automatically enabled if the catalog does not contain the fixed_y_c, \
+                        fixed_err_y_c columns. Use this switch to force using this mode even if the \
+                        catalog already contains fixed_y_c, fixed_err_y_c  columns (e.g., for doing forced\
+                        photometry on one ACT map using positions of clusters found in another, deeper \
+                        map).", default = False, action="store_true")
+    parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
+                        want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M", 
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true",
-                        help="""Disable strict exception handling (applies under MPI only, i.e., must be
-                        used with the -M switch). If you use this option, you will get the full traceback
-                        when a Python Exception is triggered, but the code may not terminate. This is due
-                        to the Exception handling in mpi4py.""",
-                        default = False)
+                        help="Disable strict exception handling (applies under MPI only, i.e., must be\
+                        used with the -M switch). If you use this option, you will get the full traceback\
+                        when a Python Exception is triggered, but the code may not terminate. This is due\
+                        to the Exception handling in mpi4py.", default = False)
+
+    return parser
+
+#------------------------------------------------------------------------------------------------------------
+if __name__ == '__main__':
+
+    
+    parser = makeParser()
     args = parser.parse_args()
     
     parDictFileName=args.configFileName

@@ -107,7 +107,18 @@ def fSZ(obsFrequencyGHz):
 
 #------------------------------------------------------------------------------------------------------------
 def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
-    """Given z, MDelta (in MSun), returns RDelta in Mpc, with respect to critical density or mean density.
+    """Calculate RDelta (e.g., R500c, R200m etc.) in Mpc, for a halo with the given mass and redshift.
+    
+    Args:
+        z (float): Redshift.
+        MDelta (float): Halo mass in units of solar masses, using the definition set by `delta` and `wrt`.
+        cosmoModel (:obj:`astropy.cosmology.core.FlatLambdaCDM`): Cosmology object.
+        delta (float, optional): Overdensity (e.g., typically 500 or 200).
+        wrt (str, optional): Use 'critical' or 'mean' to set the definition of density with respect to the
+            critical density or mean density at the given redshift.
+    
+    Returns:
+        RDelta (in Mpc)
     
     """
 
@@ -118,7 +129,7 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
     if wrt == 'critical':
         wrtDensity=cosmoModel.critical_density(z).value
     elif wrt == 'mean':
-        wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z)
+        wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z).value
     else:
         raise Exception("wrt should be either 'critical' or 'mean'")
     wrtDensity=(wrtDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
@@ -127,19 +138,21 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
     return RDeltaMpc
 
 #------------------------------------------------------------------------------------------------------------
-def calcR500Mpc(z, M500, cosmoModel):
-    """Given z, M500 (in MSun), returns R500 in Mpc, with respect to critical density.
+def calcR500Mpc(z, M500c, cosmoModel):
+    """Calculate R500 (in Mpc), with respect to critical density.
+
+    Args:
+        z (float): Redshift.
+        M500c (float): Halo mass in units of solar masses, using the definition set by `delta` and `wrt`.
+        cosmoModel (:obj:`astropy.cosmology.core.FlatLambdaCDM`): Cosmology object.
+    
+    Returns:
+        R500c (in Mpc)
     
     """
-
-    if type(M500) == str:
-        raise Exception("M500 is a string - check M500MSun in your .yml config file: use, e.g., 1.0e+14 (not 1e14 or 1e+14)")
-
-    Ez=cosmoModel.efunc(z)
-    criticalDensity=cosmoModel.critical_density(z).value
-    criticalDensity=(criticalDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
-    R500Mpc=np.power((3*M500)/(4*np.pi*500*criticalDensity), 1.0/3.0)
-        
+    
+    R500Mpc=calcRDeltaMpc(z, M500c, cosmoModel, delta = 500, wrt = 'critical')
+    
     return R500Mpc
 
 #------------------------------------------------------------------------------------------------------------
@@ -607,7 +620,7 @@ def calcQ(theta500Arcmin, tck):
     return Q
 
 #------------------------------------------------------------------------------------------------------------
-def calcWeightedFRel(z, M500, fRelWeightsDict):
+def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):
     """Return fRel for the given (z, M500), weighted by frequency according to fRelWeightsDict
     
     """
@@ -616,7 +629,7 @@ def calcWeightedFRel(z, M500, fRelWeightsDict):
     freqWeights=[]
     for obsFreqGHz in fRelWeightsDict.keys():
         if fRelWeightsDict[obsFreqGHz] > 0:
-            fRels.append(calcFRel(z, M500, obsFreqGHz = obsFreqGHz))
+            fRels.append(calcFRel(z, M500, Ez, obsFreqGHz = obsFreqGHz))
             freqWeights.append(fRelWeightsDict[obsFreqGHz])
     fRel=np.average(fRels, weights = freqWeights)
     

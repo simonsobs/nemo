@@ -8,10 +8,10 @@ unfilteredMaps:
     - {mapFileName: "sourceInjectedMap.fits",
        weightsFileName: "testsCache/weightedInvVar_4.fits",
        obsFreqGHz: 148.0, 'units': "uK",
-       beamFileName: "../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"}
+       beamFileName: "../examples/ACT-DR3-clusters/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"}
 
 # Masks
-surveyMask: "../examples/equD56/surveyMask.fits.gz"
+surveyMask: "../examples/ACT-DR3-clusters/surveyMask.fits.gz"
     
 # Detection/catalog options
 # Set useInterpolator: True for sub-pixel flux and SNR measurements

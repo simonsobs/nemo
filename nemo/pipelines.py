@@ -89,8 +89,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         config.parDict['maskPointSourcesFromCatalog']=[]    # This is only applied on the 2nd pass
         config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
         orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
-        orig_forcedPhotometryCatalog=config.parDict['forcedPhotometryCatalog']
-        config.parDict['forcedPhotometryCatalog']=None # If in this mode, only wanted on 2nd pass        
+        config.parDict['forcedPhotometryCatalog']=None # If in this mode, only wanted on 2nd pass
         pass1CatalogsList=[]
         surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
         for mapDict in orig_unfilteredMapsDictList:
@@ -111,7 +110,6 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         # We subtract those from the maps used in pass 2 - we then need to add them back at the end
         config.restoreConfig()
         config.parDict['measureShapes']=True    # We'll keep this for pass 2 as well
-        config.parDict['forcedPhotometryCatalog']=orig_forcedPhotometryCatalog
         siphonSNR=50
         for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
             #catalogs.catalog2DS9(catalog[catalog['SNR'] > siphonSNR], config.diagnosticsDir+os.path.sep+"pass1_highSNR_siphoned.reg")
