@@ -46,7 +46,7 @@ class NemoTests(object):
         """
     
         # Needed for inject_sources
-        self.beamFileName="../examples/equD56/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
+        self.beamFileName="../examples/ACT-DR3-clusters/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
         
         thisDir=os.getcwd()
         
@@ -55,7 +55,7 @@ class NemoTests(object):
         if os.path.exists(self.inMapFileName) == False:
             print(">>> Downloading E-D56 map ...")
             os.chdir(self.cacheDir)
-            os.system("wget https://www.acru.ukzn.ac.za/~mjh/equD56Maps.tar.gz")
+            os.system("wget https://astro.ukzn.ac.za/~mjh/equD56Maps.tar.gz")
             os.system("tar -zxvf equD56Maps.tar.gz")
             os.remove("equD56Maps.tar.gz")
             os.chdir(thisDir)
