@@ -73,6 +73,7 @@ def makeParser():
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
 
+    parser=makeParser()
     args=parser.parse_args()
     
     if args.noStrictMPIExceptions == True:
