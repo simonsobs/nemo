@@ -607,7 +607,7 @@ def calcQ(theta500Arcmin, tck):
     return Q
 
 #------------------------------------------------------------------------------------------------------------
-def calcWeightedFRel(z, M500, fRelWeightsDict):
+def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):
     """Return fRel for the given (z, M500), weighted by frequency according to fRelWeightsDict
     
     """
@@ -616,7 +616,7 @@ def calcWeightedFRel(z, M500, fRelWeightsDict):
     freqWeights=[]
     for obsFreqGHz in fRelWeightsDict.keys():
         if fRelWeightsDict[obsFreqGHz] > 0:
-            fRels.append(calcFRel(z, M500, obsFreqGHz = obsFreqGHz))
+            fRels.append(calcFRel(z, M500, Ez, obsFreqGHz = obsFreqGHz))
             freqWeights.append(fRelWeightsDict[obsFreqGHz])
     fRel=np.average(fRels, weights = freqWeights)
     
