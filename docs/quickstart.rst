@@ -5,7 +5,5 @@ Quickstart: Finding Sources and Clusters
 ========================================
 
 
-.. 
-  This will be replaced.
-
+.. include:: ../examples/quickstart/README.rst
 
