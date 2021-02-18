@@ -643,14 +643,15 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilteredMaps = False):
+def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilteredMaps = False,
+                              noiseMethod = 'dataMap'):
     """See extractSpec.
     
     """
         
     # Build filter configs
     allFilters={'class': 'ArnaudModelMatchedFilter',
-                'params': {'noiseParams': {'method': 'model', 'noiseGridArcmin': 40.0},
+                'params': {'noiseParams': {'method': noiseMethod, 'noiseGridArcmin': 40.0},
                            'saveFilteredMaps': False,
                            'saveRMSMap': False,
                            'savePlots': False,
