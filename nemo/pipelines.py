@@ -679,6 +679,8 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
     catalogList=[]
     for tileName in config.tileNames:
         print("... rank %d: tileName = %s ..." % (config.rank, tileName))
+        diagnosticsDir=cacheDir+os.path.sep+tileName
+        os.makedirs(diagnosticsDir, exist_ok = True)
         for f in filtersList:
             tempTileTab=None # catalogs are organised by tile and template
             filterObj=None
@@ -694,7 +696,7 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
                 if mapDict['obsFreqGHz'] == config.unfilteredMapsDictList[0]['obsFreqGHz']:
                     filteredMapDict, filterObj=filters.filterMaps([mapDict], f, tileName, 
                                                                   filteredMapsDir = cacheDir,
-                                                                  diagnosticsDir = cacheDir, 
+                                                                  diagnosticsDir = diagnosticsDir,
                                                                   selFnDir = cacheDir, 
                                                                   verbose = True, 
                                                                   undoPixelWindow = True,
