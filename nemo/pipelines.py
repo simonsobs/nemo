@@ -643,12 +643,14 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilteredMaps = False,
-                              noiseMethod = 'dataMap'):
+def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod = 'dataMap'):
     """See extractSpec.
     
     """
-        
+    
+    cacheDir="nemoSpecCache"+os.path.sep+os.path.basename(config.rootOutDir)
+    os.makedirs(cacheDir, exist_ok = True)
+
     # Build filter configs
     allFilters={'class': 'ArnaudModelMatchedFilter',
                 'params': {'noiseParams': {'method': noiseMethod, 'noiseGridArcmin': 40.0},
@@ -671,8 +673,6 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
         newDict['params']['z']=z
         newDict['label']=t
         filtersList.append(newDict)
-    
-    os.makedirs(cacheDir, exist_ok = True)
     
     # Filter and extract
     # NOTE: We assume index 0 of the unfiltered maps list is the reference for which the filter is made
@@ -778,8 +778,8 @@ def _extractSpecCAP(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPas
         for row in tileTab:
             degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
             degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            maxSizeDeg)
+                                                                           row['RADeg'], row['decDeg'],
+                                                                           maxSizeDeg)
             innerMask=degreesMap < innerRadiusArcmin/60
             outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
             for mapDict, label in zip(mapDictList, freqLabels):
