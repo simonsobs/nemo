@@ -14,10 +14,9 @@ Nemo - a Sunyaev-Zel'dovich effect galaxy cluster and source finder
    install
    quickstart
    commands
-   advanced
-   inputs
-   outputs
    config
+   outputs
+   advanced
    tutorials
    development
    testing

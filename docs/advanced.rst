@@ -1,15 +1,15 @@
 .. _Scripts:
 
-==============
-Advanced Usage
-==============
+===============
+Advanced Topics
+===============
 
-
-In this Section, we describe how to use some selected features of Nemo.
+Here we describe how to use some selected features of **Nemo** that are not
+necessarily covered in the :ref:`TutorialsIndex`.
 
 
 Forced photometry
------------------
+=================
 
 Forced photometry is the extraction of flux or SZ-signal measurements at fixed prior positions - i.e.,
 an external catalog is used to supply a list of object positions, instead of using Nemo to detect the
@@ -45,7 +45,7 @@ method.
 
 
 Making model images
--------------------
+===================
 
 The nemoModel script can make model images from a Nemo catalog. If run using MPI, it will break the map
 into tiles to speed up processing, based on the given mask file. For example,::

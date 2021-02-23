@@ -6,6 +6,9 @@ Nemo Commands
 
 The **Nemo** package includes a number of command-line programs, each of which is described below.
 
+
+.. _nemoCommand:
+    
 nemo
 ----
 
