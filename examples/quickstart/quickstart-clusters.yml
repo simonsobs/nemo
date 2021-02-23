@@ -3,9 +3,6 @@
 # - use null to return None in Python
 # - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
 
-# Valid units are uK or Jy/sr
-# this should be a list of maps at different frequencies
-# NOTE: surveyMask is optional
 unfilteredMaps:
     - {mapFileName: "maps/f150_1_10_8_map.fits",
        weightsFileName: "maps/f150_1_10_8_ivar.fits",

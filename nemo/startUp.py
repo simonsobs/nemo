@@ -128,6 +128,9 @@ def parseConfigFile(parDictFileName):
             parDict['GNFWParams']='default'
         for filtDict in parDict['mapFilters']:
             filtDict['params']['GNFWParams']=parDict['GNFWParams']
+        # Optional forced photometry
+        if 'forcedPhotometryCatalog' not in parDict.keys():
+            parDict['forcedPhotometryCatalog']=None
         # Used for finding and removing rings around bright sources
         if 'removeRings' not in parDict.keys():
             parDict['removeRings']=True

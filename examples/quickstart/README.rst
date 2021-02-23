@@ -39,6 +39,31 @@ Comptonization parameter) under the ``quickstart-clusters/filteredMaps/PRIMARY/`
 Running a point source search
 =============================
 
-Add stuff here.
+The file ``quickstart-sources.yml`` contains a **Nemo** configuration that will conduct
+a single frequency (98 GHz) matched filter search for 5σ point sources, using the
+"two pass" source detection pipeline. This runs an initial search for extremely bright
+sources in the first pass using a simple noise model, so that these sources can be subtracted
+when using the map itself as the filter noise model in the second pass.
+Run it using:
+    
+.. code-block::
+
+   nemo quickstart-sources.yml
+
+After about a minute, you should find an output directory named ``quickstart-sources`` has
+been created. Similarly to the example cluster run above, you can find the output source
+list in the file ``quickstart-sources/quickstart-sources_optimalCatalog.fits``, and the
+filtered maps under the ``quickstart-sources/filteredMaps/PRIMARY/`` directory.
 
 
+Next steps
+==========
+
+* See `Tutorials <https://nemo-sz.readthedocs.io/en/latest/tutorials.html>`_ for a number
+  of more advanced step-by-step guides.
+
+* See `Configuration File Parameters <https://nemo-sz.readthedocs.io/en/latest/config.html>`_
+  for information about the settings that control **Nemo**.
+
+* Refer to `Output <https://nemo-sz.readthedocs.io/en/latest/outputs.html>`_ for a
+  guide to the data products produced by **Nemo**.
