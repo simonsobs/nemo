@@ -1,6 +1,3 @@
-Running the ACT DR5 Cluster Search
-==================================
-
 This is in the process of being updated for the DR5 release.
 
 The `examples/AdvACT <https://github.com/simonsobs/nemo/tree/master/examples/AdvACT>`_
