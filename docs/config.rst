@@ -50,24 +50,16 @@ Input Maps and Masks
     *Example:*
     
     .. code-block:: yaml
-    
-       unfilteredMaps:
-          - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_map.fits",
-             weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_ivar.fits",
-             obsFreqGHz: 149.6, units: 'uK',
-             beamFileName: "maps/Jun2020/beams/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"}
-          - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f090_daynight_map.fits",
-             weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f090_daynight_ivar.fits",
-             obsFreqGHz: 97.8, units: 'uK',
-             beamFileName: "maps/Jun2020/beams/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}
-    
-    
-**maskPointSourcesFromCatalog** (list):
 
-    This is a list, each element of which points to a file containing an object catalog
-    (FITS format is guaranteed to work, but in principle any format that the
-    `astropy.table <https://docs.astropy.org/en/stable/table/index.html>`_ module
-    understands can be used).
+       unfilteredMaps:
+           - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_map.fits",
+              weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f150_daynight_ivar.fits",
+              obsFreqGHz: 149.6, units: 'uK',
+              beamFileName: "maps/Jun2020/beams/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"}
+           - {mapFileName: "maps/Jun2020/act_s08_s18_cmb_f090_daynight_map.fits",
+              weightsFileName: "maps/Jun2020/act_s08_s18_cmb_f090_daynight_ivar.fits",
+              obsFreqGHz: 97.8, units: 'uK',
+              beamFileName: "maps/Jun2020/beams/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}   
 
 
 **surveyMask** (str):
@@ -76,8 +68,35 @@ Input Maps and Masks
     as the input map file names (see unfilteredMaps above), with values of 1 taken to
     indicate valid area, and values of 0 taken to indicate areas that should be ignored.
     Objects found within pixels with value 0 in this map will not be included in the
-    output catalogs produced by :ref:`nemoCommand`.
+    output catalogs produced by :ref:`nemoCommand`. Maps which are compressed using the
+    ``PLIO_1`` method (as implemented by `astropy.io.fits <https://docs.astropy.org/en/stable/io/fits/>`_)
+    are supported.
+    
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
 
+
+**maskPointSourcesFromCatalog** (list):
+
+    This is a list, each element of which points to a file containing an object catalog
+    (FITS format is guaranteed to work, but in principle any format that the
+    `astropy.table <https://docs.astropy.org/en/stable/table/index.html>`_ module
+    understands can be used). The catalog should contain object coordinates decimal
+    degrees in columns named ``RADeg``, ``decDeg``, and either a column specifying the
+    masking radius in arcmin to use (``rArcmin``), or shape information columns
+    (as produced by running :ref:`nemoCommand` with ``measureShapes: True`` set).
+    
+    *Example:*
+    
+    .. code-block:: yaml
+       
+       maskPointSourcesFromCatalog:
+           - "PSCatalog_rArcmin/PS_S18_f150_auto_rArcmin.fits"
+           - "customPSMask_S18/customPSCatalog_S18.fits"
+           
 
 **noiseMaskCatalog** (str):
     

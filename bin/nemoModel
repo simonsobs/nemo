@@ -59,6 +59,10 @@ def makeParser():
                         help = "Break large maps into tiles using the autotiler function in Nemo.\
                         This will be turned on automatically if MPI is enabled (using -M).", 
                         default = False)
+    parser.add_argument("-a", "--tcmb-alpha", dest = "TCMBAlpha", type = float, default = 0.0,
+                        help = "Only applies to cluster models. Set this to a non-zero value to generate\
+                        a model where the CMB temperature varies as T(z) = T0 * (1+z)^{1-TCMBAlpha}.\
+                        Requires a 'redshift' column to be present in the input catalog.")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If used,\
                         the image will be broken into a number of tiles, with one tile per process. If you\
                         want to use this, run with e.g., mpiexec -np 4 nemoModel args -M", 
@@ -133,7 +137,8 @@ if __name__ == '__main__':
         try:
             modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
                                                      obsFreqGHz = args.obsFreqGHz,
-                                                     validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'])
+                                                     validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
+                                                     TCMBAlpha = args.TCMBAlpha)
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
