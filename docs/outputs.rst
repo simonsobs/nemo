@@ -39,6 +39,8 @@ selFn/
     This directory contains all the necessary information for calculating the completeness of the 
     survey, given a model for the relationship between the SZ signal and mass, and an assumed halo 
     mass function. For more information, see :ref:`SelFnPage` and/or :ref:`OutputSelFn` below.
+
+.. _Catalogs:
     
 Catalogs
 --------

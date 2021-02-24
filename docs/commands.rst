@@ -21,6 +21,8 @@ nemo
    in the YAML-format configuration file.
 
 
+.. _nemoMassCommand:
+
 nemoMass
 --------
 

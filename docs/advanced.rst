@@ -8,6 +8,8 @@ Here we describe how to use some selected features of **Nemo** that are not
 necessarily covered in the :ref:`TutorialsIndex`.
 
 
+.. _AdvancedForcedPhotometry:
+    
 Forced photometry
 =================
 
