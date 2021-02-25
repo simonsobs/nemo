@@ -118,6 +118,21 @@ noiseMaskCatalog
        noiseMaskCatalog: "S18d_202006/S18d_202006_optimalCatalog.fits"
 
 
+RADecSection
+^^^^^^^^^^^^
+
+    If given, cut all maps and masks to include only this rectangular section. This is
+    specified as a list in the form ``[RAMin, RAMax, decMin, decMax]``, with all
+    coordinates in decimal degrees. This option is useful for testing purposes, but it
+    should not be used for maps that are broken into tiles (see `makeTileDir`_).
+    
+    *Example:*
+    
+    .. code-block:: yaml
+
+       RADecSection: [330.0, 355.0, -10.0, 5.0]
+
+
 .. _OutputOptions:
 
 Output Options
@@ -565,9 +580,227 @@ catalogCuts
     
 Filters
 =======
+
 mapFilters
+^^^^^^^^^^
+
+    This is a list of dictionaries, each of which contains the settings for a
+    filter that will be constructed and run over the maps listed in
+    `unfilteredMaps`_. Each dictionary has the following
+    keys:
+        
+        :label (str):
+            
+            This is a user-defined label (which can be anything, but avoid
+            using non-alphanumeric characters such as ``#`` or ``.``) that will
+            be used as a component in the filenames of output filtered maps,
+            and will appear in the ``template`` column of output catalogs.
+            
+        :class (str):
+            
+            The name of the filter class to use. The options are:
+                
+                * ``BeamMatchedFilter``
+                * ``BeamRealSpaceMatchedFilter``
+                * ``ArnaudModelMatchedFilter``
+                * ``ArnaudModelRealSpaceMatchedFilter``
+            
+            As reflected in the names above, there are two broad classes of
+            filters, and two classes of signal templates that are currently
+            supported. 
+
+            The ``MatchedFilter`` class is a Fourier-space implementation
+            and supports multi-frequency filtering (see, e.g.,
+            `Williamson et al. 2011 <https://ui.adsabs.harvard.edu/abs/2011ApJ...738..139W/abstract>`_;
+            the specific implementation used in **Nemo** is described in
+            `Hilton et al. 2021 <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_).
+            This is done automatically if maps with multiple frequencies are
+            listed in `unfilteredMaps`_. To see an example of a cluster
+            search using this method, see :ref:`QuickStartPage` or
+            :ref:`DR5Tutorial`.
+            
+            The ``RealSpaceMatchedFilter`` class is described in
+            `Hilton et al. (2018) <https://ui.adsabs.harvard.edu/abs/2018ApJS..235...20H/abstract>`_.
+            Briefly, this uses a small section of the map to construct a
+            filter kernel that is applied in real space. To see an example of
+            a cluster search using this method, see the :ref:`DR3Tutorial`.
+            
+            Point sources should be searched for by using the ``Beam`` signal
+            template, while for clusters the ``ArnaudModel`` signal template
+            is used. The latter implements the generalised Navarro-Frenk-White
+            (GNFW) profile, by default with the parameters given in
+            `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_.
+            See `Hasselfield et al. 2013 <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_
+            for details of the specific implementation used in **Nemo**.
+            The GNFW parameters can optionally be set by the user (see 
+            `GNFWParams`_).
+        
+        
+        :params (dict):
+            
+            A dictionary that sets the filter parameters - see `params`_ below.
+        
+
+    *Example:*
+
+    .. code-block:: yaml 
+    
+       mapFilters:
+           - {label: "Beam",
+              class: "BeamMatchedFilter",
+              params: {noiseParams: {method: "dataMap",
+                                     noiseGridArcmin: 40.0,
+                                     numNoiseBins: 8},
+                       saveFilteredMaps: True,
+                       outputUnits: 'uK',
+                       edgeTrimArcmin: 0.0}}
+
+params
+^^^^^^
+
+    This is a dictionary within each `mapFilters`_ definition with the
+    following keys:
+
+    :noiseParams (dict):
+                    
+        A dictionary that sets the noise model used by the filter - 
+        see `noiseParams`_ below.
+        
+                    
+    :saveFilteredMaps (bool):
+        
+        If True, writes the filtered map to disk.
+    
+    
+    :saveRMSMap (bool):
+        
+        If True, write the noise map to disk. In this case it will be
+        stored in the ``nemoOutput/selFn`` directory.
+        
+        
+    :savePlots (bool):
+        
+        If True, writes various plots (e.g., the filter profile in
+        real space) to the ``nemoOutput/diagnostics`` directory.
+        
+        
+    :saveDS9Regions (bool):
+        
+        If True, save a DS9 region file for the catalog constructed
+        from this specific filtered map. This will be written to the
+        ``nemoOutput/filteredMaps`` directory. Note that a DS9
+        region file for the "optimal" catalog, i.e., the merged
+        catalog constructed from all filtered maps, will always be
+        made, and is written to the ``nemoOutput`` directory.
+    
+    
+    :outputUnits (str):
+        
+        This should be 'uK' when producing source catalogs (flux
+        densities in Jy will also be written to the output catalog,
+        if the beam solid angle is known), and 'yc' for cluster
+        catalogs.
+        
+        
+    :edgeTrimArcmin (float):
+        
+        If given, the edges of the filtered map will be trimmed by
+        the given amount, and the output survey area mask will be
+        adjusted accordingly. This is sometimes useful to cut down
+        on "junk" in extremely noisy regions at map edgeds. It is
+        generally better to design the input `surveyMask`_ such
+        that this is unnecessary and to set `edgeTrimArcmin` to 0.
+                    
+
+noiseParams
+^^^^^^^^^^^
+
+    This is a dictionary within each filter `params`_ dictionary
+    that sets options related to the filter noise model.
+           
+    :method (str):
+        
+        Currently, two methods may be used to set the noise term in the matched
+        filter:
+            
+        ``dataMap``: The map itself is used as the noise term in the matched
+        filter. This will capture all noise sources and automatically account
+        for anisotropy in the noise, but may lead to a small amount of bias
+        in recovered source properties. This can be mitigated by running a
+        multi-pass pipeline (see `twoPass`_).
+          
+        ``model``: A simple CMB + white noise model is used as the noise term
+        in the matched filter.
+              
+    
+    :noiseGridArcmin (float):
+        
+        Sets the size of the cells (in arcmin) in which the noise level is
+        estimated in the filtered maps.
+            
+    
+    :numNoiseBins (int):
+        
+        The number of noise bins per cell (default: 1) in which the noise level
+        is estimated in the filtered maps (see `noiseGridArcmin`). The binning
+        is done according to the values in the weight map (see `unfilteredMaps`_).
+        Setting ``numNoiseBins: 8`` should be enough to remove artifacts that
+        otherwise may occur where there are sudden changes in the map depth.
+        
+    
+    :RMSEstimator (str):
+        
+        The method used to estimate the noise in cells (see `noiseGridArcmin`).
+        If this is not given, the default 3σ clipping is used. Other options
+        are ``biweight`` (uses a biweight scale estimate of the noise) or
+        ``percentile`` (uses the 68.3 percentile as the noise estimate).
+    
+        
+    .. note:: Additional options used by the ``RealSpaceMatchedFilter`` method
+              are not yet documented here. For now, please refer to the config
+              file used in :ref:`DR3Tutorial`.
+    
+            
 allFilters
+^^^^^^^^^^
+
+    This is a dictionary that contains filter settings that will be applied
+    to all the entries listed in `mapFilters`_. This allows one to define
+    common settings in `allFilters`_, and then only list parameters that change
+    between filters in `mapFilters`_. This allows the config file to be more
+    compact and readable, and is especially useful for defining different
+    filters to be used in a cluster search.
+
+    *Example:*
+
+    .. code-block:: yaml 
+
+       allFilters: {class: "ArnaudModelMatchedFilter",
+                    params: {noiseParams: {method: "dataMap",
+                                           noiseGridArcmin: 40.},
+                             saveFilteredMaps: False,
+                             saveRMSMap: False,
+                             savePlots: False,
+                             saveDS9Regions: False,
+                             outputUnits: 'yc',
+                             edgeTrimArcmin: 0.0}
+                   }
+       mapFilters:
+           - {label: "Arnaud_M2e14_z0p2",
+              params: {M500MSun: 2.0e+14, z: 0.2}}
+           - {label: "Arnaud_M2e14_z0p4",
+              params: {M500MSun: 2.0e+14, z: 0.4,
+                       saveFilteredMaps: True,
+                       savePlots: True}}
+           - {label: "Arnaud_M2e14_z0p8",
+              params: {M500MSun: 2.0e+14, z: 0.8}}
+           - {label: "Arnaud_M2e14_z1p2",
+              params: {M500MSun: 2.0e+14, z: 1.2}}
+
+
 GNFWParams
+^^^^^^^^^^
+
 
 Cluster Mass Estimates
 ======================
