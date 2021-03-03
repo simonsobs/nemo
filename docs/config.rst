@@ -767,7 +767,7 @@ allFilters
     This is a dictionary that contains filter settings that will be applied
     to all the entries listed in `mapFilters`_. This allows one to define
     common settings in `allFilters`_, and then only list parameters that change
-    between filters in `mapFilters`_. This allows the config file to be more
+    between filters in `mapFilters`_. This makes the config file more
     compact and readable, and is especially useful for defining different
     filters to be used in a cluster search.
 
@@ -783,8 +783,7 @@ allFilters
                              savePlots: False,
                              saveDS9Regions: False,
                              outputUnits: 'yc',
-                             edgeTrimArcmin: 0.0}
-                   }
+                             edgeTrimArcmin: 0.0}}
        mapFilters:
            - {label: "Arnaud_M2e14_z0p2",
               params: {M500MSun: 2.0e+14, z: 0.2}}
@@ -801,25 +800,234 @@ allFilters
 GNFWParams
 ^^^^^^^^^^
 
+    If given, these set the shape of the GNFW profile (see 
+    `Nagai et al. 2007 <https://ui.adsabs.harvard.edu/abs/2007ApJ...668....1N/abstract>`_)
+    used in cluster searches. This is a dictionary with the following keys (see Section 5 of
+    `Arnaud et al. 2010 <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_ 
+    for more information - we follow their notation):
+        
+        :P0 (float):
+            Central pressure.
+        
+        :c500 (float):
+            Concentration parameter, equal to *R*\ :sub:`500` / *r*\ :sub:`s`,
+            where *r*\ :sub:`s` is the scale radius.
+        
+        :gamma (float):
+            Central slope parameter.
+            
+        :alpha (float):
+            Intermediate slope parameter.
+        
+        :beta (float):
+            Outer slope parameter.
+            
+    .. note:: If `GNFWParams`_ is not given in the config file, the parameters
+              for the Universal Pressure Profile (UPP) described by 
+              `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_
+              are used.
+
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       # Planck Pressure Profile
+       GNFWParams: {P0: 6.41, c500: 1.81, gamma: 0.31, alpha: 1.33, beta: 4.13}
+
 
 Cluster Mass Estimates
 ======================
+
 photFilter
+^^^^^^^^^^
+
+    Sets the reference filter used for inferring mass estimates, which relies on
+    the calculation of the filter mismatch function, referred to as *Q* in
+    `Hasselfield et al. 2013 <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_
+    (see `fitQ`_ below). This is a string that must match the `label` of a filter
+    specified in the `mapFilters`_ list.
+    
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       photFilter: 'Arnaud_M2e14_z0p4'
+       
+        
 fitQ
+^^^^
+
+    If True (the default), calculate the filter mismatch function, referred to as
+    *Q* in the ACT cluster papers (e.g.,
+    `Hasselfield et al. 2013 <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_).
+    The result of this calculation is stored in the ``nemoOutput/selFn`` directory, and
+    is used by the :ref:`nemoMassCommand` command.
+    
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       fitQ: False
+
+
 massOptions
+^^^^^^^^^^^
+
+    This is a dictionary that specifies the relationship between cluster mass
+    and the Sunyaev-Zel'dovich signal, used when inferring mass estimates (refer
+    to Section 2.3 of `Hilton et al. 2021 <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_
+    for details). It has the following keys:
+        
+        :tenToA0 (float):
+            
+            Normalization of the scaling relation (i.e., the SZ signal expected
+            for a cluster with mass `Mpivot`).
+        
+        :B0 (float):
+            
+            Deviation of the slope from unity (i.e., the actual slope is specified as
+            1 + *B*\ :sub:`0`).
+        
+        :Mpivot (float):
+            
+            The pivot mass corresponding to `tenToA0`.
+            
+        :sigma_int (float):
+            
+            Log-normal intrinsic scatter.
+        
+        :relativisticCorrection (bool):
+            
+            If True, apply relativistic corrections to the output masses. This uses the
+            formulae of `Itoh et al. (1998) <https://ui.adsabs.harvard.edu/abs/1998ApJ...502....7I/abstract>`_,
+            and assumes the
+            `Arnaud et al. (2005) <https://ui.adsabs.harvard.edu/abs/2005A%26A...441..893A/abstract>`_ 
+            mass--temperature relation.
+        
+        :rescaleFactor (float):
+            
+            If given, outputs masses that have been simply rescaled by this factor (these
+            are found in the `M500cCal` columns output by :ref:`nemoMassCommand`).
+        
+        :rescaleFactorErr (float):
+            
+            The uncertainty in `rescaleFactor`, which will be taken into account in the error
+            bars reported for `M500cCal` by :ref:`nemoMassCommand`.
+            
+    .. note:: You can also set the cosmological parameters in the `massOptions`_ dictionary.
+              The parameters that are understood are ``H0``, ``Om0``, ``Ob0``, ``sigma8``,
+              and ``ns`` (flat cosmologies only).
+        
+    .. note:: In a future version, `massOptions`_ will be revised to accept a list, allowing
+              the user to specify various different mass definitions to be output by
+              :ref:`nemoMassCommand`.
+
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       massOptions: {tenToA0: 4.95e-5, 
+                     B0: 0.08, 
+                     Mpivot: 3.0e+14, 
+                     sigma_int: 0.2,
+                     relativisticCorrection: True,
+                     rescaleFactor: 0.71,
+                     rescaleFactorErr: 0.07,
+                     redshiftCatalog: "S18Clusters/AdvACT_confirmed.fits"}
+
 
 Selection Function
 ==================
+
 calcSelFn
+^^^^^^^^^
+
+    If True, produce the files needed to estimate the mass completeness of a
+    cluster search. These are written into the ``nemoOutput/selFn`` directory.
+
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       calcSelFn: True
+
+
 selFnOptions
+^^^^^^^^^^^^
 
-**selFnFootprints** (list):
+    A dictionary containing settings for cluster mass completeness estimates.
+    It has the following keys:
     
-    Blah
+        :fixedSNRCut (float):
+            
+            The ``fixed_SNR`` threshold for which mass completeness statistics
+            will be reported (``fixed_SNR`` is the S/N at the reference filter
+            scale, chosen using `photFilter`_).
+        
+        :method (str):
+            
+            The method used for estimating completeness. The options are ``fast``
+            or ``montecarlo``.
+        
+        :numIterations (int):
+            
+            The number of iterations used by the ``montecarlo`` method for
+            estimating completeness.
+        
+        :massLimitMaps (list):
+            
+            A list of dictionaries, specifying the mass limit maps to output.
+            At the moment, the only key read from each dictionary is the
+            redshift for each mass limit map, ``z`` (see the example below).
+            
+            
+    *Example:*
     
-massLimitMaps
+    .. code-block:: yaml
+    
+       selFnOptions: {fixedSNRCut: 5.0,
+                      method: 'montecarlo',
+                      numIterations: 1000, 
+                      massLimitMaps: [{z: 0.5}]}
 
+selFnFootprints
+^^^^^^^^^^^^^^^
 
+    A list of dictionaries, each of which defines a survey footprint in which
+    mass completeness statistics will be estimated. Each dictionary has the
+    following keys:
+        
+        :label (str):
+            
+            User-defined label for this footprint. This can be anything, but
+            may be, e.g., the name of an overlapping optical survey.
+        
+        :maskList (list):
+            
+            A list of paths to FITS format images that contain mask images,
+            with values of 1 taken to indicate valid area, and values of 0
+            taken to indicate areas that should be ignored. The mask images
+            need not have the same pixelization as the maps in the
+            `unfilteredMaps`_ list - they just need to have a valid WCS and
+            will be resampled accordingly. Maps which are compressed using
+            the ``PLIO_1`` method (as implemented by 
+            `astropy.io.fits <https://docs.astropy.org/en/stable/io/fits/>`_)
+            are supported. If multiple masks are given, they will be combined
+            and treated as one footprint area when completeness statistics
+            are reported.
+        
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       selFnFootprints: 
+           - {label: "HSC",
+              maskList: ["HSCCheckAndSelFn/s19a_fdfc_CAR_contarea_ziy-gt-5.fits"]}
+           - {label: "KiDS",
+              maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
+           - {label: "DES",
+              maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+    
 
 Mock Catalogs
 =============
@@ -836,13 +1044,3 @@ sourceInjectionTest
 sourceInjectionIterations
 sourceInjectionModels
 sourcesPerTile
-
-Other Diagnostics
-=================
-
-.. note::  The parameters listed in this section are depreciated and not currently enabled,
-           i.e., they are ignored by the :ref:`nemoCommand` command.
-
-numSkySims
-estimateContaminationFromInvertedMaps
-estimateContaminationFromSkySim
