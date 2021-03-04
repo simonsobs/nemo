@@ -51,6 +51,8 @@ nemoSelFn
    configuration file.
 
 
+.. _nemoMockCommand:
+
 nemoMock
 ---------
    

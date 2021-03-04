@@ -1031,12 +1031,37 @@ selFnFootprints
 
 Mock Catalogs
 =============
-applyPoissonScatter
-applyIntrinsicScatter
-applyNoiseScatter
+
 makeMockCatalogs
-numMocksToMake
-seed
+^^^^^^^^^^^^^^^^
+
+    If present in the config file, this sets the number of mocks made by the
+    :ref:`nemoMockCommand` command.
+
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       makeMockCatalogs: 5
+
+
+applyNoiseScatter
+^^^^^^^^^^^^^^^^^
+
+applyPoissonScatter
+^^^^^^^^^^^^^^^^^^^
+
+applyIntrinsicScatter
+^^^^^^^^^^^^^^^^^^^^^
+
+
+
+    
+
+applyPoissonScatter: False
+applyIntrinsicScatter: False
+applyNoiseScatter: False
+
 
 Source Injection Simulations
 ============================
