@@ -32,9 +32,9 @@ def makeParser():
                         The catalog must contain at least the following columns (alternatives given in\
                         brackets): name, RADeg (or ra, RA), decDeg (or dec, DEC).")
     parser.add_argument("-r", "--match-radius", dest="matchRadiusArcmin", help = "Cross-matching radius in\
-                        arcmin.", default = 2.5)
+                        arcmin.", default = 2.5, type = float)
     parser.add_argument("-S", "--fixed-SNR-cut", dest="fixedSNRCut", help = "Cut in fixed_SNR used to select\
-                        nemo cluster candidates.", default = 4.0)
+                        nemo cluster candidates.", default = 4.0, type = float)
     
     return parser
 

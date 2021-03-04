@@ -6,6 +6,9 @@ Nemo Commands
 
 The **Nemo** package includes a number of command-line programs, each of which is described below.
 
+
+.. _nemoCommand:
+    
 nemo
 ----
 
@@ -17,6 +20,8 @@ nemo
    :program:`nemo` produces object catalogs and filtered maps using the parameter settings given
    in the YAML-format configuration file.
 
+
+.. _nemoMassCommand:
 
 nemoMass
 --------
@@ -45,6 +50,8 @@ nemoSelFn
    set to do this task by setting `calcSelFn: True` in the YAML-format
    configuration file.
 
+
+.. _nemoMockCommand:
 
 nemoMock
 ---------

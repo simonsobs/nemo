@@ -57,19 +57,22 @@ def convertToY(mapData, obsFrequencyGHz = 148):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
-def convertToDeltaT(mapData, obsFrequencyGHz = 148):
+def convertToDeltaT(mapData, obsFrequencyGHz = 148, TCMBAlpha = 0.0, z = None):
     """Converts an array (e.g., a map) of Compton y parameter values to delta T (micro Kelvin) with respect to
     the CMB temperature at the given frequency.
     
     Args:
         mapData (:obj:`np.ndarray`): An array containing Compton y parameter values.
         obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
+        TCMBAlpha (float, optional): This should always be zero unless you really do want to make a model
+            where CMB temperature evolves T0*(1+z)^{1-TCMBAlpha}.
+        z (float, optional): Redshift - needed only if TCMBAlpha is non-zero.
     
     Returns:
         An array of delta T (micro Kelvin) values.
     
     """
-    fx=signals.fSZ(obsFrequencyGHz)   
+    fx=signals.fSZ(obsFrequencyGHz, TCMBAlpha = TCMBAlpha, z = z)
     mapData=mapData*fx*(signals.TCMB*1e6)   # into uK
     
     return mapData
@@ -1518,7 +1521,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
                    cosmoModel = None, applyPixelWindow = True, override = None,
-                   validAreaSection = None, minSNR = 0.0):
+                   validAreaSection = None, minSNR = 0.0, TCMBAlpha = 0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1549,6 +1552,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         minSNR (float, optional): Only include objects with SNR (or fixed_SNR) > this value in the model.
             If found, the 'SNR' column will be used, otherwise the 'fixed_SNR' column will be used. If
             neither is present, no cuts on the catalog will be performed.
+        TCMBAlpha (float, optional): This should always be zero unless you really do want to make a
+            cluster model image where CMB temperature evolves as T0*(1+z)^{1-TCMBAlpha}.
         
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
@@ -1640,7 +1645,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 if obsFreqGHz is not None:
-                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz)
+                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
+                                              TCMBAlpha = TCMBAlpha, z = z)
                 modelMap=modelMap+signalMap
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 

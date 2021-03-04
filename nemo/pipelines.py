@@ -643,14 +643,17 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilteredMaps = False):
+def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod = 'dataMap'):
     """See extractSpec.
     
     """
-        
+    
+    cacheDir="nemoSpecCache"+os.path.sep+os.path.basename(config.rootOutDir)
+    os.makedirs(cacheDir, exist_ok = True)
+
     # Build filter configs
     allFilters={'class': 'ArnaudModelMatchedFilter',
-                'params': {'noiseParams': {'method': 'model', 'noiseGridArcmin': 40.0},
+                'params': {'noiseParams': {'method': noiseMethod, 'noiseGridArcmin': 40.0},
                            'saveFilteredMaps': False,
                            'saveRMSMap': False,
                            'savePlots': False,
@@ -671,13 +674,13 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
         newDict['label']=t
         filtersList.append(newDict)
     
-    os.makedirs(cacheDir, exist_ok = True)
-    
     # Filter and extract
     # NOTE: We assume index 0 of the unfiltered maps list is the reference for which the filter is made
     catalogList=[]
     for tileName in config.tileNames:
         print("... rank %d: tileName = %s ..." % (config.rank, tileName))
+        diagnosticsDir=cacheDir+os.path.sep+tileName
+        os.makedirs(diagnosticsDir, exist_ok = True)
         for f in filtersList:
             tempTileTab=None # catalogs are organised by tile and template
             filterObj=None
@@ -693,7 +696,7 @@ def _extractSpecMatchedFilter(config, tab, cacheDir = "nemoSpecCache", saveFilte
                 if mapDict['obsFreqGHz'] == config.unfilteredMapsDictList[0]['obsFreqGHz']:
                     filteredMapDict, filterObj=filters.filterMaps([mapDict], f, tileName, 
                                                                   filteredMapsDir = cacheDir,
-                                                                  diagnosticsDir = cacheDir, 
+                                                                  diagnosticsDir = diagnosticsDir,
                                                                   selFnDir = cacheDir, 
                                                                   verbose = True, 
                                                                   undoPixelWindow = True,
@@ -775,8 +778,8 @@ def _extractSpecCAP(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPas
         for row in tileTab:
             degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
             degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            maxSizeDeg)
+                                                                           row['RADeg'], row['decDeg'],
+                                                                           maxSizeDeg)
             innerMask=degreesMap < innerRadiusArcmin/60
             outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
             for mapDict, label in zip(mapDictList, freqLabels):

@@ -1,0 +1,52 @@
+# Nemo config file
+# YAML format 
+# - use null to return None in Python
+# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+
+unfilteredMaps:
+    - {mapFileName: "maps/f090_1_10_8_map.fits",
+       weightsFileName: "maps/f090_1_10_8_ivar.fits",
+       obsFreqGHz: 97.8, units: 'uK',
+       beamFileName: "maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}
+    
+# NOTE: In the 2-pass pipeline, this is only applied on the 2nd pass
+#maskPointSourcesFromCatalog: brightMaskCatalog.csv
+
+# Masks
+#surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_S18.fits"
+
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 5.0
+minObjPix: 1
+findCenterOfMass: True
+useInterpolator: True
+rejectBorder: 0
+ringThresholdSigma: 3
+objIdent: 'ACT-S'
+longNames: False
+
+# Set this to True to generate a sky sim (with noise), run all the filters over it, and measure contamination
+# Set numSkySims to number required - we need to average over many as results vary a fair bit
+estimateContaminationFromSkySim: False
+numSkySims: 10
+
+# Set this to True to estimate contamination by running cluster finder over inverted maps
+# This is sensitive to how well point source masking is done
+estimateContaminationFromInvertedMaps: False
+
+# Source injection test - this can also be enabled with the nemo -I switch
+sourceInjectionIterations: 20
+sourcesPerTile: 50
+
+# Filter definitions:
+twoPass: True
+mapFilters:
+        - {label: "Beam090",
+           class: "BeamMatchedFilter",
+           params: {noiseParams: {method: "dataMap",
+                                  noiseGridArcmin: 40.0,
+                                  numNoiseBins: 8},
+                    saveFilteredMaps: True,
+                    outputUnits: 'uK',
+                    edgeTrimArcmin: 0.0}}

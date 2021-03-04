@@ -84,11 +84,14 @@ class BeamProfile(object):
         self.FWHMArcmin=self.rDeg[np.argmin(abs(self.profile1d-0.5))]*60*2
 
 #------------------------------------------------------------------------------------------------------------
-def fSZ(obsFrequencyGHz):
+def fSZ(obsFrequencyGHz, TCMBAlpha = 0.0, z = None):
     """Returns the frequency dependence of the (non-relativistic) Sunyaev-Zel'dovich effect.
     
     Args:
         obsFrequencyGHz (float): Frequency in GHz at which to calculate fSZ.
+        TCMBAlpha (float, optional): This should always be zero unless you really do want to make a model
+            where CMB temperature evolves T0*(1+z)^{1-TCMBAlpha}.
+        z (float, optional): Redshift - needed only if TCMBAlpha is non-zero.
     
     Returns:
         Value of SZ spectral shape at given frequency (neglecting relativistic corrections).
@@ -101,6 +104,9 @@ def fSZ(obsFrequencyGHz):
     me=constants.m_e.value
     c=constants.c.value
     x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
+    if TCMBAlpha != 0 and z is not None:
+        assert(z >= 0)
+        x=x*np.power(1+z, TCMBAlpha)
     fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
     
     return fSZ

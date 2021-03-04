@@ -1,44 +1,53 @@
+Here we present an example of how to approximately re-create the cluster
+catalog presented in the 
+`two-season ACTPol cluster catalog paper <http://adsabs.harvard.edu/abs/2017arXiv170905600H>`_
+(retrospectively referred to as the *ACT DR3 cluster catalog*).
 
-Re-creating the ACTPol two-season cluster catalog
-=================================================
+.. note::  The config files needed for this tutorial can be found in the 
+           `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+           directory of the **Nemo** source distribution.
 
-Here is an example of how to re-create the cluster catalog presented 
-in the `two-season ACTPol cluster catalog paper <http://adsabs.harvard.edu/abs/2017arXiv170905600H>`_. 
-This uses nemo's RealSpaceMatchedFilter method. Note that since nemo
-has been updated since the time the ACTPol cluster catalog paper
-was published, some results may not be exactly the same (most of this 
-is due to changing the underlying code for calculating map power 
-spectra from ``flipper`` to ``pixell``\ , but the code for calculating the
-selection function / completeness has also been completely re-written).
+This example uses **Nemo**'s ``RealSpaceMatchedFilter`` class. 
+Note that since **Nemo** has been updated since the ACTPol cluster
+catalog paper was published, some results are not be exactly the same.
+Most of this is due to changing the underlying code for calculating map power
+spectra from `flipper <https://github.com/ACTCollaboration/flipper>`_ to 
+`pixell <https://github.com/simonsobs/pixell/>`_, but the code for
+estimating the completeness of the cluster sample was also completely
+re-written, and various other bugs were fixed (e.g., treatment of pixel
+window corrections).
 
-If you want to see an example .yml config file that breaks the map 
-up into tiles and runs in parallel, see the `examples/AdvACT <../AdvACT/>`_ 
-directory instead. This also makes use of some features not used here
-(e.g., multi-frequency filtering, non-azimuthally symmetric kernels 
-etc.).
+If you want to see an example **Nemo** config file that breaks the map 
+up into tiles and runs in parallel, see :ref:`DR5Tutorial`, which
+also makes use of many features not used here (multi-frequency filtering,
+non-azimuthally symmetric kernels etc.).
+
 
 Downloading ACT maps
 ====================
 
-This directory already contains some of the things needed - e.g, the
-survey and point source masks (\ ``surveyMask.fits.gz`` and 
-``pointSourceMask.fits.gz`` respectively), the beam profile used (under 
-``profiles_ACT/``\ ; from ACT actually, but ACTPol is not significantly 
-different for cluster-finding purposes), and the .yml config file, from
-which nemo reads its settings (see below). However, the maps are too 
-big to include in the github repository, so we need to get them from 
-elsewhere.
+The `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+directory of the **Nemo** source distribution contains some of the
+data products needed for this tutorial - e.g., the survey and point source
+masks (``surveyMask.fits.gz`` and ``pointSourceMask.fits.gz`` respectively),
+the beam profile (found under ``profiles_ACT/``), and the YAML-format
+configuration file (``equD56.yml``), from which **Nemo** reads its settings.
+However, the maps are too big to include in the source distribution,
+so they must be fetched from elsewhere.
 
 For the ACTPol two-season cluster catalog, we combined the ACT+ACTPol
-maps (which are available on LAMBDA). You can download the combined 
-map and weight files (403 Mb) using:
+maps, for which the original season maps are available on 
+`LAMBDA <https://lambda.gsfc.nasa.gov/product/act/actpol_prod_table.cfm>`_. 
+You can download the combined map and weight files made from these for the
+cluster search (403 Mb) using:
 
 .. code-block::
 
-   wget http://www.acru.ukzn.ac.za/~mjh/equD56Maps.tar.gz
+   wget http://astro.ukzn.ac.za/~mjh/equD56Maps.tar.gz
 
-Extract this in the current directory (i.e., the same place as the 
-equD56.yml file). 
+Extract this in the current directory (i.e., the same place as the ``equD56.yml``
+file and the masks). 
+
 
 Making a cluster catalog
 ========================
@@ -49,30 +58,32 @@ Run ``nemo`` using:
 
    nemo equD56.yml
 
-You can check the settings by opening the .yml file in a text editor.
-This may take ~20-30 minutes to run, because a lot of different filter
-scales are used (for a "cosmological sample", you would only need to
-run the ``'Arnaud_M2e14_z0p4'`` filter, and could comment out with # the
-other dictionaries defining each other filter in the mapFilters 
-list - this is already done in the ``equD56_quick.yml`` file that you can
-find in this directory).
+This may take 45 minutes to run, because a lot of different filter scales are used.
+You can check the settings by opening the ``equD56.yml`` file in a text editor.
+For a "cosmological sample", you would only need to run the ``'Arnaud_M2e14_z0p4'``
+filter, and could comment out the dictionaries defining the other filters in the
+``mapFilters`` list - this is already done in the ``equD56_quick.yml`` file that
+you can find in the `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+directory of the source code distribution.
 
-Output is written to the ``equD56`` directory. Here you will find 
-catalogs (.fits tables, e.g., ``equD56_optimalCatalog.fits``\ ), DS9 region
-(.reg files), images (both in terms of y0 and signal-to-noise; under
-``filteredMaps/``\ ), and a bunch of other stuff under ``diagnostics/``.
+Output is written to the ``equD56`` directory. Here you will find catalogs 
+(FITS tables, e.g., ``equD56_optimalCatalog.fits``), 
+`DS9 <https://sites.google.com/cfa.harvard.edu/saoimageds9/home>`_ region files
+(.reg), images (under ``filteredMaps/``), and a bunch of other stuff under the
+``diagnostics/`` directory.
+
 
 Estimating cluster masses
 =========================
 
-If you want to measure masses, a .fits table that includes the columns
+If you want to measure masses, a FITS table that includes the columns
 ``redshift`` and ``redshiftErr`` is needed. The ``ACTPol_redshifts.fits`` file
-in this directory contains all redshifts that were assigned to 
-cluster candidates on the web database at the time the ACTPol clusters
-paper was submitted. You can specify the redshift catalog 
-used for mass estimates with the ``massOptions`` key in the .yml file. 
-Since this is already filled in, you can run the mass estimation 
-script with:
+in the `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+directory contains all the redshifts that were assigned to cluster candidates
+at the time that the ACT DR3 cluster catalog paper was submitted. You can specify
+the redshift catalog used for mass estimates with the ``massOptions`` key in
+the configuration file. Since this is already filled in, you can run the mass
+estimation script with:
 
 .. code-block::
 
@@ -80,58 +91,54 @@ script with:
 
 Nemo will then infer the masses of clusters detected in the 
 ``equD56/equD56_optimalCatalog.fits`` catalog generated by the previous 
-step. You can give a path to another catalog (e.g., a mock - see 
+step. This will take less than 1 minute to run.
+The output is written as a FITS table, ``equD56/equD56_mass.fits``.
+
+You can give a path to another catalog (e.g., a mock - see 
 below) by using the ``-c`` switch. If you provide a catalog that 
-doesn't contain ``fixed_y_c``\ , ``fixed_err_y_c`` columns, nemo will run 
+doesn't contain ``fixed_y_c``, ``fixed_err_y_c`` columns, nemo will run 
 in "forced photometry" mode, and measure the SZ observables and infer
-masses at the positions given in the catalog (only the ``name``\ , ``RADeg``\ , 
-``decDeg``\ , and ``redshift`` columns need to be present for this mode to
+masses at the positions given in the catalog (only the ``name``, ``RADeg``, 
+``decDeg``, and ``redshift`` columns need to be present for this mode to
 work).
 
-``nemoMass`` will take ~5 minutes to run (initially), as it calculates 
-the filter mismatch function Q (the result of this is cached, so 
-subsequent runs will be faster). The output is written as a 
-.fits table, ``equD56/equD56_M500.fits``.
-
-If you're interested in measuring photo-zs for clusters detected with
-``nemo``\ , check out ``zCluster``\ : 
-
-https://github.com/ACTCollaboration/zCluster
-
-This can take the ``equD56/equD56_optimalCatalog.fits`` file as input.
 
 Calculating completeness
 ========================
 
-Steps 1-3 are all that are needed to recreate the two-season ACTPol
-cluster catalog (though see the note at the top of this page). 
+The above steps are all that are needed to recreate the two-season
+ACTPol cluster catalog (though see the note at the top of this page).
 You can check the output by cross-matching against the 
 ``ACTPol_clusters.fits`` catalog using, e.g., 
 `TopCat <http://www.star.bris.ac.uk/%7Embt/topcat/>`_.
 
-If you wanted to run simulations to estimate completeness, you can use
-the ``nemoSelFn`` script. You can run it with:
+If you wanted to model the mass completeness, you can use the 
+``nemoSelFn`` script. You can run it with:
 
 .. code-block::
 
    nemoSelFn equD56.yml
 
-This will take ~30 minutes to run (again, subsequent runs will be 
+This will take about 60 minutes to run (subsequent runs will be 
 faster, as some of the output is cached). The output for this script
-is written in the ``diagnostics/`` directory, and includes a plot of
-the 90% completeness limit, averaged over the survey (in this case
-the E-D56 field), and an equivalent mass limit map, evaluated at 
-z = 0.5 (a .fits image). It is making the latter that takes up most
-of the time - this can be disabled by removing the ``massLimitMaps``
-key from the ``selFnOptions`` dictionary in the .yml file. 
+is written in the ``diagnostics/`` and ``selFn`` directories, and
+includes a plot of the 90% completeness limit, averaged over the
+survey (in this case the E-D56 field), and an equivalent mass limit
+map, evaluated at z = 0.5 (a FITS image). It is making the latter that
+takes up most of the time - this can be disabled by removing the 
+``massLimitMaps``key from the ``selFnOptions`` dictionary in the .yml file. 
 
 Note that ``nemoSelFn`` has been completely rewritten and is different
-to the version used for the ACTPol paper. Hence, the results are 
-different (90% completeness mass limits are higher than quoted in
-the paper).
+to the version used for the ACT DR3 cluster catalog paper. Hence, the
+results are different (90% completeness mass limits are higher than
+quoted in the paper). Running ``nemoSelFn`` is rarely necessary, as the main
+`nemo <https://nemo-sz.readthedocs.io/en/latest/commands.html#nemo>`_ 
+command can run all of these tasks using the ``-S`` switch.
 
 A script that shows an example of how to use the selection function
-can be found in this directory. You can run it with:
+files can be found in the
+`examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+directory. You can run it with:
 
 .. code-block::
 
@@ -143,23 +150,19 @@ and should contain all of the information needed to estimate the
 completeness for a given ``nemo`` run. By default, this example uses
 the full survey area, but you may optionally use the ``-f`` switch to
 specify a different footprint to use (see the ``selFnFootprints`` 
-dictionary in the .yml config file - this is commented out by 
-default). Footprints can be used to calculate the
+dictionary in the config file - this is commented out by default). 
+Footprints can be used to calculate the
 completeness within the intersection between the SZ survey and an
 optical survey (e.g., DES, HSC, KiDS, SDSS etc.). The ``-S`` switch may
 be used to change the signal-to-noise cut used to select the cluster
 sample.
 
-You can also take a look at the ``nemoCosmo`` script for more examples of
-how to use the selection function routines. Note that ``nemoCosmo`` is 
-experimental, and to date has been used for testing nemo rather than
-for cosmological analyses.
 
 Generating mock catalogs
 ========================
 
-You can generate mock cluster catalogs using the output from nemo
-by using the ``nemoMock`` script:
+You can generate mock cluster catalogs using the output from ``nemo``
+by using the ``nemoMock`` command:
 
 .. code-block::
 
@@ -175,6 +178,6 @@ generated mocks together to form one giant oversampled catalog
 
 Mock catalogs assume the fixed cosmology and mass scaling relation 
 parameters given in the ``massOptions`` dictionary in the config 
-file - so for the Arnaud et al. (2010) based scaling relation, 
-the number of clusters in the mocks will be larger than what is 
-observed in reality.
+file - so for the default Arnaud et al. (2010) based scaling
+relation, the number of clusters in the mocks will be larger than what
+is observed in reality.
