@@ -4,16 +4,20 @@
 Output
 ======
 
-This section describes the output produced by Nemo, and the main files of interest.
+This section describes the output produced by :ref:`nemoCommand`, and the main
+files of interest.
+
 
 Directory Structure
 -------------------
 
-The main Nemo script (launched with the ``nemo`` command) creates a folder (by default sharing the name
-of the configuration file, but with ``.yml`` removed) in the current working directory under which it
-stores all of its output. We will refer to this as the ``output`` directory hereafter. 
+The main :ref:`nemoCommand` command creates a folder in the current working directory
+under which it stores all of its output. By default this directory has the same name
+as the configuration file, but with the ``.yml`` extension removed. We will refer to
+this as the ``output`` directory hereafter. 
 
-After ``nemo`` has run, within the ``output`` directory, you will find the following::
+After :ref:`nemoCommand` has run, within the ``output`` directory, you will find the
+following::
 
     output/
         diagnostics/
@@ -36,9 +40,10 @@ mocks/
     (otherwise it will be empty).
 
 selFn/
-    This directory contains all the necessary information for calculating the completeness of the 
-    survey, given a model for the relationship between the SZ signal and mass, and an assumed halo 
-    mass function. For more information, see :ref:`SelFnPage` and/or :ref:`OutputSelFn` below.
+    This directory contains all the necessary information for calculating the completeness of a
+    cluster search, given a model for the relationship between the SZ signal and mass, and an
+    assumed halo mass function.
+
 
 .. _Catalogs:
     
@@ -46,17 +51,20 @@ Catalogs
 --------
 
 And region files.
-M500 too.
+Mass catalogs too.
+
 
 .. _FilteredMaps:
     
 Filtered Maps
 -------------
 
+
 .. _OutputSelFn:
     
 Selection Function
 ------------------
+
 
 Diagnostics
 -----------

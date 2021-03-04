@@ -1037,6 +1037,9 @@ makeMockCatalogs
 
     If present in the config file, this sets the number of mocks made by the
     :ref:`nemoMockCommand` command.
+    
+    .. note:: The number of mock catalogs to be generated can also be set from
+              a :ref:`nemoMockCommand` command line switch.
 
     *Example:*
     
@@ -1048,24 +1051,122 @@ makeMockCatalogs
 applyNoiseScatter
 ^^^^^^^^^^^^^^^^^
 
+    If True, apply scatter due to map noise to the SZ signals in the mock
+    catalog.
+
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       applyNoiseScatter: True
+
+
 applyPoissonScatter
 ^^^^^^^^^^^^^^^^^^^
+
+    If True, apply Poisson scatter to the number of clusters drawn from the
+    halo mass function, when generating a mock catalog.
+
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       applyPoissonScatter: True
+
 
 applyIntrinsicScatter
 ^^^^^^^^^^^^^^^^^^^^^
 
-
-
+    If True, apply log-normal intrinsic scatter (set by ``sigma_int`` in the
+    `massOptions`_ dictionary) to the SZ signals in the mock catalog.
     
-
-applyPoissonScatter: False
-applyIntrinsicScatter: False
-applyNoiseScatter: False
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       applyIntrinsicScatter: True
 
 
 Source Injection Simulations
 ============================
+
 sourceInjectionTest
+^^^^^^^^^^^^^^^^^^^
+    
+    If True, :ref:`nemoCommand` will perform a source injection test, which is
+    useful for testing position and flux recovery. This can be done for both
+    clusters and sources. The results will be written to a FITS-table format
+    catalog at ``nemoOutput/diagnostics/sourceInjectionData.fits``. At the
+    moment, source amplitudes, listed in the ``inFlux`` and ``outFlux``
+    columns, are ``deltaT_c`` (μK CMB) for sources and ``fixed_y_c``
+    (10\ :sup:`-4`) for clusters.
+    
+    .. note:: A source injection test can also be set to run by using the
+              :ref:`nemoCommand` ``-I`` switch.
+        
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       sourceInjectionTest: True
+       
+       
 sourceInjectionIterations
-sourceInjectionModels
+^^^^^^^^^^^^^^^^^^^^^^^^^
+    
+    The number of times the `sourceInjectionTest`_ will be repeated. The
+    results from all runs will be concatenated.
+    
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       sourceInjectionIterations: 200
+
+
 sourcesPerTile
+^^^^^^^^^^^^^^
+
+    The maximum number of sources that :ref:`nemoCommand` will try to
+    insert into each tile in each iteration of a `sourceInjectionTest`_.
+    Sources are inserted at random locations, but no source may be
+    inserted within 20 arcmin of another (this is done to avoid
+    confusion by spurious cross matches).
+    
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       sourcesPerTile: 50
+
+
+sourceInjectionModels
+^^^^^^^^^^^^^^^^^^^^^
+    
+    For cluster injection tests. This is a list that specifies the shapes
+    of clusters to be inserted, with each run inserting cluster signals
+    of random amplitude but the same profile.
+    The `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_
+    universal pressure profile (UPP) is assumed, following the implementation
+    described in `Hasselfield et al. (2013) <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_.
+    Each entry in the list is a dictionary with the following keys, which set the
+    scale of the cluster signal:
+        
+        :redshift (float):
+            
+            Redshift of the UPP-model cluster to be inserted.
+        
+        :M500 (float):
+            
+            Mass (*M\ :sup:`500c`), in units of solar mass, of the
+            UPP-model cluster to be inserted.
+    
+    *Example:*
+    
+    .. code-block:: yaml
+    
+       sourceInjectionModels:
+           - {redshift: 0.8, M500: 2.0e+14}
+           - {redshift: 0.4, M500: 2.0e+14}
+           - {redshift: 0.2, M500: 2.0e+14}
+           - {redshift: 0.1, M500: 2.0e+14}
