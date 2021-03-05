@@ -21,6 +21,8 @@ nemo
    in the YAML-format configuration file.
 
 
+.. _nemoMassCommand:
+
 nemoMass
 --------
 
@@ -48,6 +50,8 @@ nemoSelFn
    set to do this task by setting `calcSelFn: True` in the YAML-format
    configuration file.
 
+
+.. _nemoMockCommand:
 
 nemoMock
 ---------
