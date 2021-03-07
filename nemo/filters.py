@@ -174,12 +174,7 @@ class MapFilter(object):
             self.beamSolidAnglesDict[mapDict['obsFreqGHz']]=solidAngle_nsr
         
         # For pixell / enmap
-        # NOTE: enki maps can have an additional axis, which we don't want
-        enheader=self.wcs.header.copy()
-        if 'NAXIS3' in enheader.keys():
-            del enheader['NAXIS3']
-        enheader['NAXIS']=2
-        self.enwcs=enwcs.WCS(enheader)
+        self.enwcs=self.wcs.AWCS
 
         # We could make this adjustable... added after switch to pixell
         self.apodPix=20

@@ -245,12 +245,12 @@ class NemoConfig(object):
             self.origShape=None
                 
         # Downsampled WCS and shape for 'quicklook' stitched images
-        if 'makeQuickLookMaps' in self.parDict.keys() and self.parDict['makeQuickLookMaps'] == True:
-            self.quicklookScale=0.25
-            if self.origWCS is not None:
-                self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
-            else:
-                if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail ...")
+        # NOTE: This gets used by default for mass limit maps, so left in even when not used otherwise
+        self.quicklookScale=0.25
+        if self.origWCS is not None:
+            self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+        else:
+            if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail ...")
         
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
