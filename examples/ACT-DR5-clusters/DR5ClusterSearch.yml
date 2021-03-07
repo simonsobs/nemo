@@ -9,11 +9,11 @@ unfilteredMaps:
     - {mapFileName: "maps/act_dr5.01_s08s18_AA_f150_daynight_map.fits",
        weightsFileName: "maps/act_dr5.01_s08s18_AA_f150_daynight_ivar.fits",
        obsFreqGHz: 149.6, units: 'uK',
-       beamFileName: "beams/act_planck_dr5.01_s08s18_f150_daynight_beam.txt"}
+       beamFileName: "beam_profiles/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"}
     - {mapFileName: "maps/act_dr5.01_s08s18_AA_f090_daynight_map.fits",
        weightsFileName: "maps/act_dr5.01_s08s18_AA_f090_daynight_ivar.fits",
        obsFreqGHz: 97.8, units: 'uK',
-       beamFileName: "beams/act_planck_dr5.01_s08s18_f090_daynight_beam.txt"}
+       beamFileName: "beam_profiles/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}
 
 # Masks
 surveyMask: "dr5_masking/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
