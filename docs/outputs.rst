@@ -4,7 +4,7 @@
 Output
 ======
 
-This section describes the output produced by :ref:`nemoCommand`, and the main
+This section will describe the output produced by :ref:`nemoCommand`, and the main
 files of interest.
 
 
