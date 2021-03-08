@@ -1321,21 +1321,11 @@ def tidyUp(config):
             fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits"
             if os.path.exists(fileName):
                 with pyfits.open(fileName) as img:
-                    if tileName not in img:
-                        extName=0
-                    else:
-                        extName=tileName
-                    if tileName == 'PRIMARY':
-                        for extName in img:
-                            if img[extName].data is not None:
-                                break
-                    else:
-                        extName=tileName
-                    if 'COMPRESSED_IMAGE' in img:
-                        extName='COMPRESSED_IMAGE'                                          
+                    for extName in img:
+                        if img[extName].data is not None:
+                            break
                     hdu=pyfits.CompImageHDU(np.array(img[extName].data, dtype = dtype), img[extName].header, 
                                             name = tileName, compression_type = compressionType)
-                    data=img[extName].data
                 filesToRemove.append(fileName)
                 newImg.append(hdu)
         if len(newImg) > 0:
