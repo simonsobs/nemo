@@ -17,6 +17,7 @@ import numpy as np
 from scipy import ndimage
 import copy
 from pixell import enmap
+import nemo
 from . import startUp
 from . import filters
 from . import photometry
