@@ -354,8 +354,12 @@ def makeTileDir(parDict, writeToDisk = True):
 
             if wcs is None:
                 wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
+                # Allows compressed format (yes, we should tidy this up properly...)
                 with pyfits.open(wcsPath) as img:
-                    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+                    for extName in img:
+                        if img[extName].data is not None:
+                            break
+                    wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
                 
             # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]
