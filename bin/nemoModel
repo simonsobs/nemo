@@ -106,7 +106,7 @@ if __name__ == '__main__':
                               makeOutputDirs = False, setUpMaps = True, writeTileDir = False, 
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
     
-    baseDir, fileName=os.path.split(outputFileName)
+    baseDir, fileName=os.path.split(args.outputFileName)
     os.makedirs(baseDir, exist_ok = True)
     
     if args.catalog[:12] == 'pointsources':
