@@ -743,7 +743,7 @@ def getM500FromP(P, log10M, calcErrors = True):
 
 #------------------------------------------------------------------------------------------------------------
 def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2,
-                  cosmoModel = None, fRelWeightsDict = {148.0: 1.0}):
+                  cosmoModel = None, applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}):
     """Predict y0~ given logM500 (in MSun) and redshift. Default scaling relation parameters are A10 (as in
     H13).
     
@@ -769,12 +769,15 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     
     # Relativistic correction: now a little more complicated, to account for fact y0~ maps are weighted sum
     # of individual frequency maps, and relativistic correction size varies with frequency
-    fRels=[]
-    freqWeights=[]
-    for obsFreqGHz in fRelWeightsDict.keys():
-        fRels.append(calcFRel(z, M500, cosmoModel, obsFreqGHz = obsFreqGHz))
-        freqWeights.append(fRelWeightsDict[obsFreqGHz])
-    fRel=np.average(np.array(fRels), axis = 0, weights = freqWeights)
+    if applyRelativisticCorrection == True:
+        fRels=[]
+        freqWeights=[]
+        for obsFreqGHz in fRelWeightsDict.keys():
+            fRels.append(calcFRel(z, M500, cosmoModel, obsFreqGHz = obsFreqGHz))
+            freqWeights.append(fRelWeightsDict[obsFreqGHz])
+        fRel=np.average(np.array(fRels), axis = 0, weights = freqWeights)
+    else:
+        fRel=1.0
     
     # UPP relation according to H13
     # NOTE: m in H13 is M/Mpivot

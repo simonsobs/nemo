@@ -1621,14 +1621,17 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
                         continue
                 count=count+1
-                # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
                 if 'true_M500c' in catalog.keys():
+                    # This case is for when we're running from nemoMock output
+                    # Since the idea of this is to create noise-free model images, we must use true values here
+                    # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
                     M500=row['true_M500c']*1e14
                     z=row['redshift']
-                    y0ToInsert=row['fixed_y_c']*1e-4
-                    if 'true_Q' in catalog.keys():
-                        y0ToInsert=y0ToInsert/row['true_Q']
+                    y0ToInsert=row['true_fixed_y_c']*1e-4
+                    y0ToInsert=y0ToInsert/row['true_Q']
                 else:
+                    # NOTE: This case is for running from nemo output
+                    # We need to adapt this for when the template names are not in this format
                     if 'template' not in catalog.keys():
                         raise Exception("No M500, z, or template column found in catalog.")
                     bits=row['template'].split("#")[0].split("_")
