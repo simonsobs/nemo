@@ -631,65 +631,69 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             #mapDict['smoothAttenuationFactor']=1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max()
 
     # PSF matching via a convolution kernel
-    for i in range(len(config.unfilteredMapsDictList)):
-        mapDict=config.unfilteredMapsDictList[i]
-        beam=beams[i]
-        degPerPix=np.mean(np.diff(beam.rDeg))
-        assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
-        if i != refIndex:
+    # Different kernel for each tile (because CAR)
+    kernelDict={}
+    for tileName in config.tileNames:
+        shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
+               config.tileCoordsDict[tileName]['header']['NAXIS1'])
+        wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+        for i in range(len(config.unfilteredMapsDictList)):
+            mapDict=config.unfilteredMapsDictList[i]
+            beam=beams[i]
+            degPerPix=np.mean(np.diff(beam.rDeg))
+            assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
+            if i != refIndex:
 
-            # Calculate convolution kernel
-            symRefProf=np.zeros((refBeam.profile1d.shape[0]*2)-1)
-            symRefProf[:refBeam.profile1d.shape[0]]=refBeam.profile1d[::-1]
-            symRefProf[refBeam.profile1d.shape[0]-1:]=refBeam.profile1d
+                # Calculate convolution kernel
+                symRefProf=np.zeros((refBeam.profile1d.shape[0]*2)-1)
+                symRefProf[:refBeam.profile1d.shape[0]]=refBeam.profile1d[::-1]
+                symRefProf[refBeam.profile1d.shape[0]-1:]=refBeam.profile1d
 
-            symProf=np.zeros((beam.profile1d.shape[0]*2)-1)
-            symProf[:beam.profile1d.shape[0]]=beam.profile1d[::-1]
-            symProf[beam.profile1d.shape[0]-1:]=beam.profile1d        
-                    
-            symRefProf=np.fft.fftshift(symRefProf)
-            symProf=np.fft.fftshift(symProf)
-            fSymRef=np.fft.fft(symRefProf)
-            fSymBeam=np.fft.fft(symProf)
-            fSymConv=fSymRef/fSymBeam
-            fSymConv[fSymBeam < 1e-2]=0 # This value avoids ringing, smaller values do not
-            symMatched=np.fft.ifft(fSymBeam*fSymConv).real
-            symConv=np.fft.fftshift(np.fft.ifft(fSymConv).real)
-                    
-            conv=symConv[beam.profile1d.shape[0]-1:]
-            conv=conv/conv.max()
-            convKernel=copy.deepcopy(refBeam)
-            convKernel.profile1d=conv
-            
-            # Do the convolution - we apply to a beam map to figure out normalisation (for now)
-            data=mapDict['data']
-            degreesMap=np.ones([data.shape[0], data.shape[1]], dtype = float)*1e6
-            RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
-            #degreesMap=makeDegreesMap(mapList[i], wcs)        
-            beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
-            matchedBeamMap=maps.convolveMapWithBeam(beamMap, wcs, convKernel, maxDistDegrees = 1.0)
-            attenuationFactor=1/matchedBeamMap.max()
-            beamMap=beamMap*attenuationFactor
-            matchedBeamMap=maps.convolveMapWithBeam(beamMap, wcs, convKernel, maxDistDegrees = 1.0)        
-            mapDict['smoothKernel']=convKernel
-            mapDict['smoothAttenuationFactor']=attenuationFactor
+                symProf=np.zeros((beam.profile1d.shape[0]*2)-1)
+                symProf[:beam.profile1d.shape[0]]=beam.profile1d[::-1]
+                symProf[beam.profile1d.shape[0]-1:]=beam.profile1d        
+                        
+                symRefProf=np.fft.fftshift(symRefProf)
+                symProf=np.fft.fftshift(symProf)
+                fSymRef=np.fft.fft(symRefProf)
+                fSymBeam=np.fft.fft(symProf)
+                fSymConv=fSymRef/fSymBeam
+                fSymConv[fSymBeam < 1e-2]=0 # This value avoids ringing, smaller values do not
+                symMatched=np.fft.ifft(fSymBeam*fSymConv).real
+                symConv=np.fft.fftshift(np.fft.ifft(fSymConv).real)
+                        
+                conv=symConv[beam.profile1d.shape[0]-1:]
+                conv=conv/conv.max()
+                convKernel=copy.deepcopy(refBeam)
+                convKernel.profile1d=conv
+                
+                # Do the convolution - we apply to a beam map to figure out normalisation (for now)
+                degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
+                RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
+                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+                #degreesMap=makeDegreesMap(mapList[i], wcs)        
+                beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
+                matchedBeamMap=maps.convolveMapWithBeam(beamMap, wcs, convKernel, maxDistDegrees = 1.0)
+                attenuationFactor=1/matchedBeamMap.max()
+                beamMap=beamMap*attenuationFactor
+                matchedBeamMap=maps.convolveMapWithBeam(beamMap, wcs, convKernel, maxDistDegrees = 1.0)        
+                kernelDict[tileName]={'smoothKernel': convKernel, 'smoothAttenuationFactor': attenuationFactor}
     
     # Sort the list of maps so that the one with the reference beam is in index 0
     config.unfilteredMapsDictList.insert(0, config.unfilteredMapsDictList.pop(refIndex)) 
     
     if method == 'CAP':
-        catalog=_extractSpecCAP(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False,
+        catalog=_extractSpecCAP(config, tab, kernelDict, diskRadiusArcmin = 4.0, highPassFilter = False,
                                 estimateErrors = True)
     elif method == 'matchedFilter':
-        catalog=_extractSpecMatchedFilter(config, tab, saveFilteredMaps = saveFilteredMaps)
+        catalog=_extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = saveFilteredMaps)
     else:
         raise Exception("'method' should be 'CAP' or 'matchedFilter'")
     
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod = 'dataMap'):
+def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False, noiseMethod = 'dataMap'):
     """See extractSpec.
     
     """
@@ -748,6 +752,8 @@ def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod
                                                                   undoPixelWindow = True,
                                                                   returnFilter = True)
                 else:
+                    mapDict['smoothKernel']=kernelDict[tileName]['smoothKernel']
+                    mapDict['smoothAttenuationFactor']=kernelDict[tileName]['smoothAttenuationFactor']
                     mapDictToFilter=maps.preprocessMapDict(mapDict.copy(), tileName = tileName)
                     filteredMapDict['data']=filterObj.applyFilter(mapDictToFilter['data'])
                     RMSMap=filterObj.makeNoiseMap(filteredMapDict['data'])
@@ -787,7 +793,7 @@ def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod
     return catalog
     
 #------------------------------------------------------------------------------------------------------------
-def _extractSpecCAP(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFilter = False, 
+def _extractSpecCAP(config, tab, kernelDict, method = 'CAP', diskRadiusArcmin = 4.0, highPassFilter = False, 
                     estimateErrors = True):
     """See extractSpec.
     
