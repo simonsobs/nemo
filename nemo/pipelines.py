@@ -631,7 +631,7 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             #mapDict['smoothAttenuationFactor']=1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max()
 
     # PSF matching via a convolution kernel
-    for i in range(len(beamFileNames)):
+    for i in range(len(config.unfilteredMapsDictList)):
         mapDict=config.unfilteredMapsDictList[i]
         beam=beams[i]
         degPerPix=np.mean(np.diff(beam.rDeg))
