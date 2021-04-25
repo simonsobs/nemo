@@ -107,7 +107,8 @@ if __name__ == '__main__':
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
     
     baseDir, fileName=os.path.split(args.outputFileName)
-    os.makedirs(baseDir, exist_ok = True)
+    if baseDir != '':
+        os.makedirs(baseDir, exist_ok = True)
     
     if args.catalog[:12] == 'pointsources':
         try:
