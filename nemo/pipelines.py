@@ -606,82 +606,108 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             refFWHMArcmin=beam.FWHMArcmin
             refIndex=i
         beams.append(beam)
+
+    # Sort the list of beams and maps so that the one with the reference beam is in index 0
+    config.unfilteredMapsDictList.insert(0, config.unfilteredMapsDictList.pop(refIndex))
+    beams.insert(0, beams.pop(refIndex))
     
     # Figure out how much we need to Gaussian blur to match the reference beam
     # NOTE: This was an alternative to proper PSF-matching that wasn't good enough for ACT beams
-    #for i in range(len(config.unfilteredMapsDictList)):
+    #for i in range(1, len(config.unfilteredMapsDictList)):
         #mapDict=config.unfilteredMapsDictList[i]
         #beam=beams[i]
         #degPerPix=np.mean(np.diff(beam.rDeg))
         #assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
-        #if i != refIndex:
-            #resMin=1e6
-            #smoothPix=0
-            #attFactor=1.0
-            #for j in range(1, 100):
-                #smoothProf=ndimage.gaussian_filter1d(beam.profile1d, j)
-                #smoothProf=smoothProf/smoothProf.max()
-                #res=np.sum(np.power(refBeam.profile1d-smoothProf, 2))
-                #if res < resMin:
-                    #resMin=res
-                    #smoothPix=j
-                    #attFactor=1/smoothProf.max()
-            #smoothScaleDeg=smoothPix*degPerPix
-            #mapDict['smoothScaleDeg']=smoothScaleDeg
-            #mapDict['smoothAttenuationFactor']=1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max()
-
+        #resMin=1e6
+        #smoothPix=0
+        #attFactor=1.0
+        #for j in range(1, 100):
+            #smoothProf=ndimage.gaussian_filter1d(beam.profile1d, j)
+            #smoothProf=smoothProf/smoothProf.max()
+            #res=np.sum(np.power(refBeam.profile1d-smoothProf, 2))
+            #if res < resMin:
+                #resMin=res
+                #smoothPix=j
+                #attFactor=1/smoothProf.max()
+        #smoothScaleDeg=smoothPix*degPerPix
+        #mapDict['smoothScaleDeg']=smoothScaleDeg
+        #mapDict['smoothAttenuationFactor']=1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max()
+    
+    # For testing on CMB maps here
+    refMapDict=config.unfilteredMapsDictList[0]
+            
     # PSF matching via a convolution kernel
-    # Different kernel for each tile (because CAR)
-    kernelDict={}
-    for tileName in config.tileNames:
-        shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
-               config.tileCoordsDict[tileName]['header']['NAXIS1'])
-        wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
-        for i in range(len(config.unfilteredMapsDictList)):
-            mapDict=config.unfilteredMapsDictList[i]
-            beam=beams[i]
-            degPerPix=np.mean(np.diff(beam.rDeg))
-            assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
-            if i != refIndex:
+    kernelDict={}   # keys: obsFreqGHz
+    for i in range(1, len(config.unfilteredMapsDictList)):
+        mapDict=config.unfilteredMapsDictList[i]
+        beam=beams[i]
+        degPerPix=np.mean(np.diff(beam.rDeg))
+        assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
+        
+        # Calculate convolution kernel
+        symRefProf=np.zeros((refBeam.profile1d.shape[0]*2)-1)
+        symRefProf[:refBeam.profile1d.shape[0]]=refBeam.profile1d[::-1]
+        symRefProf[refBeam.profile1d.shape[0]-1:]=refBeam.profile1d
 
-                # Calculate convolution kernel
-                symRefProf=np.zeros((refBeam.profile1d.shape[0]*2)-1)
-                symRefProf[:refBeam.profile1d.shape[0]]=refBeam.profile1d[::-1]
-                symRefProf[refBeam.profile1d.shape[0]-1:]=refBeam.profile1d
-
-                symProf=np.zeros((beam.profile1d.shape[0]*2)-1)
-                symProf[:beam.profile1d.shape[0]]=beam.profile1d[::-1]
-                symProf[beam.profile1d.shape[0]-1:]=beam.profile1d        
-                        
-                symRefProf=np.fft.fftshift(symRefProf)
-                symProf=np.fft.fftshift(symProf)
-                fSymRef=np.fft.fft(symRefProf)
-                fSymBeam=np.fft.fft(symProf)
-                fSymConv=fSymRef/fSymBeam
-                fSymConv[fSymBeam < 1e-2]=0 # This value avoids ringing, smaller values do not
-                symMatched=np.fft.ifft(fSymBeam*fSymConv).real
-                symConv=np.fft.fftshift(np.fft.ifft(fSymConv).real)
-                        
-                conv=symConv[beam.profile1d.shape[0]-1:]
-                conv=conv/conv.max()
-                convKernel=copy.deepcopy(refBeam)
-                convKernel.profile1d=conv
+        symProf=np.zeros((beam.profile1d.shape[0]*2)-1)
+        symProf[:beam.profile1d.shape[0]]=beam.profile1d[::-1]
+        symProf[beam.profile1d.shape[0]-1:]=beam.profile1d        
                 
-                # Do the convolution - we apply to a beam map to figure out normalisation (for now)
-                degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
-                RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
-                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
-                #degreesMap=makeDegreesMap(mapList[i], wcs)        
-                beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
-                matchedBeamMap=maps.convolveMapWithBeam(beamMap, wcs, convKernel, maxDistDegrees = 1.0)
-                attenuationFactor=1/matchedBeamMap.max()
-                beamMap=beamMap*attenuationFactor
-                matchedBeamMap=maps.convolveMapWithBeam(beamMap, wcs, convKernel, maxDistDegrees = 1.0)        
-                kernelDict[tileName]={'smoothKernel': convKernel, 'smoothAttenuationFactor': attenuationFactor}
-    
-    # Sort the list of maps so that the one with the reference beam is in index 0
-    config.unfilteredMapsDictList.insert(0, config.unfilteredMapsDictList.pop(refIndex)) 
-    
+        symRefProf=np.fft.fftshift(symRefProf)
+        symProf=np.fft.fftshift(symProf)
+        fSymRef=np.fft.fft(symRefProf)
+        fSymBeam=np.fft.fft(symProf)
+        fSymConv=fSymRef/fSymBeam
+        fSymConv[fSymBeam < 1e-2]=0 # This value avoids ringing, smaller values do not
+        symMatched=np.fft.ifft(fSymBeam*fSymConv).real
+        symConv=np.fft.fftshift(np.fft.ifft(fSymConv).real)
+
+        # This allows normalization in same way as Gaussian smooth method
+        symConv=symConv/symConv.sum()
+        convedProf=ndimage.convolve(symProf, np.fft.fftshift(symConv))[beam.profile1d.shape[0]-1:]
+        attenuationFactor=1/convedProf.max() # norm
+
+        conv=symConv[beam.profile1d.shape[0]-1:]
+        convKernel=copy.deepcopy(refBeam)
+        convKernel.profile1d=conv
+        
+        #---
+        ## This shows kernel convolution equivalent to Gaussian filter
+        ## All integrate to approximately the same thing
+        #plt.plot(ndimage.convolve(symProf, np.fft.fftshift(symConv)))
+        #convedProf=ndimage.convolve(symProf, np.fft.fftshift(symConv))[beam.profile1d.shape[0]-1:]*attenuationFactor
+        #smoothedProf=ndimage.gaussian_filter1d(beam.profile1d, smoothPix)#*(1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max())
+        #smoothedProf=smoothedProf/smoothedProf.max()
+        #plt.plot(beam.rDeg*60, refBeam.profile1d, label = 'ref')
+        #plt.plot(beam.rDeg*60, smoothedProf, label = 'gauss smooth')
+        #plt.plot(beam.rDeg*60, convedProf, label = 'kernel convolved')
+        #plt.legend()
+        
+        #---
+        # Checking that general kernel can match original smooth method
+        # NOTE: For the 1d Gaussian case, all we're doing is Gaussian filtering, then multiplying by 1/smoothedProfile.max()
+        #with pyfits.open(mapDict['mapFileName']) as img:
+            #data=img[0].data
+        ## Original (just ndimage.gaussian_filter(data, (ySmoothScalePix, xSmoothScalePix))
+        #smoothedData=maps.smoothMap(data*mapDict['smoothAttenuationFactor'], 
+                                    #wcs, smoothScaleDeg = mapDict['smoothScaleDeg'])
+        ## Kernel - ndimage convolve
+        #degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
+        #RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
+        #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+        #kernel2d=signals.makeBeamModelSignalMap(degreesMap, wcs, convKernel, amplitude = None)
+        #kernel2d=kernel2d/kernel2d.sum() 
+        #ys, xs=np.where(kernel2d != 0)
+        #kernel2d=kernel2d[ys.min():ys.max(), xs.min():xs.max()]
+        #convedData=ndimage.convolve(data*norm, kernel2d)
+        ## Nemo beam conv routine
+        #matchedData=maps.convolveMapWithBeam(data*norm, wcs, convKernel, maxDistDegrees = 1.0)
+        #---
+        
+        # NOTE: If we're NOT passing in 2d kernels, don't need to organise by tile
+        kernelDict[mapDict['obsFreqGHz']]={'smoothKernel': convKernel, 
+                                            'smoothAttenuationFactor': attenuationFactor}
+        
     if method == 'CAP':
         catalog=_extractSpecCAP(config, tab, kernelDict, diskRadiusArcmin = 4.0, highPassFilter = False,
                                 estimateErrors = True)
@@ -752,8 +778,8 @@ def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False,
                                                                   undoPixelWindow = True,
                                                                   returnFilter = True)
                 else:
-                    mapDict['smoothKernel']=kernelDict[tileName]['smoothKernel']
-                    mapDict['smoothAttenuationFactor']=kernelDict[tileName]['smoothAttenuationFactor']
+                    mapDict['smoothKernel']=kernelDict[mapDict['obsFreqGHz']]['smoothKernel']
+                    mapDict['smoothAttenuationFactor']=kernelDict[mapDict['obsFreqGHz']]['smoothAttenuationFactor']
                     mapDictToFilter=maps.preprocessMapDict(mapDict.copy(), tileName = tileName)
                     filteredMapDict['data']=filterObj.applyFilter(mapDictToFilter['data'])
                     RMSMap=filterObj.makeNoiseMap(filteredMapDict['data'])
