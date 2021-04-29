@@ -673,10 +673,14 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
                         
         # Additional numerical fudge factor, calculated from comparing the kernel+beam in 2d with ref beam
         # NOTE: We could properly fix 1d -> 2d projection on chunky pixels - this should be good enough for now
-        with pyfits.open(mapDict['mapFileName']) as img:
-            data=img[0].data
-            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-            shape=data.shape
+        tileName=config.tileNames[0]
+        shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
+               config.tileCoordsDict[tileName]['header']['NAXIS1'])
+        wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+        #with pyfits.open(mapDict['mapFileName']) as img:
+            #data=img[0].data
+            #wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            #shape=data.shape
         degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
         RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
         degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
