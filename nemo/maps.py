@@ -1223,7 +1223,7 @@ def convolveMapWithBeam(data, wcs, beam, maxDistDegrees = 1.0):
     #outMap=ndimage.shift(outMap, [yc1-yc2, xc1-xc2])
     
     outMap=ndimage.shift(scipy_convolve(data, beamMap, mode = 'same'), [-1, -1])
-        
+    
     return outMap
 
 #-------------------------------------------------------------------------------------------------------------

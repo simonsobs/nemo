@@ -652,13 +652,13 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
         symProf=np.zeros((beam.profile1d.shape[0]*2)-1)
         symProf[:beam.profile1d.shape[0]]=beam.profile1d[::-1]
         symProf[beam.profile1d.shape[0]-1:]=beam.profile1d        
-                
+        
         symRefProf=np.fft.fftshift(symRefProf)
         symProf=np.fft.fftshift(symProf)
         fSymRef=np.fft.fft(symRefProf)
         fSymBeam=np.fft.fft(symProf)
         fSymConv=fSymRef/fSymBeam
-        fSymConv[fSymBeam < 1e-2]=0 # This value avoids ringing, smaller values do not
+        fSymConv[fSymBeam < 1e-1]=0 # Was 1e-2; this value avoids ringing, smaller values do not
         symMatched=np.fft.ifft(fSymBeam*fSymConv).real
         symConv=np.fft.fftshift(np.fft.ifft(fSymConv).real)
 
@@ -670,39 +670,24 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
         conv=symConv[beam.profile1d.shape[0]-1:]
         convKernel=copy.deepcopy(refBeam)
         convKernel.profile1d=conv
+                        
+        # Additional numerical fudge factor, calculated from comparing the kernel+beam in 2d with ref beam
+        # NOTE: We could properly fix 1d -> 2d projection on chunky pixels - this should be good enough for now
+        with pyfits.open(mapDict['mapFileName']) as img:
+            data=img[0].data
+            wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+            shape=data.shape
+        degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
+        RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
+        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+        beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
+        refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
+        matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
         
-        #---
-        ## This shows kernel convolution equivalent to Gaussian filter
-        ## All integrate to approximately the same thing
-        #plt.plot(ndimage.convolve(symProf, np.fft.fftshift(symConv)))
-        #convedProf=ndimage.convolve(symProf, np.fft.fftshift(symConv))[beam.profile1d.shape[0]-1:]*attenuationFactor
-        #smoothedProf=ndimage.gaussian_filter1d(beam.profile1d, smoothPix)#*(1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max())
-        #smoothedProf=smoothedProf/smoothedProf.max()
-        #plt.plot(beam.rDeg*60, refBeam.profile1d, label = 'ref')
-        #plt.plot(beam.rDeg*60, smoothedProf, label = 'gauss smooth')
-        #plt.plot(beam.rDeg*60, convedProf, label = 'kernel convolved')
-        #plt.legend()
-        
-        #---
-        # Checking that general kernel can match original smooth method
-        # NOTE: For the 1d Gaussian case, all we're doing is Gaussian filtering, then multiplying by 1/smoothedProfile.max()
-        #with pyfits.open(mapDict['mapFileName']) as img:
-            #data=img[0].data
-        ## Original (just ndimage.gaussian_filter(data, (ySmoothScalePix, xSmoothScalePix))
-        #smoothedData=maps.smoothMap(data*mapDict['smoothAttenuationFactor'], 
-                                    #wcs, smoothScaleDeg = mapDict['smoothScaleDeg'])
-        ## Kernel - ndimage convolve
-        #degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
-        #RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
-        #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
-        #kernel2d=signals.makeBeamModelSignalMap(degreesMap, wcs, convKernel, amplitude = None)
-        #kernel2d=kernel2d/kernel2d.sum() 
-        #ys, xs=np.where(kernel2d != 0)
-        #kernel2d=kernel2d[ys.min():ys.max(), xs.min():xs.max()]
-        #convedData=ndimage.convolve(data*norm, kernel2d)
-        ## Nemo beam conv routine
-        #matchedData=maps.convolveMapWithBeam(data*norm, wcs, convKernel, maxDistDegrees = 1.0)
-        #---
+        refBeamMap=refBeamMap/refBeamMap.max()
+        matchedBeamMap=matchedBeamMap/matchedBeamMap.max() 
+        fudge=matchedBeamMap.sum()/refBeamMap.sum()
+        attenuationFactor=attenuationFactor*fudge
         
         # NOTE: If we're NOT passing in 2d kernels, don't need to organise by tile
         kernelDict[mapDict['obsFreqGHz']]={'smoothKernel': convKernel, 
@@ -723,7 +708,7 @@ def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False,
     """See extractSpec.
     
     """
-    
+        
     cacheDir="nemoSpecCache"+os.path.sep+os.path.basename(config.rootOutDir)
     os.makedirs(cacheDir, exist_ok = True)
 
