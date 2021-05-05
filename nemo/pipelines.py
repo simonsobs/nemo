@@ -14,7 +14,7 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astLib import astWCS
 import numpy as np
-from scipy import ndimage
+from scipy import ndimage, interpolate
 import copy
 from pixell import enmap
 import nemo
@@ -637,65 +637,92 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
     refMapDict=config.unfilteredMapsDictList[0]
             
     # PSF matching via a convolution kernel
-    kernelDict={}   # keys: obsFreqGHz
-    for i in range(1, len(config.unfilteredMapsDictList)):
-        mapDict=config.unfilteredMapsDictList[i]
-        beam=beams[i]
-        degPerPix=np.mean(np.diff(beam.rDeg))
-        assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
-        
-        # Calculate convolution kernel
-        symRefProf=np.zeros((refBeam.profile1d.shape[0]*2)-1)
-        symRefProf[:refBeam.profile1d.shape[0]]=refBeam.profile1d[::-1]
-        symRefProf[refBeam.profile1d.shape[0]-1:]=refBeam.profile1d
+    kernelDict={}   # keys: tile, obsFreqGHz
+    for tileName in config.tileNames:
+        if tileName not in kernelDict.keys():
+            kernelDict[tileName]={}
+        for i in range(1, len(config.unfilteredMapsDictList)):
+            mapDict=config.unfilteredMapsDictList[i]
+            beam=beams[i]
+            degPerPix=np.mean(np.diff(beam.rDeg))
+            assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
+            
+            # Calculate convolution kernel
+            sizePix=beam.profile1d.shape[0]*2
+            if sizePix % 2 == 0:
+                sizePix=sizePix+1
+            symRDeg=np.linspace(-0.5, 0.5, sizePix)
+            assert((symRDeg == 0).sum())
+            
+            symProf=interpolate.splev(abs(symRDeg), beam.tck)
+            symRefProf=interpolate.splev(abs(symRDeg), refBeam.tck)
 
-        symProf=np.zeros((beam.profile1d.shape[0]*2)-1)
-        symProf[:beam.profile1d.shape[0]]=beam.profile1d[::-1]
-        symProf[beam.profile1d.shape[0]-1:]=beam.profile1d        
-        
-        symRefProf=np.fft.fftshift(symRefProf)
-        symProf=np.fft.fftshift(symProf)
-        fSymRef=np.fft.fft(symRefProf)
-        fSymBeam=np.fft.fft(symProf)
-        fSymConv=fSymRef/fSymBeam
-        fSymConv[fSymBeam < 1e-1]=0 # Was 1e-2; this value avoids ringing, smaller values do not
-        symMatched=np.fft.ifft(fSymBeam*fSymConv).real
-        symConv=np.fft.fftshift(np.fft.ifft(fSymConv).real)
+            fSymRef=np.fft.fft(np.fft.fftshift(symRefProf))
+            fSymBeam=np.fft.fft(np.fft.fftshift(symProf))
+            fSymConv=fSymRef/fSymBeam
+            fSymConv[fSymBeam < 1e-1]=0 # Was 1e-2; this value avoids ringing, smaller values do not
+            symMatched=np.fft.ifft(fSymBeam*fSymConv).real
+            symConv=np.fft.ifft(fSymConv).real
 
-        # This allows normalization in same way as Gaussian smooth method
-        symConv=symConv/symConv.sum()
-        convedProf=ndimage.convolve(symProf, np.fft.fftshift(symConv))[beam.profile1d.shape[0]-1:]
-        attenuationFactor=1/convedProf.max() # norm
+            # This allows normalization in same way as Gaussian smooth method
+            symConv=symConv/symConv.sum()
+            convedProf=ndimage.convolve(symProf, np.fft.fftshift(symConv))
+            attenuationFactor=1/convedProf.max() # norm
 
-        conv=symConv[beam.profile1d.shape[0]-1:]
-        convKernel=copy.deepcopy(refBeam)
-        convKernel.profile1d=conv
-                        
-        # Additional numerical fudge factor, calculated from comparing the kernel+beam in 2d with ref beam
-        # NOTE: We could properly fix 1d -> 2d projection on chunky pixels - this should be good enough for now
-        tileName=config.tileNames[0]
-        shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
-               config.tileCoordsDict[tileName]['header']['NAXIS1'])
-        wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
-        #with pyfits.open(mapDict['mapFileName']) as img:
-            #data=img[0].data
-            #wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-            #shape=data.shape
-        degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
-        RADeg, decDeg=wcs.pix2wcs(degreesMap.shape[1]/2, degreesMap.shape[0]/2)
-        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
-        beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
-        refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
-        matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
-        
-        refBeamMap=refBeamMap/refBeamMap.max()
-        matchedBeamMap=matchedBeamMap/matchedBeamMap.max() 
-        fudge=matchedBeamMap.sum()/refBeamMap.sum()
-        attenuationFactor=attenuationFactor*fudge
-        
-        # NOTE: If we're NOT passing in 2d kernels, don't need to organise by tile
-        kernelDict[mapDict['obsFreqGHz']]={'smoothKernel': convKernel, 
-                                            'smoothAttenuationFactor': attenuationFactor}
+            # Make profile object
+            peakIndex=np.argmax(np.fft.fftshift(symConv))       
+            convKernel=signals.BeamProfile(profile1d = np.fft.fftshift(symConv)[peakIndex:], rDeg = symRDeg[peakIndex:])
+            
+            ## Check plots
+            #import pylab as plt
+            #plt.figure(figsize=(10,8))
+            #plt.plot(abs(symRDeg*60), symRefProf, label = 'ref', lw = 3)
+            #plt.plot(abs(symRDeg*60), convedProf*attenuationFactor, label = 'kernel convolved')
+            #plt.semilogy()
+            #plt.legend()
+            #ratio=(convedProf*attenuationFactor)/symRefProf
+            #plt.figure(figsize=(10,8))
+            #plt.plot(abs(symRDeg*60), ratio, label = 'ratio')
+            #plt.plot(abs(symRDeg*60), [1.0]*len(symRDeg), 'r-')
+            #plt.legend()
+            
+            # Fudging 2d kernel to match (fix properly later)
+            shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
+                   config.tileCoordsDict[tileName]['header']['NAXIS1'])
+            wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+            degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
+            RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
+            refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
+            matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor**2, wcs, convKernel, maxDistDegrees = 1.0)
+
+            # Radial fudge factor
+            yRow=np.where(refBeamMap == refBeamMap.max())[0][0]
+            rowValid=degreesMap[yRow] < refBeam.rDeg.max()
+            ratio=refBeamMap[yRow][rowValid]/matchedBeamMap[yRow][rowValid]
+            zeroIndex=np.argmin(degreesMap[yRow][rowValid])
+            assert(degreesMap[yRow][rowValid][zeroIndex] == 0)
+            tck=interpolate.splrep(degreesMap[yRow][rowValid][zeroIndex:], ratio[zeroIndex:])
+            fudge=interpolate.splev(convKernel.rDeg, tck)
+            fudge[fudge < 0.5]=1.0
+            fudge[fudge > 1.5]=1.0
+            fudgeKernel=signals.BeamProfile(profile1d = convKernel.profile1d*fudge, rDeg = convKernel.rDeg)
+            
+            ## Check plot
+            #import pylab as plt
+            #fudgeMatchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor**2, wcs, fudgeKernel, maxDistDegrees = 1.0)
+            #plt.figure(figsize=(10,8))
+            #plt.plot(degreesMap[yRow][rowValid]*60, refBeamMap[yRow][rowValid], lw = 3, label = 'ref')
+            #plt.plot(degreesMap[yRow][rowValid]*60, fudgeMatchedBeamMap[yRow][rowValid], label = 'fudged')
+            #plt.semilogy()
+            #plt.ylim(1e-5)
+            #plt.legend()
+            #plt.show()
+            
+            # NOTE: If we're NOT passing in 2d kernels, don't need to organise by tile
+            kernelDict[tileName][mapDict['obsFreqGHz']]={'smoothKernel': fudgeKernel, 
+                                                         'smoothAttenuationFactor': attenuationFactor}
         
     if method == 'CAP':
         catalog=_extractSpecCAP(config, tab, kernelDict, diskRadiusArcmin = 4.0, highPassFilter = False,
@@ -767,8 +794,8 @@ def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False,
                                                                   undoPixelWindow = True,
                                                                   returnFilter = True)
                 else:
-                    mapDict['smoothKernel']=kernelDict[mapDict['obsFreqGHz']]['smoothKernel']
-                    mapDict['smoothAttenuationFactor']=kernelDict[mapDict['obsFreqGHz']]['smoothAttenuationFactor']
+                    mapDict['smoothKernel']=kernelDict[tileName][mapDict['obsFreqGHz']]['smoothKernel']
+                    mapDict['smoothAttenuationFactor']=kernelDict[tileName][mapDict['obsFreqGHz']]['smoothAttenuationFactor']
                     mapDictToFilter=maps.preprocessMapDict(mapDict.copy(), tileName = tileName)
                     filteredMapDict['data']=filterObj.applyFilter(mapDictToFilter['data'])
                     RMSMap=filterObj.makeNoiseMap(filteredMapDict['data'])

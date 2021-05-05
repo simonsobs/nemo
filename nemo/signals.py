@@ -256,7 +256,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     # Turn 1d profile into 2d
     r2p=interpolate.interp1d(beam.rDeg, profile1d, bounds_error=False, fill_value=0.0)
     signalMap=r2p(degreesMap)
-                
+    
     return signalMap
     
 #------------------------------------------------------------------------------------------------------------
