@@ -719,6 +719,12 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             #plt.ylim(1e-5)
             #plt.legend()
             #plt.show()
+            #from astLib import astImages
+            #astImages.saveFITS("ref.fits", refBeamMap, wcs)
+            #astImages.saveFITS("fudgematched.fits", fudgeMatchedBeamMap, wcs)            
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
             
             # NOTE: If we're NOT passing in 2d kernels, don't need to organise by tile
             kernelDict[tileName][mapDict['obsFreqGHz']]={'smoothKernel': fudgeKernel, 
