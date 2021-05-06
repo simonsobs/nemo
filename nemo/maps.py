@@ -983,7 +983,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         #data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
     if 'smoothKernel' in mapDict.keys():
         if 'smoothAttenuationFactor' in mapDict.keys():
-            data=data*mapDict['smoothAttenuationFactor']**2
+            data=data*mapDict['smoothAttenuationFactor']
         data=convolveMapWithBeam(data, wcs, mapDict['smoothKernel'], maxDistDegrees = 1.0)
                 
     # Optional masking of point sources from external catalog

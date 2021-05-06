@@ -678,6 +678,8 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             #plt.figure(figsize=(10,8))
             #plt.plot(abs(symRDeg*60), symRefProf, label = 'ref', lw = 3)
             #plt.plot(abs(symRDeg*60), convedProf*attenuationFactor, label = 'kernel convolved')
+            #integralRatio=np.trapz(symRefProf)/np.trapz(convedProf*attenuationFactor)
+            #plt.title("%.3f" % (integralRatio))
             #plt.semilogy()
             #plt.legend()
             #ratio=(convedProf*attenuationFactor)/symRefProf
@@ -687,41 +689,75 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             #plt.legend()
             
             # Fudging 2d kernel to match (fix properly later)
-            shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
-                   config.tileCoordsDict[tileName]['header']['NAXIS1'])
-            wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+            # NOTE: Now done at higher res but doesn't make much difference
+            wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits').copy()
+            wcs.header['CDELT1']=np.diff(refBeam.rDeg)[0]*2
+            wcs.header['CDELT2']=np.diff(refBeam.rDeg)[0]*2
+            wcs.header['NAXIS1']=int(np.ceil(2*refBeam.rDeg.max()/wcs.header['CDELT1'])) 
+            wcs.header['NAXIS2']=int(np.ceil(2*refBeam.rDeg.max()/wcs.header['CDELT2']))
+            wcs.updateFromHeader()
+            shape=(wcs.header['NAXIS2'], wcs.header['NAXIS1'])
             degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
             RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
             degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
             beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
             refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
-            matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor**2, wcs, convKernel, maxDistDegrees = 1.0)
-
-            # Radial fudge factor
+            matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
+            
+            # Find and apply radial fudge factor
             yRow=np.where(refBeamMap == refBeamMap.max())[0][0]
-            rowValid=degreesMap[yRow] < refBeam.rDeg.max()
+            rowValid=np.logical_and(degreesMap[yRow] < refBeam.rDeg.max(), matchedBeamMap[yRow] != 0)
             ratio=refBeamMap[yRow][rowValid]/matchedBeamMap[yRow][rowValid]
             zeroIndex=np.argmin(degreesMap[yRow][rowValid])
             assert(degreesMap[yRow][rowValid][zeroIndex] == 0)
             tck=interpolate.splrep(degreesMap[yRow][rowValid][zeroIndex:], ratio[zeroIndex:])
             fudge=interpolate.splev(convKernel.rDeg, tck)
-            fudge[fudge < 0.5]=1.0
-            fudge[fudge > 1.5]=1.0
+            #fudge[fudge < 0.5]=1.0
+            #fudge[fudge > 1.5]=1.0
             fudgeKernel=signals.BeamProfile(profile1d = convKernel.profile1d*fudge, rDeg = convKernel.rDeg)
             
             ## Check plot
             #import pylab as plt
-            #fudgeMatchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor**2, wcs, fudgeKernel, maxDistDegrees = 1.0)
+            #plt.figure(figsize=(10,8))
+            #plt.plot(convKernel.rDeg, fudge, lw = 3, label = 'fudge')
+            #plt.plot(convKernel.rDeg, [1.0]*len(fudge), 'r-')
+            #plt.ylim(0, 2)
+            #plt.legend()
+            #plt.show()
+            
+            # 2nd fudge factor - match integrals of 2d kernels and adjust attenuation factor
+            fudgeMatchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, fudgeKernel, maxDistDegrees = 1.0)
+            attenuationFactor=refBeamMap.sum()/fudgeMatchedBeamMap.sum()
+            #integralRatio=np.trapz(fudgeMatchedBeamMap[yRow][rowValid])/np.trapz(refBeamMap[yRow][rowValid])
+            #attenuationFactor=np.sqrt(1/integralRatio)*attenuationFactor
+                        
+            ## Check at map pixelization that is actually used
+            #shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
+                   #config.tileCoordsDict[tileName]['header']['NAXIS1'])
+            #wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits').copy()
+            #degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
+            #RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
+            #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            #beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
+            #refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
+            #fudgeMatchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, fudgeKernel, maxDistDegrees = 1.0)            
+            ## Check plot
+            #import pylab as plt
+            #yRow=np.where(refBeamMap == refBeamMap.max())[0][0]
+            #rowValid=np.logical_and(degreesMap[yRow] < refBeam.rDeg.max(), fudgeMatchedBeamMap[yRow] != 0)
             #plt.figure(figsize=(10,8))
             #plt.plot(degreesMap[yRow][rowValid]*60, refBeamMap[yRow][rowValid], lw = 3, label = 'ref')
             #plt.plot(degreesMap[yRow][rowValid]*60, fudgeMatchedBeamMap[yRow][rowValid], label = 'fudged')
+            #integralRatio=np.trapz(fudgeMatchedBeamMap[yRow][rowValid])/np.trapz(refBeamMap[yRow][rowValid])
+            #plt.title("native map res - %.3f" % (integralRatio))
             #plt.semilogy()
             #plt.ylim(1e-5)
             #plt.legend()
             #plt.show()
             #from astLib import astImages
             #astImages.saveFITS("ref.fits", refBeamMap, wcs)
-            #astImages.saveFITS("fudgematched.fits", fudgeMatchedBeamMap, wcs)            
+            #astImages.saveFITS("fudgematched.fits", fudgeMatchedBeamMap, wcs)
+            #astImages.saveFITS("diff.fits", refBeamMap-fudgeMatchedBeamMap, wcs)
             #import IPython
             #IPython.embed()
             #sys.exit()
