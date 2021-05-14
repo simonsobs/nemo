@@ -690,9 +690,10 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             
             # Fudging 2d kernel to match (fix properly later)
             # NOTE: Now done at higher res but doesn't make much difference
+            # (but DOES blow up in some tiles if you use e.g. have the resolution)
             wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits').copy()
-            wcs.header['CDELT1']=np.diff(refBeam.rDeg)[0]*2
-            wcs.header['CDELT2']=np.diff(refBeam.rDeg)[0]*2
+            wcs.header['CDELT1']=np.diff(refBeam.rDeg)[0]
+            wcs.header['CDELT2']=np.diff(refBeam.rDeg)[0]
             wcs.header['NAXIS1']=int(np.ceil(2*refBeam.rDeg.max()/wcs.header['CDELT1'])) 
             wcs.header['NAXIS2']=int(np.ceil(2*refBeam.rDeg.max()/wcs.header['CDELT2']))
             wcs.updateFromHeader()
@@ -721,17 +722,16 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             #plt.figure(figsize=(10,8))
             #plt.plot(convKernel.rDeg, fudge, lw = 3, label = 'fudge')
             #plt.plot(convKernel.rDeg, [1.0]*len(fudge), 'r-')
-            #plt.ylim(0, 2)
+            #plt.title("fudge")
+            ##plt.ylim(0, 2)
             #plt.legend()
             #plt.show()
             
-            # 2nd fudge factor - match integrals of 2d kernels and adjust attenuation factor
+            # 2nd fudge factor - match integrals of 2d kernels
             fudgeMatchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, fudgeKernel, maxDistDegrees = 1.0)
             attenuationFactor=refBeamMap.sum()/fudgeMatchedBeamMap.sum()
-            #integralRatio=np.trapz(fudgeMatchedBeamMap[yRow][rowValid])/np.trapz(refBeamMap[yRow][rowValid])
-            #attenuationFactor=np.sqrt(1/integralRatio)*attenuationFactor
                         
-            ## Check at map pixelization that is actually used
+            # Check at map pixelization that is actually used
             #shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
                    #config.tileCoordsDict[tileName]['header']['NAXIS1'])
             #wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits').copy()
