@@ -32,19 +32,23 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
         if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
             # Corrected for mass function steepness
-            massDict=signals.calcM500Fromy0(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                            row['redshift'], row['redshiftErr'],
-                                            tenToA0 = massOptions['tenToA0'],
-                                            B0 = massOptions['B0'], 
-                                            Mpivot = massOptions['Mpivot'], 
-                                            sigma_int = massOptions['sigma_int'],
-                                            tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
-                                            applyMFDebiasCorrection = True,
-                                            applyRelativisticCorrection = True,
-                                            fRelWeightsDict = fRelWeightsDict[tileName])
-            row['M500']=massDict['M500']
-            row['M500_errPlus']=massDict['M500_errPlus']
-            row['M500_errMinus']=massDict['M500_errMinus']
+            massDict=signals.calcMass(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
+                                      row['redshift'], row['redshiftErr'],
+                                      tenToA0 = massOptions['tenToA0'],
+                                      B0 = massOptions['B0'], 
+                                      Mpivot = massOptions['Mpivot'], 
+                                      sigma_int = massOptions['sigma_int'],
+                                      tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
+                                      applyMFDebiasCorrection = True,
+                                      applyRelativisticCorrection = True,
+                                      fRelWeightsDict = fRelWeightsDict[tileName])
+            row['M500c']=massDict['M500c']
+            try:
+                row['M500c_errPlus']=massDict['M500c_errPlus']
+            except:
+                IPython.embed()
+                sys.exit()
+            row['M500c_errMinus']=massDict['M500c_errMinus']
 
     return tab
 
@@ -52,8 +56,8 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
 # Main
 
 # Options - masses are as output by Nemo routines; we compare these to halo catalog (converting as necessary)
-massCol="M500"
-massCol="M200m"
+massCol="M500c"
+#massCol="M200m"
 
 # Websky cosmo - for on-the-fly redone masses
 minMass=1e13
@@ -72,10 +76,10 @@ tckQFitDict=signals.loadQ("../MFMF_SOSim_3freq_tiles/selFn/QFit.fits")
 fRelWeightsDict=signals.loadFRelWeights("../MFMF_SOSim_3freq_tiles/selFn/fRelWeights.fits")
 
 # Make combined table
-mergedTabFileName="trueMasses_MFMF_SOSim_3freq_tiles_M500.fits"
+mergedTabFileName="trueMasses_MFMF_SOSim_3freq_tiles_M500c.fits"
 if os.path.exists(mergedTabFileName) == False:
     halos=atpy.Table().read("../halos.fits")
-    tab=atpy.Table().read("../MFMF_SOSim_3freq_tiles/MFMF_SOSim_3freq_tiles_M500.fits")
+    tab=atpy.Table().read("../MFMF_SOSim_3freq_tiles/MFMF_SOSim_3freq_tiles_mass.fits")
     tab=tab[tab['fixed_SNR'] > 6]
 
     tab, halos, rDeg=catalogs.crossMatch(tab, halos, radiusArcmin = 1.0)
@@ -92,8 +96,8 @@ if os.path.exists(mergedTabFileName) == False:
         M500c.append(M200mDef.translate_mass(mockSurvey.cosmoModel, m, 1/(1+z), M500cDef))
     M500c=np.array(M500c)
     
-    tab['true_M500']=M500c/1e14
-    tab['true_M200']=M200m/1e14
+    tab['true_M500c']=M500c/1e14
+    tab['true_M200m']=M200m/1e14
     tab['redshift']=zs
     tab.write(mergedTabFileName, overwrite = True)
 
@@ -107,18 +111,18 @@ for i in range(len(zBinEdges)-1):
     zMin=zBinEdges[i]
     zMax=zBinEdges[i+1]
 
-    fitTab=tab[tab['M500'] > MMin]
+    fitTab=tab[tab['M500c'] > MMin]
     fitTab=fitTab[fitTab['redshift'] > zMin]
     fitTab=fitTab[fitTab['redshift'] < zMax]
 
     # NOTE: This is done in place anyway
     fitTab=calcMass(fitTab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey)
 
-    y=fitTab['M500']
-    x=fitTab['true_M500']
+    y=fitTab['M500c']
+    x=fitTab['true_M500c']
     result=stats.linregress(x, y)
     sumSqRes=np.sum((x-y)**2)
-    calibFactor=np.mean(fitTab['true_M500'])/np.mean(fitTab['M500'])
+    calibFactor=np.mean(fitTab['true_M500c'])/np.mean(fitTab['M500c'])
     
     # Scaling relation plot
     plotSettings.update_rcParams()
