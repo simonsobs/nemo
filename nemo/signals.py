@@ -788,7 +788,7 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
             
 #------------------------------------------------------------------------------------------------------------
 def calcMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
-             sigma_int = 0.2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
+             sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
              calcErrors = True, fRelWeightsDict = {148.0: 1.0}):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
@@ -820,7 +820,8 @@ def calcMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.
         raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
             
     P=calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
-                sigma_int = sigma_int, applyMFDebiasCorrection = applyMFDebiasCorrection,
+                sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power, 
+                applyMFDebiasCorrection = applyMFDebiasCorrection,
                 applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict)
     
     M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
@@ -831,14 +832,18 @@ def calcMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.
 
 #------------------------------------------------------------------------------------------------------------
 def calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
-              sigma_int = 0.2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True, 
-              fRelWeightsDict = {148.0: 1.0}, return2D = False):
+              sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, 
+              applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False):
     """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
     et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
     cosmological parameters.
     
     This routine is used by calcMass.
+    
+    Ez_gamma is E(z)^gamma factor (we assumed E(z)^2 previously)
+    
+    onePlusRedshift_power: added multiplication by (1+z)**onePlusRedshift_power (for checking evolution)
     
     If return2D == True, returns a grid of same dimensions / binning as mockSurvey.z, mockSurvey.log10M,
     normalised such that the sum of the values is 1.
@@ -888,7 +893,8 @@ def calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
         Qs=interpolate.splev(theta500s, tckQFit, ext = 3)
         fRels=interpolate.splev(log10M500c_zk, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)   
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
-        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], 2)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
+        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
+        y0pred=y0pred*np.power(1+zk, onePlusRedshift_power)
         if applyRelativisticCorrection == True:
             y0pred=y0pred*fRels
         if np.less(y0pred, 0).sum() > 0:

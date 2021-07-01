@@ -120,10 +120,17 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         yMin=ys.min()
         yMax=ys.max()
         xc=int((xs.min()+xs.max())/2)
-        RAc, decMin=wcs.pix2wcs(xc, yMin)
-        RAc, decMax=wcs.pix2wcs(xc, yMax)
+        
+        # Some people want to run on full sky CAR ... so we have to avoid that blowing up at the poles
+        decMin, decMax=np.nan, np.nan
+        deltaY=0
+        while np.isnan(decMin) and np.isnan(decMax):
+            RAc, decMin=wcs.pix2wcs(xc, yMin+deltaY)
+            RAc, decMax=wcs.pix2wcs(xc, yMax-deltaY)
+            deltaY=deltaY+0.01
         
         numRows=int((decMax-decMin)/targetTileHeight)
+
         tileHeight=np.ceil(((decMax-decMin)/numRows)*100)/100
         assert(tileHeight < 10)
         

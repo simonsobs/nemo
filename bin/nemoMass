@@ -106,6 +106,16 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
     if 'relativisticCorrection' not in massOptions.keys():
         massOptions['relativisticCorrection']=True
         
+    # Experimenting with E(z)^gamma instead of E(z)^2
+    if 'Ez_gamma' not in massOptions.keys():
+        massOptions['Ez_gamma']=2
+
+    # Experimenting with arbitrary (1+z)^something
+    if 'onePlusRedshift_power' not in massOptions.keys():
+        massOptions['onePlusRedshift_power']=0.0
+    
+    print("massOptions", massOptions)
+        
     label=mockSurvey.mdefLabel
     colNames=['%s' % (label), '%sUncorr' % (label)]
     if 'rescaleFactor' in massOptions.keys():
@@ -133,6 +143,8 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
                                             B0 = massOptions['B0'], 
                                             Mpivot = massOptions['Mpivot'], 
                                             sigma_int = massOptions['sigma_int'],
+                                            Ez_gamma = massOptions['Ez_gamma'],
+                                            onePlusRedshift_power = massOptions['onePlusRedshift_power'],
                                             tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                             applyMFDebiasCorrection = True,
                                             applyRelativisticCorrection = massOptions['relativisticCorrection'],
@@ -147,6 +159,8 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
                                                     B0 = massOptions['B0'], 
                                                     Mpivot = massOptions['Mpivot'], 
                                                     sigma_int = massOptions['sigma_int'],
+                                                    Ez_gamma = massOptions['Ez_gamma'],
+                                                    onePlusRedshift_power = massOptions['onePlusRedshift_power'],
                                                     tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
                                                     applyMFDebiasCorrection = False,
                                                     applyRelativisticCorrection = massOptions['relativisticCorrection'],
