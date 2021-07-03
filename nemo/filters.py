@@ -1166,7 +1166,32 @@ class ArnaudModelFilter(MapFilter):
                                                    amplitude = amplitude)
         
         return signalMap
+
+#------------------------------------------------------------------------------------------------------------
+class BattagliaModelFilter(MapFilter):
+    """Base class for filters using the GNFW profile as described in Battaglia et al. (2012).
+    
+    NOTE: This is the same as the ArnaudModelFilter (it is still a GNFW profile), but has non-self-similar
+    evolution with redshift, which is accounted for here.
+    
+    NOTE: When it comes to the GNFW parameters, we still follow the convention used in Arnaud+2010, rather
+    than Battaglia+2012 here.
+    
+    """
+    
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
+        """Makes a model signal template map.
                 
+        """
+        
+        signalMap=signals.makeBattagliaModelSignalMap(self.params['z'], self.params['M500MSun'], 
+                                                   np.degrees(self.radiansMap),
+                                                   self.wcs, beamFileName, 
+                                                   GNFWParams = self.params['GNFWParams'],
+                                                   amplitude = amplitude)
+        
+        return signalMap
+    
 #------------------------------------------------------------------------------------------------------------
 # Definitions of actual filters that can be used
 class ArnaudModelMatchedFilter(MatchedFilter, ArnaudModelFilter):

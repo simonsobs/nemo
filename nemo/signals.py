@@ -225,6 +225,65 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
     return {'tckP': tckP, 'theta500Arcmin': theta500Arcmin, 'rDeg': thetaDegRange}
 
 #------------------------------------------------------------------------------------------------------------
+def makeBattagliaModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
+    """Given z, M500 (in MSun), returns dictionary containing Battaglia+2012 model profile (well, knots from
+    spline fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
+    (particularly 'y0', 'theta500Arcmin').
+    
+    Use GNFWParams to specify a different shape. If GNFWParams = 'default', then the default parameters as
+    listed in Battaglia et al. 2012 are used, i.e., GNFWParams = {'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49,
+    'c500': 1.408, 'tol': 1e-7, 'npts': 100}. Note that the definitions/sign convention is slightly
+    different in Battaglia+2012 compared to Arnaud+2010 (we follow the latter). 
+    
+    Otherwise, give a dictionary that specifies the wanted values. This would usually be specified as
+    GNFWParams in the filter params in the nemo .par file (see the example .par files).
+    
+    If cosmoModel is None, use default (Om0, Ol0, H0) = (0.3, 0.7, 70 km/s/Mpc) cosmology.
+    
+    Used by ArnaudModelFilter
+    
+    """
+
+    if cosmoModel is None:
+        cosmoModel=fiducialCosmoModel
+
+    if GNFWParams == 'default':
+        # NOTE: These are Table 1 values from Battaglia+2012 for M500c
+        GNFWParams={'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
+    
+    # Redshift dependence
+    print("put in B12 shape z dependence")
+    import IPython
+    IPython.embed()
+    sys.exit()
+    
+    # Adjust tol for speed vs. range of b covered
+    bRange=np.linspace(0, 30, 1000)
+    cylPProfile=[]
+    tol=1e-6
+    for i in range(len(bRange)):
+        b=bRange[i]
+        cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
+        if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
+            break
+    cylPProfile=np.array(cylPProfile)
+    bRange=bRange[:i+1]
+    
+    # Normalise to 1 at centre
+    cylPProfile=cylPProfile/cylPProfile.max()
+
+    # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
+    theta500Arcmin=calcTheta500Arcmin(z, M500, cosmoModel)
+    
+    # Map between b and angular coordinates
+    # NOTE: c500 now taken into account in gnfw.py
+    thetaDegRange=bRange*(theta500Arcmin/60.)
+    tckP=interpolate.splrep(thetaDegRange, cylPProfile)
+    
+    return {'tckP': tckP, 'theta500Arcmin': theta500Arcmin, 'rDeg': thetaDegRange}
+
+
+#------------------------------------------------------------------------------------------------------------
 def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     """Makes a 2d signal only map containing the given beam.
     
@@ -295,6 +354,64 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
 
     # Making the 1d profile itself is the slowest part (~1 sec)
     signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
+    tckP=signalDict['tckP']
+    
+    # Make cluster map (unit-normalised profile)
+    rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+    profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+    if amplitude is not None:
+        profile1d=profile1d*amplitude
+    r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+    signalMap=r2p(degreesMap)
+    
+    if convolveWithBeam == True:        
+        signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+    
+    return signalMap
+
+#------------------------------------------------------------------------------------------------------------
+def makeBattagliaModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'default', amplitude = None, 
+                                 maxSizeDeg = 15.0, convolveWithBeam = True):
+    """Makes a 2d signal only map containing a Battaglia+2012 model cluster (taking into account the redshift
+    evolution described in Table 1 and equation 11 there).
+    
+    Args:
+        z (float): Redshift; used for setting angular size.
+        M500 (float): Mass within R500, defined with respect to critical density; units are solar masses.
+        degreesMap (:obj:`numpy.ndarray`): A 2d array containing radial distance measured in degrees from 
+            the centre of the model to be inserted. The output map will have the same dimensions and pixel
+            scale (see nemoCython.makeDegreesDistanceMap).
+        GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows 
+            Battaglia et al. 2012). If GNFWParams = 'default', then the default parameters as listed in 
+            Battaglia et al. 2012 are used, i.e., GNFWParams = {'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49,
+            'c500': 1.408, 'tol': 1e-7, 'npts': 100}. Note that the definitions/sign convention is slightly
+            different in Battaglia+2012 compared to Arnaud+2010 (we follow the latter). 
+            Otherwise, give a dictionary that specifies the wanted values. This 
+            would usually be specified using the GNFWParams key in the .yml config used when running nemo
+            (see the examples/ directory).
+        amplitude (float, optional): Amplitude of the cluster, i.e., the central decrement (in map units, 
+            e.g., uK), or the central Comptonization parameter (dimensionless), before beam convolution. 
+            Not needed for generating filter kernels.
+        maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done, 
+            for optimization purposes.
+        convolveWithBeam (bool, optional): If False, no beam convolution is done (it can be quicker to apply
+            beam convolution over a whole source-injected map rather than per object).
+    
+    Returns:
+        signalMap (:obj:`np.ndarray`).
+
+    Note:
+        The pixel window function is not applied here; use pixell.enmap.apply_window to do that (see 
+        nemo.filters.filterMaps).    
+        
+    """
+    
+    if GNFWParams == 'default':
+        # NOTE: These are Table 1 values from Battaglia+2012 for M500c
+        GNFWParams={'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
+
+    # Making the 1d profile itself is the slowest part (~1 sec)
+    signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
     
     # Make cluster map (unit-normalised profile)
