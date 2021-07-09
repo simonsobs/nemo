@@ -118,9 +118,8 @@ class QFit(object):
         self._theta500ArcminGrid=np.logspace(np.log10(0.1), np.log10(55), 10)
         self.zMin=(self._zGrid).min()
         self.zMax=(self._zGrid).max()
-        self.thetaMin=(self._theta500ArcminGrid).min()
-        self.thetaMax=(self._theta500ArcminGrid).max()
         self.zDependent=None
+        self.zDepThetaMax=None
 
         self.fitDict={}                
         if QFitFileName is not None:
@@ -162,9 +161,7 @@ class QFit(object):
             if tileNames is None:
                 tileNames=tileNamesInFile
             zMin=self._zGrid.max()
-            zMax=self._zGrid.min()
-            thetaMin=self._theta500ArcminGrid.max()
-            thetaMax=self._theta500ArcminGrid.min()            
+            zMax=self._zGrid.min()           
             for tileName in tileNames:
                 if tileName in tileNamesInFile:
                     QTab=atpy.Table().read(combinedQTabFileName, hdu = tileName)
@@ -172,10 +169,6 @@ class QFit(object):
                         self.zMin=QTab['z'].min()
                     if QTab['z'].max() > zMax:
                         self.zMax=QTab['z'].max()
-                    if QTab['theta500Arcmin'].min() < thetaMin:
-                        self.thetaMin=QTab['theta500Arcmin'].min()
-                    if QTab['theta500Arcmin'].max() > thetaMax:
-                        self.thetaMax=QTab['theta500Arcmin'].max()
                     self.fitDict[tileName]=self._makeInterpolator(QTab)
 
         elif os.path.exists(source) == True:
@@ -194,10 +187,6 @@ class QFit(object):
                     self.zMin=QTab['z'].min()
                 if QTab['z'].max() > zMax:
                     self.zMax=QTab['z'].max()
-                if QTab['theta500Arcmin'].min() < thetaMin:
-                    self.thetaMin=QTab['theta500Arcmin'].min()
-                if QTab['theta500Arcmin'].max() > thetaMax:
-                    self.thetaMax=QTab['theta500Arcmin'].max()
                 self.fitDict[tileName]=self._makeInterpolator(QTab)
                 
 
@@ -211,12 +200,18 @@ class QFit(object):
             spline=interpolate.InterpolatedUnivariateSpline(QTab['theta500Arcmin'], QTab['Q'], ext = 1)
             if self.zDependent == True:
                 raise Exception("QFit contains a mixture of z-dependent and z-independent tables")
+            self.zDepThetaMax=None
             self.zDependent=False
         elif QTab.meta['ZDEPQ'] == 1:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', UserWarning)
                 spline=interpolate.LSQBivariateSpline(QTab['z'], QTab['theta500Arcmin'], QTab['Q'],
                                                       self._zGrid, self._theta500ArcminGrid)
+            zs=np.unique(QTab['z'])
+            thetaMaxs=[]
+            for z in zs:
+                thetaMaxs.append(QTab['theta500Arcmin'][QTab['z'] == z].max())
+            self.zDepThetaMax=interpolate.InterpolatedUnivariateSpline(zs, thetaMaxs)
             if self.zDependent == False:
                 raise Exception("QFit contains a mixture of z-dependent and z-independent tables")
             self.zDependent=True
@@ -224,7 +219,7 @@ class QFit(object):
             raise Exception("Valid ZDEPQ values are 0 or 1 only")
         
         return spline
-    
+        
         
     def getQ(self, theta500Arcmin, z = None, tileName = None):
         """Return Q using interpolation.
@@ -247,8 +242,8 @@ class QFit(object):
         
         if self.zDependent == True:
             Qs=self.fitDict[tileName](z, theta500Arcmin)[0]
-            thetaMask=np.logical_or(theta500Arcmin < self.thetaMin, theta500Arcmin > self.thetaMax)
-            Qs[thetaMask]=0
+            thetaMask=theta500Arcmin > self.zDepThetaMax(z)
+            Qs[thetaMask]=0.0
             if z < self.zMin or z > self.zMax:
                 Qs=0
         else:
@@ -701,8 +696,8 @@ def fitQ(config):
     
     # This could be more general... but A10 model has no z-dependence, B12 model does
     # So Q is a function of (theta500, z) for the latter
-    # We'll add a header keyword to the QFit.fits table to indicate if z-dependence important or not
-    # Everything will get handled internally by functions that handle Q
+    # We add a header keyword to the QFit.fits table to indicate if z-dependence important or not
+    # Everything is then handled internally by QFit class
     if ref['class'].find("Arnaud") != -1:
         makeSignalModelMap=makeArnaudModelSignalMap
         zDepQ=0
@@ -738,13 +733,14 @@ def fitQ(config):
             MRange_wanted.append(M500)         
         MRange=MRange+MRange_wanted
         zRange=zRange+zRange_wanted.tolist()
+        signalMapSizeDeg=10.0
     elif zDepQ == 1:
         # On a z grid for evolving profile models (e.g., Battaglia et al. 2012)
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
         zGrid=[0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
         minTheta500Arcmin=0.1
-        maxTheta500Arcmin=55.0  # This corresponds to M500c = 1e16 MSun at z = 0.05
+        maxTheta500Arcmin=100.0  # 55' corresponds to M500c = 1e16 MSun at z = 0.05
         numPoints=24
         theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
         for z in zGrid:
@@ -754,16 +750,16 @@ def fitQ(config):
                 criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
                 R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
                 M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
-                if M500 < 1e16:
-                    MRange_wanted.append(M500)
+                MRange_wanted.append(M500)
             MRange=MRange+MRange_wanted
             zRange=zRange+([z]*len(MRange_wanted))
+        signalMapSizeDeg=5.0
     else:
         raise Exception("valid values for zDepQ are 0 or 1")
             
     # Here we save the fit for each tile separately... 
     # completeness.tidyUp will put them into one file at the end of a nemo run
-    for tileName in config.tileNames:        
+    for tileName in config.tileNames:
         tileQTabFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
         if os.path.exists(tileQTabFileName) == True:
             print("... already done Q fit for tile %s ..." % (tileName))
@@ -797,12 +793,12 @@ def fitQ(config):
             beamsDict[obsFreqGHz]=mapDict['beamFileName']
         
         # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
-        # NOTE: 5 deg is too small for the largest very low-z clusters: it's better to add a z cut and ignore those
-        # NOTE: 5 deg fell over (ringing) for tiles_v2 RE6_10_0, but 10 deg worked fine
+        # signalMapSizeDeg set according to lowest z model (see above), using smaller for z dependent to save RAM
+        # (but then have a higher low-z cut where Q will be valid)
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
         RADeg, decDeg=wcs.getCentreWCSCoords()                
-        clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, 10.0)
+        clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         wcs=clipDict['wcs']
         extMap=clipDict['data']
         
@@ -812,7 +808,7 @@ def fitQ(config):
         signalMapDict={}
         signalMap=np.zeros(extMap.shape)
         degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
-        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 10.0)
+        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
@@ -826,7 +822,7 @@ def fitQ(config):
                 # NOTE: Q is to adjust for mismatched filter shape
                 # Yes, this should have the beam in it (certainly for TILe-C)
                 # NOTE: CCL can blow up for some of the extreme masses we try to feed in here
-                # (so we just skip those)
+                # (so we just skip those if it happens)
                 try:
                     signalMap=makeSignalModelMap(z, M500MSun, degreesMap, wcs, beamsDict[obsFreqGHz], 
                                                  amplitude = amplitude, convolveWithBeam = True, 
@@ -838,7 +834,7 @@ def fitQ(config):
                 else:
                     signalMaps.append(enmap.fft(signalMap))
             signalMaps=np.array(signalMaps)
-            # Skip failed ones (see above - CCL blowing up for extreme masses)
+            # Skip any failed ones (see above - CCL blowing up for extreme masses)
             if len(signalMaps) == len(list(beamsDict.keys())):
                 signalMapDict[key]=signalMaps
                 theta500ArcminDict[key]=calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel)
@@ -1212,6 +1208,10 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         if np.less(y0pred, 0).sum() > 0:
             # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
             # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)
+            print("-ve")
+            import IPython
+            IPython.embed()
+            sys.exit()
             raise Exception("some predicted y0 values -ve")
         log_y0pred=np.log(y0pred)
 
