@@ -98,7 +98,7 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
+def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey):
     """Calculates masses for cluster data in table.
     
     """
@@ -145,10 +145,11 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
                                             sigma_int = massOptions['sigma_int'],
                                             Ez_gamma = massOptions['Ez_gamma'],
                                             onePlusRedshift_power = massOptions['onePlusRedshift_power'],
-                                            tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
+                                            QFit = QFit, mockSurvey = mockSurvey, 
                                             applyMFDebiasCorrection = True,
                                             applyRelativisticCorrection = massOptions['relativisticCorrection'],
-                                            fRelWeightsDict = fRelWeightsDict[tileName])
+                                            fRelWeightsDict = fRelWeightsDict[tileName],
+                                            tileName = tileName)
             row['%s' % (label)]=massDict['%s' % (label)]
             row['%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
             row['%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
@@ -161,10 +162,11 @@ def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey):
                                                     sigma_int = massOptions['sigma_int'],
                                                     Ez_gamma = massOptions['Ez_gamma'],
                                                     onePlusRedshift_power = massOptions['onePlusRedshift_power'],
-                                                    tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
+                                                    QFit = QFit, mockSurvey = mockSurvey, 
                                                     applyMFDebiasCorrection = False,
                                                     applyRelativisticCorrection = massOptions['relativisticCorrection'],
-                                                    fRelWeightsDict = fRelWeightsDict)
+                                                    fRelWeightsDict = fRelWeightsDict,
+                                                    tileName = tileName)
             row['%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
             row['%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
             row['%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
@@ -275,7 +277,7 @@ if __name__ == '__main__':
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
-    tckQFitDict=signals.loadQ(config)    
+    Q=signals.QFit(config)    
     fRelWeightsDict=signals.getFRelWeights(config)
     
     # Forced photometry (if enabled) - modifying table in place
@@ -329,7 +331,7 @@ if __name__ == '__main__':
             endIndex=len(tab)
         tab=tab[startIndex:endIndex]
         
-    tab=calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey)
+    tab=calcMass(tab, massOptions, Q, fRelWeightsDict, mockSurvey)
     
     if config.MPIEnabled == True:
         tabList=config.comm.gather(tab, root = 0)

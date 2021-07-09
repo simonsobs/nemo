@@ -1196,10 +1196,14 @@ class BattagliaModelFilter(MapFilter):
 # Definitions of actual filters that can be used
 class ArnaudModelMatchedFilter(MatchedFilter, ArnaudModelFilter):
     pass
+class BattagliaModelMatchedFilter(MatchedFilter, BattagliaModelFilter):
+    pass
 class BeamMatchedFilter(MatchedFilter, BeamFilter):
     pass
 
 class ArnaudModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, ArnaudModelFilter):
+    pass
+class BattagliaModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, BattagliaModelFilter):
     pass
 class BeamRealSpaceMatchedFilter(RealSpaceMatchedFilter, BeamFilter):
     pass

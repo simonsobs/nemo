@@ -5,10 +5,12 @@ This module contains routines for modeling cluster and source signals.
 """
 
 from pixell import enmap
+import astropy
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
 import astropy.constants as constants
-from astropy.cosmology import FlatLambdaCDM
+#from astropy.cosmology import FlatLambdaCDM
+import pyccl as ccl
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
@@ -36,6 +38,7 @@ import nemo
 import glob
 import shutil
 import yaml
+import warnings
 #import IPython
 np.random.seed()
 
@@ -46,7 +49,21 @@ Mpc_in_cm=constants.pc.value*100*1e6
 MSun_in_g=constants.M_sun.value*1000
 
 # Default cosmology (e.g., for fitQ)
-fiducialCosmoModel=FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = TCMB)
+#fiducialCosmoModel=FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = TCMB)
+
+# Default cosmology (e.g., for fitQ) - now based on CCL rather than astropy
+Om0=0.3
+Ob0=0.05
+H0=70
+sigma8=0.8
+ns=0.95
+transferFunction="boltzmann_camb"
+fiducialCosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0, Omega_b=Ob0, h=0.01*H0, sigma8=sigma8, n_s=ns,
+                                 transfer_function=transferFunction)
+
+# For CCL-based mass conversions
+M200mDef=ccl.halos.MassDef(200, "matter", c_m_relation = 'Bhattacharya13')
+M200cDef=ccl.halos.MassDef(200, "critical", c_m_relation = 'Bhattacharya13')
 
 #------------------------------------------------------------------------------------------------------------
 class BeamProfile(object):
@@ -82,6 +99,163 @@ class BeamProfile(object):
         
         # This is really just for sorting a list of beams by resolution
         self.FWHMArcmin=self.rDeg[np.argmin(abs(self.profile1d-0.5))]*60*2
+
+#------------------------------------------------------------------------------------------------------------
+class QFit(object):
+    
+    def __init__(self, QFitFileName = None, tileNames = None):
+        """Create a QFit object, for managing the filter mismatch function (referred to as Q in the ACT
+        papers from Hasselfield et al. (2013) onwards.
+        
+        Args:
+        
+        Attributes:
+            fitDict (dict): Dictionary of interpolation objects, indexed by tileName.
+        
+        """
+        
+        self._zGrid=np.array([0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0])
+        self._theta500ArcminGrid=np.logspace(np.log10(0.1), np.log10(55), 10)
+        self.zMin=(self._zGrid).min()
+        self.zMax=(self._zGrid).max()
+        self.thetaMin=(self._theta500ArcminGrid).min()
+        self.thetaMax=(self._theta500ArcminGrid).max()
+        self.zDependent=None
+
+        self.fitDict={}                
+        if QFitFileName is not None:
+            self.loadQ(QFitFileName, tileNames = tileNames)
+        
+        
+    def loadQ(self, source, tileNames = None):
+        """Load the filter mismatch function Q (see `Hasselfield et al. 2013 
+        <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_) as a dictionary of spline fits.
+        
+        Args:
+            source (:obj:`nemo.startUp.NemoConfig` or str): Either the path to a .fits table (containing Q fits
+                for all tiles - this is normally ``selFn/QFit.fits``), or a :obj:`nemo.startUp.NemoConfig` object 
+                (from which the path and tiles to use will be inferred).
+            tileNames (optional, list): A list of tiles for which the Q function spline fit coefficients 
+                will be extracted. If source is a :obj:`nemo.startUp.NemoConfig` object, this should be set to 
+                ``None``.
+        
+        Returns:
+            A dictionary (with tilNames as keys), containing spline knots for the Q function for each tile.
+            Q values can then be obtained by using these with :func:`scipy.interpolate.splev`.
+            
+        """
+
+        # Bit messy, but two modes here: 
+        # - combined Q fit file for all tiles
+        # - single Q fit for a single tile (interim stage, when under nemo MPI run)
+        if type(source) == nemo.startUp.NemoConfig:
+            combinedQTabFileName=source.selFnDir+os.path.sep+"QFit.fits"
+            if os.path.exists(combinedQTabFileName) == False:
+                raise Exception("could not find '%s' - needed to make QFit object" % (combinedQTabFileName))
+            tileNames=source.tileNames        
+            tileNamesInFile=[]
+            with pyfits.open(combinedQTabFileName) as QTabFile:
+                for ext in QTabFile:
+                    if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
+                        tileNamesInFile.append(ext.name)
+            tileNamesInFile.sort()
+            if tileNames is None:
+                tileNames=tileNamesInFile
+            zMin=self._zGrid.max()
+            zMax=self._zGrid.min()
+            thetaMin=self._theta500ArcminGrid.max()
+            thetaMax=self._theta500ArcminGrid.min()            
+            for tileName in tileNames:
+                if tileName in tileNamesInFile:
+                    QTab=atpy.Table().read(combinedQTabFileName, hdu = tileName)
+                    if QTab['z'].min() < zMin:
+                        self.zMin=QTab['z'].min()
+                    if QTab['z'].max() > zMax:
+                        self.zMax=QTab['z'].max()
+                    if QTab['theta500Arcmin'].min() < thetaMin:
+                        self.thetaMin=QTab['theta500Arcmin'].min()
+                    if QTab['theta500Arcmin'].max() > thetaMax:
+                        self.thetaMax=QTab['theta500Arcmin'].max()
+                    self.fitDict[tileName]=self._makeInterpolator(QTab)
+
+        elif os.path.exists(source) == True:
+            # If this is an interim file for a single tile, we can figure out the filename
+            if tileNames is None:
+                tileNames=[os.path.split(source)[-1].split("QFit#")[-1].split(".fits")[0]]
+            #if tileNames is None:
+                #raise Exception("If source does not point to a complete QFit.fits file, you need to supply tileNames.")
+            zMin=self._zGrid.max()
+            zMax=self._zGrid.min()
+            thetaMin=self._theta500ArcminGrid.max()
+            thetaMax=self._theta500ArcminGrid.min() 
+            for tileName in tileNames:
+                QTab=atpy.Table().read(source)
+                if QTab['z'].min() < zMin:
+                    self.zMin=QTab['z'].min()
+                if QTab['z'].max() > zMax:
+                    self.zMax=QTab['z'].max()
+                if QTab['theta500Arcmin'].min() < thetaMin:
+                    self.thetaMin=QTab['theta500Arcmin'].min()
+                if QTab['theta500Arcmin'].max() > thetaMax:
+                    self.thetaMax=QTab['theta500Arcmin'].max()
+                self.fitDict[tileName]=self._makeInterpolator(QTab)
+                
+
+    def _makeInterpolator(self, QTab):
+        """Inspects QTab, and makes an interpolator object - 2d if there is z-dependence, 1d if not.
+        
+        """
+        
+        if QTab.meta['ZDEPQ'] == 0:
+            QTab.sort('theta500Arcmin')
+            spline=interpolate.InterpolatedUnivariateSpline(QTab['theta500Arcmin'], QTab['Q'], ext = 1)
+            if self.zDependent == True:
+                raise Exception("QFit contains a mixture of z-dependent and z-independent tables")
+            self.zDependent=False
+        elif QTab.meta['ZDEPQ'] == 1:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', UserWarning)
+                spline=interpolate.LSQBivariateSpline(QTab['z'], QTab['theta500Arcmin'], QTab['Q'],
+                                                      self._zGrid, self._theta500ArcminGrid)
+            if self.zDependent == False:
+                raise Exception("QFit contains a mixture of z-dependent and z-independent tables")
+            self.zDependent=True
+        else:
+            raise Exception("Valid ZDEPQ values are 0 or 1 only")
+        
+        return spline
+    
+        
+    def getQ(self, theta500Arcmin, z = None, tileName = None):
+        """Return Q using interpolation.
+        
+        If Q is not a function of z, z can be any float (it won't be used).
+        
+        theta500Arcmin may be an array, z must be a float
+        
+        returns 2d array (rows correspond to z, columns correspond to theta500Arcmin)
+        
+        NOTE: Checks bounds - if z or theta500Arcmin outside of range, fills with 0
+        
+        """
+        
+        if z is not None:
+            if type(z) == np.ndarray and z.shape == (1,):
+                z=float(z)
+            if type(z) is not float and type(z) is not np.float64:
+                raise Exception("z must be a float, and not, e.g., an array")
+        
+        if self.zDependent == True:
+            Qs=self.fitDict[tileName](z, theta500Arcmin)[0]
+            thetaMask=np.logical_or(theta500Arcmin < self.thetaMin, theta500Arcmin > self.thetaMax)
+            Qs[thetaMask]=0
+            if z < self.zMin or z > self.zMax:
+                Qs=0
+        else:
+            # Univariate case handles own valid bounds checking
+            Qs=self.fitDict[tileName](theta500Arcmin)
+        
+        return Qs
 
 #------------------------------------------------------------------------------------------------------------
 def fSZ(obsFrequencyGHz, TCMBAlpha = 0.0, z = None):
@@ -131,14 +305,15 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
     if type(MDelta) == str:
         raise Exception("MDelta is a string - use, e.g., 1.0e+14 (not 1e14 or 1e+14)")
 
-    Ez=cosmoModel.efunc(z)
+    Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
     if wrt == 'critical':
-        wrtDensity=cosmoModel.critical_density(z).value
+        wrtDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
     elif wrt == 'mean':
-        wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z).value
+        wrtDensity=ccl.omega_x(cosmoModel, 1/(1+z), 'matter')
+        #wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z).value
     else:
         raise Exception("wrt should be either 'critical' or 'mean'")
-    wrtDensity=(wrtDensity*np.power(Mpc_in_cm, 3))/MSun_in_g
+    #wrtDensity=(wrtDensity*np.power(Mpc_in_cm, 3))/MSun_in_g # NOTE: not needed for CCL units (MSun, Mpc etc.)
     RDeltaMpc=np.power((3*MDelta)/(4*np.pi*delta*wrtDensity), 1.0/3.0)
         
     return RDeltaMpc
@@ -168,7 +343,8 @@ def calcTheta500Arcmin(z, M500, cosmoModel):
     """
     
     R500Mpc=calcR500Mpc(z, M500, cosmoModel)
-    theta500Arcmin=np.degrees(np.arctan(R500Mpc/cosmoModel.angular_diameter_distance(z).value))*60.0
+    #theta500Arcmin=np.degrees(np.arctan(R500Mpc/cosmoModel.angular_diameter_distance(z).value))*60.0
+    theta500Arcmin=np.degrees(np.arctan(R500Mpc/ccl.angular_diameter_distance(cosmoModel, 1/(1+z))))*60.0
     
     return theta500Arcmin
     
@@ -225,7 +401,7 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
     return {'tckP': tckP, 'theta500Arcmin': theta500Arcmin, 'rDeg': thetaDegRange}
 
 #------------------------------------------------------------------------------------------------------------
-def makeBattagliaModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
+def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = None):
     """Given z, M500 (in MSun), returns dictionary containing Battaglia+2012 model profile (well, knots from
     spline fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
     (particularly 'y0', 'theta500Arcmin').
@@ -246,16 +422,38 @@ def makeBattagliaModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None
 
     if cosmoModel is None:
         cosmoModel=fiducialCosmoModel
-
+    
     if GNFWParams == 'default':
         # NOTE: These are Table 1 values from Battaglia+2012 for M500c
-        GNFWParams={'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
+        GNFWParams={'P0': 7.49, 'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
     
     # Redshift dependence
-    print("put in B12 shape z dependence")
-    import IPython
-    IPython.embed()
-    sys.exit()
+    # (we do P0 here anyway but since we have arbitrary normalization that seems pointless)
+    # These are all defined for M200c in Battaglia+2012
+    # Parameters for shape are for M500c in Table 1 of Battaglia+2012
+    # NOTE: Some transforming between A10 <-> B12 conventions here
+    P0=GNFWParams['P0']
+    P0_alpha_m=0.226
+    P0_alpha_z=-0.957
+    xc=1/GNFWParams['c500']
+    xc_alpha_m=-0.0833
+    xc_alpha_z=0.853
+    beta=GNFWParams['beta']-0.3
+    beta_alpha_m=0.0480
+    beta_alpha_z=0.615
+
+    M200c=M500cToMdef(M500c, z, M200cDef, cosmoModel)
+
+    P0z=P0*np.power(M200c/1e14, P0_alpha_m)*np.power(1+z, P0_alpha_z)
+    xcz=xc*np.power(M200c/1e14, xc_alpha_m)*np.power(1+z, xc_alpha_z)
+    betaz=beta*np.power(M200c/1e14, beta_alpha_m)*np.power(1+z, beta_alpha_z)
+    
+    # Some more B12 -> A10 notation conversion
+    GNFWParams['P0']=P0z
+    GNFWParams['beta']=betaz+0.3
+    GNFWParams['c500']=1/xcz
+    GNFWParams['gamma']=0.3
+    GNFWParams['alpha']=1.0    
     
     # Adjust tol for speed vs. range of b covered
     bRange=np.linspace(0, 30, 1000)
@@ -273,7 +471,7 @@ def makeBattagliaModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None
     cylPProfile=cylPProfile/cylPProfile.max()
 
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
-    theta500Arcmin=calcTheta500Arcmin(z, M500, cosmoModel)
+    theta500Arcmin=calcTheta500Arcmin(z, M500c, cosmoModel)
     
     # Map between b and angular coordinates
     # NOTE: c500 now taken into account in gnfw.py
@@ -408,7 +606,7 @@ def makeBattagliaModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'de
     
     if GNFWParams == 'default':
         # NOTE: These are Table 1 values from Battaglia+2012 for M500c
-        GNFWParams={'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
+        GNFWParams={'P0': 7.49, 'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
 
     # Making the 1d profile itself is the slowest part (~1 sec)
     signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams)
@@ -490,11 +688,9 @@ def fitQ(config):
         See :obj:`loadQ` for how to load in the output of this routine.
         
     """
-        
-    if config.parDict['GNFWParams'] == 'default':
-        GNFWParams=gnfw._default_params
-    else:
-        GNFWParams=config.parDict['GNFWParams']
+    
+    t0=time.time()
+    cosmoModel=fiducialCosmoModel
         
     # Spin through the filter kernels
     photFilterLabel=config.parDict['photFilter']
@@ -503,38 +699,68 @@ def fitQ(config):
         if f['label'] == photFilterLabel:
             ref=f
     
-    # M, z ranges for Q calc
-    # NOTE: ref filter that sets scale we compare to must ALWAYS come first
-    # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
-    MRange=[ref['params']['M500MSun']]
-    zRange=[ref['params']['z']]
-    # This should cover theta500Arcmin range fairly evenly without using too crazy masses
-    #minTheta500Arcmin=0.5
-    #maxTheta500Arcmin=20.0
-    minTheta500Arcmin=0.1
-    maxTheta500Arcmin=500.0
-    numPoints=50
-    #theta500Arcmin_wanted=np.logspace(np.log10(1e-1), np.log10(500), 50)
-    theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
-    zRange_wanted=np.zeros(numPoints)
-    zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
-    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
-    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
-    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
-    zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
-    zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
-    MRange_wanted=[]
-    for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
-        Ez=astCalc.Ez(z)
-        Hz=astCalc.Ez(z)*astCalc.H0  
-        G=4.301e-9  # in MSun-1 km2 s-2 Mpc
-        criticalDensity=(3*np.power(Hz, 2))/(8*np.pi*G)
-        R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*astCalc.da(z)
-        M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
-        MRange_wanted.append(M500)
-    MRange=MRange+MRange_wanted
-    zRange=zRange+zRange_wanted.tolist()
+    # This could be more general... but A10 model has no z-dependence, B12 model does
+    # So Q is a function of (theta500, z) for the latter
+    # We'll add a header keyword to the QFit.fits table to indicate if z-dependence important or not
+    # Everything will get handled internally by functions that handle Q
+    if ref['class'].find("Arnaud") != -1:
+        makeSignalModelMap=makeArnaudModelSignalMap
+        zDepQ=0
+    elif ref['class'].find("Battaglia") != -1:
+        makeSignalModelMap=makeBattagliaModelSignalMap
+        zDepQ=1
+    else:
+        raise Exception("Signal model for Q calculation should either be 'Arnaud' or 'Battaglia'")
     
+    # M, z -> theta ranges for Q calc - what's most efficient depends on whether there is z-dependence, or not
+    # NOTE: ref filter that sets scale we compare to must ALWAYS come first
+    if zDepQ == 0:
+        # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
+        MRange=[ref['params']['M500MSun']]
+        zRange=[ref['params']['z']]
+        minTheta500Arcmin=0.1
+        maxTheta500Arcmin=500.0
+        numPoints=50
+        theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
+        zRange_wanted=np.zeros(numPoints)
+        zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
+        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
+        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
+        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
+        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
+        zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
+        MRange_wanted=[]
+        for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
+            Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
+            criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
+            R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
+            M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
+            MRange_wanted.append(M500)         
+        MRange=MRange+MRange_wanted
+        zRange=zRange+zRange_wanted.tolist()
+    elif zDepQ == 1:
+        # On a z grid for evolving profile models (e.g., Battaglia et al. 2012)
+        MRange=[ref['params']['M500MSun']]
+        zRange=[ref['params']['z']]
+        zGrid=[0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0]
+        minTheta500Arcmin=0.1
+        maxTheta500Arcmin=55.0  # This corresponds to M500c = 1e16 MSun at z = 0.05
+        numPoints=24
+        theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
+        for z in zGrid:
+            MRange_wanted=[]
+            for theta500Arcmin in theta500Arcmin_wanted:
+                Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
+                criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
+                R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
+                M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
+                if M500 < 1e16:
+                    MRange_wanted.append(M500)
+            MRange=MRange+MRange_wanted
+            zRange=zRange+([z]*len(MRange_wanted))
+    else:
+        raise Exception("valid values for zDepQ are 0 or 1")
+            
     # Here we save the fit for each tile separately... 
     # completeness.tidyUp will put them into one file at the end of a nemo run
     for tileName in config.tileNames:        
@@ -582,7 +808,7 @@ def fitQ(config):
         
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
-        theta500Arcmin=[]
+        theta500ArcminDict={}
         signalMapDict={}
         signalMap=np.zeros(extMap.shape)
         degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
@@ -599,67 +825,74 @@ def fitQ(config):
                     amplitude=y0
                 # NOTE: Q is to adjust for mismatched filter shape
                 # Yes, this should have the beam in it (certainly for TILe-C)
-                signalMap=makeArnaudModelSignalMap(z, M500MSun, degreesMap, wcs, beamsDict[obsFreqGHz], 
-                                                   amplitude = amplitude, convolveWithBeam = True, 
-                                                   GNFWParams = config.parDict['GNFWParams'])
+                # NOTE: CCL can blow up for some of the extreme masses we try to feed in here
+                # (so we just skip those)
+                try:
+                    signalMap=makeSignalModelMap(z, M500MSun, degreesMap, wcs, beamsDict[obsFreqGHz], 
+                                                 amplitude = amplitude, convolveWithBeam = True, 
+                                                 GNFWParams = config.parDict['GNFWParams'])
+                except:
+                    continue
                 if realSpace == True:
                     signalMaps.append(signalMap)
                 else:
                     signalMaps.append(enmap.fft(signalMap))
             signalMaps=np.array(signalMaps)
-            signalMapDict[key]=signalMaps
-            theta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
-        theta500Arcmin=np.array(theta500Arcmin)
+            # Skip failed ones (see above - CCL blowing up for extreme masses)
+            if len(signalMaps) == len(list(beamsDict.keys())):
+                signalMapDict[key]=signalMaps
+                theta500ArcminDict[key]=calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel)
         
         # Filter maps with the ref kernel
         # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
         Q=[]
         QTheta500Arcmin=[]
-        count=0
+        Qz=[]
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
-            filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
-            peakFilteredSignal=filteredSignal.max()
-            if peakFilteredSignal not in Q:
-                Q.append(peakFilteredSignal)      
-                QTheta500Arcmin.append(theta500Arcmin[count])
-            count=count+1
+            if key in signalMapDict.keys():
+                filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
+                peakFilteredSignal=filteredSignal.max()
+                if peakFilteredSignal not in Q:
+                    Q.append(peakFilteredSignal)      
+                    QTheta500Arcmin.append(theta500ArcminDict[key])
+                    Qz.append(z)
         Q=np.array(Q)
         Q=Q/Q[0]
             
-        # Sort and do spline fit... save .fits table of theta, Q
+        # Sort and save as FITS table (interim - all tile files gets combined at end of nemo run)
         QTab=atpy.Table()
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
+        QTab.add_column(atpy.Column(Qz, 'z'))
         QTab.sort('theta500Arcmin')
         QTab.meta['NEMOVER']=nemo.__version__
+        QTab.meta['ZDEPQ']=zDepQ
         QTab.write(tileQTabFileName, overwrite = True)
-        #rank_QTabDict[tileName]=QTab
-                    
-        # Fit with spline
-        tck=interpolate.splrep(QTab['theta500Arcmin'], QTab['Q'])
         
-        # Plot
+        # Test plot
+        Q=QFit(tileQTabFileName)
         plotSettings.update_rcParams()
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.12, 0.11, 0.86, 0.88])
-        #plt.tick_params(axis='both', which='major', labelsize=15)
-        #plt.tick_params(axis='both', which='minor', labelsize=15)       
-        thetaArr=np.linspace(0, 500, 100000)
-        plt.plot(thetaArr, interpolate.splev(thetaArr, tck), 'k-')
-        plt.plot(QTheta500Arcmin, Q, 'D', ms = 8)
-        #plt.xlim(0, 9)
-        plt.ylim(0, 1.9)
-        #plt.xlim(0, thetaArr.max())
-        #plt.xlim(0, 15)
-        plt.xlim(0.1, 500)
+        for z in [0.05, 0.1, 0.4, 1.0, 2.0]:
+            mask=(QTab['z'] == z)
+            if mask.sum() > 0:
+                plt.plot(QTab['theta500Arcmin'][mask], QTab['Q'][mask], '.', label = "z = %.2f" % (z))
+                thetaArr=np.logspace(np.log10(QTab['theta500Arcmin'][mask].min()), 
+                                 np.log10(QTab['theta500Arcmin'][mask].max()), numPoints)
+                plt.plot(thetaArr, Q.getQ(thetaArr, z, tileName = tileName), 'k-')
+        plt.legend()
         plt.semilogx()
         plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
-        plt.ylabel("$Q$ ($M_{\\rm 500c}$, $z$)")
+        plt.ylabel("$Q$ ($\\theta_{\\rm 500c}$, $z$)")
         plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.pdf" % (tileName))
         plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.png" % (tileName))
         plt.close()
-        print("... Q fit finished [tileName = %s, rank = %d] ..." % (tileName, config.rank))
+        
+        t1=time.time()
+        print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
+        
 
 #------------------------------------------------------------------------------------------------------------
 def makeCombinedQTable(config):
@@ -677,70 +910,30 @@ def makeCombinedQTable(config):
     for tileName in config.allTileNames:
         QTabDict[tileName]=atpy.Table().read(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
     
-    combinedQTab=atpy.Table()
-    for tabKey in list(QTabDict.keys()):
-        for colKey in QTabDict[tabKey].keys():
-            if colKey == 'theta500Arcmin':
-                if colKey not in combinedQTab.keys():
-                    combinedQTab.add_column(QTabDict[tabKey]['theta500Arcmin'], index = 0)
-            else:
-                combinedQTab.add_column(atpy.Column(QTabDict[tabKey][colKey].data, tabKey))
-    combinedQTab.meta['NEMOVER']=nemo.__version__
-    combinedQTab.write(outFileName, overwrite = True)
+    #----
+    # New - MEF
+    QTabMEF=pyfits.HDUList()
+    for tileName in config.allTileNames:
+        with pyfits.open(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)) as QTab:
+            QTab[1].name=tileName
+            QTabMEF.append(QTab[1].copy())
+    QTabMEF.writeto(outFileName, overwrite = True)
+    combinedQTab=QTabMEF
+    
+    #----
+    # Old
+    #combinedQTab=atpy.Table()
+    #for tabKey in list(QTabDict.keys()):
+        #for colKey in QTabDict[tabKey].keys():
+            #if colKey == 'theta500Arcmin':
+                #if colKey not in combinedQTab.keys():
+                    #combinedQTab.add_column(QTabDict[tabKey]['theta500Arcmin'], index = 0)
+            #else:
+                #combinedQTab.add_column(atpy.Column(QTabDict[tabKey][colKey].data, tabKey))
+    #combinedQTab.meta['NEMOVER']=nemo.__version__
+    #combinedQTab.write(outFileName, overwrite = True)
     
     return combinedQTab
-
-#------------------------------------------------------------------------------------------------------------
-def loadQ(source, tileNames = None):
-    """Load the filter mismatch function Q (see `Hasselfield et al. 2013 
-    <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_) as a dictionary of spline fits.
-    
-    Args:
-        source (:obj:`nemo.startUp.NemoConfig` or str): Either the path to a .fits table (containing Q fits
-            for all tiles - this is normally ``selFn/QFit.fits``), or a :obj:`nemo.startUp.NemoConfig` object 
-            (from which the path and tiles to use will be inferred).
-        tileNames (optional, list): A list of tiles for which the Q function spline fit coefficients 
-            will be extracted. If source is a :obj:`nemo.startUp.NemoConfig` object, this should be set to 
-            ``None``.
-    
-    Returns:
-        A dictionary (with tilNames as keys), containing spline knots for the Q function for each tile.
-        Q values can then be obtained by using these with :func:`scipy.interpolate.splev`.
-        
-    """
-
-    if type(source) == str:
-        combinedQTabFileName=source
-    else:
-        # We should add a check to confirm this is actually a NemoConfig object
-        combinedQTabFileName=source.selFnDir+os.path.sep+"QFit.fits"
-        tileNames=source.tileNames
-        
-    tckDict={}    
-    if os.path.exists(combinedQTabFileName) == True:
-        combinedQTab=atpy.Table().read(combinedQTabFileName)
-        for key in combinedQTab.keys():
-            if key != 'theta500Arcmin':
-                tckDict[key]=interpolate.splrep(combinedQTab['theta500Arcmin'], combinedQTab[key])
-    else:
-        if tileNames is None:
-            raise Exception("If source does not point to a complete QFit.fits file, you need to supply tileNames.")
-        for tileName in tileNames:
-            tab=atpy.Table().read(combinedQTabFileName.replace(".fits", "#%s.fits" % (tileName)))
-            tckDict[tileName]=interpolate.splrep(tab['theta500Arcmin'], tab['Q'])
-           
-    return tckDict
-
-#------------------------------------------------------------------------------------------------------------
-def calcQ(theta500Arcmin, tck):
-    """Returns Q, given theta500Arcmin, and a set of spline fit knots for (theta, Q).
-    
-    """
-    
-    #Q=np.poly1d(coeffs)(theta500Arcmin)
-    Q=interpolate.splev(theta500Arcmin, tck)
-    
-    return Q
 
 #------------------------------------------------------------------------------------------------------------
 def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):
@@ -904,9 +1097,9 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     return y0pred, theta500Arcmin, Q
             
 #------------------------------------------------------------------------------------------------------------
-def calcMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
+def calcMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
              sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
-             calcErrors = True, fRelWeightsDict = {148.0: 1.0}):
+             calcErrors = True, fRelWeightsDict = {148.0: 1.0}, tileName = None):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
@@ -936,10 +1129,11 @@ def calcMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.
     if y0 > 1e-2:
         raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
             
-    P=calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
+    P=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
                 sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power, 
                 applyMFDebiasCorrection = applyMFDebiasCorrection,
-                applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict)
+                applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
+                tileName = tileName)
     
     M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     
@@ -948,9 +1142,10 @@ def calcMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.
     return {'%s' % (label): M500, '%s_errPlus' % (label): errM500Plus, '%s_errMinus' % (label): errM500Minus}
 
 #------------------------------------------------------------------------------------------------------------
-def calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
+def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
               sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, 
-              applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False):
+              applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False,
+              tileName = None):
     """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
     et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
@@ -1007,7 +1202,7 @@ def calcPMass(y0, y0Err, z, zErr, tckQFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0
                 
         mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-zk))
         theta500s=interpolate.splev(log10M500c_zk, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
-        Qs=interpolate.splev(theta500s, tckQFit, ext = 3)
+        Qs=QFit.getQ(theta500s, zk, tileName = tileName)
         fRels=interpolate.splev(log10M500c_zk, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)   
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
         y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
@@ -1109,6 +1304,32 @@ def meanDensity(z):
     rho_mean=astCalc.OmegaMz(z)*criticalDensity(z)
     
     return rho_mean  
+
+#------------------------------------------------------------------------------------------------------------
+def M500cToMdef(M500c, z, massDef, cosmoModel):
+    """Convert M500c to some other mass definition.
+    
+    massDef (`obj`:ccl.halos.MassDef): CCL halo mass definition
+    
+    """
+
+    M500cDef=ccl.halos.MassDef(500, "critical")
+
+    tolerance=1e-5
+    scaleFactor=3.0
+    ratio=1e6
+    count=0
+    while abs(1.0-ratio) > tolerance:
+        testM500c=massDef.translate_mass(cosmoModel, scaleFactor*M500c, 1/(1+z), M500cDef)
+        ratio=M500c/testM500c
+        scaleFactor=scaleFactor*ratio
+        count=count+1
+        if count > 10:
+            raise Exception("M500c -> massDef conversion didn't converge quickly enough")
+        
+    massX=scaleFactor*M500c
+    
+    return massX
 
 #------------------------------------------------------------------------------------------------------------
 def convertM200mToM500c(M200m, z):
