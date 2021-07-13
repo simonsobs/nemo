@@ -29,5 +29,5 @@ All ACT data products are available from `LAMBDA <https://lambda.gsfc.nasa.gov/p
 (some may contain references to files that are not yet publicly available). The package also contains
 some experimental features that are not necessarily well tested.
 
-If you need to aknowledge the use of **Nemo**, please cite
+If you need to acknowledge the use of **Nemo**, please cite
 `Hilton et al. (2021) <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_.
