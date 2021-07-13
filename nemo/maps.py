@@ -1741,7 +1741,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                        sourceInjectionModel['M500'], signals.fiducialCosmoModel))
             sourceInjectionModel['label']=label
         # We need Q for flux recovery stuff...
-        tckQFitDict=signals.loadQ(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
+        QFit=signals.QFit(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
     else:
         # Sources
         clusterMode=False
@@ -1856,7 +1856,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                     if clusterMode == True:
                         for tileName in np.unique(x_recCatalog['tileName']):
                             theta500Arcmin=float(sourceInjectionModel['label'])
-                            Q=interpolate.splev(theta500Arcmin, tckQFitDict[tileName])
+                            Q=QFit.getQ(theta500Arcmin, tileName = tileName)
                             mask=(x_recCatalog['tileName'] == tileName)
                             x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
                     # Store everything - analyse later

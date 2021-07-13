@@ -292,7 +292,7 @@ def makeSelFnCollection(config, mockSurvey):
     """
     
     # Q varies across tiles
-    tckQFitDict=signals.loadQ(config)
+    Q=signals.QFit(config)
         
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -322,7 +322,7 @@ def makeSelFnCollection(config, mockSurvey):
             
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
-        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
+        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
                                            numDraws = config.parDict['selFnOptions']['numDraws'],
                                            numIterations = config.parDict['selFnOptions']['numIterations'],
                                            method = config.parDict['selFnOptions']['method'])
@@ -340,7 +340,7 @@ def makeSelFnCollection(config, mockSurvey):
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
                                               footprintLabel = footprintDict['label'])
-                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
+                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
                                                    numDraws = config.parDict['selFnOptions']['numDraws'],
                                                    numIterations = config.parDict['selFnOptions']['numIterations'],
                                                    method = config.parDict['selFnOptions']['method'])
@@ -354,7 +354,7 @@ def makeSelFnCollection(config, mockSurvey):
         if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
             for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
                 completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
-                                            config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
+                                            config.parDict['massOptions'], Q, config.diagnosticsDir,
                                             config.selFnDir) 
     
     return selFnCollection
@@ -389,7 +389,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     if verbose: print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
     
     # Q varies across tiles
-    tckQFitDict=signals.loadQ(config)
+    Q=signals.QFit(config)
     
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -498,7 +498,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             # We may also have some tiles that are almost but not quite blank
             if RMSMapDict[tileName].sum() == 0 or areaDeg2Dict[tileName] < 0.5:
                 continue
-            mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
+            mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, Q, wcs = wcsDict[tileName], 
                                           photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
                                           SNRLimit = thresholdSigma, applySNRCut = True, 
                                           areaDeg2 = areaDeg2Dict[tileName],
