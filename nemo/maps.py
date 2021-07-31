@@ -430,8 +430,7 @@ def makeTileDir(parDict, writeToDisk = True):
                         dec1=dec1+tileOverlapDeg
                     if ra1 > ra0:
                         ra1=-(360-ra1)
-                    #---
-                    # New
+                    
                     # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
                     # (which happens if image dimensions are both odd)
                     # I _think_ this is related to the interpolation done in signals.fitQ
@@ -449,30 +448,7 @@ def makeTileDir(parDict, writeToDisk = True):
                         count=count+1
                         if count > 200:
                             raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
-
-                    #---
-                    # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
-                    # (which happens if image dimensions are both odd)
-                    # I _think_ this is related to the interpolation done in signals.fitQ
-                    #ddec=0.2/60.
-                    #count=0
-                    #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
-                    #while clip['data'].shape[0] % 2 != 0:
-                        #try_dec0=dec0-ddec*count
-                        #try_dec1=dec1+ddec*count
-                        #if try_dec0 < -90:
-                            #try_dec0=dec0
-                        #if try_dec1 > 90:
-                            #try_dec1=dec1
-                        #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, try_dec0, try_dec1)
-                        #count=count+1
-                        #if count > 200:
-                            #print("agh")
-                            #import IPython
-                            #IPython.embed()
-                            #sys.exit()
-                            #raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
-                    #---
+                    
                     # Storing clip coords etc. so can stitch together later
                     # areaMaskSection here is used to define the region that would be kept (takes out overlap)
                     ra0, dec0=wcs.pix2wcs(x0, y0)
