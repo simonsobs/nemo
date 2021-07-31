@@ -280,8 +280,9 @@ class MapFilter(object):
         #tck=interpolate.splrep(arcminRange, prof)
         #FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
         
+        plotSettings.update_rcParams()
         fig=plt.figure(figsize=(8,8))
-        ax=plt.axes([0.14, 0.11, 0.85, 0.86])
+        ax=plt.axes([0.14, 0.11, 0.835, 0.86])
         #fig.canvas.set_window_title('Filter Profile in Real Space')
         #plt.title("Filter Profile %s" % (self.label))
         plt.ylabel("Amplitude")
@@ -292,7 +293,7 @@ class MapFilter(object):
             elif mapDict['units'] == 'yc':
                 label = 'yc'
             plt.plot(arcminRange, row, label = label)
-        plt.xlim(0, 30.0)
+        plt.xlim(0, 10.0)
         plt.ylim(prof.min(), prof.max()*1.1)
         plt.legend()
         plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+"#"+self.tileName+".png")
