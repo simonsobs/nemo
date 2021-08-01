@@ -148,28 +148,39 @@ class QFit(object):
         # - combined Q fit file for all tiles
         # - single Q fit for a single tile (interim stage, when under nemo MPI run)
         if type(source) == nemo.startUp.NemoConfig:
+            tileNames=source.tileNames
             combinedQTabFileName=source.selFnDir+os.path.sep+"QFit.fits"
-            if os.path.exists(combinedQTabFileName) == False:
-                raise Exception("could not find '%s' - needed to make QFit object" % (combinedQTabFileName))
-            tileNames=source.tileNames        
-            tileNamesInFile=[]
-            with pyfits.open(combinedQTabFileName) as QTabFile:
-                for ext in QTabFile:
-                    if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
-                        tileNamesInFile.append(ext.name)
-            tileNamesInFile.sort()
-            if tileNames is None:
-                tileNames=tileNamesInFile
+            loadMode=None
+            if os.path.exists(combinedQTabFileName) == True:
+                tileNamesInFile=[]
+                with pyfits.open(combinedQTabFileName) as QTabFile:
+                    for ext in QTabFile:
+                        if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
+                            tileNamesInFile.append(ext.name)
+                tileNamesInFile.sort()
+                if tileNames is None:
+                    tileNames=tileNamesInFile
+                loadMode="combined"
+            else:
+                globStr=source.selFnDir+os.path.sep+"QFit#*.fits"
+                QTabFileNames=glob.glob(globStr)
+                loadMode="single"
+                if len(QTabFileNames) == 0:
+                    raise Exception("could not find either '%s' or '%s' - needed to make QFit object" % (combinedQTabFileName, globStr))
             zMin=self._zGrid.max()
-            zMax=self._zGrid.min()           
+            zMax=self._zGrid.min()
             for tileName in tileNames:
-                if tileName in tileNamesInFile:
+                if loadMode == "combined":
                     QTab=atpy.Table().read(combinedQTabFileName, hdu = tileName)
-                    if QTab['z'].min() < zMin:
-                        self.zMin=QTab['z'].min()
-                    if QTab['z'].max() > zMax:
-                        self.zMax=QTab['z'].max()
-                    self.fitDict[tileName]=self._makeInterpolator(QTab)
+                elif loadMode == "single":
+                    QTab=atpy.Table().read(source.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
+                else:
+                    raise Exception("loadMode is not defined")
+                if QTab['z'].min() < zMin:
+                    self.zMin=QTab['z'].min()
+                if QTab['z'].max() > zMax:
+                    self.zMax=QTab['z'].max()
+                self.fitDict[tileName]=self._makeInterpolator(QTab)
 
         elif os.path.exists(source) == True:
             # If this is an interim file for a single tile, we can figure out the filename
@@ -179,8 +190,6 @@ class QFit(object):
                 #raise Exception("If source does not point to a complete QFit.fits file, you need to supply tileNames.")
             zMin=self._zGrid.max()
             zMax=self._zGrid.min()
-            thetaMin=self._theta500ArcminGrid.max()
-            thetaMax=self._theta500ArcminGrid.min() 
             for tileName in tileNames:
                 QTab=atpy.Table().read(source)
                 if QTab['z'].min() < zMin:
@@ -188,7 +197,7 @@ class QFit(object):
                 if QTab['z'].max() > zMax:
                     self.zMax=QTab['z'].max()
                 self.fitDict[tileName]=self._makeInterpolator(QTab)
-                
+    
 
     def _makeInterpolator(self, QTab):
         """Inspects QTab, and makes an interpolator object - 2d if there is z-dependence, 1d if not.
