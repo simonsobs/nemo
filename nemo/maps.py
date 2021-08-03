@@ -1043,13 +1043,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                                                                                 row['RADeg'], row['decDeg'],
                                                                                 maskRadiusArcmin/60)
                 rArcminMap=rArcminMap*60
-                try:
-                    surveyMask[rArcminMap < maskRadiusArcmin]=0
-                except:
-                    print("huh")
-                    import IPython
-                    IPython.embed()
-                    sys.exit()
+                surveyMask[rArcminMap < maskRadiusArcmin]=0
                 psMask[rArcminMap < maskRadiusArcmin]=0
                 data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
 

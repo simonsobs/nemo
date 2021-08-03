@@ -113,6 +113,11 @@ if __name__ == '__main__':
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
+            if config.MPIEnabled == True:
+                config.comm.barrier()
+            if config.rank == 0:
+                signals.makeCombinedQTable(config)
+                print("... made combined Q fit file ...")
 
     # Source injection tests for quantifying position recovery accuracy and noise bias
     if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
