@@ -1812,7 +1812,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                          amplitudeColumnName = 'fixed_y_c', 
                                                          amplitudeRange = [0.001, 1], 
                                                          amplitudeDistribution = 'linear',
-                                                         selFn = selFn, removeBorderPix = 20)
+                                                         selFn = selFn, maskDilationPix = 20)
                 # Or... proper mock, but this takes ~24 sec for E-D56
                 #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
                 injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'], 
@@ -1825,7 +1825,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                          amplitudeColumnName = fluxCol, 
                                                          amplitudeRange = [1, 1000], 
                                                          amplitudeDistribution = 'log', 
-                                                         selFn = selFn, removeBorderPix = 20)
+                                                         selFn = selFn, maskDilationPix = 20)
                 injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
