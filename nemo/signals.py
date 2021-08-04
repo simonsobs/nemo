@@ -183,15 +183,22 @@ class QFit(object):
                 self.fitDict[tileName]=self._makeInterpolator(QTab)
 
         elif os.path.exists(source) == True:
-            # If this is an interim file for a single tile, we can figure out the filename
+            # Inspect file and get tile names if MEF
             if tileNames is None:
-                tileNames=[os.path.split(source)[-1].split("QFit#")[-1].split(".fits")[0]]
-            #if tileNames is None:
-                #raise Exception("If source does not point to a complete QFit.fits file, you need to supply tileNames.")
+                tileNames=[]
+                with pyfits.open(source) as QTab:
+                    for ext in QTab:
+                        if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
+                            tileNames.append(ext.name)
             zMin=self._zGrid.max()
             zMax=self._zGrid.min()
             for tileName in tileNames:
-                QTab=atpy.Table().read(source)
+                if tileName == '': # Individual, interim file name
+                    assert(source.find("QFit#") > 0)
+                    tileName=os.path.split(source)[-1].split("QFit#")[-1].split(".fits")[0]
+                    QTab=atpy.Table().read(source)
+                else:
+                    QTab=atpy.Table().read(source, hdu = tileName)
                 if QTab['z'].min() < zMin:
                     self.zMin=QTab['z'].min()
                 if QTab['z'].max() > zMax:
@@ -1217,11 +1224,7 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         if np.less(y0pred, 0).sum() > 0:
             # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
             # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)
-            print("-ve")
-            import IPython
-            IPython.embed()
-            sys.exit()
-            raise Exception("some predicted y0 values -ve")
+            raise Exception("Some predicted y0 values are negative.")
         log_y0pred=np.log(y0pred)
 
         Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))

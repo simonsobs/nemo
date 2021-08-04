@@ -616,6 +616,7 @@ class MatchedFilter(MapFilter):
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         else:
+            print("... loading cached filter ...")
             self.loadFilter()
         
         # Apply filter

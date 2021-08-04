@@ -168,16 +168,19 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
         diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
         dirList=[rootOutDir, filteredMapsDir, diagnosticsDir]
         for d in dirList:
-            if os.path.exists(d) == False:
-                os.makedirs(d, exist_ok = True)
+            os.makedirs(d, exist_ok = True)
         if copyFilters == True:
             for tileName in config.tileNames:
                 fileNames=glob.glob(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"filter*#%s*.fits" % (tileName))
+                if len(fileNames) == 0:
+                    raise Exception("Could not find pre-computed filters to copy - you need to add 'saveFilter: True' to the filter params in the config file (this is essential for doing source injection sims quickly).")
                 kernelCopyDestDir=diagnosticsDir+os.path.sep+tileName
-                if os.path.exists(kernelCopyDestDir) == False:
-                    os.makedirs(kernelCopyDestDir, exist_ok = True)
+                os.makedirs(kernelCopyDestDir, exist_ok = True)
                 for f in fileNames:
-                    shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
+                    dest=kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]
+                    if os.path.exists(dest) == False:
+                        shutil.copyfile(f, dest) 
+                        print("... copied filter %s to %s ..." % (f, dest))
     else:
         rootOutDir=config.rootOutDir
         filteredMapsDir=config.filteredMapsDir

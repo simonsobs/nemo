@@ -647,7 +647,7 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources, seed = None):
 #------------------------------------------------------------------------------------------------------------
 def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_y_c', 
                         amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None,
-                        avoidanceRadiusArcmin = 20.0):
+                        avoidanceRadiusArcmin = 20.0, removeBorderPix = 0):
     """Generate a catalog of objects with random positions and amplitudes. This is for testing purposes - 
     see, e.g., :meth:`nemo.maps.sourceInjectionTest`.
     
@@ -656,9 +656,9 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
         numSourcesPerTile (:obj:`int`): The maximum number of sources to insert into each tile. The number 
             of sources actually inserted may be less than this depending on the value of 
             ``avoidanceRadiusArcmin``.
-        amplitudeColumnName (:obj:`str`): Name of the column in the output catalog in which source (or cluster) 
-            amplitudes will be stored. Typically this should be "deltaT_c" for sources, and "fixed_y_c" for
-            clusters.
+        amplitudeColumnName (:obj:`str`): Name of the column in the output catalog in which source (or
+            cluster) amplitudes will be stored. Typically this should be "deltaT_c" for sources, and
+            "fixed_y_c" for clusters.
         amplitudeRange (:obj:`list`): Range for the random amplitudes, in the form [minimum, maximum].
         amplitudeDistribution (:obj:`str`): Either 'linear' or 'log'.
         selFn (:obj:`nemo.completeness.SelFn`, optional): Nemo selection function object, used to access 
@@ -667,6 +667,10 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
             disk.
         avoidanceRadiusArcmin (:obj:`float`): Minimum separation between two objects in the output catalog.
             This should be set large enough to avoid crowding and spurious cross-matching problems.
+        removeBorderPix (:obj:`int`): Avoid placing objects within this many pixels of the area mask (avoids
+            problems with objects split across the mask boundary - if not set, gives a small number of
+            objects with larger than expected offsets in recovered position in
+            :meth:`nemo.maps.sourceInjectionTest`).
 
     Returns:
         An astropy Table object containing the catalog.
@@ -684,8 +688,14 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
         mapData=selFn.areaMaskDict[tileName]
         if mapData.sum() == 0:  # Skip any empty/blank tile
             continue
+        minX=np.where(mapData > 0)[1].min()+removeBorderPix
+        maxX=np.where(mapData > 0)[1].max()-removeBorderPix
+        minY=np.where(mapData > 0)[0].min()+removeBorderPix
+        maxY=np.where(mapData > 0)[0].max()-removeBorderPix
         wcs=selFn.WCSDict[tileName]
         ys, xs=np.where(mapData != 0)
+        ys=ys[np.logical_and(ys > minY, ys < maxY)]
+        xs=xs[np.logical_and(xs > minX, xs < maxX)]
         ys=ys+np.random.uniform(0, 1, len(ys))
         xs=xs+np.random.uniform(0, 1, len(xs))
         indices=np.random.randint(0, len(ys), len(ys))

@@ -1715,7 +1715,7 @@ def sourceInjectionTest(config, writeRankTable = True):
     # We don't copy this, because it's complicated due to containing MPI-related things (comm)
     # So... we modify the config parameters in-place, and restore them before exiting this method
     simConfig=config
-    simConfig.parDict['twoPass']=False  # We re-use filters we already made, so no need to do full two pass
+    simConfig.parDict['twoPass']=False      # We re-use filters we already made, so no need to do full two pass
     
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
@@ -1812,7 +1812,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                          amplitudeColumnName = 'fixed_y_c', 
                                                          amplitudeRange = [0.001, 1], 
                                                          amplitudeDistribution = 'linear',
-                                                         selFn = selFn)
+                                                         selFn = selFn, removeBorderPix = 20)
                 # Or... proper mock, but this takes ~24 sec for E-D56
                 #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
                 injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'], 
@@ -1825,7 +1825,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                          amplitudeColumnName = fluxCol, 
                                                          amplitudeRange = [1, 1000], 
                                                          amplitudeDistribution = 'log', 
-                                                         selFn = selFn)
+                                                         selFn = selFn, removeBorderPix = 20)
                 injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
@@ -1861,6 +1861,20 @@ def sourceInjectionTest(config, writeRankTable = True):
                             Q=QFit.getQ(theta500Arcmin, tileName = tileName)
                             mask=(x_recCatalog['tileName'] == tileName)
                             x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
+                    # Catching any crazy mismatches, writing output for debugging
+                    if clusterMode == False and np.logical_and(rDeg > 0.4/60, x_recCatalog['SNR'] > 10).sum() > 0:
+                        mask=np.logical_and(rDeg > 0.4/60, x_recCatalog['SNR'] > 10)
+                        simConfig.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
+                        recCatalog2=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
+                                                                       copyFilters = True, useCachedMaps = False)
+                        recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog, radiusArcmin = 5.0)
+                        catalogs.catalog2DS9(x_recCatalog[mask],
+                                             simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-rec.reg")
+                        catalogs.catalog2DS9(x_mockCatalog[mask],
+                                             simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-input.reg",
+                                             color = 'red')
+                        raise Exception("Caught recovered source at large offset - check output under %s" % (simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName))
+
                     # Store everything - analyse later
                     SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog[SNRCol].tolist()
                     rArcminDict[sourceInjectionModel['label']]=rArcminDict[sourceInjectionModel['label']]+(rDeg*60).tolist()

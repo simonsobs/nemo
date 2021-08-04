@@ -93,8 +93,8 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
     minX=minX+rejectBorder
     maxX=maxX-rejectBorder
     minY=minY+rejectBorder
-    maxY=maxY-rejectBorder       
-    
+    maxY=maxY-rejectBorder
+        
     # Build catalog - initially as a list of dictionaries, then converted to astropy Table
     catalog=[]
     idNumCount=1

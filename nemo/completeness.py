@@ -305,21 +305,7 @@ class SelFn(object):
         if len(inMaskList) > 1:
             return np.array(inMaskList)
         else:
-            return inMaskList[0]            
-            
-
-    def overrideRMS(self, RMS, obsFreqGHz = 148.0):
-        """Override the RMS noise of the SelFn object - replacing it with constant value RMS (given in uK/arcmin^2).
-        This is translated into a y0~ noise level at the given observing frequency.
-        
-        After doing this call update() to get an updated (M, z) completeness grid.
-        
-        """
-        
-        for selFnDict in self.selFnDictList:
-            print("Add RMS override code")
-            IPython.embed()
-            sys.exit()            
+            return inMaskList[0]
         
 
     def update(self, H0, Om0, Ob0, sigma8, ns, scalingRelationDict = None):
@@ -362,7 +348,7 @@ class SelFn(object):
                 else:
                     log10M500s=self.mockSurvey.log10M
                 theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-                Qs_zk=Q.getQ(theta500s_zk, zk, tileName = tileName)
+                Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
                 true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
                                                                                 1+B0)*Qs_zk
                 if self.applyRelativisticCorrection == True:
@@ -1295,9 +1281,9 @@ def tidyUp(config):
     
     shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
-    # Combine Q fits
+    # Delete single tile Q fits (combined Q file should be made before this)
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
-        signals.makeCombinedQTable(config)
+        #signals.makeCombinedQTable(config)
         for tileName in config.allTileNames:
             QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
             if os.path.exists(QFileName):
