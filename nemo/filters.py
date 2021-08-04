@@ -280,8 +280,9 @@ class MapFilter(object):
         #tck=interpolate.splrep(arcminRange, prof)
         #FWHMArcmin=interpolate.splev([0.5], tck)*2 # *2 because otherwise would be half width
         
+        plotSettings.update_rcParams()
         fig=plt.figure(figsize=(8,8))
-        ax=plt.axes([0.14, 0.11, 0.85, 0.86])
+        ax=plt.axes([0.14, 0.11, 0.835, 0.86])
         #fig.canvas.set_window_title('Filter Profile in Real Space')
         #plt.title("Filter Profile %s" % (self.label))
         plt.ylabel("Amplitude")
@@ -292,7 +293,7 @@ class MapFilter(object):
             elif mapDict['units'] == 'yc':
                 label = 'yc'
             plt.plot(arcminRange, row, label = label)
-        plt.xlim(0, 30.0)
+        plt.xlim(0, 10.0)
         plt.ylim(prof.min(), prof.max()*1.1)
         plt.legend()
         plt.savefig(self.diagnosticsDir+os.path.sep+"realSpaceProfile1d_"+self.label+"#"+self.tileName+".png")
@@ -615,6 +616,7 @@ class MatchedFilter(MapFilter):
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         else:
+            print("... loading cached filter ...")
             self.loadFilter()
         
         # Apply filter
@@ -1166,15 +1168,44 @@ class ArnaudModelFilter(MapFilter):
                                                    amplitude = amplitude)
         
         return signalMap
+
+#------------------------------------------------------------------------------------------------------------
+class BattagliaModelFilter(MapFilter):
+    """Base class for filters using the GNFW profile as described in Battaglia et al. (2012).
+    
+    NOTE: This is the same as the ArnaudModelFilter (it is still a GNFW profile), but has non-self-similar
+    evolution with redshift, which is accounted for here.
+    
+    NOTE: When it comes to the GNFW parameters, we still follow the convention used in Arnaud+2010, rather
+    than Battaglia+2012 here.
+    
+    """
+    
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
+        """Makes a model signal template map.
                 
+        """
+        
+        signalMap=signals.makeBattagliaModelSignalMap(self.params['z'], self.params['M500MSun'], 
+                                                   np.degrees(self.radiansMap),
+                                                   self.wcs, beamFileName, 
+                                                   GNFWParams = self.params['GNFWParams'],
+                                                   amplitude = amplitude)
+        
+        return signalMap
+    
 #------------------------------------------------------------------------------------------------------------
 # Definitions of actual filters that can be used
 class ArnaudModelMatchedFilter(MatchedFilter, ArnaudModelFilter):
+    pass
+class BattagliaModelMatchedFilter(MatchedFilter, BattagliaModelFilter):
     pass
 class BeamMatchedFilter(MatchedFilter, BeamFilter):
     pass
 
 class ArnaudModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, ArnaudModelFilter):
+    pass
+class BattagliaModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, BattagliaModelFilter):
     pass
 class BeamRealSpaceMatchedFilter(RealSpaceMatchedFilter, BeamFilter):
     pass

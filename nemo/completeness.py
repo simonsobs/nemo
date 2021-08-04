@@ -168,7 +168,7 @@ class SelFn(object):
         if enableCompletenessCalc == True:
             
             self.scalingRelationDict=parDict['massOptions']
-            self.tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
+            self.Q=signals.QFit(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
             
             # We should be able to do everything (except clustering) with this
             # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
@@ -305,21 +305,7 @@ class SelFn(object):
         if len(inMaskList) > 1:
             return np.array(inMaskList)
         else:
-            return inMaskList[0]            
-            
-
-    def overrideRMS(self, RMS, obsFreqGHz = 148.0):
-        """Override the RMS noise of the SelFn object - replacing it with constant value RMS (given in uK/arcmin^2).
-        This is translated into a y0~ noise level at the given observing frequency.
-        
-        After doing this call update() to get an updated (M, z) completeness grid.
-        
-        """
-        
-        for selFnDict in self.selFnDictList:
-            print("Add RMS override code")
-            IPython.embed()
-            sys.exit()            
+            return inMaskList[0]
         
 
     def update(self, H0, Om0, Ob0, sigma8, ns, scalingRelationDict = None):
@@ -362,7 +348,7 @@ class SelFn(object):
                 else:
                     log10M500s=self.mockSurvey.log10M
                 theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-                Qs_zk=interpolate.splev(theta500s_zk, self.tckQFitDict[tileName])
+                Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
                 true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
                                                                                 1+B0)*Qs_zk
                 if self.applyRelativisticCorrection == True:
@@ -424,11 +410,11 @@ class SelFn(object):
             zErr=row['redshiftErr']
             y0=row['fixed_y_c']*1e-4
             y0Err=row['fixed_err_y_c']*1e-4
-            P=signals.calcPMass(y0, y0Err, z, zErr, self.tckQFitDict[tileName], self.mockSurvey, 
+            P=signals.calcPMass(y0, y0Err, z, zErr, self.Q, self.mockSurvey, 
                                   tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, sigma_int = sigma_int, 
                                   applyMFDebiasCorrection = self.applyMFDebiasCorrection, 
                                   fRelWeightsDict = self.fRelDict[tileName],
-                                  return2D = True)
+                                  return2D = True, tileName = tileName)
             # Paste into (M, z) grid
             catProjectedMz=catProjectedMz+P # For return2D = True, P is normalised such that 2D array sum is 1
         
@@ -454,12 +440,11 @@ class SelFn(object):
             zErr=row['redshiftErr']
             y0=row['fixed_y_c']*1e-4
             y0Err=row['fixed_err_y_c']*1e-4
-            massDict=signals.calcMass(y0, y0Err, z, zErr, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
-                                            sigma_int = sigma_int, tckQFit = self.tckQFitDict[tileName], 
-                                            mockSurvey = self.mockSurvey, 
+            massDict=signals.calcMass(y0, y0Err, z, zErr, self.Q, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
+                                            sigma_int = sigma_int, mockSurvey = self.mockSurvey, 
                                             applyMFDebiasCorrection = self.applyMFDebiasCorrection,
                                             fRelWeightsDict = self.fRelDict[tileName],
-                                            calcErrors = False)
+                                            calcErrors = False, tileName = tileName)
             obs_log10Ms.append(14+np.log10(massDict['M500']))
         obsGrid, obs_log10MBinEdges, obs_zBinEdges=np.histogram2d(obs_log10Ms, tab['redshift'], 
                                                                   bins = [self.mockSurvey.log10MBinEdges, 
@@ -502,7 +487,7 @@ class SelFn(object):
         mockTabsList=[]
         for tileName, areaDeg2 in zip(self.tileNames, self.tileAreas):
             mockTab=self.mockSurvey.drawSample(self.y0NoiseAverageDict[tileName], self.scalingRelationDict, 
-                                               self.tckQFitDict, wcs = None, 
+                                               self.Q, wcs = None, 
                                                photFilterLabel = self.photFilterLabel, tileName = tileName, 
                                                makeNames = False,
                                                SNRLimit = self.SNRCut, applySNRCut = True,
@@ -975,7 +960,7 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
     return massLimit
     
 #------------------------------------------------------------------------------------------------------------
-def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, tckQFitDict,
+def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, QFit,
                      plotFileName = None, z = None, method = "fast", numDraws = 2000000, numIterations = 100):
     """Calculate completeness as a function of (log10 M500c, z) on the mockSurvey grid at the given SNRCut.
     Intrinsic scatter in the scaling relation is taken into account.
@@ -1028,7 +1013,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
             allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
             detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
             for i in range(numIterations):
-                tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, tckQFitDict, tileName = tileName, 
+                tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, QFit, tileName = tileName, 
                                         SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
                 allMz=allMz+np.histogram2d(np.log10(tab[trueMassCol]*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
                 detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
@@ -1053,7 +1038,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
             zk=zRange[i]
             k=np.argmin(abs(mockSurvey.z-zk))
             theta500s_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.theta500Splines[k])
-            Qs_zk=interpolate.splev(theta500s_zk, tckQFitDict[tileName])
+            Qs_zk=QFit.getQ(theta500s_zk, z = zk, tileName = tileName)
             fRels_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.fRelSplines[k])
             true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
             #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
@@ -1107,7 +1092,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
     return compMz
       
 #------------------------------------------------------------------------------------------------------------
-def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRelationDict, tckQFitDict, 
+def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRelationDict, QFit, 
                      diagnosticsDir, selFnDir):
     """Makes a map of 90% mass completeness (for now, this fraction is fixed).
     
@@ -1134,7 +1119,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
             count=count+1
             #print(("... %d/%d (%.3e) ..." % (count, len(RMSTab), y0Noise)))
             compMz=calcCompleteness(RMSTab[np.where(RMSTab['y0RMS'] == y0Noise)], SNRCut, tileName, mockSurvey, 
-                                    scalingRelationDict, tckQFitDict, z = z)
+                                    scalingRelationDict, QFit, z = z)
             massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(compMz-0.9))]
         t1=time.time()
         mask=np.not_equal(massLimMap, 0)
@@ -1296,9 +1281,9 @@ def tidyUp(config):
     
     shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
-    # Combine Q fits
+    # Delete single tile Q fits (combined Q file should be made before this)
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
-        signals.makeCombinedQTable(config)
+        #signals.makeCombinedQTable(config)
         for tileName in config.allTileNames:
             QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
             if os.path.exists(QFileName):

@@ -120,10 +120,17 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         yMin=ys.min()
         yMax=ys.max()
         xc=int((xs.min()+xs.max())/2)
-        RAc, decMin=wcs.pix2wcs(xc, yMin)
-        RAc, decMax=wcs.pix2wcs(xc, yMax)
+        
+        # Some people want to run on full sky CAR ... so we have to avoid that blowing up at the poles
+        decMin, decMax=np.nan, np.nan
+        deltaY=0
+        while np.isnan(decMin) and np.isnan(decMax):
+            RAc, decMin=wcs.pix2wcs(xc, yMin+deltaY)
+            RAc, decMax=wcs.pix2wcs(xc, yMax-deltaY)
+            deltaY=deltaY+0.01
         
         numRows=int((decMax-decMin)/targetTileHeight)
+
         tileHeight=np.ceil(((decMax-decMin)/numRows)*100)/100
         assert(tileHeight < 10)
         
@@ -354,8 +361,12 @@ def makeTileDir(parDict, writeToDisk = True):
 
             if wcs is None:
                 wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
+                # Allows compressed format (yes, we should tidy this up properly...)
                 with pyfits.open(wcsPath) as img:
-                    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+                    for extName in img:
+                        if img[extName].data is not None:
+                            break
+                    wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
                 
             # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]
@@ -419,17 +430,25 @@ def makeTileDir(parDict, writeToDisk = True):
                         dec1=dec1+tileOverlapDeg
                     if ra1 > ra0:
                         ra1=-(360-ra1)
+                    
                     # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
                     # (which happens if image dimensions are both odd)
                     # I _think_ this is related to the interpolation done in signals.fitQ
-                    ddec=0.5/60.
+                    ddec=wcs.getYPixelSizeDeg()/10
                     count=0
                     clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                     while clip['data'].shape[0] % 2 != 0:
-                        clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0-ddec*count, dec1)
+                        try_dec0=dec0-ddec*count
+                        try_dec1=dec1+ddec*count
+                        if try_dec0 < -90:
+                            try_dec0=dec0
+                        if try_dec1 > 90:
+                            try_dec1=dec1
+                        clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, try_dec0, try_dec1)
                         count=count+1
-                        if count > 100:
+                        if count > 200:
                             raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
+                    
                     # Storing clip coords etc. so can stitch together later
                     # areaMaskSection here is used to define the region that would be kept (takes out overlap)
                     ra0, dec0=wcs.pix2wcs(x0, y0)
@@ -972,11 +991,16 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
             
     # Optional smoothing with a Gaussian kernel (for approximate PSF-matching)
-    if 'smoothScaleDeg' in mapDict.keys():
+    # NOTE: Turns out this is not good enough for real ACT beams - use full convolution kernel instead (see below)
+    #if 'smoothScaleDeg' in mapDict.keys():
+        #if 'smoothAttenuationFactor' in mapDict.keys():
+            #data=data*mapDict['smoothAttenuationFactor']
+        #data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
+    if 'smoothKernel' in mapDict.keys():
         if 'smoothAttenuationFactor' in mapDict.keys():
             data=data*mapDict['smoothAttenuationFactor']
-        data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
-        
+        data=convolveMapWithBeam(data, wcs, mapDict['smoothKernel'], maxDistDegrees = 1.0)
+                
     # Optional masking of point sources from external catalog
     # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
     if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
@@ -1019,13 +1043,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                                                                                 row['RADeg'], row['decDeg'],
                                                                                 maskRadiusArcmin/60)
                 rArcminMap=rArcminMap*60
-                try:
-                    surveyMask[rArcminMap < maskRadiusArcmin]=0
-                except:
-                    print("huh")
-                    import IPython
-                    IPython.embed()
-                    sys.exit()
+                surveyMask[rArcminMap < maskRadiusArcmin]=0
                 psMask[rArcminMap < maskRadiusArcmin]=0
                 data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
 
@@ -1582,7 +1600,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         return None
 
     if cosmoModel is None:
-        cosmoModel=signals.FlatLambdaCDM(H0 = 70.0, Om0 = 0.3, Ob0 = 0.05, Tcmb0 = signals.TCMB)
+        cosmoModel=signals.fiducialCosmoModel
     
     # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
     numFWHM=5.0
@@ -1621,14 +1639,17 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
                         continue
                 count=count+1
-                # NOTE: We need to think about this a bit more, for when we're not working at fixed filter scale
                 if 'true_M500c' in catalog.keys():
+                    # This case is for when we're running from nemoMock output
+                    # Since the idea of this is to create noise-free model images, we must use true values here
+                    # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
                     M500=row['true_M500c']*1e14
                     z=row['redshift']
-                    y0ToInsert=row['fixed_y_c']*1e-4
-                    if 'true_Q' in catalog.keys():
-                        y0ToInsert=y0ToInsert/row['true_Q']
+                    y0ToInsert=row['true_fixed_y_c']*1e-4
+                    y0ToInsert=y0ToInsert/row['true_Q']
                 else:
+                    # NOTE: This case is for running from nemo output
+                    # We need to adapt this for when the template names are not in this format
                     if 'template' not in catalog.keys():
                         raise Exception("No M500, z, or template column found in catalog.")
                     bits=row['template'].split("#")[0].split("_")
@@ -1694,7 +1715,7 @@ def sourceInjectionTest(config, writeRankTable = True):
     # We don't copy this, because it's complicated due to containing MPI-related things (comm)
     # So... we modify the config parameters in-place, and restore them before exiting this method
     simConfig=config
-    simConfig.parDict['twoPass']=False  # We re-use filters we already made, so no need to do full two pass
+    simConfig.parDict['twoPass']=False      # We re-use filters we already made, so no need to do full two pass
     
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
@@ -1722,7 +1743,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                        sourceInjectionModel['M500'], signals.fiducialCosmoModel))
             sourceInjectionModel['label']=label
         # We need Q for flux recovery stuff...
-        tckQFitDict=signals.loadQ(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
+        QFit=signals.QFit(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
     else:
         # Sources
         clusterMode=False
@@ -1791,7 +1812,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                          amplitudeColumnName = 'fixed_y_c', 
                                                          amplitudeRange = [0.001, 1], 
                                                          amplitudeDistribution = 'linear',
-                                                         selFn = selFn)
+                                                         selFn = selFn, maskDilationPix = 20)
                 # Or... proper mock, but this takes ~24 sec for E-D56
                 #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
                 injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'], 
@@ -1804,7 +1825,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                                          amplitudeColumnName = fluxCol, 
                                                          amplitudeRange = [1, 1000], 
                                                          amplitudeDistribution = 'log', 
-                                                         selFn = selFn)
+                                                         selFn = selFn, maskDilationPix = 20)
                 injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
@@ -1837,9 +1858,27 @@ def sourceInjectionTest(config, writeRankTable = True):
                     if clusterMode == True:
                         for tileName in np.unique(x_recCatalog['tileName']):
                             theta500Arcmin=float(sourceInjectionModel['label'])
-                            Q=interpolate.splev(theta500Arcmin, tckQFitDict[tileName])
+                            Q=QFit.getQ(theta500Arcmin, tileName = tileName)
                             mask=(x_recCatalog['tileName'] == tileName)
                             x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
+                    # Catching any crazy mismatches, writing output for debugging
+                    if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
+                        mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)
+                        simConfig.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
+                        recCatalog2=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
+                                                                       copyFilters = True, useCachedMaps = False)
+                        recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog, radiusArcmin = 5.0)
+                        catalogs.catalog2DS9(x_recCatalog[mask],
+                                             simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-rec.reg")
+                        catalogs.catalog2DS9(x_mockCatalog[mask],
+                                             simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-input.reg",
+                                             color = 'red')
+                        msg="Caught recovered source at large offset - check output under %s" % (simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName)
+                        if simConfig.parDict['haltOnPositionRecoveryProblem'] == True:
+                            raise Exception(msg)
+                        else:
+                            print("... Warning: %s ..." % (msg))
+
                     # Store everything - analyse later
                     SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog[SNRCol].tolist()
                     rArcminDict[sourceInjectionModel['label']]=rArcminDict[sourceInjectionModel['label']]+(rDeg*60).tolist()

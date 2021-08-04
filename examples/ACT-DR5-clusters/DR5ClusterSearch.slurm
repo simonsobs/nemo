@@ -6,4 +6,6 @@
 #SBATCH --output=DR5ClusterSearch.log
 #SBATCH --error=DR5ClusterSearch.err
 
+source $HOME/SETUP_CONDA.sh
+
 time mpiexec nemo DR5ClusterSearch.yml -M

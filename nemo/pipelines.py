@@ -14,7 +14,7 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astLib import astWCS
 import numpy as np
-from scipy import ndimage
+from scipy import ndimage, interpolate
 import copy
 from pixell import enmap
 import nemo
@@ -103,7 +103,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             mapDict['surveyMask']=None
             config.unfilteredMapsDictList=[mapDict]
             catalog=_filterMapsAndMakeCatalogs(config, verbose = False, writeAreaMasks = False)
-            catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)       
+            if len(catalog) > 0 :
+                catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)
             pass1CatalogsList.append(catalog)
 
         # Pass 2 - subtract point sources in the maps used for noise term in filter only
@@ -168,16 +169,19 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
         diagnosticsDir=rootOutDir+os.path.sep+"diagnostics"
         dirList=[rootOutDir, filteredMapsDir, diagnosticsDir]
         for d in dirList:
-            if os.path.exists(d) == False:
-                os.makedirs(d, exist_ok = True)
+            os.makedirs(d, exist_ok = True)
         if copyFilters == True:
             for tileName in config.tileNames:
                 fileNames=glob.glob(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"filter*#%s*.fits" % (tileName))
+                if len(fileNames) == 0:
+                    raise Exception("Could not find pre-computed filters to copy - you need to add 'saveFilter: True' to the filter params in the config file (this is essential for doing source injection sims quickly).")
                 kernelCopyDestDir=diagnosticsDir+os.path.sep+tileName
-                if os.path.exists(kernelCopyDestDir) == False:
-                    os.makedirs(kernelCopyDestDir, exist_ok = True)
+                os.makedirs(kernelCopyDestDir, exist_ok = True)
                 for f in fileNames:
-                    shutil.copyfile(f, kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]) 
+                    dest=kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]
+                    if os.path.exists(dest) == False:
+                        shutil.copyfile(f, dest) 
+                        print("... copied filter %s to %s ..." % (f, dest))
     else:
         rootOutDir=config.rootOutDir
         filteredMapsDir=config.filteredMapsDir
@@ -292,7 +296,7 @@ def makeSelFnCollection(config, mockSurvey):
     """
     
     # Q varies across tiles
-    tckQFitDict=signals.loadQ(config)
+    Q=signals.QFit(config)
         
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -322,7 +326,7 @@ def makeSelFnCollection(config, mockSurvey):
             
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
-        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict, 
+        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
                                            numDraws = config.parDict['selFnOptions']['numDraws'],
                                            numIterations = config.parDict['selFnOptions']['numIterations'],
                                            method = config.parDict['selFnOptions']['method'])
@@ -340,7 +344,7 @@ def makeSelFnCollection(config, mockSurvey):
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
                                               footprintLabel = footprintDict['label'])
-                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], tckQFitDict,
+                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
                                                    numDraws = config.parDict['selFnOptions']['numDraws'],
                                                    numIterations = config.parDict['selFnOptions']['numIterations'],
                                                    method = config.parDict['selFnOptions']['method'])
@@ -354,7 +358,7 @@ def makeSelFnCollection(config, mockSurvey):
         if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
             for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
                 completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
-                                            config.parDict['massOptions'], tckQFitDict, config.diagnosticsDir,
+                                            config.parDict['massOptions'], Q, config.diagnosticsDir,
                                             config.selFnDir) 
     
     return selFnCollection
@@ -389,7 +393,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     if verbose: print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
     
     # Q varies across tiles
-    tckQFitDict=signals.loadQ(config)
+    Q=signals.QFit(config)
     
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -498,7 +502,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             # We may also have some tiles that are almost but not quite blank
             if RMSMapDict[tileName].sum() == 0 or areaDeg2Dict[tileName] < 0.5:
                 continue
-            mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, tckQFitDict, wcs = wcsDict[tileName], 
+            mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, Q, wcs = wcsDict[tileName], 
                                           photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
                                           SNRLimit = thresholdSigma, applySNRCut = True, 
                                           areaDeg2 = areaDeg2Dict[tileName],
@@ -606,49 +610,182 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             refFWHMArcmin=beam.FWHMArcmin
             refIndex=i
         beams.append(beam)
+
+    # Sort the list of beams and maps so that the one with the reference beam is in index 0
+    config.unfilteredMapsDictList.insert(0, config.unfilteredMapsDictList.pop(refIndex))
+    beams.insert(0, beams.pop(refIndex))
     
     # Figure out how much we need to Gaussian blur to match the reference beam
-    # We're not doing full-blown PSF matching, this should be good enough for our purposes
-    for i in range(len(config.unfilteredMapsDictList)):
-        mapDict=config.unfilteredMapsDictList[i]
-        beam=beams[i]
-        degPerPix=np.mean(np.diff(beam.rDeg))
-        assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
-        if i != refIndex:
-            resMin=1e6
-            smoothPix=0
-            attFactor=1.0
-            for j in range(1, 100):
-                smoothProf=ndimage.gaussian_filter1d(beam.profile1d, j)
-                smoothProf=smoothProf/smoothProf.max()
-                res=np.sum(np.power(refBeam.profile1d-smoothProf, 2))
-                if res < resMin:
-                    resMin=res
-                    smoothPix=j
-                    attFactor=1/smoothProf.max()
-            smoothScaleDeg=smoothPix*degPerPix
-            mapDict['smoothScaleDeg']=smoothScaleDeg
-            mapDict['smoothAttenuationFactor']=1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max()
+    # NOTE: This was an alternative to proper PSF-matching that wasn't good enough for ACT beams
+    #for i in range(1, len(config.unfilteredMapsDictList)):
+        #mapDict=config.unfilteredMapsDictList[i]
+        #beam=beams[i]
+        #degPerPix=np.mean(np.diff(beam.rDeg))
+        #assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
+        #resMin=1e6
+        #smoothPix=0
+        #attFactor=1.0
+        #for j in range(1, 100):
+            #smoothProf=ndimage.gaussian_filter1d(beam.profile1d, j)
+            #smoothProf=smoothProf/smoothProf.max()
+            #res=np.sum(np.power(refBeam.profile1d-smoothProf, 2))
+            #if res < resMin:
+                #resMin=res
+                #smoothPix=j
+                #attFactor=1/smoothProf.max()
+        #smoothScaleDeg=smoothPix*degPerPix
+        #mapDict['smoothScaleDeg']=smoothScaleDeg
+        #mapDict['smoothAttenuationFactor']=1/ndimage.gaussian_filter1d(beam.profile1d, smoothPix).max()
     
-    # Sort the list of maps so that the one with the reference beam is in index 0
-    config.unfilteredMapsDictList.insert(0, config.unfilteredMapsDictList.pop(refIndex)) 
-    
+    # For testing on CMB maps here
+    refMapDict=config.unfilteredMapsDictList[0]
+            
+    # PSF matching via a convolution kernel
+    kernelDict={}   # keys: tile, obsFreqGHz
+    for tileName in config.tileNames:
+        if tileName not in kernelDict.keys():
+            kernelDict[tileName]={}
+        for i in range(1, len(config.unfilteredMapsDictList)):
+            mapDict=config.unfilteredMapsDictList[i]
+            beam=beams[i]
+            degPerPix=np.mean(np.diff(beam.rDeg))
+            assert(abs(np.diff(beam.rDeg).max()-degPerPix) < 0.001)
+            
+            # Calculate convolution kernel
+            sizePix=beam.profile1d.shape[0]*2
+            if sizePix % 2 == 0:
+                sizePix=sizePix+1
+            symRDeg=np.linspace(-0.5, 0.5, sizePix)
+            assert((symRDeg == 0).sum())
+            
+            symProf=interpolate.splev(abs(symRDeg), beam.tck)
+            symRefProf=interpolate.splev(abs(symRDeg), refBeam.tck)
+
+            fSymRef=np.fft.fft(np.fft.fftshift(symRefProf))
+            fSymBeam=np.fft.fft(np.fft.fftshift(symProf))
+            fSymConv=fSymRef/fSymBeam
+            fSymConv[fSymBeam < 1e-1]=0 # Was 1e-2; this value avoids ringing, smaller values do not
+            symMatched=np.fft.ifft(fSymBeam*fSymConv).real
+            symConv=np.fft.ifft(fSymConv).real
+
+            # This allows normalization in same way as Gaussian smooth method
+            symConv=symConv/symConv.sum()
+            convedProf=ndimage.convolve(symProf, np.fft.fftshift(symConv))
+            attenuationFactor=1/convedProf.max() # norm
+
+            # Make profile object
+            peakIndex=np.argmax(np.fft.fftshift(symConv))       
+            convKernel=signals.BeamProfile(profile1d = np.fft.fftshift(symConv)[peakIndex:], rDeg = symRDeg[peakIndex:])
+            
+            ## Check plots
+            #import pylab as plt
+            #plt.figure(figsize=(10,8))
+            #plt.plot(abs(symRDeg*60), symRefProf, label = 'ref', lw = 3)
+            #plt.plot(abs(symRDeg*60), convedProf*attenuationFactor, label = 'kernel convolved')
+            #integralRatio=np.trapz(symRefProf)/np.trapz(convedProf*attenuationFactor)
+            #plt.title("%.3f" % (integralRatio))
+            #plt.semilogy()
+            #plt.legend()
+            #ratio=(convedProf*attenuationFactor)/symRefProf
+            #plt.figure(figsize=(10,8))
+            #plt.plot(abs(symRDeg*60), ratio, label = 'ratio')
+            #plt.plot(abs(symRDeg*60), [1.0]*len(symRDeg), 'r-')
+            #plt.legend()
+            
+            # Fudging 2d kernel to match (fix properly later)
+            # NOTE: Now done at higher res but doesn't make much difference
+            # (but DOES blow up in some tiles if you use e.g. have the resolution)
+            wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits').copy()
+            wcs.header['CDELT1']=np.diff(refBeam.rDeg)[0]
+            wcs.header['CDELT2']=np.diff(refBeam.rDeg)[0]
+            wcs.header['NAXIS1']=int(np.ceil(2*refBeam.rDeg.max()/wcs.header['CDELT1'])) 
+            wcs.header['NAXIS2']=int(np.ceil(2*refBeam.rDeg.max()/wcs.header['CDELT2']))
+            wcs.updateFromHeader()
+            shape=(wcs.header['NAXIS2'], wcs.header['NAXIS1'])
+            degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
+            RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
+            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
+            refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
+            matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
+            
+            # Find and apply radial fudge factor
+            yRow=np.where(refBeamMap == refBeamMap.max())[0][0]
+            rowValid=np.logical_and(degreesMap[yRow] < refBeam.rDeg.max(), matchedBeamMap[yRow] != 0)
+            ratio=refBeamMap[yRow][rowValid]/matchedBeamMap[yRow][rowValid]
+            zeroIndex=np.argmin(degreesMap[yRow][rowValid])
+            assert(degreesMap[yRow][rowValid][zeroIndex] == 0)
+            tck=interpolate.splrep(degreesMap[yRow][rowValid][zeroIndex:], ratio[zeroIndex:])
+            fudge=interpolate.splev(convKernel.rDeg, tck)
+            #fudge[fudge < 0.5]=1.0
+            #fudge[fudge > 1.5]=1.0
+            fudgeKernel=signals.BeamProfile(profile1d = convKernel.profile1d*fudge, rDeg = convKernel.rDeg)
+            
+            ## Check plot
+            #import pylab as plt
+            #plt.figure(figsize=(10,8))
+            #plt.plot(convKernel.rDeg, fudge, lw = 3, label = 'fudge')
+            #plt.plot(convKernel.rDeg, [1.0]*len(fudge), 'r-')
+            #plt.title("fudge")
+            ##plt.ylim(0, 2)
+            #plt.legend()
+            #plt.show()
+            
+            # 2nd fudge factor - match integrals of 2d kernels
+            fudgeMatchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, fudgeKernel, maxDistDegrees = 1.0)
+            attenuationFactor=refBeamMap.sum()/fudgeMatchedBeamMap.sum()
+                        
+            # Check at map pixelization that is actually used
+            #shape=(config.tileCoordsDict[tileName]['header']['NAXIS2'], 
+                   #config.tileCoordsDict[tileName]['header']['NAXIS1'])
+            #wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits').copy()
+            #degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
+            #RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
+            #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            #beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
+            #refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
+            #fudgeMatchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, fudgeKernel, maxDistDegrees = 1.0)            
+            ## Check plot
+            #import pylab as plt
+            #yRow=np.where(refBeamMap == refBeamMap.max())[0][0]
+            #rowValid=np.logical_and(degreesMap[yRow] < refBeam.rDeg.max(), fudgeMatchedBeamMap[yRow] != 0)
+            #plt.figure(figsize=(10,8))
+            #plt.plot(degreesMap[yRow][rowValid]*60, refBeamMap[yRow][rowValid], lw = 3, label = 'ref')
+            #plt.plot(degreesMap[yRow][rowValid]*60, fudgeMatchedBeamMap[yRow][rowValid], label = 'fudged')
+            #integralRatio=np.trapz(fudgeMatchedBeamMap[yRow][rowValid])/np.trapz(refBeamMap[yRow][rowValid])
+            #plt.title("native map res - %.3f" % (integralRatio))
+            #plt.semilogy()
+            #plt.ylim(1e-5)
+            #plt.legend()
+            #plt.show()
+            #from astLib import astImages
+            #astImages.saveFITS("ref.fits", refBeamMap, wcs)
+            #astImages.saveFITS("fudgematched.fits", fudgeMatchedBeamMap, wcs)
+            #astImages.saveFITS("diff.fits", refBeamMap-fudgeMatchedBeamMap, wcs)
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
+            
+            # NOTE: If we're NOT passing in 2d kernels, don't need to organise by tile
+            kernelDict[tileName][mapDict['obsFreqGHz']]={'smoothKernel': fudgeKernel, 
+                                                         'smoothAttenuationFactor': attenuationFactor}
+        
     if method == 'CAP':
-        catalog=_extractSpecCAP(config, tab, diskRadiusArcmin = 4.0, highPassFilter = False,
+        catalog=_extractSpecCAP(config, tab, kernelDict, diskRadiusArcmin = 4.0, highPassFilter = False,
                                 estimateErrors = True)
     elif method == 'matchedFilter':
-        catalog=_extractSpecMatchedFilter(config, tab, saveFilteredMaps = saveFilteredMaps)
+        catalog=_extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = saveFilteredMaps)
     else:
         raise Exception("'method' should be 'CAP' or 'matchedFilter'")
     
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod = 'dataMap'):
+def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False, noiseMethod = 'dataMap'):
     """See extractSpec.
     
     """
-    
+        
     cacheDir="nemoSpecCache"+os.path.sep+os.path.basename(config.rootOutDir)
     os.makedirs(cacheDir, exist_ok = True)
 
@@ -703,6 +840,8 @@ def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod
                                                                   undoPixelWindow = True,
                                                                   returnFilter = True)
                 else:
+                    mapDict['smoothKernel']=kernelDict[tileName][mapDict['obsFreqGHz']]['smoothKernel']
+                    mapDict['smoothAttenuationFactor']=kernelDict[tileName][mapDict['obsFreqGHz']]['smoothAttenuationFactor']
                     mapDictToFilter=maps.preprocessMapDict(mapDict.copy(), tileName = tileName)
                     filteredMapDict['data']=filterObj.applyFilter(mapDictToFilter['data'])
                     RMSMap=filterObj.makeNoiseMap(filteredMapDict['data'])
@@ -742,7 +881,7 @@ def _extractSpecMatchedFilter(config, tab, saveFilteredMaps = False, noiseMethod
     return catalog
     
 #------------------------------------------------------------------------------------------------------------
-def _extractSpecCAP(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFilter = False, 
+def _extractSpecCAP(config, tab, kernelDict, method = 'CAP', diskRadiusArcmin = 4.0, highPassFilter = False, 
                     estimateErrors = True):
     """See extractSpec.
     
