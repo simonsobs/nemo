@@ -1862,8 +1862,8 @@ def sourceInjectionTest(config, writeRankTable = True):
                             mask=(x_recCatalog['tileName'] == tileName)
                             x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
                     # Catching any crazy mismatches, writing output for debugging
-                    if clusterMode == False and np.logical_and(rDeg > 0.4/60, x_recCatalog['SNR'] > 10).sum() > 0:
-                        mask=np.logical_and(rDeg > 0.4/60, x_recCatalog['SNR'] > 10)
+                    if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
+                        mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)
                         simConfig.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
                         recCatalog2=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
                                                                        copyFilters = True, useCachedMaps = False)
