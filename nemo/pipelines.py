@@ -103,7 +103,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
             mapDict['surveyMask']=None
             config.unfilteredMapsDictList=[mapDict]
             catalog=_filterMapsAndMakeCatalogs(config, verbose = False, writeAreaMasks = False)
-            catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)       
+            if len(catalog) > 0 :
+                catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)
             pass1CatalogsList.append(catalog)
 
         # Pass 2 - subtract point sources in the maps used for noise term in filter only
