@@ -1873,7 +1873,11 @@ def sourceInjectionTest(config, writeRankTable = True):
                         catalogs.catalog2DS9(x_mockCatalog[mask],
                                              simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-input.reg",
                                              color = 'red')
-                        raise Exception("Caught recovered source at large offset - check output under %s" % (simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName))
+                        msg="Caught recovered source at large offset - check output under %s" % (simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName)
+                        if simConfig.parDict['haltOnPositionRecoveryProblem'] == True:
+                            raise Exception(msg)
+                        else:
+                            print("... Warning: %s ..." % (msg))
 
                     # Store everything - analyse later
                     SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog[SNRCol].tolist()

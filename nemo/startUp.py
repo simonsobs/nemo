@@ -136,7 +136,10 @@ def parseConfigFile(parDictFileName):
             parDict['removeRings']=True
         if 'ringThresholdSigma' not in parDict.keys():
             parDict['ringThresholdSigma']=3
-    
+        # Applies to source injection recover sims only (whether print message or trigger exception)
+        if 'haltOnPositionRecoveryProblem' not in parDict.keys():
+            parDict['haltOnPositionRecoveryProblem']=False
+
     return parDict
 
 #------------------------------------------------------------------------------------------------------------
