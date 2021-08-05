@@ -252,7 +252,11 @@ if __name__ == '__main__':
         zTab=atpy.Table().read(config.parDict['massOptions']['redshiftCatalog'])
         nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = 2.5)
         nemoTab['redshift']=zTab['redshift']
-        nemoTab['redshiftErr']=zTab['redshiftErr']
+        if 'redshiftErr' in zTab.keys():
+            nemoTab['redshiftErr']=zTab['redshiftErr']
+        else:
+            print("... WARNING: no redshiftErr column found in '%s' - assuming redshiftErr = 0 for all clusters ..." %  (config.parDict['massOptions']['redshiftCatalog']))
+            nemoTab['redshiftErr']=0
         tab=nemoTab
         if outFileName is None:
             outFileName=optimalCatalogFileName.replace("_optimalCatalog.fits", "_mass.fits")
