@@ -64,6 +64,7 @@ fiducialCosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0, Omega_b=Ob0, h=0.01*H0, sigma8
 # For CCL-based mass conversions
 M200mDef=ccl.halos.MassDef(200, "matter", c_m_relation = 'Bhattacharya13')
 M200cDef=ccl.halos.MassDef(200, "critical", c_m_relation = 'Bhattacharya13')
+M500cDef=ccl.halos.MassDef(500, "critical")
 
 #------------------------------------------------------------------------------------------------------------
 class BeamProfile(object):

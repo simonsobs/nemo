@@ -1610,7 +1610,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # Map of distance(s) from objects - this will get updated in place (fast)
     degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
     
-    if 'fixed_y_c' in catalog.keys():
+    if 'fixed_y_c' or 'true_fixed_y_c' in catalog.keys():
         # Clusters: for speed - assume all objects are the same shape
         if override is not None:
             fluxScaleMap=np.zeros(modelMap.shape)
