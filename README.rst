@@ -20,7 +20,7 @@ in the package.
 
 **Nemo** is *not* the pipeline used for 
 `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_, but implements many
-of the ideas presented there. *It is* the package, that was used to produce the
+of the ideas presented there. *It is* the package that was used to produce the
 `ACT DR3 cluster catalog <https://ui.adsabs.harvard.edu/abs/2018ApJS..235...20H/abstract>`_,
 and the `ACT DR5 cluster catalog <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_.
 All ACT data products are available from `LAMBDA <https://lambda.gsfc.nasa.gov/product/act/actpol_prod_table.cfm>`_.

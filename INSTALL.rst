@@ -5,7 +5,7 @@ brackets, later versions also probably work):
 * numpy (1.13.3)
 * scipy (1.3.0)
 * matplotlib (2.1.1)
-* astLib (0.11.3)
+* astLib (0.11.7)
 * `pixell <https://github.com/simonsobs/pixell/>`_ (0.6.3 or git version)
 * Pillow (5.1.0)
 * astropy (4.0)
