@@ -1,6 +1,13 @@
+Nemo uses the `Robot Framework <http://robotframework.org/>`_ for tests.
 
-Nemo uses the `Robot Framework <http://robotframework.org/>`_ for tests. At the 
-moment, these are end-to-end tests that take a while to run and use real data.
+To run a set of tests that should take only a few minutes, use,
+
+.. code-block::
+
+   robot quick.robot
+
+The other test suites in are in the process of being replaced and/or
+reformulated. These can take a long time to run on real data.
 
 To run a single test suite do, e.g.,
 

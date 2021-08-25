@@ -265,7 +265,8 @@ class NemoConfig(object):
         else:
             if self.configFileName.find(".yml") == -1 and makeOutputDirs == True:
                 raise Exception("File must have .yml extension")
-            self.rootOutDir=os.path.abspath(self.configFileName.replace(".yml", ""))
+            #self.rootOutDir=os.path.abspath(self.configFileName.replace(".yml", "")) # old: wherever the config file is
+            self.rootOutDir=os.getcwd()+os.path.sep+os.path.split(self.configFileName.replace(".yml", ""))[-1]
         self.filteredMapsDir=self.rootOutDir+os.path.sep+"filteredMaps"
         self.diagnosticsDir=self.rootOutDir+os.path.sep+"diagnostics"
         self.selFnDir=self.rootOutDir+os.path.sep+"selFn"

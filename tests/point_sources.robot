@@ -2,7 +2,6 @@
     
 Recovered source amplitudes are unbiased
     Cross match             inputSourcesCatalog.fits    configs/PSTest_E-D56/PSTest_E-D56_optimalCatalog.fits
-    #Check recovered ratio   I   deltaT_c    tolerance=0.01    SNRKey=SNR    SNRCut=5.0  plotFileName=plots/amplitudeRecovery.png
     Check recovered ratio   deltaT_c   deltaT_c    tolerance=0.01    SNRKey=SNR    SNRCut=5.0  plotFileName=plots/amplitudeRecovery.png
     Status should be        SUCCESS
 
