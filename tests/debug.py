@@ -21,8 +21,8 @@ n=NemoTests.NemoTests()
 
 # quickstart
 n.setup_quickstart()
-n.set_config("../examples/quickstart/quickstart-clusters.yml")
-n.run_nemo()
+#n.set_config("../examples/quickstart/quickstart-clusters.yml")
+#n.run_nemo()
 
 #IPython.embed()
 #sys.exit()

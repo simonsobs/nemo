@@ -20,6 +20,7 @@ To run a single test in a test suite do, e.g.,
 .. code-block::
 
    robot -t "Recover published 2008 survey source fluxes - Fourier space filter" point_sources.robot
+   robot -t "Recover published ACTPol cluster masses - Fourier space filter" clusters.robot
 
 To run all of the tests:
 

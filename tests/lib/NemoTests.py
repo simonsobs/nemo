@@ -49,7 +49,7 @@ class NemoTests(object):
         """
     
         # Needed for inject_sources
-        self.beamFileName="../examples/ACT-DR3-clusters/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
+        self.beamFileName=self.cacheDir+os.path.sep+"profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
         
         thisDir=os.getcwd()
         
@@ -62,8 +62,24 @@ class NemoTests(object):
             os.system("tar -zxvf equD56Maps.tar.gz")
             os.remove("equD56Maps.tar.gz")
             os.chdir(thisDir)
-
-
+        
+        # This one is actually in the distribution as it stands but anyway...
+        if os.path.exists(self.cacheDir+os.path.sep+"E-D56Clusters.fits") == False:
+            os.chdir(self.cacheDir)
+            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/actpol_2016_lensing/E-D56Clusters.fits")
+            os.chdir(thisDir)
+            
+        # Copy files that are in the git/source distribution (saves re-organising)
+        if os.path.exists(self.cacheDir+os.path.sep+"surveyMask.fits.gz") == False:
+            os.system("cp %s %s/" % ("../examples/ACT-DR3-clusters/surveyMask.fits.gz", self.cacheDir))
+        if os.path.exists(self.cacheDir+os.path.sep+"pointSourceMask.fits.gz") == False:
+            os.system("cp %s %s/" % ("../examples/ACT-DR3-clusters/pointSourceMask.fits.gz", self.cacheDir))
+        if os.path.exists(self.cacheDir+os.path.sep+"ACTPol_redshifts.fits") == False:
+            os.system("cp %s %s/" % ("../examples/ACT-DR3-clusters/ACTPol_redshifts.fits", self.cacheDir))
+        if os.path.exists(self.cacheDir+os.path.sep+"profiles_ACT") == False:
+            os.system("cp -R %s %s/" % ("../examples/ACT-DR3-clusters/profiles_ACT", self.cacheDir))
+            
+        
     def setup_south2008(self):
         """Set-up for tests that use southern 2008 ACT data - downloads needed files from LAMBDA if not 
         found.
@@ -116,6 +132,22 @@ class NemoTests(object):
             os.chdir(self.cacheDir)
             os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/ACT_dr5/DR5_cluster-catalog_v1.1.fits")
             os.chdir(thisDir)
+        
+        # Generate mask file for simming
+        header=pyfits.Header().fromtextfile("configs/smallTestSurveyMaskHeader.txt")
+        wcs=astWCS.WCS(header, mode = 'pyfits')
+        d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
+        maps.saveFITS(self.cacheDir+os.path.sep+"smallTestSurveyMask.fits", d, wcs, 
+                      compressed = True, compressionType = 'PLIO_1')
+        
+        # Built-in defaults
+        self.f150Beam="maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"
+        self.f090Beam="maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"
+        self.f150Freq=str(149.6)
+        self.f090Freq=str(97.8)
+        self.modelMask="smallTestSurveyMask.fits"
+        self.f150ModelMap="smallTest_f150.fits"
+        self.f090ModelMap="smallTest_f090.fits"
     
 
     def set_config(self, configFileName):
@@ -139,6 +171,18 @@ class NemoTests(object):
             args=args+['-c', catalogFileName]
         self._run_command(args)
 
+
+    def make_sim_f150(self, catalogFileName = None, noiseLevel = None, seed = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, self.f150ModelMap,
+              '-f', self.f150Freq, '-C', '-N', noiseLevel, '-S', seed]
+        self._run_command(args)
+
+
+    def make_sim_f090(self, catalogFileName = None, noiseLevel = None, seed = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, self.f090ModelMap,
+              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
+        self._run_command(args)
+    
 
     def run_nemo_selfn(self, configFileName = None):
         self._run_command(["nemoSelFn", configFileName])
@@ -266,6 +310,7 @@ class NemoTests(object):
     def _run_command(self, args):
         thisDir=os.getcwd()
         os.chdir(self.runDir)
+        print(args)
         process=subprocess.run(args, universal_newlines=True, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT)
         if process.returncode != 0:
