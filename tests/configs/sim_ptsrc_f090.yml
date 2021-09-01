@@ -23,7 +23,7 @@ longNames: False
 
 # mapFilters is a list of all the different filters to apply
 # (keys in mapFilters with the same name as those in allFilters take priority)
-twoPass: True
+twoPass: False
 mapFilters:
         - {label: "Beam090",
            class: "BeamMatchedFilter",

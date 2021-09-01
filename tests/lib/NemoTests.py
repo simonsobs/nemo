@@ -182,7 +182,25 @@ class NemoTests(object):
         args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, self.f090ModelMap,
               '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
         self._run_command(args)
-    
+
+
+    def make_signal_free_sim_f090(self, noiseLevel = None, seed = None):
+        args=['nemoModel', "pointsources-0", self.modelMask, self.f090Beam, "signal_free_f090.fits",
+              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
+        self._run_command(args)
+        
+
+    def make_signal_only_sim_f150(self, catalogFileName = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, 
+              "signal_model_only_f150.fits", '-f', self.f150Freq]
+        self._run_command(args)
+
+
+    def make_signal_only_sim_f090(self, catalogFileName = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, 
+              "signal_model_only_f090.fits", '-f', self.f090Freq]
+        self._run_command(args)
+        
 
     def run_nemo_selfn(self, configFileName = None):
         self._run_command(["nemoSelFn", configFileName])
@@ -299,7 +317,28 @@ class NemoTests(object):
             self._status="FAILED"
         else:
             self._status="SUCCESS"
-            
+    
+    
+    def subtract_maps(self, map1FileName, map2FileName, outMapFileName):
+        with pyfits.open(map1FileName) as img1:
+            d1=img1[0].data
+            wcs=astWCS.WCS(img1[0].header, mode = 'pyfits')
+        with pyfits.open(map2FileName) as img2:
+            d2=img2[0].data
+        maps.saveFITS(outMapFileName, d1-d2, wcs)
+
+
+    def check_map_sigma(self, map1FileName, expectedSigma, tol = 1.0):
+        with pyfits.open(map1FileName) as img1:
+            d1=img1[0].data
+        print("args:", map1FileName, expectedSigma)
+        diff=abs(np.std(d1.flatten()) - float(expectedSigma))
+        print("diff from expected sigma", diff)
+        if diff > tol:
+            self._status="FAILED"
+        else:
+            self._status="SUCCESS"
+    
             
     def status_should_be(self, expected_status):
         if expected_status != self._status:

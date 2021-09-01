@@ -121,8 +121,11 @@ if __name__ == '__main__':
                 if data is not None:
                     break
             wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-            tab=catalogs.generateRandomSourcesCatalog(data, wcs, numSources, seed = args.seed)
-            tab.write(args.outputFileName.replace(".fits", "_inputCatalog.fits"), overwrite = True)
+            if numSources > 0:
+                tab=catalogs.generateRandomSourcesCatalog(data, wcs, numSources, seed = args.seed)
+                tab.write(args.outputFileName.replace(".fits", "_inputCatalog.fits"), overwrite = True)
+            else:
+                tab=atpy.Table(names = ('RADeg', 'decDeg'))
     else:
         tab=atpy.Table().read(args.catalog)
     
