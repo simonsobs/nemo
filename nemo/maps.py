@@ -1605,7 +1605,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
     numFWHM=5.0
     beam=signals.BeamProfile(beamFileName = beamFileName)
-    maxSizeDeg=beam.rDeg[np.argmin(abs(beam.profile1d-0.5))]*2*numFWHM 
+    maxSizeDeg=(beam.FWHMArcmin*numFWHM)/60
     
     # Map of distance(s) from objects - this will get updated in place (fast)
     degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
@@ -1672,16 +1672,25 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
     else:
-        # Sources - note this is extremely fast, but will be wrong for sources close enough to blend
-        fluxScaleMap=np.zeros(modelMap.shape)
+        # Sources - slower but more accurate way
         for row in catalog:
+            degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
             degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
                                                                         row['RADeg'], row['decDeg'], 
                                                                         maxSizeDeg)
-            fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
-        modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
-        modelMap=modelMap*fluxScaleMap
-    
+            signalMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)*row['deltaT_c']
+            modelMap=modelMap+signalMap
+        # Sources - note this is extremely fast, but goes wrong for closely packed sources
+        # So we should just get rid of it
+        #fluxScaleMap=np.zeros(modelMap.shape)
+        #for row in catalog:
+            #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
+                                                                        #row['RADeg'], row['decDeg'], 
+                                                                        #maxSizeDeg)
+            #fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
+        #modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
+        #modelMap=modelMap*fluxScaleMap
+        
     # Optional: apply pixel window function - generally this should be True
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
     if applyPixelWindow == True:
