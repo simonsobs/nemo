@@ -34,6 +34,9 @@ class NemoTests(object):
         self.cacheDir="testsCache"
         if os.path.exists(self.cacheDir) == False:
             os.makedirs(self.cacheDir)
+        
+        # Why don't we just run all tests from the cache dir?
+        self.runDir=os.path.abspath(self.cacheDir)
             
         self.plotsDir="plots"
         if os.path.exists(self.plotsDir) == False:
@@ -46,7 +49,7 @@ class NemoTests(object):
         """
     
         # Needed for inject_sources
-        self.beamFileName="../examples/ACT-DR3-clusters/profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
+        self.beamFileName=self.cacheDir+os.path.sep+"profiles_ACT/profile_AR1_2009_pixwin_130224.txt"
         
         thisDir=os.getcwd()
         
@@ -59,8 +62,24 @@ class NemoTests(object):
             os.system("tar -zxvf equD56Maps.tar.gz")
             os.remove("equD56Maps.tar.gz")
             os.chdir(thisDir)
-
-
+        
+        # This one is actually in the distribution as it stands but anyway...
+        if os.path.exists(self.cacheDir+os.path.sep+"E-D56Clusters.fits") == False:
+            os.chdir(self.cacheDir)
+            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/actpol_2016_lensing/E-D56Clusters.fits")
+            os.chdir(thisDir)
+            
+        # Copy files that are in the git/source distribution (saves re-organising)
+        if os.path.exists(self.cacheDir+os.path.sep+"surveyMask.fits.gz") == False:
+            os.system("cp %s %s/" % ("../examples/ACT-DR3-clusters/surveyMask.fits.gz", self.cacheDir))
+        if os.path.exists(self.cacheDir+os.path.sep+"pointSourceMask.fits.gz") == False:
+            os.system("cp %s %s/" % ("../examples/ACT-DR3-clusters/pointSourceMask.fits.gz", self.cacheDir))
+        if os.path.exists(self.cacheDir+os.path.sep+"ACTPol_redshifts.fits") == False:
+            os.system("cp %s %s/" % ("../examples/ACT-DR3-clusters/ACTPol_redshifts.fits", self.cacheDir))
+        if os.path.exists(self.cacheDir+os.path.sep+"profiles_ACT") == False:
+            os.system("cp -R %s %s/" % ("../examples/ACT-DR3-clusters/profiles_ACT", self.cacheDir))
+            
+        
     def setup_south2008(self):
         """Set-up for tests that use southern 2008 ACT data - downloads needed files from LAMBDA if not 
         found.
@@ -89,13 +108,55 @@ class NemoTests(object):
             tab.rename_column("col6", "fluxJy")
             tab['fluxJy']=tab['fluxJy']/1000.0
             tab.write(tabFileName)
+
+
+    def setup_quickstart(self):
+        """Set-up for tests that use the files from the quickstart tutorial - downloads them if not found.
         
+        """
+    
+        # Maps and beams
+        thisDir=os.getcwd()        
+        self.inMapFileName=self.cacheDir+os.path.sep+"maps"+os.path.sep+"f150_1_10_8_map.fits"
+        if os.path.exists(self.inMapFileName) == False:
+            print(">>> Downloading quickstart files ...")
+            os.chdir(self.cacheDir)
+            os.system("wget https://astro.ukzn.ac.za/~mjh/nemo-quickstart-maps.tar.gz")
+            os.system("tar -zxvf nemo-quickstart-maps.tar.gz")
+            os.remove("nemo-quickstart-maps.tar.gz")
+            os.chdir(thisDir)
+        
+        # DR5 release catalog for comparing signals
+        comparisonCatalog=self.cacheDir+os.path.sep+"DR5_cluster-catalog_v1.1.fits"
+        if os.path.exists(comparisonCatalog) == False:
+            os.chdir(self.cacheDir)
+            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/ACT_dr5/DR5_cluster-catalog_v1.1.fits")
+            os.chdir(thisDir)
+        
+        # Generate mask file for simming
+        header=pyfits.Header().fromtextfile("configs/smallTestSurveyMaskHeader.txt")
+        wcs=astWCS.WCS(header, mode = 'pyfits')
+        d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
+        maps.saveFITS(self.cacheDir+os.path.sep+"smallTestSurveyMask.fits", d, wcs, 
+                      compressed = True, compressionType = 'PLIO_1')
+        
+        # Built-in defaults
+        self.f150Beam="maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"
+        self.f090Beam="maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"
+        self.f150Freq=str(149.6)
+        self.f090Freq=str(97.8)
+        self.modelMask="smallTestSurveyMask.fits"
+        self.f150ModelMap="smallTest_f150.fits"
+        self.f090ModelMap="smallTest_f090.fits"
+    
 
     def set_config(self, configFileName):
         """Set the config file to be used by all nemo scripts executed by tests.
+        Path given here can be relative to the current working directory (it gets 
+        turned into an absolute path if so).
         
         """
-        self.configFileName=configFileName
+        self.configFileName=os.path.abspath(configFileName)
         self.selFnDir=configFileName.replace(".yml", "")+os.path.sep+"selFn"
         self.mocksDir=configFileName.replace(".yml", "")+os.path.sep+"mocks"
         
@@ -111,6 +172,36 @@ class NemoTests(object):
         self._run_command(args)
 
 
+    def make_sim_f150(self, catalogFileName = None, noiseLevel = None, seed = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, self.f150ModelMap,
+              '-f', self.f150Freq, '-C', '-N', noiseLevel, '-S', seed]
+        self._run_command(args)
+
+
+    def make_sim_f090(self, catalogFileName = None, noiseLevel = None, seed = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, self.f090ModelMap,
+              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
+        self._run_command(args)
+
+
+    def make_signal_free_sim_f090(self, noiseLevel = None, seed = None):
+        args=['nemoModel', "pointsources-0", self.modelMask, self.f090Beam, "signal_free_f090.fits",
+              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
+        self._run_command(args)
+        
+
+    def make_signal_only_sim_f150(self, catalogFileName = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, 
+              "signal_model_only_f150.fits", '-f', self.f150Freq]
+        self._run_command(args)
+
+
+    def make_signal_only_sim_f090(self, catalogFileName = None):
+        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, 
+              "signal_model_only_f090.fits", '-f', self.f090Freq]
+        self._run_command(args)
+        
+
     def run_nemo_selfn(self, configFileName = None):
         self._run_command(["nemoSelFn", configFileName])
 
@@ -118,53 +209,6 @@ class NemoTests(object):
     def run_nemo_mock(self, selFnDir = None, mocksDir = None):
         self._run_command(["nemoMock", selFnDir, mocksDir])
         
-
-    #def inject_sources_using_pixell(self, outMapFileName = "sourceInjectedMap.fits", 
-                       #catalogFileName = "inputSourcesCatalog.fits", numSources = 1000):
-        #"""Injects a bunch of point sources into a map, using a vaguely plausible amplitude distribution
-        #based on the sources found in the deep56 map.
-        
-        #"""
-        
-        #nsigma=5.0
-        #smul=1.0
-
-        #img=pyfits.open(self.inMapFileName)
-        #mapData=img[0].data
-        #if mapData.ndim > 2:
-            #mapData=mapData[0]
-        #wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-        #imap=enmap.read_map(self.inMapFileName)
-
-        ## Random fluxes (in delta T uK)
-        ## This is chosen to vaguely match that seen in deep56 f090
-        #I=np.random.lognormal(np.log(600), 1.1, numSources)
-        
-        ## Random positions
-        #ys, xs=np.where(mapData != 0)
-        #ys=ys+np.random.uniform(0, 1, len(ys))
-        #xs=xs+np.random.uniform(0, 1, len(xs))
-        #indices=np.random.randint(0, len(ys), numSources)
-        #coords=wcs.pix2wcs(xs[indices], ys[indices])
-        #coords=np.array(coords)
-        
-        #tab=atpy.Table()
-        #tab.add_column(atpy.Column(coords[:, 0], "ra"))
-        #tab.add_column(atpy.Column(coords[:, 1], "dec"))
-        #tab.add_column(atpy.Column(I, "I"))
-        
-        #if os.path.exists(catalogFileName) == True:
-            #os.remove(catalogFileName)
-        #tab.write(catalogFileName)
-        #srcs=pointsrcs.tab2recarray(tab)
-
-        #beam=pointsrcs.read_beam(self.beamFileName)
-        #beam[0]*=utils.degree
-        #srcparam=pointsrcs.src2param(srcs)
-
-        #omap=pointsrcs.sim_srcs(imap.shape, imap.wcs, srcparam, beam, imap, smul=smul, nsigma=nsigma, pixwin=True)
-        #enmap.write_map(outMapFileName, omap)
-
 
     def inject_sources_using_nemo(self, outMapFileName = "sourceInjectedMap.fits", 
                        catalogFileName = "inputSourcesCatalog.fits", numSources = 1000):
@@ -273,7 +317,28 @@ class NemoTests(object):
             self._status="FAILED"
         else:
             self._status="SUCCESS"
-            
+    
+    
+    def subtract_maps(self, map1FileName, map2FileName, outMapFileName):
+        with pyfits.open(map1FileName) as img1:
+            d1=img1[0].data
+            wcs=astWCS.WCS(img1[0].header, mode = 'pyfits')
+        with pyfits.open(map2FileName) as img2:
+            d2=img2[0].data
+        maps.saveFITS(outMapFileName, d1-d2, wcs)
+
+
+    def check_map_sigma(self, map1FileName, expectedSigma, tol = 1.0):
+        with pyfits.open(map1FileName) as img1:
+            d1=img1[0].data
+        print("args:", map1FileName, expectedSigma)
+        diff=abs(np.std(d1.flatten()) - float(expectedSigma))
+        print("diff from expected sigma", diff)
+        if diff > tol:
+            self._status="FAILED"
+        else:
+            self._status="SUCCESS"
+    
             
     def status_should_be(self, expected_status):
         if expected_status != self._status:
@@ -282,9 +347,12 @@ class NemoTests(object):
 
 
     def _run_command(self, args):
+        thisDir=os.getcwd()
+        os.chdir(self.runDir)
+        print(args)
         process=subprocess.run(args, universal_newlines=True, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT)
         if process.returncode != 0:
              print(process.stdout)
              raise AssertionError("Return code of '%s' is non-zero." % (str(args)))
-
+        os.chdir(thisDir)

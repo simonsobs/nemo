@@ -1,0 +1,35 @@
+# Nemo config file
+# YAML format 
+# - use null to return None in Python
+# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+
+# This should be a list of maps at different frequencies
+# Valid units are only uK (delta T with respect to CMB) - Jy/sr has yet to be added
+unfilteredMaps:
+    - {mapFileName: "smallTest_f090.fits",
+       weightsFileName: null,
+       obsFreqGHz: 97.8, units: 'uK',
+       beamFileName: "maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}
+
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 4.0
+minObjPix: 1
+findCenterOfMass: True
+useInterpolator: True
+rejectBorder: 0
+objIdent: 'MOCK-S'
+longNames: False
+
+# mapFilters is a list of all the different filters to apply
+# (keys in mapFilters with the same name as those in allFilters take priority)
+twoPass: False
+mapFilters:
+        - {label: "Beam090",
+           class: "BeamMatchedFilter",
+           params: {noiseParams: {method: "dataMap",
+                                  noiseGridArcmin: 40.0,
+                                  numNoiseBins: 8},
+                    saveFilteredMaps: True,
+                    outputUnits: 'uK',
+                    edgeTrimArcmin: 0.0}}
