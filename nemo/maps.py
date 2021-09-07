@@ -448,6 +448,10 @@ def makeTileDir(parDict, writeToDisk = True):
                         count=count+1
                         if count > 200:
                             raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
+                            #print("Triggered stupid bug in makeTileDir... this should be fixed properly")
+                            #import IPython
+                            #IPython.embed()
+                            #sys.exit()
                     
                     # Storing clip coords etc. so can stitch together later
                     # areaMaskSection here is used to define the region that would be kept (takes out overlap)
@@ -1674,6 +1678,11 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     else:
         # Sources - slower but more accurate way
         for row in catalog:
+            if validAreaSection is not None:
+                x0, x1, y0, y1=validAreaSection
+                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
+                    continue
             degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
             degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
                                                                         row['RADeg'], row['decDeg'], 
