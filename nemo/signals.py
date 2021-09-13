@@ -12,9 +12,6 @@ import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
 import astropy.constants as constants
 #from astropy.cosmology import FlatLambdaCDM
-on_rtd=os.environ.get('READTHEDOCS', None)
-if on_rtd is None:
-    import pyccl as ccl
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
@@ -60,13 +57,21 @@ H0=70
 sigma8=0.8
 ns=0.95
 transferFunction="boltzmann_camb"
-fiducialCosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0, Omega_b=Ob0, h=0.01*H0, sigma8=sigma8, n_s=ns,
-                                 transfer_function=transferFunction)
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
+    fiducialCosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0, Omega_b=Ob0, h=0.01*H0, sigma8=sigma8, n_s=ns,
+                                    transfer_function=transferFunction)
 
-# For CCL-based mass conversions
-M200mDef=ccl.halos.MassDef(200, "matter", c_m_relation = 'Bhattacharya13')
-M200cDef=ccl.halos.MassDef(200, "critical", c_m_relation = 'Bhattacharya13')
-M500cDef=ccl.halos.MassDef(500, "critical")
+    # For CCL-based mass conversions
+    M200mDef=ccl.halos.MassDef(200, "matter", c_m_relation = 'Bhattacharya13')
+    M200cDef=ccl.halos.MassDef(200, "critical", c_m_relation = 'Bhattacharya13')
+    M500cDef=ccl.halos.MassDef(500, "critical")
+else:
+    fiducialCosmoModel=None
+    M200mDef=None
+    M200cDef=None
+    M500cDef=None
 
 #------------------------------------------------------------------------------------------------------------
 class BeamProfile(object):
