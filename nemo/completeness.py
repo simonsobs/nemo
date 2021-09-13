@@ -1245,7 +1245,7 @@ def makeFullSurveyMassLimitMapPlot(z, config):
     if os.path.exists(outFileName) == True:
         with pyfits.open(outFileName) as img:
             for hdu in img:
-                if hdu.shape is not ():
+                if hdu.shape != ():
                     reproj=np.nan_to_num(hdu.data)
                     reproj=np.ma.masked_where(reproj <1e-6, reproj)
                     wcs=astWCS.WCS(hdu.header, mode = 'pyfits')

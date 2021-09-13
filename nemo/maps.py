@@ -668,7 +668,7 @@ def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale
         #print("... %d/%d ..." % (count, len(inFiles)))
         with pyfits.open(f) as img:
             for hdu in img:
-                if hdu.shape is not ():
+                if hdu.shape != ():
                     d=hdu.data
                     inWCS=astWCS.WCS(hdu.header, mode = 'pyfits')
                     break
