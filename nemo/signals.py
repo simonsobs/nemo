@@ -4,6 +4,8 @@ This module contains routines for modeling cluster and source signals.
 
 """
 
+import os
+import sys
 from pixell import enmap
 import astropy
 import astropy.wcs as enwcs
@@ -28,11 +30,9 @@ from . import gnfw
 from . import plotSettings
 import numpy as np
 import numpy.fft as fft
-import os
 import math
 import pylab as plt
 import pickle
-import sys
 import operator
 import pyximport; pyximport.install()
 import nemoCython
