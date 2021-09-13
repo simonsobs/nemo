@@ -10,7 +10,9 @@ import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
 import astropy.constants as constants
 #from astropy.cosmology import FlatLambdaCDM
-import pyccl as ccl
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate

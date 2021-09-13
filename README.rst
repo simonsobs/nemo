@@ -1,3 +1,5 @@
+.. image:: https://readthedocs.org/projects/nemo-sz/badge/?version=latest
+
 **Nemo** is a millimeter-wave Sunyaev-Zel'dovich galaxy cluster and
 compact source detection package, originally developed for the
 `Atacama Cosmology Telescope <https://act.princeton.edu/>`_ project,
