@@ -75,24 +75,27 @@ else:
 
 #------------------------------------------------------------------------------------------------------------
 class BeamProfile(object):
+    """Describes the beam profile (i.e., the point spread function for some instrument in real space). This
+    can be either read from a white-space delimited text file (with the angle in degrees in the first column
+    and the response in the 2nd column), or can be set directly using arrays.
+    
+    Args:
+        beamFileName(:obj:`str`, optional): Path to text file containing a beam profile in the ACT format.
+        profile1d (:obj:`np.ndarray`, optional): One dimensional beam profile, with index 0 at the centre.
+        rDeg (:obj:`np.ndarray`, optional): Corresponding angular distance in degrees from the centre for
+            the beam profile.
+        
+    Attributes:
+        profile1d (:obj:`np.ndarray`): One dimensional beam profile, with index 0 at the centre.
+        rDeg (:obj:`np.ndarray`): Corresponding angular distance in degrees from the centre for the 
+            beam profile.
+        tck (:obj:`tuple`): Spline knots for interpolating the beam onto different angular binning 
+            (in degrees), for use with :scipy.interpolate.splev.
+        FWHMArcmin (float): Estimate of the beam FWHM in arcmin.
+
+    """
     
     def __init__(self, beamFileName = None, profile1d = None, rDeg = None):
-        """Create a BeamProfile object - either by reading from a file, or by passing in arrays that 
-        define it.
-        
-        Args:
-            beamFileName(str, optional): Path to text file containing a beam profile in the ACT format.
-            profile1d
-            
-        Attributes:
-            profile1d (:obj:`np.ndarray`): One dimensional beam profile, with index 0 at the centre.
-            rDeg (:obj: `np.ndarray`): Corresponding angular distance in degrees from the centre for the 
-                beam profile.
-            tck (:obj: tuple): Spline knots for interpolating the beam onto different angular binning 
-                (in degrees), for use with interpolate.splev.
-            FWHMArcmin (float): Estimate of the beam FWHM in arcmin.
-
-        """
         
         if beamFileName is not None:
             beamData=np.loadtxt(beamFileName).transpose()
@@ -110,17 +113,24 @@ class BeamProfile(object):
 
 #------------------------------------------------------------------------------------------------------------
 class QFit(object):
+
+    """A class for managing the filter mismatch function, referred to as *Q* in the ACT papers from
+    `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_ onwards.
     
+    Args:
+        
+        QFitFileName (:obj:`str`): Path to a FITS-table format file as made by :meth:`fitQ`.
+        tileNames (:obj:`list`): If given, the Q-function will be defined only for these tiles (their names
+            must appear in the file specified by `QFitFileName`).
+    
+    Attributes:
+        fitDict (:obj:`dict`): Dictionary of interpolation objects, indexed by `tileName`. You should not
+            need to access this directly - use :meth:`getQ` instead.
+    
+    """
+        
     def __init__(self, QFitFileName = None, tileNames = None):
-        """Create a QFit object, for managing the filter mismatch function (referred to as Q in the ACT
-        papers from Hasselfield et al. (2013) onwards.
-        
-        Args:
-        
-        Attributes:
-            fitDict (dict): Dictionary of interpolation objects, indexed by tileName.
-        
-        """
+
         
         self._zGrid=np.array([0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0])
         self._theta500ArcminGrid=np.logspace(np.log10(0.1), np.log10(55), 10)
@@ -246,16 +256,24 @@ class QFit(object):
         
         
     def getQ(self, theta500Arcmin, z = None, tileName = None):
-        """Return Q using interpolation.
+        """Return the value of Q (the filter mismatch function) using interpolation.
         
-        If Q is not a function of z, z can be any float (it won't be used).
-        
-        theta500Arcmin may be an array, z must be a float
-        
-        returns 2d array (rows correspond to z, columns correspond to theta500Arcmin)
-        
-        NOTE: Checks bounds - if z or theta500Arcmin outside of range, fills with 0
-        
+        Args:
+            theta500Arcmin (:obj:`float` or :obj:`np.ndarray`): The angular scale at which *Q* will
+                be calculated. This can be an array or a single value.
+            z (:obj:`float`, optional): Redshift, only used if *Q* is a function of
+                redshift, otherwise it is ignored. This must be a single value only, 
+                i.e., not an array.
+            tileName (:obj:`str`, optional): The name of the tile to use for the *Q* function.
+            
+        Returns:
+            The value of *Q* (an array or a single float, depending on the input).
+            
+        Note:
+            In the case where *Q* is a function of redshift, values outside of the range for which
+            *Q* has been calculated will be filled with zeros (i.e., there is no extrapolation in
+            redshift).
+                    
         """
         
         if z is not None:
@@ -695,16 +713,17 @@ def loadFRelWeights(fRelWeightsFileName):
 
 #------------------------------------------------------------------------------------------------------------
 def fitQ(config):
-    """Calculates the filter mismatch function Q on a grid of scale sizes (given in terms of theta500 in 
-    arcmin), for each tile in the map. The results are initially cached (with a separate .fits table for each
-    tile) under the selFn directory, before being combined into a single file at the end of a nemo run.
-    Use GNFWParams (in config.parDict) if you want to specify a different cluster profile shape.
+    """Calculates the filter mismatch function *Q* on a grid of scale sizes for each tile in the map. The
+    results are initially cached (with a separate .fits table for each tile) under the `selFn` directory,
+    before being combined into a single file at the end of a :ref:`nemoCommand` run. 
+    
+    The `GNFWParams` key in the `config` dictionary can be used to specify a different cluster profile shape.
     
     Args:
         config (:obj:`startUp.NemoConfig`): A NemoConfig object.
     
     Note:
-        See :obj:`loadQ` for how to load in the output of this routine.
+        See :class:`QFit` for how to read in and use the output.
         
     """
     
