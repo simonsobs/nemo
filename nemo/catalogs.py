@@ -125,9 +125,9 @@ def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 
         True if distArcmin < model offset (+ optional addRMpc in arcmin at z), False if not.
 
     Note:
-        The default values for the fit parameters are from a run on the f090, f150 ACT-only co-added maps
-        to S18 (as used in the AdvACT S18 cluster catalog paper), and describe a function that recovers
-        99.7% of the inserted sources in the source injection simulations.
+        The default values for the fit parameters are from a run on the f090, f150 ACT DR5 co-added maps
+        (as used in the `ACT DR5 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_),
+        and describe a function that recovers 99.7% of the inserted sources in the source injection simulations.
         
     """
     
@@ -271,7 +271,7 @@ def makeName(RADeg, decDeg, prefix = 'ACT-CL'):
 
 #------------------------------------------------------------------------------------------------------------
 def makeLongName(RADeg, decDeg, prefix = "ACT-CL"):
-    """Makes a long format object name string from the given object coordinates, following IAU convention.
+    """Makes a long format object name string from the given object coordinates, following the IAU convention.
     
     Args:
         RADeg (:obj:`float`): Right ascension of the object in J2000 decimal degrees.
@@ -436,14 +436,14 @@ def selectFromCatalog(catalog, constraintsList):
 #------------------------------------------------------------------------------------------------------------
 def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
     """Converts a catalog in the form of a list of dictionaries (where each dictionary holds the object
-    properties) into an astropy Table.
+    properties) into an :obj:`astropy.table.Table` object.
     
     Args:
         catalogList (:obj:`list`): Catalog in the form of a list of dictionaries.
         keysToWrite (:obj:`list`, optional): Keys to convert into columns in the output table.
     
     Returns:
-        An astropy Table object.
+        An :obj:`astropy.table.Table` object, where each row corresponds to an object in the catalog.
     
     """
     
@@ -463,9 +463,13 @@ def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
 
 #------------------------------------------------------------------------------------------------------------
 def tabToCatalogList(tab):
-    """Converts an astropy Table into a list of dictionaries.
-
-    Returns catalog list
+    """Converts an :obj:`astropy.table.Table` object into a list of dictionaries.
+    
+    Args:
+        tab (:obj:`astropy.table.Table`): Catalog in the form of an Astropy table object.
+    
+    Returns:
+        A list of dictionaries, where each dictionary represents an object in the catalog.
     
     """
     
@@ -480,14 +484,20 @@ def tabToCatalogList(tab):
     
 #------------------------------------------------------------------------------------------------------------
 def writeCatalog(catalog, outFileName, constraintsList = []):
-    """Writes the catalog (astropy Table) to disk. The output format depends upon the extension given by 
-    outFileName - any format supported by the astropy Table object can be used.
-    
-    NOTE: For .csv format, tab is used as the delimiter. So, to read these using astropy you will need to 
-    use something like: tab=atpy.Table().read("test.csv", delimiter = '\t').
-    
-    constraintsList works as in the selectFromCatalog function.
-    
+    """Writes the catalog to disk, including meta data on the Nemo version used to create the catalog in the
+    header.
+     
+    Args:
+        catalog (:obj:`astropy.table.Table`): The object catalog.
+        outFileName (:obj:`str`): The output filename. The format depends upon the extension given. Note
+            that CSV format (resulting from using the ``.csv`` extension) is written tab-delimited. 
+        constraintsList (:obj:`list`, optional): A list of constraints, where each item is a string of the
+            form "key < value", "key > value", etc.. Note that the spaces between the key, operator 
+            (e.g. '<'), and value are essential.
+        
+    Returns:
+        None
+        
     """
 
     # Deal with any blank catalogs (e.g., in blank tiles - not that we would want such things...)
@@ -620,7 +630,7 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources, seed = None):
             after this routine exits.
     
     Returns:
-        An astropy Table object containing the catalog.
+        An :obj:`astropy.table.Table` object containing the catalog.
         
     """
     
@@ -674,7 +684,7 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
             expected offsets in recovered position in :meth:`nemo.maps.sourceInjectionTest`).
 
     Returns:
-        An astropy Table object containing the catalog.
+        An :obj:`astropy.table.Table` object containing the catalog.
         
     """
     
@@ -738,7 +748,7 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
 
 #------------------------------------------------------------------------------------------------------------
 def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
-    """Cross matches matchCatalog onto refCatalog for objects found within some angular radius 
+    """Cross matches `matchCatalog` onto `refCatalog` for objects found within some angular radius 
     (specified in arcmin).
     
     Args:
@@ -771,8 +781,8 @@ def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
 
 #------------------------------------------------------------------------------------------------------------
 def removeCrossMatched(refCatalog, matchCatalog, radiusArcmin = 2.5):
-    """Cross matches matchCatalog onto refCatalog for objects found within some angular radius 
-    (specified in arcmin), and returns refCatalog with the matching entries removed.
+    """Cross matches `matchCatalog` onto `refCatalog` for objects found within some angular radius 
+    (specified in arcmin), and returns `refCatalog` with the matching entries removed.
     
     Args:
         refCatalog (:obj:`astropy.table.Table`): The reference catalog.
@@ -780,7 +790,7 @@ def removeCrossMatched(refCatalog, matchCatalog, radiusArcmin = 2.5):
         radiusArcmin (float, optional): Cross-match radius in arcmin.
     
     Returns:
-        Cross-matched reference catalog (:obj:`astropy.table.Table`) with matches to matchCatalog removed.
+        Cross-matched reference catalog (:obj:`astropy.table.Table`) with matches to `matchCatalog` removed.
         
     """
         
@@ -799,14 +809,14 @@ def removeCrossMatched(refCatalog, matchCatalog, radiusArcmin = 2.5):
     
 #------------------------------------------------------------------------------------------------------------
 def getTableRADecKeys(tab):
-    """Returns the column names in the table in which RA, dec coords are stored, after trying a couple of 
-    variations.
+    """Returns the column names in the table in which RA, dec coords are stored, after trying a few possible
+    name variations.
     
     Args:
         tab (:obj:`astropy.table.Table`): The table to search.
         
     Returns:
-        Name of RA column, name of dec. column
+        Name of the RA column, name of the dec. column
     
     """
     RAKeysToTry=['ra', 'RA', 'RADeg']
@@ -827,8 +837,8 @@ def getTableRADecKeys(tab):
 
 #------------------------------------------------------------------------------------------------------------
 def getCatalogWithinImage(tab, shape, wcs, mask = None):
-    """Returns the subset of the catalog with coordinates within the image defined by the given shape, wcs.
-    Optionally, a mask may also be applied.
+    """Returns the subset of the catalog with coordinates within the image defined by the given `shape`, 
+    `wcs`. Optionally, a `mask` may also be applied.
     
     Args:
         tab (:obj:`astropy.table.Table`): Catalog, as an astropy Table object. Must have columns called 

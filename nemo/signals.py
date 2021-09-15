@@ -77,7 +77,7 @@ else:
 class BeamProfile(object):
     """Describes the beam profile (i.e., the point spread function for some instrument in real space). This
     can be either read from a white-space delimited text file (with the angle in degrees in the first column
-    and the response in the 2nd column), or can be set directly using arrays.
+    and the response in the second column), or can be set directly using arrays.
     
     Args:
         beamFileName(:obj:`str`, optional): Path to text file containing a beam profile in the ACT format.
@@ -90,7 +90,7 @@ class BeamProfile(object):
         rDeg (:obj:`np.ndarray`): Corresponding angular distance in degrees from the centre for the 
             beam profile.
         tck (:obj:`tuple`): Spline knots for interpolating the beam onto different angular binning 
-            (in degrees), for use with :scipy.interpolate.splev.
+            (in degrees), for use with :meth:`scipy.interpolate.splev`.
         FWHMArcmin (float): Estimate of the beam FWHM in arcmin.
 
     """
@@ -329,7 +329,7 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
     Args:
         z (float): Redshift.
         MDelta (float): Halo mass in units of solar masses, using the definition set by `delta` and `wrt`.
-        cosmoModel (:obj:`astropy.cosmology.core.FlatLambdaCDM`): Cosmology object.
+        cosmoModel (:obj:`pyccl.Cosmology`): Cosmology object.
         delta (float, optional): Overdensity (e.g., typically 500 or 200).
         wrt (str, optional): Use 'critical' or 'mean' to set the definition of density with respect to the
             critical density or mean density at the given redshift.
@@ -361,8 +361,8 @@ def calcR500Mpc(z, M500c, cosmoModel):
 
     Args:
         z (float): Redshift.
-        M500c (float): Halo mass in units of solar masses, using the definition set by `delta` and `wrt`.
-        cosmoModel (:obj:`astropy.cosmology.core.FlatLambdaCDM`): Cosmology object.
+        M500c (float): Mass within R500c (i.e., with respect to critical density) in units of solar masses.
+        cosmoModel (`:obj:`pyccl.Cosmology`): Cosmology object.
     
     Returns:
         R500c (in Mpc)
@@ -375,7 +375,16 @@ def calcR500Mpc(z, M500c, cosmoModel):
 
 #------------------------------------------------------------------------------------------------------------
 def calcTheta500Arcmin(z, M500, cosmoModel):
-    """Given z, M500 (in MSun), returns angular size equivalent to R500, with respect to critical density.
+    """Given `z`, `M500` (in MSun), returns the angular size equivalent to R:sub:`500c`, with respect to the
+    critical density.
+    
+    Args:
+        z (float): Redshift.
+        M500 (float): Mass within R500c (i.e., with respect to critical density) in units of solar masses.
+        cosmoModel (`:obj:`pyccl.Cosmology`): Cosmology object.
+    
+    Returns:
+        theta500c (in arcmin)
     
     """
     
@@ -723,7 +732,7 @@ def fitQ(config):
         config (:obj:`startUp.NemoConfig`): A NemoConfig object.
     
     Note:
-        See :class:`QFit` for how to read in and use the output.
+        See :class:`QFit` for how to read in and use the output of this function.
         
     """
     
@@ -1096,7 +1105,7 @@ def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 
     """Predict y0~ given logM500 (in MSun) and redshift. Default scaling relation parameters are A10 (as in
     H13).
     
-    Use cosmoModel (astropy.cosmology object) to change/specify cosmological parameters.
+    Use cosmoModel (:obj:`pyccl.Cosmology`) to change/specify cosmological parameters.
     
     fRelWeightsDict is used to account for the relativistic correction when y0~ has been constructed
     from multi-frequency maps. Weights should sum to 1.0; keys are observed frequency in GHz.
