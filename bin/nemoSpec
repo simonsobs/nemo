@@ -7,7 +7,6 @@ nemoSpec: given a config file and a catalog of positions, extract average flux i
 """
 
 import sys
-#print("Running under python: %s" % (sys.version))
 import os
 import datetime
 from nemo import *
@@ -23,8 +22,6 @@ import pylab
 import pickle
 import types
 import yaml
-#import IPython
-pylab.matplotlib.interactive(False)
 plotSettings.update_rcParams()
 
 #------------------------------------------------------------------------------------------------------------

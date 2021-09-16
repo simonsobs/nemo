@@ -133,21 +133,25 @@ class NemoTests(object):
             os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/ACT_dr5/DR5_cluster-catalog_v1.1.fits")
             os.chdir(thisDir)
         
-        # Generate mask file for simming
-        header=pyfits.Header().fromtextfile("configs/smallTestSurveyMaskHeader.txt")
-        wcs=astWCS.WCS(header, mode = 'pyfits')
-        d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
-        maps.saveFITS(self.cacheDir+os.path.sep+"smallTestSurveyMask.fits", d, wcs, 
-                      compressed = True, compressionType = 'PLIO_1')
+        # Generate mask file(s) for simming
+        headerFileNames=["configs/smallTestSurveyMaskHeader.txt", "configs/MPITestSurveyMaskHeader.txt"]
+        maskFileNames=["smallTestSurveyMask.fits", "MPITestSurveyMask.fits"]
+        for headerFileName, maskFileName in zip(headerFileNames, maskFileNames):
+            header=pyfits.Header().fromtextfile(headerFileName)
+            wcs=astWCS.WCS(header, mode = 'pyfits')
+            d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
+            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs,
+                          compressed = True, compressionType = 'PLIO_1')
         
-        # Built-in defaults
-        self.f150Beam="maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"
-        self.f090Beam="maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"
-        self.f150Freq=str(149.6)
-        self.f090Freq=str(97.8)
-        self.modelMask="smallTestSurveyMask.fits"
-        self.f150ModelMap="smallTest_f150.fits"
-        self.f090ModelMap="smallTest_f090.fits"
+        # Map/frequency-related defaults
+        self.bandsDict={'f150': {'beam': "maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt",
+                                 'freq': str(149.6)},
+                        'f090': {'beam': "maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt",
+                                 'freq': str(97.8)}
+                       }
+        self.sizesDict={'small': {'mask': "smallTestSurveyMask.fits"},
+                        'large': {'mask': "MPITestSurveyMask.fits"}
+                       }
     
 
     def set_config(self, configFileName):
@@ -165,6 +169,10 @@ class NemoTests(object):
         self._run_command(["nemo", self.configFileName])
 
 
+    def run_parallel_nemo(self):
+        self._run_command(["mpiexec", "nemo", self.configFileName, "-M"])
+
+
     def run_nemo_mass(self, catalogFileName = None):
         args=['nemoMass', self.configFileName]
         if catalogFileName != None:
@@ -172,35 +180,32 @@ class NemoTests(object):
         self._run_command(args)
 
 
-    def make_sim_f150(self, catalogFileName = None, noiseLevel = None, seed = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, self.f150ModelMap,
-              '-f', self.f150Freq, '-C', '-N', noiseLevel, '-S', seed]
+    def make_sim(self, catalogFileName = None, noiseLevel = None, seed = None, band = None, size = None):
+        args=['nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "sim_%s.fits" % (band), '-f', self.bandsDict[band]['freq'], 
+              '-C', '-N', noiseLevel, '-S', seed]
         self._run_command(args)
 
 
-    def make_sim_f090(self, catalogFileName = None, noiseLevel = None, seed = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, self.f090ModelMap,
-              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
+    def make_parallel_sim(self, catalogFileName = None, noiseLevel = None, seed = None, band = None, size = None):
+        args=['mpiexec', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "sim_%s.fits" % (band), '-f', self.bandsDict[band]['freq'], 
+              '-C', '-N', noiseLevel, '-S', seed, '-M']
         self._run_command(args)
 
 
-    def make_signal_free_sim_f090(self, noiseLevel = None, seed = None):
-        args=['nemoModel', "pointsources-0", self.modelMask, self.f090Beam, "signal_free_f090.fits",
-              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
-        self._run_command(args)
-        
-
-    def make_signal_only_sim_f150(self, catalogFileName = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, 
-              "signal_model_only_f150.fits", '-f', self.f150Freq]
-        self._run_command(args)
-
-
-    def make_signal_only_sim_f090(self, catalogFileName = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, 
-              "signal_model_only_f090.fits", '-f', self.f090Freq]
+    def make_signal_free_sim(self, noiseLevel = None, seed = None, band = None, size = None):
+        args=['nemoModel', "pointsources-0", self.sizesDict[size]['mask'], self.bandsDict[band]['beam'],
+              "signal_free_%s.fits" % (band), '-f', self.bandsDict[band]['freq'],
+              '-C', '-N', noiseLevel, '-S', seed]
         self._run_command(args)
         
+
+    def make_signal_only_sim(self, catalogFileName = None, band = None, size = None):
+        args=['nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "signal_model_only_%s.fits" % (band), '-f', self.bandsDict[band]['freq']]
+        self._run_command(args)
+    
 
     def run_nemo_selfn(self, configFileName = None):
         self._run_command(["nemoSelFn", configFileName])
@@ -230,7 +235,7 @@ class NemoTests(object):
         astImages.saveFITS(outMapFileName, modelMap+mapData, wcs)
         
         
-    def cross_match(self, inCatalogFileName, outCatalogFileName, radiusArcmin = 2.5):
+    def cross_match(self, inCatalogFileName, outCatalogFileName, radiusArcmin = 1.0):
         """Cross matches input and output source catalogs.
         
         """

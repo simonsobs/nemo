@@ -19,7 +19,6 @@ from astLib import *
 import numpy as np
 import time
 import argparse
-#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def makeParser():

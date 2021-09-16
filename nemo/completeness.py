@@ -32,8 +32,6 @@ import time
 import shutil
 import yaml
 from decimal import Decimal
-#import IPython
-plt.matplotlib.interactive(False)
 
 # If want to catch warnings as errors...
 #import warnings
@@ -1063,7 +1061,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
         
         #t1=time.time()
         
-        # For sanity checking figure-of-merit
+        # For checking figure-of-merit
         #predMz=compMz*mockSurvey.clusterCount
         #predMz=predMz/predMz.sum()
         #astImages.saveFITS("predMz.fits", predMz.transpose(), None)        

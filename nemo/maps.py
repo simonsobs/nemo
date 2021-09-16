@@ -27,7 +27,6 @@ import shutil
 import copy
 import yaml
 import pickle
-#import IPython
 from pixell import enmap
 import nemo
 from . import catalogs
@@ -130,10 +129,10 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             deltaY=deltaY+0.01
         
         numRows=int((decMax-decMin)/targetTileHeight)
-
+        if numRows == 0:
+            raise Exception("targetTileHeight is larger than the height of the map - edit your config file accordingly.")
         tileHeight=np.ceil(((decMax-decMin)/numRows)*100)/100
-        assert(tileHeight < 10)
-        
+
         for i in range(numRows):
             decBottom=decMin+i*tileHeight
             decTop=decMin+(i+1)*tileHeight
@@ -265,10 +264,18 @@ def loadTile(pathToTileImages, tileName, returnWCS = False):
 
     if os.path.isdir(pathToTileImages) == True:
         with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
+            extName=0
+            tileData=img[extName].data
+            if tileData is None:
+                for extName in img:
+                    tileData=img[extName].data
+                    if tileData is not None:
+                        break
+            assert tileData is not None
             if returnWCS == True:
                 # Zapping keywords in old ACT maps that confuse astropy.wcs
-                wcs=astWCS.WCS(img[0].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
-            data=img[0].data
+                wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
+            data=tileData
     else:
         with pyfits.open(pathToTileImages) as img:
             # Handle compressed full-size masks
@@ -358,6 +365,10 @@ def makeTileDir(parDict, writeToDisk = True):
                         mapDirStr=''
                     outFileNames.append(mapDirStr+"tileDir_%s_" % (tileDirFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
+            if 'surveyMask' not in mapTypeList:
+                inFileNames.append(None)
+                mapTypeList.append('surveyMask')
+                outFileNames.append('tileDir_%s_surveyMask' % (tileDirFileNameLabel))
 
             if wcs is None:
                 wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
@@ -395,11 +406,14 @@ def makeTileDir(parDict, writeToDisk = True):
                 for c, name in zip(coordsList, tileNames):
                     tileFileName=outMapFileName+os.path.sep+name+".fits"
                     if mapData is None:
-                        #deckImg=pyfits.HDUList()
-                        # Special handling for case where surveyMask = None in the .par file (tidy later...)
+                        # Special handling for case where surveyMask not supplied
                         if mapType == 'surveyMask' and inMapFileName is None:
                             with pyfits.open(inFileNames[0]) as img:
-                                mapData=np.ones(img[0].data.shape)
+                                for extName in img:
+                                    mapData=img[extName].data
+                                    if mapData is not None:
+                                        break
+                                mapData=np.ones(img[extName].data.shape, dtype = int)
                         else:
                             # Allows compressed format masks
                             with pyfits.open(inMapFileName) as img:
@@ -430,28 +444,22 @@ def makeTileDir(parDict, writeToDisk = True):
                         dec1=dec1+tileOverlapDeg
                     if ra1 > ra0:
                         ra1=-(360-ra1)
+                    clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                     
                     # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
                     # (which happens if image dimensions are both odd)
                     # I _think_ this is related to the interpolation done in signals.fitQ
-                    ddec=wcs.getYPixelSizeDeg()/10
-                    count=0
-                    clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
-                    while clip['data'].shape[0] % 2 != 0:
-                        try_dec0=dec0-ddec*count
-                        try_dec1=dec1+ddec*count
-                        if try_dec0 < -90:
-                            try_dec0=dec0
-                        if try_dec1 > 90:
-                            try_dec1=dec1
-                        clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, try_dec0, try_dec1)
-                        count=count+1
-                        if count > 200:
-                            raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
-                            #print("Triggered stupid bug in makeTileDir... this should be fixed properly")
-                            #import IPython
-                            #IPython.embed()
-                            #sys.exit()
+                    if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
+                        newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
+                        newArr[:clip['data'].shape[0], :]=clip['data']
+                        newWCS=clip['wcs'].copy()
+                        newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
+                        newWCS.updateFromHeader()
+                        testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
+                        # Check if we see the same sky, if not and we trip this, we need to think about this more
+                        assert((testClip['data']-clip['data']).sum() == 0)
+                        clip['data']=newArr
+                        clip['wcs']=newWCS
                     
                     # Storing clip coords etc. so can stitch together later
                     # areaMaskSection here is used to define the region that would be kept (takes out overlap)
@@ -468,8 +476,6 @@ def makeTileDir(parDict, writeToDisk = True):
                                               'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
                     else:
                         assert(clipCoordsDict[name]['clippedSection'] == clip['clippedSection'])
-                    # Old
-                    #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                     print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
                     header=clip['wcs'].header#.copy()
                     if 'tileNoiseRegions' in list(parDict.keys()):
@@ -500,7 +506,11 @@ def makeTileDir(parDict, writeToDisk = True):
                         zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                         clip['data']=clip['data']*zapMask
                     if os.path.exists(tileFileName) == False and writeToDisk == True:
-                        saveFITS(tileFileName, clip['data'], clip['wcs'])
+                        if mapType == 'surveyMask' or mapType == 'pointSourceMask':
+                            saveFITS(tileFileName, clip['data'], clip['wcs'], compressed = True,
+                                     compressionType = 'PLIO_1')
+                        else:
+                            saveFITS(tileFileName, clip['data'], clip['wcs'])
                                 
             # Replace entries in unfilteredMapsDictList in place
             for key, outFileName in zip(mapTypeList, outFileNames):
@@ -628,7 +638,9 @@ def stitchTiles(config):
                         continue
                     areaMask, areaWCS=completeness.loadAreaMask(tileName, config.selFnDir)
                     minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
-                    d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask*tileData
+                    # Accounting for tiles that may have been extended by 1 pix for FFT purposes (Q-related)
+                    height=maxY-minY; width=maxX-minX
+                    d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask[:height, :width]*tileData[:height, :width]
                 saveFITS(outFileName, d, wcs, compressed = compressed, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
@@ -869,7 +881,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     """
     
     data, wcs=loadTile(mapDict['mapFileName'], tileName, returnWCS = True)
-    
+        
     # Optional calibration factor
     if 'calibFactor' in mapDict.keys():
         data=data*mapDict['calibFactor']

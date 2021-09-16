@@ -386,3 +386,4 @@ class NemoConfig(object):
         
         """      
         self.parDict=copy.deepcopy(self._origParDict)
+    

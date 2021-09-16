@@ -27,7 +27,6 @@ from . import signals
 from . import completeness
 from . import MockSurvey
 import nemoCython
-#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
