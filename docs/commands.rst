@@ -35,14 +35,16 @@ nemoMass
    :program:`nemo`. Cosmological and scaling relation parameters are set in the
    YAML-format configuration file.
 
+
+.. _nemoSelFnCommand:
    
 nemoSelFn
 ---------
    
 .. argparse::
-   :filename: ../bin/nemoMass
+   :filename: ../bin/nemoSelFn
    :func: makeParser
-   :prog: nemoMass
+   :prog: nemoSelFn
 
    :program:`nemoSelFn` calculates mass completeness summary statistics and generates
    files needed to compute the selection function from the results of a :program:`nemo`
@@ -64,7 +66,9 @@ nemoMock
    :program:`nemoMock` generates random catalogs, using the selection function files
    produced by :program:`nemo`. Cosmological and scaling relation parameters are set
    in the YAML-format configuration file.
-   
+
+
+.. _nemoModelCommand:
 
 nemoModel
 ---------
@@ -76,7 +80,9 @@ nemoModel
    
    :program:`nemoModel` generates model images, i.e., signal-only maps containing
    either clusters or sources.
-   
+
+
+.. _nemoSpecCommand:
    
 nemoSpec
 --------
@@ -89,9 +95,12 @@ nemoSpec
    :program:`nemoSpec` extracts spectra (in ΔT with respect to the CMB)
    at locations given in the catalog, after first matching the angular resolution
    of the maps to the one with the worst resolution. Two modes are offered: 
-   (i) compensated aperture photometry; and (ii) a matched filter.
+   (i) compensated aperture photometry; and (ii) a matched filter. The latter
+   was used in `Li et al. (2021) <https://ui.adsabs.harvard.edu/abs/2021arXiv210612467L/abstract>`_.
+
    
-   
+.. _nemoCatalogCheckCommand:
+
 nemoCatalogCheck
 ----------------
 

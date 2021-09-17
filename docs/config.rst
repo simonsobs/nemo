@@ -991,6 +991,8 @@ selFnOptions
                       numIterations: 1000, 
                       massLimitMaps: [{z: 0.5}]}
 
+.. _selFnFootprints:
+
 selFnFootprints
 ^^^^^^^^^^^^^^^
 
@@ -1159,7 +1161,7 @@ sourceInjectionModels
         
         :M500 (float):
             
-            Mass (*M\ :sup:`500c`), in units of solar mass, of the
+            Mass (M\ :sub:`500c`), in units of solar mass, of the
             UPP-model cluster to be inserted.
     
     *Example:*

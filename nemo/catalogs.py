@@ -102,9 +102,10 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
 #------------------------------------------------------------------------------------------------------------
 def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
                     fitNorm = 38.097):
-    """Checks the cross match offset between an ACT detection and an external catalog using a model derived
+    """Checks the cross match offset between a cluster detection and an external catalog using a model derived
     from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysis`). The position recovery test
-    itself only accounts for the effect of noise fluctuations in the maps on the recovered SZ positions.
+    itself only accounts for the effect of noise fluctuations in the maps on the recovered SZ cluster
+    positions.
     
     Args:
         distArcmin (:obj:`bool`): Distance of the potential cross match from the ACT position in arcmin.
@@ -126,7 +127,8 @@ def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 
     Note:
         The default values for the fit parameters are from a run on the f090, f150 ACT DR5 co-added maps
         (as used in the `ACT DR5 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_),
-        and describe a function that recovers 99.7% of the inserted sources in the source injection simulations.
+        and describe a function that recovers 99.7% of the inserted model clusters in 
+        source injection simulations.
         
     """
     
@@ -465,7 +467,7 @@ def tabToCatalogList(tab):
     """Converts an :obj:`astropy.table.Table` object into a list of dictionaries.
     
     Args:
-        tab (:obj:`astropy.table.Table`): Catalog in the form of an Astropy table object.
+        tab (:obj:`astropy.table.Table`): Catalog in the form of an astropy Table object.
     
     Returns:
         A list of dictionaries, where each dictionary represents an object in the catalog.
@@ -623,10 +625,10 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources, seed = None):
         mapData (:obj:`numpy.ndarray`): Map pixel-data, only used for determining valid area in which sources
             may be randomly placed (pixel values == 0 are ignored).
         wcs (:obj:`astWCS.WCS`): WCS corresponding to the map.
-        numSources (int): Number of random sources to put into the output catalog.
-        seed (optional, int): If given, generate the catalog using this random seed value. This is useful
-            for generating the same realization across maps at different frequencies. The seed will be reset
-            after this routine exits.
+        numSources (:obj:`int`): Number of random sources to put into the output catalog.
+        seed (optional, :obj:`int`): If given, generate the catalog using this random seed value. This is
+            useful for generating the same realization across maps at different frequencies. The seed will
+            be reset after this routine exits.
     
     Returns:
         An :obj:`astropy.table.Table` object containing the catalog.
@@ -665,7 +667,7 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
         config (:obj:`nemo.startup.NemoConfig`): Nemo configuration object.
         numSourcesPerTile (:obj:`int`): The maximum number of sources to insert into each tile. The number 
             of sources actually inserted may be less than this depending on the value of 
-            ``avoidanceRadiusArcmin``.
+            `avoidanceRadiusArcmin`.
         amplitudeColumnName (:obj:`str`): Name of the column in the output catalog in which source (or
             cluster) amplitudes will be stored. Typically this should be "deltaT_c" for sources, and
             "fixed_y_c" for clusters.
@@ -753,7 +755,7 @@ def crossMatch(refCatalog, matchCatalog, radiusArcmin = 2.5):
     Args:
         refCatalog (:obj:`astropy.table.Table`): The reference catalog.
         matchCatalog (:obj:`astropy.table.Table`): The catalog to match onto the reference catalog.
-        radiusArcmin (float, optional): Cross-match radius in arcmin.
+        radiusArcmin (:obj:`float`, optional): Cross-match radius in arcmin.
     
     Returns:
         Cross-matched reference catalog, matchCatalog, and array of angular separation in degrees, for 
@@ -786,7 +788,7 @@ def removeCrossMatched(refCatalog, matchCatalog, radiusArcmin = 2.5):
     Args:
         refCatalog (:obj:`astropy.table.Table`): The reference catalog.
         matchCatalog (:obj:`astropy.table.Table`): The catalog to match onto the reference catalog.
-        radiusArcmin (float, optional): Cross-match radius in arcmin.
+        radiusArcmin (:obj:`float`, optional): Cross-match radius in arcmin.
     
     Returns:
         Cross-matched reference catalog (:obj:`astropy.table.Table`) with matches to `matchCatalog` removed.
@@ -842,7 +844,7 @@ def getCatalogWithinImage(tab, shape, wcs, mask = None):
     Args:
         tab (:obj:`astropy.table.Table`): Catalog, as an astropy Table object. Must have columns called 
             'RADeg', 'decDeg' that contain object coordinates in decimal degrees.
-        shape (list): Shape of the array corresponding to the image / map.
+        shape (:obj:`list`): Shape of the array corresponding to the image / map.
         wcs (:obj:`astWCS.WCS`): WCS of the image.
         mask (optional, :obj:`np.ndarray`): Mask with same dimensions and WCS as the image. Pixels with
             value = 1 indicate valid area, and pixels with value = 0 are considered to be outside the mask.
