@@ -403,8 +403,19 @@ def makeTileDir(parDict, writeToDisk = True):
                 mapData=None    # only load the map if we have to
                 if writeToDisk == True:
                     os.makedirs(outMapFileName, exist_ok = True)
-                for c, name in zip(coordsList, tileNames):
+                for c, name, tileDict in zip(coordsList, tileNames, parDict['tileDefinitions']):
                     tileFileName=outMapFileName+os.path.sep+name+".fits"
+                    
+                    # If config or map was modified more recently than tile was written, re-write tile
+                    # (this is a fairly blunt instrument, but should be a little more user friendly)
+                    writeNewTileFile=False
+                    if os.path.exists(tileFileName) == True:
+                        if '_file_last_modified_ctime' in parDict.keys():
+                            if parDict['_file_last_modified_ctime'] > os.path.getctime(tileFileName):
+                                writeNewTileFile=True
+                            if inMapFileName is not None and parDict['_file_last_modified_ctime'] > os.path.getctime(inMapFileName):
+                                writeNewTileFile=True
+                            
                     if mapData is None:
                         # Special handling for case where surveyMask not supplied
                         if mapType == 'surveyMask' and inMapFileName is None:
@@ -505,7 +516,7 @@ def makeTileDir(parDict, writeToDisk = True):
                         zapMask=np.zeros(clip['data'].shape)
                         zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                         clip['data']=clip['data']*zapMask
-                    if os.path.exists(tileFileName) == False and writeToDisk == True:
+                    if (os.path.exists(tileFileName) == False or writeNewTileFile == True)  and writeToDisk == True:
                         if mapType == 'surveyMask' or mapType == 'pointSourceMask':
                             saveFITS(tileFileName, clip['data'], clip['wcs'], compressed = True,
                                      compressionType = 'PLIO_1')

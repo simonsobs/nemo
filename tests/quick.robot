@@ -38,15 +38,15 @@ Recovered sim cluster amplitudes are unbiased
     Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.02  SNRKey=fixed_SNR  SNRCut=5.0  plotFileName=plots/sim_cl_amplitudes.png
     Status should be        SUCCESS
 
-Recovered sim cluster amplitudes are unbiased - two pass
-    Generate simulated cluster maps
-    Set config      configs/sim_cl_MFMF.yml
-    Run nemo
-    Set config      configs/sim_cl_MFMF_pass2.yml
-    Run nemo
-    Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_MFMF_pass2/sim_cl_MFMF_pass2_optimalCatalog.fits
-    Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.02  SNRKey=fixed_SNR  SNRCut=5.0  plotFileName=plots/sim_cl_amplitudes_pass2.png
-    Status should be        SUCCESS
+#Recovered sim cluster amplitudes are unbiased - two pass
+#    Generate simulated cluster maps
+#    Set config      configs/sim_cl_MFMF.yml
+#    Run nemo
+#    Set config      configs/sim_cl_MFMF_pass2.yml
+#    Run nemo
+#    Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_MFMF_pass2/sim_cl_MFMF_pass2_optimalCatalog.fits
+#    Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.02  SNRKey=fixed_SNR  SNRCut=5.0  plotFileName=plots/sim_cl_amplitudes_pass2.png
+#    Status should be        SUCCESS
     
 End-to-end source recovery and subtraction
     Generate simulated source maps

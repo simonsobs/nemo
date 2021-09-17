@@ -140,6 +140,9 @@ def parseConfigFile(parDictFileName):
         if 'haltOnPositionRecoveryProblem' not in parDict.keys():
             parDict['haltOnPositionRecoveryProblem']=False
 
+    # This is useful for spotting if the user changed the config between re-runs of nemo
+    parDict['_file_last_modified_ctime']=os.path.getctime(parDictFileName)
+    
     return parDict
 
 #------------------------------------------------------------------------------------------------------------

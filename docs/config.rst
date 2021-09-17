@@ -199,15 +199,16 @@ makeTileDir
     a directory with prefix ``tileDir_`` followed by the map filename will be
     created (see also `tileDefLabel`_ below). The individual tiles cut 
     from each map can be found within, in subdirectories labeled according to
-    the tile name. This is done such that
-    on subsequent :ref:`nemoCommand` runs, each process (if running in parallel
-    under MPI) can read its data from disk without any bottleneck, if using
-    a cluster file system (e.g., `Lustre <https://www.lustre.org/>`_).
+    the tile name. This is done such that on subsequent :ref:`nemoCommand` 
+    runs, each process (if running in parallel under MPI) can read its data
+    from disk without any bottleneck, if using a cluster file system
+    (e.g., `Lustre <https://www.lustre.org/>`_).
 
-    .. note::  If you change the definitions of the tiles, you *must* delete
-               the corresponding ``tileDir_*`` directories in order for your
-               changes to take effect the next time that you run
-               :ref:`nemoCommand`.
+    .. note::  If you modify your config file or the map to be tiled, then
+               **Nemo** should detect this and re-make the ``tileDir_*``
+               directories. If you have any doubts, you can always delete
+               the ``tileDir_*`` directories to force them to be re-made
+               from scratch the next time you run :ref:`nemoCommand`.
 
     *Example:*
     
