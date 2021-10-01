@@ -862,8 +862,22 @@ def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
 
 #------------------------------------------------------------------------------------------------------------
 def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintLabel = None):
-    """Returns weighted average noise value in the tile.
+    """Returns the area weighted average ỹ\ :sub:`0` noise value in the tile.
     
+    Args:
+        tileName (:obj:`str`): The name of the tile.
+        photFilterLabel (:obj:`str`): Name of the reference filter, as specified in, e.g., a 
+            :ref:`nemoCommand` config file (see :ref:`ConfigReference`).
+        selFnDir (:obj:`str`): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
+            command. This directory contains information such as the survey noise maps, area masks,
+            and information needed to construct the filter mismatch function, `Q`, used in mass
+            modeling.
+        footprintLabel (:obj:`str`, optional): The name of the footprint in which the calculation will be
+            done, as defined in the :ref:`nemoCommand` config file (see :ref:`selFnFootprints`).
+    
+    Returns:
+        Area-weighted average noise in ỹ\ :sub:`0` (``fixed_y_c`` in Nemo cluster catalogs).
+        
     """
 
     RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = footprintLabel)
@@ -875,16 +889,29 @@ def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintL
 
 #------------------------------------------------------------------------------------------------------------
 def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additionalLabel = ""):
-    """Write out average (M, z) grid for all tiles (tileNames) given in selFnCollection (a dictionary with 
-    keys corresponding to footprints: 'full' is the entire survey), weighted by fraction of total survey area
-    within the footprint. We also produce a bunch of other stats and plots to do with completeness versus 
-    redshift.
+    """Write out the average (log\ :sub:`10` mass, z) grid over all survey footprints provided in 
+    `selFnCollection`, weighted by fraction of total survey area within the footprint. Also prints some
+    useful statistics and produces some plots that are written to the `diagnosticsDir` directory.
     
-    Output is written to files named e.g. diagnosticsDir/MzCompleteness_label.npz, where label is the 
-    footprint (key in selFnCollection); 'full' is the default (survey-wide average).
+    Args:
+        selFnCollection (:obj:`dict`): A dictionary where each key points to a :class:`SelFn` object that
+            describes a given survey footprint. Here, "full" corresponds to the whole survey, while "DES"
+            may represent the DES footprint, if it has been defined in the :ref:`nemoCommand` config file
+            (see :ref:`selFnFootprints`).
+        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
+            function calculations and generating mock catalogs.
+        diagnosticsDir (:obj:`str`): The path to the diagnostics directory, where the output from this
+            routine will be written.
+        additionalLabel (:obj:`str`, optional): This will be added to the output filenames (use this for
+            e.g., tagging with the :meth:`calcCompleteness` method used).
     
-    additionalLabel is optional and will be added to the output filenames (use for e.g., tagging with the
-    calcCompleteness method used).
+    Returns:
+        None
+        
+    Note:
+        Output is written to files named e.g. ``diagnosticsDir/MzCompleteness_label.npz``, where `label`
+        is the footprint name (i.e., a key in `selFnCollection`); 'full' is the default (survey-wide
+        average).
     
     """
         
@@ -929,16 +956,18 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
 
 #------------------------------------------------------------------------------------------------------------
 def calcCompletenessContour(compMz, log10M, z, level = 0.90):
-    """Calculate completeness contour on the (log10M, z) plane.
+    """Calculates a completeness contour on the (log\ :sub:`10` mass, z) plane.
     
     Args:
-        compMz (2d array): Map of completeness on the (log10M, z) plane.
-        log10M (1d array): Array of log10 mass values corresponding to compMz.
-        z (1d array): Array of redshifts corresponding to compMz.
-        level (float, optional): Fractional completeness level (e.g., 0.90 is 90% completeness).
+        compMz (:obj:`np.ndarray`): Map (2d array) of completeness on the (log\ :sub:`10` mass, z) plane.
+        log10M (:obj:`np.ndarray`): One dimensional array of log\ :sub:`10` mass values corresponding to
+            `compMz`.
+        z (:obj:`np.ndarray`): One dimensional arra of redshifts corresponding to `compMz`.
+        level (:obj:`float`, optional): Fractional completeness level (e.g., 0.90 is 90% completeness).
     
     Returns:
-        Contour values for the given completeness level (pair of arrays: redshifts, and log10 mass values).
+        Contour values for the given completeness level (a pair of arrays - redshifts, and log\ :sub:`10`
+        mass values).
     
     """
     # Easiest way to get at contour for plotting later
@@ -970,8 +999,20 @@ def calcCompletenessContour(compMz, log10M, z, level = 0.90):
     
 #------------------------------------------------------------------------------------------------------------
 def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
-    """Makes a (M, z) plot. Here, compMz is a 2d array, and log10M and z are arrays corresponding to the axes.
+    """Makes a (log\ :sub:`10` mass, z) completeness plot.
     
+    Args:
+        compMz (:obj:`np.ndarray`): Map (2d array) of completeness on the (log\ :sub:`10` mass, z) plane.
+        log10M (:obj:`np.ndarray`): One dimensional array of log\ :sub:`10` mass values corresponding to
+            `compMz`.
+        z (:obj:`np.ndarray`): One dimensional arra of redshifts corresponding to `compMz`.
+        title (:obj:`str`): Title that will be written at the top of the plot.
+        outFileName (:obj:`str`): Path where the plot will be written to a file, with the format being
+            determined by the file extension.
+    
+    Returns:
+        None
+        
     """
     
     cont_z, cont_log10M=calcCompletenessContour(compMz, log10M, z, level = 0.90)
@@ -1019,9 +1060,20 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
 
 #------------------------------------------------------------------------------------------------------------
 def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
-    """Given a completeness (log10M, z) grid as made by calcCompleteness, return the mass limit (units of 
-    10^14 MSun) as a function of redshift. By default, the same binning used in the given mockSurvey object -
-    this can be overridden by giving zBinEdges.
+    """Given a completeness (log\ :sub:`10` mass, z) grid as made by :meth:`calcCompleteness`, return the
+    mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`) as a function of redshift at the given completeness
+    level. By default, the same binning as the given `mockSurvey` object is used - this can be overridden by
+    giving `zBinEdges`.
+    
+    Args:
+        completenessFraction (:obj:`float`): Fractional completeness level (e.g., 0.90 is 90% completeness).
+        compMz (:obj:`np.ndarray`): Map (2d array) of completeness on the (log\ :sub:`10` mass, z) plane.
+        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
+            function calculations and generating mock catalogs.
+        zBinEdges (:obj:`np.ndarray`, optional): Redshifts at which the mass limit is evaluated.
+
+    Returns:
+        The mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`, 1d array) at each requested redshift.
     
     """
     
@@ -1038,33 +1090,37 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
 #------------------------------------------------------------------------------------------------------------
 def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, QFit,
                      plotFileName = None, z = None, method = "fast", numDraws = 2000000, numIterations = 100):
-    """Calculate completeness as a function of (log10 M500c, z) on the mockSurvey grid at the given SNRCut.
-    Intrinsic scatter in the scaling relation is taken into account.
+    """Calculate completeness as a function of (log\ :sub:`10` mass, z) on the mockSurvey grid at the given
+    `SNRCut`. Intrinsic scatter in the scaling relation is taken into account.
     
     Args:
-        RMSTab (astropy Table): Table containing noise level by area, as returned by getRMSTab.
-        SNRCut (float): Completeness will be calculated for objects relative to this cut in fixed_SNR.
-        tileName (str): Name of the map tile.
-        mockSurvey (MockSurvey): A Nemo MockSurvey object used for halo mass function calculations.
-        scalingRelationDict (dict): A dictionary of scaling relation parameters (see example Nemo config 
-            files for the format).
-        tckQFitDict (dict): A dictionary, with keys corresponding to tile names, containing the spline knots
-            used to obtain interpolated values from the filter mismatch function Q 
-            (see :func:`nemo.signals.loadQ`).
-        plotFileName (str, optional): If given, write a plot showing 90% completness limit.
-        z (array, optional): Redshift grid on which the completeness calculation will be performed. 
-            Alternatively, a single redshift can be specified as a float instead.
-        method (str, optional): Two methods for doing the calculation are available: "fast" (applies the 
-            measurement errors and scatter to 'true' y0 values on a grid) and "montecarlo" (uses samples
-            drawn from a mock catalog, generated on the fly, to estimate the completeness). Both methods 
-            should give consistent results.
-        numDraws (int, optional): Used by the "montecarlo" method - sets the number of draws from the 
+        RMSTab (:obj:`astropy.table.Table`): Table containing noise level by area, as returned by
+            :meth:`getRMSTab`.
+        SNRCut (:obj:`float`): Completeness will be calculated for objects relative to this cut in 
+            ``fixed_SNR``.
+        tileName (:obj:`str`): Name of the map tile.
+        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
+            function calculations and generating mock catalogs.
+        scalingRelationDict (:obj:`dict`): A dictionary of scaling relation parameters (see example Nemo
+            config files for the format).
+        QFit (:class:`nemo.signals.QFit`): An object for calculating the filter mismatch function, referred
+            to as `Q` in the ACT papers from `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_
+            onwards.
+        plotFileName (:obj:`str`, optional): If given, write a plot showing 90% completness limit to this
+            path.
+        z (:obj:`np.ndarray`, optional): Redshifts at which the completeness calculation will be performed.
+            Alternatively, a single redshift can be specified as a :obj:`float` instead.
+        method (:obj:`str`, optional): Two methods for doing the calculation are available: "fast" (applies
+            the measurement errors and scatter to 'true' ỹ\ :sub:`0` values on a grid) and "montecarlo" (uses
+            samples drawn from a mock catalog, generated on the fly, to estimate the completeness). Both
+            methods should give consistent results.
+        numDraws (:obj:`int`, optional): Used by the "montecarlo" method - sets the number of draws from the
             halo mass function on each iteration.
-        numIterations (int, optional): Used by the "montecarlo" method - sets the number of iterations,
+        numIterations (:obj:`int`, optional): Used by the "montecarlo" method - sets the number of iterations,
             i.e., the number of mock catalogs from which the completeness is estimated.
 
     Returns:
-        2d array of (log10 M500c, z) completeness
+        A 2d array of (log\ :sub:`10` mass, z) completeness.
     
     """
         
@@ -1170,11 +1226,29 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRelationDict, QFit, 
                      diagnosticsDir, selFnDir):
-    """Makes a map of 90% mass completeness (for now, this fraction is fixed).
+    """Makes a map of 90% mass completeness (for now, this fraction is fixed and not adjustable). The map
+    is written as a FITS file in the `diagnosticsDir` directory.
     
-    NOTE: The map here is "downsampled" (i.e., binned) in terms of noise resolution - okay for display 
-    purposes, may not be for analysis using the map (if anyone should decide to). Much quicker and saves
-    on memory issues (the y0 noise estimates have uncertainties themselves anyway).
+    Args:
+        SNRCut (:obj:`float`): Completeness will be calculated for objects relative to this cut in
+            ``fixed_SNR``.
+        z (:obj:`float`): The redshift at which the mass limit map will be produced.
+        tileName (:obj:`str`): The name of the tile.
+        photFilterLabel (:obj:`str`): Name of the reference filter, as specified in, e.g., a 
+            :ref:`nemoCommand` config file (see :ref:`ConfigReference`).
+        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass function 
+            calculations and generating mock catalogs.
+        scalingRelationDict (:obj:`dict`): A dictionary of scaling relation parameters (see example Nemo
+            config files for the format).
+        QFit (:class:`nemo.signals.QFit`): An object for calculating the filter mismatch function, referred
+            to as `Q` in the ACT papers from `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_
+            onwards.
+        diagnosticsDir (:obj:`str`): Path to the ``diagnostics/`` directory, as produced by the 
+            :ref:`nemoCommand` command.
+        selFnDir (:obj:`str`): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
+            command. This directory contains information such as the survey noise maps, area masks,
+            and information needed to construct the filter mismatch function, `Q`, used in mass
+            modeling.
     
     """
         
@@ -1204,7 +1278,18 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
         
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title = None):
-    """Write a plot of 90%-completeness mass limit versus z, adding a spline interpolation.
+    """Makes a plot of 90%-completeness mass limit versus redshift. Uses spline interpolation.
+    
+    Args:
+        massLimit_90Complete (:obj:`np.ndarray`): Mass limit at each redshift, corresponding to 90%
+            completeness.
+        zRange (:obj:`np.ndarray`): Redshifts at which mass completeness was evaluted.
+        outFileName (:obj:`str`): Path to which the plot file will be written. The format is determined by
+            the file extension.
+        title (:obj:`str`): The title that will be written at the top of the plot.
+    
+    Returns:
+        None
     
     """
     
@@ -1230,8 +1315,25 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     
 #------------------------------------------------------------------------------------------------------------
 def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
-    """Make a cumulative plot of 90%-completeness mass limit versus survey area, at the given redshift.
+    """Makes cumulative plots of the 90%-completeness mass limit versus survey area, at the given redshift.
     
+    Args:
+        z (:obj:`float`): The redshift at which the mass completeness is evaluated.
+        diagnosticsDir (:obj:`str`): Path to the ``diagnostics/`` directory, as produced by the 
+            :ref:`nemoCommand` command.
+        selFnDir (:obj:`str`): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
+            command. This directory contains information such as the survey noise maps, area masks,
+            and information needed to construct the filter mismatch function, `Q`, used in mass
+            modeling.
+        tileNames (:obj:`list`): List of tiles to use.
+    
+    Note:
+        This routine writes plots into the `diagnosticsDir` directory (one for the cumulative mass
+        completeness limit over the whole survey area, and one for the deepest 20% only).
+    
+    Returns:
+        None
+        
     """
         
     # NOTE: We truncate mass limits to 0.1 level here - differences beyond that are due to compression
@@ -1303,9 +1405,19 @@ def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
         
 #------------------------------------------------------------------------------------------------------------
 def makeFullSurveyMassLimitMapPlot(z, config):
-    """Reprojects tile mass limit maps onto the full map pixelisation, then makes a plot and saves a
-    .fits image.
-        
+    """Makes full area mass limit map by reprojecting the tile mass limit maps onto the full map pixelisation.
+    Creates both a plot and a FITS image.
+    
+    Args:
+        z (:obj:`float`): The redshift at which the mass completeness is evaluated.
+        config (:class:`nemo.startUp.NemoConfig`): A NemoConfig object.
+    
+    Note:
+        Output is written to the `diagnostics` directory, as produced by the :ref:`nemoCommand` command.
+    
+    Returns:
+        None
+    
     """
     
     if 'makeQuickLookMaps' not in config.parDict.keys():
@@ -1349,9 +1461,16 @@ def makeFullSurveyMassLimitMapPlot(z, config):
 
 #------------------------------------------------------------------------------------------------------------
 def tidyUp(config):
-    """Tidy up the selFn directory - making MEF files etc. and deleting individual tile files.
+    """Tidies up the `selFn` directory, constructing multi-extension FITS files from individual tile images
+    and tables, deleting the individual tile files when complete. This routine also copies the given Nemo
+    configuration into the `selFn` directory, and writes a plain text file that lists the tile names, and the
+    areas covered by each tile.
     
-    We also copy the configuration file into the selFn dir to make things easier for distribution/end users.
+    Args:
+        config (:class:`nemo.startUp.NemoConfig`): A NemoConfig object.
+        
+    Returns:
+        None
     
     """
     

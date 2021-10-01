@@ -113,8 +113,7 @@ class BeamProfile(object):
 
 #------------------------------------------------------------------------------------------------------------
 class QFit(object):
-
-    """A class for managing the filter mismatch function, referred to as *Q* in the ACT papers from
+    """A class for managing the filter mismatch function, referred to as `Q` in the ACT papers from
     `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_ onwards.
     
     Args:
