@@ -340,7 +340,9 @@ tileNoiseRegions
 ^^^^^^^^^^^^^^^^
 
     To be added - this is only used by the ``RealSpaceMatchedFilter`` method.
-    
+
+
+.. _Detection:
 
 Object Detection and Photometry
 ===============================
@@ -578,10 +580,12 @@ catalogCuts
     
        catalogCuts: ['fluxJy > 0.01']
        
+
+.. _Filters:
     
 Filters
 =======
-
+    
 mapFilters
 ^^^^^^^^^^
 
@@ -835,6 +839,8 @@ GNFWParams
        # Planck Pressure Profile
        GNFWParams: {P0: 6.41, c500: 1.81, gamma: 0.31, alpha: 1.33, beta: 4.13}
 
+
+.. _ClusterMassEstimates:
 
 Cluster Mass Estimates
 ======================
