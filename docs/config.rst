@@ -609,9 +609,11 @@ mapFilters
                 * ``BeamRealSpaceMatchedFilter``
                 * ``ArnaudModelMatchedFilter``
                 * ``ArnaudModelRealSpaceMatchedFilter``
+                * ``BattagliaModelMatchedFilter``
+                * ``BattagliaModelRealSpaceMatchedFilter``
             
             As reflected in the names above, there are two broad classes of
-            filters, and two classes of signal templates that are currently
+            filters, and three classes of signal templates that are currently
             supported. 
 
             The ``MatchedFilter`` class is a Fourier-space implementation
