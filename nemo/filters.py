@@ -6,12 +6,15 @@ There are two main classes of filter: :obj:`MatchedFilter` and :obj:`RealSpaceMa
 
 New base classes can be derived from the overall base class :obj:`MapFilter`. There are also 
 base classes corresponding to filters with different signal templates (:obj:`BeamFilter`,
-:obj:`ArnaudModelFilter`). The actual filters that can be used are derived from these, e.g.:
+:obj:`ArnaudModelFilter`, :obj:`BattagliaModelFilter`). The actual filters that can be used are
+derived from these, e.g.:
 
 * :obj:`BeamMatchedFilter`
 * :obj:`ArnaudModelMatchedFilter`
+* :obj:`BattagliaModelMatchedFilter`
 * :obj:`BeamRealSpaceMatchedFilter`
 * :obj:`ArnaudModelRealSpaceMatchedFilter`
+* :obj:`BattagliaModelRealSpaceMatchedFilter`
 
 """
 
@@ -50,14 +53,28 @@ import time
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
                selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True,
                returnFilter = False):
-    """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
-    can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
-    even if multifrequency (a change from previous behaviour).
-   
-    Filtered maps are written to rootOutDir/filteredMaps
-    Filters, if stored, are written to rootOutDir/filters
+    """Builds and applies filters to the unfiltered map(s). 
     
-    Returns a dictionary containing the filtered map and S/N map etc.
+    Args:
+        unfilteredMapsDictList (:obj:`list`): A list of dictionaries, each of which describes a map of the sky
+            at some frequency (see :ref:`InputMaps`).
+        filterParams (:obj:`dict`): A dictionary containing filter settings (see :ref:`Filters`).
+        tileName (:obj:`str`): The name of the tile.
+        filteredMapsDir (:obj:`str`, optional): The path to the directory where the filtered maps may be written.
+        diagnosticsDir (:obj:`str`, optional): Path to the `diagnostics` directory, where the filters may be
+            written to disk.
+        selFnDir (:obj:`str`, optional): Path to the `selFn` directory, where area masks may be written.
+        verbose (:obj:`bool`, optional): If True, write information about progress to the terminal.
+        undoPixelWindow (:obj:`bool`, optional): If True, undo the pixel window effect on the output filtered
+            maps.
+        useCachedMaps (:obj:`bool`, optional): If True, and previously made maps are found, these will be
+            read from disk, rather than re-calculating and re-applying the filter.
+        returnFilter (:obj:`bool`, optional): If True, the filter object is returned, as well as a dictionary
+            containing the filtered map.
+    
+    Returns:
+        A dictionary containing the filtered map in signal units, a signal-to-noise-map, area mask, WCS, and
+        a label (for housekeeping).
     
     """
         
@@ -119,20 +136,40 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
     
 #------------------------------------------------------------------------------------------------------------
 class MapFilter(object):
-    """Generic map filter base class. Defines common interface.
+    """Base class for Fourier space filters, defining a common interface.
+    
+    Args:
+        label (:obj:`str`): Unique label for the filter, can be anything.
+        unfilteredMapsDictList (:obj:`list`): A list of dictionaries, each of which describes a map of the sky
+            at some frequency (see :ref:`InputMaps`).
+        paramsDict (:obj:`dict`): Dictionary of filter settings (see :ref:`Filters`).
+        tileName (:obj:`str`): Name of the tile in which the filter will be constructed.
+        writeFilter (:obj:`bool`): If `True`, save the filter to disk in the `diagnosticsDir` directory.
+        forceRebuild (:obj:`bool`): If `True`, rebuild the filter, even a previously calculated filter is
+            found cached to disk.
+        diagnosticsDir (:obj:`str`, optional): Path to the `diagnostics` directory, where the filters may be
+            written to disk.
+        selFnDir (:obj:`str`, optional): Path to the `selFn` directory, where area masks may be written.
+    
+    Attributes:
+        label (:obj:`str`): Unique label for the filter, can be anything.
+        params (:obj:`dict`): Dictionary of filter settings (see :ref:`Filters`).
+        diagnosticsDir (:obj:`str`, optional): Path to the `diagnostics` directory, where the filters may be
+            written to disk.
+        selFnDir (:obj:`str`, optional): Path to the `selFn` directory, where area masks may be written.       
+        tileName (:obj:`str`): Name of the map tile.
+        filterFileName (:obj:`str`): Path (under `diagnosticsDir`) where the cached filter is written.
+        unfilteredMapsDictList (:obj:`list`): A list of dictionaries, each of which describes a map of the sky
+            at some frequency (see :ref:`InputMaps`).
+        wcs (:obj:`astWCS.WCS`): Object that contains the map World Coordinate System.
+        shape (:obj:`tuple`): Dimensions of the map (height, width) in pixels.
+        beamSolidAnglesDict (:obj:`dict`): Dictionary, indexed by map frequency in GHz, holding the beam
+            solid angles in nano steradians. Used only for conversion of source amplitudes to flux
+            densities in Jy.
     
     """
     def __init__(self, label, unfilteredMapsDictList, paramsDict, tileName = 'PRIMARY', writeFilter = False, 
                  forceRebuild = False, diagnosticsDir = None, selFnDir = None):
-        """Initialises a MapFilter. unfilteredMapsDictList describes the input maps, paramsDict describes
-        the filter options. The convention is that single frequency only filters (e.g. GaussianWienerFilter)
-        only operate on the first map in the unfilteredMapDictList.
-        
-        label is used to store the filter to save calculating it again. Filters are stored under filters/
-        dir. If a filter already exists under this dir with the given label, it is loaded rather than
-        recalculated. To force recalculating the filter, set forceRebuild == True.
-                        
-        """
         
         self.label=label
         self.params=paramsDict
@@ -193,7 +230,10 @@ class MapFilter(object):
                
         
     def makeRadiansMap(self):
-        """Makes a map of distance in radians from centre, for the map being filtered.
+        """Makes a map of distance in radians from the centre of the map being filtered.
+        
+        Returns:
+            None
         
         """
         
@@ -218,19 +258,32 @@ class MapFilter(object):
         
         
     def buildAndApply(self):
-        """Builds and applies the filter to the unfiltered map(s). Returns a dictionary, containing
-        keys 'data', 'wcs', 'weights', 'obsFreqGHz'. If this routine converts to yc in place, the latter is set
-        to 'yc'.
-    
+        """Builds and applies the filter to the unfiltered map(s). 
+        
+        Returns:
+            A dictionary, containing the listed keys:
+                * data (:obj:`np.ndarray`): The filtered map, in signal units.
+                * wcs (:obj:`astWCS.WCS`): WCS object for the map.
+                * obsFreqGHz (:obj:`float`): The observing frequency (in GHz) for the map. This is set to `yc` if the output units are set to the central Comptonization parameter.
+                * SNMap (:obj:`np.ndarray`): Signal-to-noise map.
+                * surveyMask (:obj:`np.ndarray`): Survey mask, where pixels with value 1 indicate valid area that can be searched for objects.
+                * mapUnits (:obj:`str`): Either `uK` (for ΔTemperature (μK) with respect to the CMB) or `yc` (for central Comptonization parameter).
+                * beamSolidAngle_nsr (:obj:`float`): The beam solid angle in nanosteradians. This is only used for conversion of source amplitudes to flux densities in Jy.
+                * label (:obj:`str`): User-defined label for the filter (see :ref:`Filters`).
+                * tileName (:obj:`str`): Name of the tile this filtered map corresponds to.
+        
         """
+        # NOTE: Long lines above to avoid breaking formatting in sphinx
         
         raise Exception("Called a base filter class without a buildAndApply() function implemented.")
         return None
     
     
     def makeForegroundsPower(self):
-        """Returns a Power2D object with foregrounds power from the CMB (this could be extended to add other
-        foregrounds if necessary).
+        """Returns 2d power spectrum in k-space, with the power set by a Planck-like CMB power spectrum.
+        
+        Returns:
+            A 2d :obj:`np.ndarray` containing the noise power.
                        
         """
 
@@ -245,10 +298,11 @@ class MapFilter(object):
         
 
     def makeRealSpaceFilterProfile(self):
-        """Makes a 1d real-space profile of the filter. This is normalised to 1 at the frequency of the 
+        """Makes a 1d real-space profile of the filter, with amplitude normalised to 1 at the frequency of the
         first map given in the unfiltered maps list.
         
-        Returns profile, arcminRange
+        Returns:
+            One dimensional profile (:obj:`np.ndarray`), corresponding angular range in arcmin (:obj:`np.ndarray`).
         
         """
         realSpace=fft.ifft2(self.filt).real
@@ -269,7 +323,10 @@ class MapFilter(object):
     
         
     def saveRealSpaceFilterProfile(self):
-        """Saves a real-space profile of the filter out as a .png plot and 2d .fits image.
+        """Saves a real-space profile of the filter as a PNG plot under the `diagnosticsDir` directory.
+        
+        Returns:
+            None
         
         """
         
@@ -304,7 +361,14 @@ class MapFilter(object):
       
 
     def makeNoiseMap(self, mapData):
-        """Estimate the noise map using local RMS measurements on a grid, over the whole filtered map.
+        """Estimate the noise map using local measurements in grid cells, over the whole filtered map
+        (see :ref:`Filters` for the config file parameters that control this).
+        
+        Args:
+            mapData (:obj:`np.ndarray`): A filtered map.
+        
+        Returns:
+            Noise map (:obj:`np.ndarray`).
         
         """
 
@@ -432,7 +496,10 @@ class MapFilter(object):
     
     
     def loadFRelWeights(self):
-        """Reads frequency weights used for relativistic corrections from filter header.
+        """Reads frequency weights used for relativistic corrections from the filter header.
+        
+        Returns:
+            None
         
         """
         with pyfits.open(self.filterFileName) as img:

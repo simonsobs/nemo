@@ -117,7 +117,6 @@ class QFit(object):
     `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_ onwards.
     
     Args:
-        
         QFitFileName (:obj:`str`): Path to a FITS-table format file as made by :meth:`fitQ`.
         tileNames (:obj:`list`): If given, the Q-function will be defined only for these tiles (their names
             must appear in the file specified by `QFitFileName`).
@@ -129,8 +128,6 @@ class QFit(object):
     """
         
     def __init__(self, QFitFileName = None, tileNames = None):
-
-        
         self._zGrid=np.array([0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0])
         self._theta500ArcminGrid=np.logspace(np.log10(0.1), np.log10(55), 10)
         self.zMin=(self._zGrid).min()

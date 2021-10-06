@@ -118,7 +118,8 @@ err_y_c:
 
 fixed_y_c:
     Central Comptonization parameter (10\ :sup:`-4`) measured at the reference filter scale, chosen
-    using ``photFilterLabel`` in the config file (see :ref:`ClusterMassEstimates`).
+    using ``photFilterLabel`` in the config file (see :ref:`ClusterMassEstimates`). This quantity is
+    called ỹ\ :sub:`0` in the ACT cluster papers. 
 
 err_fixed_y_c:
     The 1-sigma uncertainty on the central Comptonization parameter (10\ :sup:`-4`) measured at the
