@@ -1,8 +1,7 @@
 """
-Perform line-of-sight integral of GNFW model.
+Routines to perform line-of-sight integrals of the GNFW model. 
 
-Matthew Hasselfield's code, slightly updated to include P0, c500
-(makes life a bit easier for some applications of this).
+This code was originally written by Matthew Hasselfield, and has been slightly extended.
 
 """
 
@@ -34,8 +33,16 @@ _default_params = {
         }
 
 def func(x, params):
-    """
-    The GNFW radial profile - now with added P0, c500.
+    """The GNFW radial profile.
+    
+    Args:
+        x (:obj:`np.ndarray`): Radial coordinate.
+        params (:obj:`dict`): Dictionary with keys `alpha`, `beta`, `gamma`, `c500`, and `P0` that defines
+            the GNFW profile shape.
+    
+    Returns:
+        Profile (1d :obj:`np.ndarray`).
+        
     """
     G, A, B, c500, P0 = params['gamma'], params['alpha'], params['beta'], params['c500'], params['P0']
     prof=np.zeros(x.shape)
@@ -45,9 +52,18 @@ def func(x, params):
     return prof
 
 def xfunc(x, b, params):
-    """
-    The log-scaled integrand for GNFW cylindrical integration along
-    line-of-sight coordinate x, with impact parameter b.
+    """The log-scaled integrand for GNFW cylindrical integration along the line-of-sight coordinate `x`,
+    with impact parameter `b`.
+    
+    Args:
+        x (:obj:`np.ndarray`): Line-of-sight coordinate.
+        b (:obj:`float`): Impact parameter.
+        params (:obj:`dict`): Dictionary with keys `alpha`, `beta`, `gamma`, `c500`, and `P0` that defines
+            the GNFW profile shape.
+    
+    Returns:
+        Value of integrand.
+        
     """
     x = np.array(x)
     if x.ndim == 0:
@@ -58,14 +74,22 @@ def xfunc(x, b, params):
     return y
 
 def integrated(b, params = _default_params):
+    """Returns the line of sight integral of the GNFW profile at impact parameter `b`.
+    
+    Args:
+        b (:obj:`float`): Impact parameter.
+        params (:obj:`dict`): Dictionary with keys `alpha`, `beta`, `gamma`, `c500`, and `P0` that defines
+            the GNFW profile shape.
+    
+    Returns:
+        Line of sight integral at given impact parameter.
+        
     """
-    Return the line of sight integral of the GNFW profile at impact
-    parameter b.  Since the GNFW is a smoothly varying power-law from
-    0+ to +infty, we make a change of variables to
-        u = ln x
-    and perform the integral by summing over equally spaced logarithmic
-    bins in x.
-    """
+    # Since the GNFW is a smoothly varying power-law from
+    # 0+ to +infty, we make a change of variables to
+    #     u = ln x
+    # and perform the integral by summing over equally spaced logarithmic
+    # bins in x.
     # Get GNFW vars as well as integration parameters
     G, A, B = params['gamma'], params['alpha'], params['beta']
     TH, N = params.get('tol',1e-6), params.get('npts', 200)

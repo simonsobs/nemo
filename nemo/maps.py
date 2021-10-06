@@ -1,6 +1,6 @@
 """
 
-This module contains tools for manipulating maps (e.g., conversion of units etc.).
+This module contains tools for manipulating maps.
 
 """
 
@@ -39,12 +39,12 @@ np.random.seed()
               
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
-    """Converts an array (e.g., a map) in delta T (micro Kelvin) with respect to the CMB temperature to
-    Compton y parameter values at the given frequency.
+    """Converts an array (e.g., a map) in ΔTemperature (μK) with respect to the CMB to Compton y parameter
+    values at the given frequency.
     
     Args:
         mapData (:obj:`np.ndarray`): An array containing delta T (micro Kelvin, with respect to CMB) values.
-        obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
+        obsFrequencyGHz (:obj:`float`): Frequency in GHz at which to do the conversion.
     
     Returns:
         An array of Compton y parameter values.
@@ -57,18 +57,18 @@ def convertToY(mapData, obsFrequencyGHz = 148):
 
 #-------------------------------------------------------------------------------------------------------------
 def convertToDeltaT(mapData, obsFrequencyGHz = 148, TCMBAlpha = 0.0, z = None):
-    """Converts an array (e.g., a map) of Compton y parameter values to delta T (micro Kelvin) with respect to
-    the CMB temperature at the given frequency.
+    """Converts an array (e.g., a map) of Compton y parameter values to ΔTemperature (μK) with respect to the
+    CMB at the given frequency.
     
     Args:
         mapData (:obj:`np.ndarray`): An array containing Compton y parameter values.
-        obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
-        TCMBAlpha (float, optional): This should always be zero unless you really do want to make a model
-            where CMB temperature evolves T0*(1+z)^{1-TCMBAlpha}.
-        z (float, optional): Redshift - needed only if TCMBAlpha is non-zero.
+        obsFrequencyGHz (:obj:`float`): Frequency in GHz at which to do the conversion.
+        TCMBAlpha (:obj:`float`, optional): This should always be zero unless you really do want to make a model
+            where CMB temperature evolves as T\ :sub:`0` * (1+z)\ :sup:`1-TCMBAlpha`.
+        z (:obj:`float`, optional): Redshift - needed only if TCMBAlpha is non-zero.
     
     Returns:
-        An array of delta T (micro Kelvin) values.
+        An array of ΔT (μK) values.
     
     """
     fx=signals.fSZ(obsFrequencyGHz, TCMBAlpha = TCMBAlpha, z = z)
