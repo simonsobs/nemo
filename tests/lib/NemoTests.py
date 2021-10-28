@@ -187,10 +187,12 @@ class NemoTests(object):
         self._run_command(args)
 
 
-    def make_parallel_sim(self, catalogFileName = None, noiseLevel = None, seed = None, band = None, size = None):
+    def make_parallel_sim(self, catalogFileName = None, noiseLevel = None, seed = None, band = None, size = None, profile = None):
         args=['mpiexec', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
-              "sim_%s.fits" % (band), '-f', self.bandsDict[band]['freq'], 
+              "sim_%s.fits" % (band), '-f', self.bandsDict[band]['freq'],
               '-C', '-N', noiseLevel, '-S', seed, '-M']
+        if profile is not None:
+            args=args+['-p', profile]
         self._run_command(args)
 
 
@@ -204,6 +206,14 @@ class NemoTests(object):
     def make_signal_only_sim(self, catalogFileName = None, band = None, size = None):
         args=['nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
               "signal_model_only_%s.fits" % (band), '-f', self.bandsDict[band]['freq']]
+        self._run_command(args)
+        
+        
+    def make_parallel_signal_only_sim(self, catalogFileName = None, band = None, size = None, profile = None):
+        args=['mpiexec', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "signal_model_only_%s.fits" % (band), '-f', self.bandsDict[band]['freq'], '-M']
+        if profile is not None:
+            args=args+['-p', profile]
         self._run_command(args)
     
 

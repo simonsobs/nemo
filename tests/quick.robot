@@ -16,7 +16,7 @@ Source sim with nemoModel runs
     Generate simulated source maps
 
 Nemo runs in parallel
-    Generate simulated cluster maps in parallel
+    Generate simulated A10 cluster maps in parallel
     Set config      configs/sim_cl_MFMF_tiles.yml
     Run parallel nemo
     
@@ -58,6 +58,18 @@ End-to-end source recovery and subtraction
     Check map sigma     testsCache/signal_free-sources_diff.fits    100
     Status should be        SUCCESS
 
+End-to-end A10 cluster modeling and subtraction
+    Generate simulated cluster maps in parallel     A10
+    Set config      configs/sim_cl_MFMF_tiles.yml
+    Run parallel nemo
+    Make parallel signal only sim    sim_cl_MFMF_tiles/sim_cl_MFMF_tiles_optimalCatalog.fits   f090    large
+    Subtract maps   testsCache/sim_f090.fits  testsCache/signal_model_only_f090.fits  testsCache/cl_f090_A10_diff.fits
+    Subtract maps   testsCache/signal_free_f090.fits  testsCache/cl_f090_A10_diff.fits  testsCache/signal_free-cl_f090_A10_diff.fits
+    Check map sigma     testsCache/signal_free-cl_f090_A10_diff.fits    50
+    Status should be        SUCCESS
+
+#    Make parallel sim signal only sim    sim_cl_MFMF/sim_cl_MFMF_optimalCatalog.fits   f150    large
+
     
 *** Keywords ***
 
@@ -75,9 +87,17 @@ Generate simulated cluster maps
     Make sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large
 
 Generate simulated cluster maps in parallel
+    Arguments   ${profile}
     Setup quickstart
-    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f150    large
-    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large
+    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f150    large  ${profile}
+    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large  ${profile}
+    Make signal free sim    0.0   1234  f150    large
+    Make signal free sim    0.0   1234  f090    large
+
+Generate simulated B12 cluster maps in parallel
+    Setup quickstart
+    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f150    large  B12
+    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large  B12
     
 Generate simulated source maps
     Setup quickstart

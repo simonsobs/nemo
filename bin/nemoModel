@@ -40,6 +40,15 @@ def makeParser():
                         evaluted at the given frequency, ignoring relativistic effects (default: 150.0).")
     parser.add_argument("-s", "--scale-signals", dest = "scale", type = float, default = 1.0,
                         help = "Scale the input y_c values of clusters in the catalog by this factor.")
+    parser.add_argument("-p", "--profile", dest = "profile", type = str, default = "A10",
+                        help = "For cluster models only - select the profile to use: 'A10'\
+                        (Arnaud et al. 2010 UPP models) or 'B12' (Battaglia et al. 2012 models). The mass and\
+                        redshift used to set the shape and scale of the cluster model uses the 'template'\
+                        column in the Nemo catalog, if the 'true_M500c', 'true_fixed_y_c', and 'true_Q' columns\
+                        are not present. This requires the filter labels that appear in the 'template'\
+                        column to be in the format 'Profile_M{$MASS}_z{$REDSHIFT}', with the decimal point\
+                        replaced by the letter 'p' (e.g., 'Arnaud_M2e14_z0p4', as in the example config\
+                        files for Nemo).")
     parser.add_argument("-C", "--add-cmb", dest = "addCMB", action = "store_true", default = False,
                         help = "Add a realization of the cosmic microwave background to the map. Use\
                         --cmb-seed to set the random seed to the same value if creating sets of maps at\
@@ -145,7 +154,8 @@ if __name__ == '__main__':
             modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
                                                      obsFreqGHz = args.obsFreqGHz,
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
-                                                     TCMBAlpha = args.TCMBAlpha)
+                                                     TCMBAlpha = args.TCMBAlpha,
+                                                     profile = args.profile)
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 

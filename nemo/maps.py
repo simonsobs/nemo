@@ -1565,7 +1565,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
-                   cosmoModel = None, applyPixelWindow = True, override = None,
+                   profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,
                    validAreaSection = None, minSNR = 0.0, TCMBAlpha = 0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
@@ -1587,6 +1587,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         GNFWParams (str or dict, optional): Used only by cluster catalogs. If 'default', the Arnaud et al. 
             (2010) Universal Pressure Profile is assumed. Otherwise, a dictionary that specifies the profile
             parameters can be given here (see gnfw.py).
+        profile (str, optional): Used by cluster models only - sets the profile shape to use: 'A10'
+            for Arnaud et al. (2010) UPP models, or 'B12' for Battaglia et al. (2012) models.
         override (dict, optional): Used only by cluster catalogs. If a dictionary containing keys
             {'M500', 'redshift'} is given, all objects in the model image are forced to have the 
             corresponding angular size. Used by :meth:`sourceInjectionTest`.
@@ -1629,6 +1631,15 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     if cosmoModel is None:
         cosmoModel=signals.fiducialCosmoModel
     
+    # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
+    if profile == 'A10':
+        makeClusterSignalMap=signals.makeArnaudModelSignalMap
+    elif profile == 'B12':
+        makeClusterSignalMap=signals.makeBattagliaModelSignalMap
+    else:
+        raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
+                        to accept a string of GNFW parameters, but that is not implemented yet.")
+    
     # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
     numFWHM=5.0
     beam=signals.BeamProfile(beamFileName = beamFileName)
@@ -1648,9 +1659,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['fixed_y_c']*1e-4
             theta500Arcmin=signals.calcTheta500Arcmin(override['redshift'], override['M500'], cosmoModel)
             maxSizeDeg=5*(theta500Arcmin/60)
-            modelMap=signals.makeArnaudModelSignalMap(override['redshift'], override['M500'], degreesMap, 
-                                                      wcs, beam, GNFWParams = GNFWParams,
-                                                      maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+            modelMap=makeClusterSignalMap(override['redshift'], override['M500'], degreesMap, 
+                                          wcs, beam, GNFWParams = GNFWParams,
+                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
             modelMap=modelMap*fluxScaleMap
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
@@ -1689,9 +1700,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
                                                                             row['RADeg'], row['decDeg'], 
                                                                             maxSizeDeg)
-                signalMap=signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
-                                                           GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                                           maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+                signalMap=makeClusterSignalMap(z, M500, degreesMap, wcs, beam, 
+                                               GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 if obsFreqGHz is not None:
                     signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
                                               TCMBAlpha = TCMBAlpha, z = z)
