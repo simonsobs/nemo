@@ -862,9 +862,12 @@ def getCatalogWithinImage(tab, shape, wcs, mask = None):
     for i in range(len(tab)):
         x, y=xyCoords[i][0], xyCoords[i][1]
         if x >= 0 and x < shape[1]-1 and y >= 0 and y < shape[0]-1:
-            if mask is not None and mask[int(round(y)), int(round(x))] == 1:
-                selected.append(True)
-            elif mask is None:
+            if mask is not None:
+                if mask[int(round(y)), int(round(x))] == 1:
+                    selected.append(True)
+                else:
+                    selected.append(False)
+            else:
                 selected.append(True)
         else:
             selected.append(False)

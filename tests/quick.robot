@@ -94,6 +94,11 @@ Generate simulated cluster maps in parallel
     Make signal free sim    0.0   1234  f150    large
     Make signal free sim    0.0   1234  f090    large
 
+Generate simulated A10 cluster maps in parallel
+    Setup quickstart
+    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f150    large  A10
+    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large  A10
+
 Generate simulated B12 cluster maps in parallel
     Setup quickstart
     Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f150    large  B12
