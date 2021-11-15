@@ -1,0 +1,142 @@
+# Nemo config file
+# YAML format 
+# - use null to return None in Python
+# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+
+# This should be a list of maps at different frequencies
+# Valid units are only uK (delta T with respect to CMB) - Jy/sr has yet to be added
+unfilteredMaps:
+    - {mapFileName: "sim_f150.fits",
+       weightsFileName: null,
+       obsFreqGHz: 149.6, units: 'uK',
+       beamFileName: "maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"}
+    - {mapFileName: "sim_f090.fits",
+       weightsFileName: null,
+       obsFreqGHz: 97.8, units: 'uK',
+       beamFileName: "maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}
+
+# Masks
+#surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
+
+# Instead of giving point source mask, can give catalogs instead
+#maskPointSourcesFromCatalog:
+    #- "PSCatalog_rArcmin/PS_S18_f150_auto_rArcmin.fits"
+    #- "customPSMask_S18/customPSCatalog_S18.fits"
+
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 4.0
+minObjPix: 1
+findCenterOfMass: True
+useInterpolator: True
+rejectBorder: 0
+objIdent: 'ACT-CL'
+longNames: False
+
+# Photometry options
+photFilter: 'Battaglia_M2e14_z0p4' # Defines the reference filter for cluster selection / mass estimates
+
+# Mass measurement options - used by nemoMass
+# redshiftCatalog:  A .fits table containing name, RADeg, decDeg, redshift, redshiftErr columns
+# tenToA0, B0, Mpivot, sigma_int: Fixed scaling relation options (see H13 or ACTPol paper)
+# rescaleFactor, rescaleFactorErr: For MCal masses, as in the ACTPol, DR5 papers (just rescales M500c)
+massOptions: {tenToA0: 4.95e-5, 
+              B0: 0.08, 
+              Mpivot: 3.0e+14, 
+              sigma_int: 0.2,
+              relativisticCorrection: True,
+              rescaleFactor: 0.70,
+              rescaleFactorErr: 0.07,
+              redshiftCatalog: "S18Clusters/AdvACT_confirmed.fits"}
+
+# Selection function options - this calculation can also be enabled with the nemo -S switch
+# NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
+# Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
+calcSelFn: False
+selFnOptions: {fixedSNRCut: 5.0,
+               method: 'montecarlo',
+               numIterations: 1000, 
+               massLimitMaps: [{z: 0.5}]}
+               
+selFnFootprints: 
+    - {label: "HSC",
+       maskList: ["HSCCheckAndSelFn/s19a_fdfc_CAR_contarea_ziy-gt-5.fits"]}
+    - {label: "KiDS",
+       maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
+    - {label: "DES",
+       maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+
+# Filter definitions:
+# allFilters is a dictionary of parameters that will be copied into all mapFilters
+# (these can be overridden by keys with the same name in mapFilters)
+allFilters: {class: "BattagliaModelMatchedFilter",
+             params: {noiseParams: {method: "dataMap",
+                                    noiseGridArcmin: 40.},
+                      saveFilteredMaps: False,
+                      saveRMSMap: False,
+                      savePlots: False,
+                      saveDS9Regions: False,
+                      outputUnits: 'yc',
+                      edgeTrimArcmin: 0.0}
+            }
+                
+# mapFilters is a list of all the different filters to apply
+# (keys in mapFilters with the same name as those in allFilters take priority)
+mapFilters:
+    #- {label: "Battaglia_M1e14_z0p2",
+       #params: {M500MSun: 1.0e+14, z: 0.2}}
+    #- {label: "Battaglia_M2e14_z0p2",
+       #params: {M500MSun: 2.0e+14, z: 0.2}}
+    #- {label: "Battaglia_M4e14_z0p2",
+       #params: {M500MSun: 4.0e+14, z: 0.2}}
+    #- {label: "Battaglia_M8e14_z0p2",
+       #params: {M500MSun: 8.0e+14, z: 0.2}}
+    #- {label: "Battaglia_M1e14_z0p4",
+       #params: {M500MSun: 1.0e+14, z: 0.4}}
+    - {label: "Battaglia_M2e14_z0p4",
+       params: {M500MSun: 2.0e+14, z: 0.4,
+                saveFilteredMaps: True,
+                savePlots: True}}
+    #- {label: "Battaglia_M4e14_z0p4",
+       #params: {M500MSun: 4.0e+14, z: 0.4}}
+    #- {label: "Battaglia_M8e14_z0p4",
+       #params: {M500MSun: 8.0e+14, z: 0.4}}              
+    #- {label: "Battaglia_M1e14_z0p8",
+       #params: {M500MSun: 1.0e+14, z: 0.8}}
+    #- {label: "Battaglia_M2e14_z0p8",
+       #params: {M500MSun: 2.0e+14, z: 0.8}}
+    #- {label: "Battaglia_M4e14_z0p8",
+       #params: {M500MSun: 4.0e+14, z: 0.8}}
+    #- {label: "Battaglia_M8e14_z0p8",
+       #params: {M500MSun: 8.0e+14, z: 0.8}}
+    #- {label: "Battaglia_M1e14_z1p2",
+       #params: {M500MSun: 1.0e+14, z: 1.2}}
+    #- {label: "Battaglia_M2e14_z1p2",
+       #params: {M500MSun: 2.0e+14, z: 1.2}}
+    #- {label: "Battaglia_M4e14_z1p2",
+       #params: {M500MSun: 4.0e+14, z: 1.2}}
+    #- {label: "Battaglia_M8e14_z1p2",
+       #params: {M500MSun: 8.0e+14, z: 1.2}}
+
+# Source injection test - this can also be enabled with the nemo -I switch
+#sourceInjectionTest: False
+sourceInjectionIterations: 200
+sourcesPerTile: 50
+sourceInjectionModels:
+    - {redshift: 0.8, M500: 2.0e+14}
+    - {redshift: 0.4, M500: 2.0e+14}
+    - {redshift: 0.2, M500: 2.0e+14}
+    - {redshift: 0.1, M500: 2.0e+14}
+
+# tileDir options - cut-up each map into smaller sections
+makeTileDir: True
+stitchTiles: True
+tileOverlapDeg: 1.0
+tileDefLabel: 'auto'
+tileDefinitions: {targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
+
+# If this is given, only the named tiles will be processed (useful for testing)
+#tileNameList:
+    #- '1_10_7'
+    #- '1_10_8'      # contains J2327 (next to a source)
