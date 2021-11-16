@@ -1,6 +1,6 @@
 """
 
-This module contains tools for manipulating maps (e.g., conversion of units etc.).
+This module contains tools for manipulating maps.
 
 """
 
@@ -27,7 +27,6 @@ import shutil
 import copy
 import yaml
 import pickle
-#import IPython
 from pixell import enmap
 import nemo
 from . import catalogs
@@ -40,12 +39,12 @@ np.random.seed()
               
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
-    """Converts an array (e.g., a map) in delta T (micro Kelvin) with respect to the CMB temperature to
-    Compton y parameter values at the given frequency.
+    """Converts an array (e.g., a map) in ΔTemperature (μK) with respect to the CMB to Compton y parameter
+    values at the given frequency.
     
     Args:
         mapData (:obj:`np.ndarray`): An array containing delta T (micro Kelvin, with respect to CMB) values.
-        obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
+        obsFrequencyGHz (:obj:`float`): Frequency in GHz at which to do the conversion.
     
     Returns:
         An array of Compton y parameter values.
@@ -58,18 +57,18 @@ def convertToY(mapData, obsFrequencyGHz = 148):
 
 #-------------------------------------------------------------------------------------------------------------
 def convertToDeltaT(mapData, obsFrequencyGHz = 148, TCMBAlpha = 0.0, z = None):
-    """Converts an array (e.g., a map) of Compton y parameter values to delta T (micro Kelvin) with respect to
-    the CMB temperature at the given frequency.
+    """Converts an array (e.g., a map) of Compton y parameter values to ΔTemperature (μK) with respect to the
+    CMB at the given frequency.
     
     Args:
         mapData (:obj:`np.ndarray`): An array containing Compton y parameter values.
-        obsFrequencyGHz (float): Frequency in GHz at which to do the conversion.
-        TCMBAlpha (float, optional): This should always be zero unless you really do want to make a model
-            where CMB temperature evolves T0*(1+z)^{1-TCMBAlpha}.
-        z (float, optional): Redshift - needed only if TCMBAlpha is non-zero.
+        obsFrequencyGHz (:obj:`float`): Frequency in GHz at which to do the conversion.
+        TCMBAlpha (:obj:`float`, optional): This should always be zero unless you really do want to make a model
+            where CMB temperature evolves as T\ :sub:`0` * (1+z)\ :sup:`1-TCMBAlpha`.
+        z (:obj:`float`, optional): Redshift - needed only if TCMBAlpha is non-zero.
     
     Returns:
-        An array of delta T (micro Kelvin) values.
+        An array of ΔT (μK) values.
     
     """
     fx=signals.fSZ(obsFrequencyGHz, TCMBAlpha = TCMBAlpha, z = z)
@@ -130,10 +129,10 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             deltaY=deltaY+0.01
         
         numRows=int((decMax-decMin)/targetTileHeight)
-
+        if numRows == 0:
+            raise Exception("targetTileHeight is larger than the height of the map - edit your config file accordingly.")
         tileHeight=np.ceil(((decMax-decMin)/numRows)*100)/100
-        assert(tileHeight < 10)
-        
+
         for i in range(numRows):
             decBottom=decMin+i*tileHeight
             decTop=decMin+(i+1)*tileHeight
@@ -265,10 +264,18 @@ def loadTile(pathToTileImages, tileName, returnWCS = False):
 
     if os.path.isdir(pathToTileImages) == True:
         with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
+            extName=0
+            tileData=img[extName].data
+            if tileData is None:
+                for extName in img:
+                    tileData=img[extName].data
+                    if tileData is not None:
+                        break
+            assert tileData is not None
             if returnWCS == True:
                 # Zapping keywords in old ACT maps that confuse astropy.wcs
-                wcs=astWCS.WCS(img[0].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
-            data=img[0].data
+                wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
+            data=tileData
     else:
         with pyfits.open(pathToTileImages) as img:
             # Handle compressed full-size masks
@@ -358,6 +365,10 @@ def makeTileDir(parDict, writeToDisk = True):
                         mapDirStr=''
                     outFileNames.append(mapDirStr+"tileDir_%s_" % (tileDirFileNameLabel)+mapFileName)
                     mapTypeList.append(f)
+            if 'surveyMask' not in mapTypeList:
+                inFileNames.append(None)
+                mapTypeList.append('surveyMask')
+                outFileNames.append('tileDir_%s_surveyMask' % (tileDirFileNameLabel))
 
             if wcs is None:
                 wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
@@ -392,14 +403,28 @@ def makeTileDir(parDict, writeToDisk = True):
                 mapData=None    # only load the map if we have to
                 if writeToDisk == True:
                     os.makedirs(outMapFileName, exist_ok = True)
-                for c, name in zip(coordsList, tileNames):
+                for c, name, tileDict in zip(coordsList, tileNames, parDict['tileDefinitions']):
                     tileFileName=outMapFileName+os.path.sep+name+".fits"
+                    
+                    # If config or map was modified more recently than tile was written, re-write tile
+                    # (this is a fairly blunt instrument, but should be a little more user friendly)
+                    writeNewTileFile=False
+                    if os.path.exists(tileFileName) == True:
+                        if '_file_last_modified_ctime' in parDict.keys():
+                            if parDict['_file_last_modified_ctime'] > os.path.getctime(tileFileName):
+                                writeNewTileFile=True
+                            if inMapFileName is not None and parDict['_file_last_modified_ctime'] > os.path.getctime(inMapFileName):
+                                writeNewTileFile=True
+                            
                     if mapData is None:
-                        #deckImg=pyfits.HDUList()
-                        # Special handling for case where surveyMask = None in the .par file (tidy later...)
+                        # Special handling for case where surveyMask not supplied
                         if mapType == 'surveyMask' and inMapFileName is None:
                             with pyfits.open(inFileNames[0]) as img:
-                                mapData=np.ones(img[0].data.shape)
+                                for extName in img:
+                                    mapData=img[extName].data
+                                    if mapData is not None:
+                                        break
+                                mapData=np.ones(img[extName].data.shape, dtype = int)
                         else:
                             # Allows compressed format masks
                             with pyfits.open(inMapFileName) as img:
@@ -430,28 +455,22 @@ def makeTileDir(parDict, writeToDisk = True):
                         dec1=dec1+tileOverlapDeg
                     if ra1 > ra0:
                         ra1=-(360-ra1)
+                    clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                     
                     # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
                     # (which happens if image dimensions are both odd)
                     # I _think_ this is related to the interpolation done in signals.fitQ
-                    ddec=wcs.getYPixelSizeDeg()/10
-                    count=0
-                    clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
-                    while clip['data'].shape[0] % 2 != 0:
-                        try_dec0=dec0-ddec*count
-                        try_dec1=dec1+ddec*count
-                        if try_dec0 < -90:
-                            try_dec0=dec0
-                        if try_dec1 > 90:
-                            try_dec1=dec1
-                        clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, try_dec0, try_dec1)
-                        count=count+1
-                        if count > 200:
-                            raise Exception("Triggered stupid bug in makeTileDir... this should be fixed properly")
-                            #print("Triggered stupid bug in makeTileDir... this should be fixed properly")
-                            #import IPython
-                            #IPython.embed()
-                            #sys.exit()
+                    if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
+                        newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
+                        newArr[:clip['data'].shape[0], :]=clip['data']
+                        newWCS=clip['wcs'].copy()
+                        newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
+                        newWCS.updateFromHeader()
+                        testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
+                        # Check if we see the same sky, if not and we trip this, we need to think about this more
+                        assert((testClip['data']-clip['data']).sum() == 0)
+                        clip['data']=newArr
+                        clip['wcs']=newWCS
                     
                     # Storing clip coords etc. so can stitch together later
                     # areaMaskSection here is used to define the region that would be kept (takes out overlap)
@@ -468,8 +487,6 @@ def makeTileDir(parDict, writeToDisk = True):
                                               'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
                     else:
                         assert(clipCoordsDict[name]['clippedSection'] == clip['clippedSection'])
-                    # Old
-                    #clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
                     print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
                     header=clip['wcs'].header#.copy()
                     if 'tileNoiseRegions' in list(parDict.keys()):
@@ -499,8 +516,12 @@ def makeTileDir(parDict, writeToDisk = True):
                         zapMask=np.zeros(clip['data'].shape)
                         zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
                         clip['data']=clip['data']*zapMask
-                    if os.path.exists(tileFileName) == False and writeToDisk == True:
-                        saveFITS(tileFileName, clip['data'], clip['wcs'])
+                    if (os.path.exists(tileFileName) == False or writeNewTileFile == True)  and writeToDisk == True:
+                        if mapType == 'surveyMask' or mapType == 'pointSourceMask':
+                            saveFITS(tileFileName, clip['data'], clip['wcs'], compressed = True,
+                                     compressionType = 'PLIO_1')
+                        else:
+                            saveFITS(tileFileName, clip['data'], clip['wcs'])
                                 
             # Replace entries in unfilteredMapsDictList in place
             for key, outFileName in zip(mapTypeList, outFileNames):
@@ -628,7 +649,9 @@ def stitchTiles(config):
                         continue
                     areaMask, areaWCS=completeness.loadAreaMask(tileName, config.selFnDir)
                     minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
-                    d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask*tileData
+                    # Accounting for tiles that may have been extended by 1 pix for FFT purposes (Q-related)
+                    height=maxY-minY; width=maxX-minX
+                    d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask[:height, :width]*tileData[:height, :width]
                 saveFITS(outFileName, d, wcs, compressed = compressed, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
@@ -869,7 +892,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     """
     
     data, wcs=loadTile(mapDict['mapFileName'], tileName, returnWCS = True)
-    
+        
     # Optional calibration factor
     if 'calibFactor' in mapDict.keys():
         data=data*mapDict['calibFactor']
@@ -1542,7 +1565,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
-                   cosmoModel = None, applyPixelWindow = True, override = None,
+                   profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,
                    validAreaSection = None, minSNR = 0.0, TCMBAlpha = 0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
@@ -1564,6 +1587,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         GNFWParams (str or dict, optional): Used only by cluster catalogs. If 'default', the Arnaud et al. 
             (2010) Universal Pressure Profile is assumed. Otherwise, a dictionary that specifies the profile
             parameters can be given here (see gnfw.py).
+        profile (str, optional): Used by cluster models only - sets the profile shape to use: 'A10'
+            for Arnaud et al. (2010) UPP models, or 'B12' for Battaglia et al. (2012) models.
         override (dict, optional): Used only by cluster catalogs. If a dictionary containing keys
             {'M500', 'redshift'} is given, all objects in the model image are forced to have the 
             corresponding angular size. Used by :meth:`sourceInjectionTest`.
@@ -1606,6 +1631,15 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     if cosmoModel is None:
         cosmoModel=signals.fiducialCosmoModel
     
+    # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
+    if profile == 'A10':
+        makeClusterSignalMap=signals.makeArnaudModelSignalMap
+    elif profile == 'B12':
+        makeClusterSignalMap=signals.makeBattagliaModelSignalMap
+    else:
+        raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
+                        to accept a string of GNFW parameters, but that is not implemented yet.")
+    
     # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
     numFWHM=5.0
     beam=signals.BeamProfile(beamFileName = beamFileName)
@@ -1625,9 +1659,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['fixed_y_c']*1e-4
             theta500Arcmin=signals.calcTheta500Arcmin(override['redshift'], override['M500'], cosmoModel)
             maxSizeDeg=5*(theta500Arcmin/60)
-            modelMap=signals.makeArnaudModelSignalMap(override['redshift'], override['M500'], degreesMap, 
-                                                      wcs, beam, GNFWParams = GNFWParams,
-                                                      maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+            modelMap=makeClusterSignalMap(override['redshift'], override['M500'], degreesMap, 
+                                          wcs, beam, GNFWParams = GNFWParams,
+                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
             modelMap=modelMap*fluxScaleMap
             modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
@@ -1666,9 +1700,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
                                                                             row['RADeg'], row['decDeg'], 
                                                                             maxSizeDeg)
-                signalMap=signals.makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, 
-                                                           GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                                           maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+                signalMap=makeClusterSignalMap(z, M500, degreesMap, wcs, beam, 
+                                               GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 if obsFreqGHz is not None:
                     signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
                                               TCMBAlpha = TCMBAlpha, z = z)

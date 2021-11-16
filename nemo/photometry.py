@@ -20,8 +20,6 @@ from . import maps
 from . import completeness
 from . import signals
 import sys
-#import IPython
-np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
 def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 

@@ -35,7 +35,6 @@ import argparse
 import astropy.io.fits as pyfits
 import time
 import yaml
-#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnName = None):

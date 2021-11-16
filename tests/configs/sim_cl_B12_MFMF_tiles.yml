@@ -34,11 +34,7 @@ objIdent: 'ACT-CL'
 longNames: False
 
 # Photometry options
-photFilter: 'Arnaud_M2e14_z0p4' # Defines the reference filter for cluster selection / mass estimates
-
-# Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
-# The example below is for the Planck Pressure Profile (PPP)
-#GNFWParams: {P0: 6.41, c500: 1.81, gamma: 0.31, alpha: 1.33, beta: 4.13, tol: 1e-7, npts: 100}
+photFilter: 'Battaglia_M2e14_z0p4' # Defines the reference filter for cluster selection / mass estimates
 
 # Mass measurement options - used by nemoMass
 # redshiftCatalog:  A .fits table containing name, RADeg, decDeg, redshift, redshiftErr columns
@@ -73,7 +69,7 @@ selFnFootprints:
 # Filter definitions:
 # allFilters is a dictionary of parameters that will be copied into all mapFilters
 # (these can be overridden by keys with the same name in mapFilters)
-allFilters: {class: "ArnaudModelMatchedFilter",
+allFilters: {class: "BattagliaModelMatchedFilter",
              params: {noiseParams: {method: "dataMap",
                                     noiseGridArcmin: 40.},
                       saveFilteredMaps: False,
@@ -87,39 +83,39 @@ allFilters: {class: "ArnaudModelMatchedFilter",
 # mapFilters is a list of all the different filters to apply
 # (keys in mapFilters with the same name as those in allFilters take priority)
 mapFilters:
-    #- {label: "Arnaud_M1e14_z0p2",
+    #- {label: "Battaglia_M1e14_z0p2",
        #params: {M500MSun: 1.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M2e14_z0p2",
+    #- {label: "Battaglia_M2e14_z0p2",
        #params: {M500MSun: 2.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M4e14_z0p2",
+    #- {label: "Battaglia_M4e14_z0p2",
        #params: {M500MSun: 4.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M8e14_z0p2",
+    #- {label: "Battaglia_M8e14_z0p2",
        #params: {M500MSun: 8.0e+14, z: 0.2}}
-    #- {label: "Arnaud_M1e14_z0p4",
+    #- {label: "Battaglia_M1e14_z0p4",
        #params: {M500MSun: 1.0e+14, z: 0.4}}
-    - {label: "Arnaud_M2e14_z0p4",
+    - {label: "Battaglia_M2e14_z0p4",
        params: {M500MSun: 2.0e+14, z: 0.4,
                 saveFilteredMaps: True,
                 savePlots: True}}
-    #- {label: "Arnaud_M4e14_z0p4",
+    #- {label: "Battaglia_M4e14_z0p4",
        #params: {M500MSun: 4.0e+14, z: 0.4}}
-    #- {label: "Arnaud_M8e14_z0p4",
+    #- {label: "Battaglia_M8e14_z0p4",
        #params: {M500MSun: 8.0e+14, z: 0.4}}              
-    #- {label: "Arnaud_M1e14_z0p8",
+    #- {label: "Battaglia_M1e14_z0p8",
        #params: {M500MSun: 1.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M2e14_z0p8",
+    #- {label: "Battaglia_M2e14_z0p8",
        #params: {M500MSun: 2.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M4e14_z0p8",
+    #- {label: "Battaglia_M4e14_z0p8",
        #params: {M500MSun: 4.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M8e14_z0p8",
+    #- {label: "Battaglia_M8e14_z0p8",
        #params: {M500MSun: 8.0e+14, z: 0.8}}
-    #- {label: "Arnaud_M1e14_z1p2",
+    #- {label: "Battaglia_M1e14_z1p2",
        #params: {M500MSun: 1.0e+14, z: 1.2}}
-    #- {label: "Arnaud_M2e14_z1p2",
+    #- {label: "Battaglia_M2e14_z1p2",
        #params: {M500MSun: 2.0e+14, z: 1.2}}
-    #- {label: "Arnaud_M4e14_z1p2",
+    #- {label: "Battaglia_M4e14_z1p2",
        #params: {M500MSun: 4.0e+14, z: 1.2}}
-    #- {label: "Arnaud_M8e14_z1p2",
+    #- {label: "Battaglia_M8e14_z1p2",
        #params: {M500MSun: 8.0e+14, z: 1.2}}
 
 # Source injection test - this can also be enabled with the nemo -I switch
@@ -133,14 +129,12 @@ sourceInjectionModels:
     - {redshift: 0.1, M500: 2.0e+14}
 
 # tileDir options - cut-up each map into smaller sections
-#makeTileDir: True
-#makeQuickLookMaps: True
-#stitchTiles: True
-#tileOverlapDeg: 1.0
-#tileDefLabel: 'auto'
-#tileDefinitions: {mask: 'maps/Jun2020/AdvACTSurveyMask_v7_S18.fits',
-                  #targetTileWidthDeg: 10.0, 
-                  #targetTileHeightDeg: 5.0}
+makeTileDir: True
+stitchTiles: True
+tileOverlapDeg: 1.0
+tileDefLabel: 'auto'
+tileDefinitions: {targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:

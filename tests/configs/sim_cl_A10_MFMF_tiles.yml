@@ -133,14 +133,12 @@ sourceInjectionModels:
     - {redshift: 0.1, M500: 2.0e+14}
 
 # tileDir options - cut-up each map into smaller sections
-#makeTileDir: True
-#makeQuickLookMaps: True
-#stitchTiles: True
-#tileOverlapDeg: 1.0
-#tileDefLabel: 'auto'
-#tileDefinitions: {mask: 'maps/Jun2020/AdvACTSurveyMask_v7_S18.fits',
-                  #targetTileWidthDeg: 10.0, 
-                  #targetTileHeightDeg: 5.0}
+makeTileDir: True
+stitchTiles: True
+tileOverlapDeg: 1.0
+tileDefLabel: 'auto'
+tileDefinitions: {targetTileWidthDeg: 10.0, 
+                  targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:

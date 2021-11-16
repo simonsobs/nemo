@@ -4,7 +4,7 @@ catalog presented in the
 (retrospectively referred to as the *ACT DR3 cluster catalog*).
 
 .. note::  The config files needed for this tutorial can be found in the 
-           `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+           `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR3-clusters>`_
            directory of the **Nemo** source distribution.
 
 This example uses **Nemo**'s ``RealSpaceMatchedFilter`` class. 
@@ -26,7 +26,7 @@ non-azimuthally symmetric kernels etc.).
 Downloading ACT maps
 ====================
 
-The `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+The `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR3-clusters>`_
 directory of the **Nemo** source distribution contains some of the
 data products needed for this tutorial - e.g., the survey and point source
 masks (``surveyMask.fits.gz`` and ``pointSourceMask.fits.gz`` respectively),
@@ -63,7 +63,7 @@ You can check the settings by opening the ``equD56.yml`` file in a text editor.
 For a "cosmological sample", you would only need to run the ``'Arnaud_M2e14_z0p4'``
 filter, and could comment out the dictionaries defining the other filters in the
 ``mapFilters`` list - this is already done in the ``equD56_quick.yml`` file that
-you can find in the `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+you can find in the `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR3-clusters>`_
 directory of the source code distribution.
 
 Output is written to the ``equD56`` directory. Here you will find catalogs 
@@ -78,7 +78,7 @@ Estimating cluster masses
 
 If you want to measure masses, a FITS table that includes the columns
 ``redshift`` and ``redshiftErr`` is needed. The ``ACTPol_redshifts.fits`` file
-in the `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+in the `examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR3-clusters>`_
 directory contains all the redshifts that were assigned to cluster candidates
 at the time that the ACT DR3 cluster catalog paper was submitted. You can specify
 the redshift catalog used for mass estimates with the ``massOptions`` key in
@@ -137,7 +137,7 @@ command can run all of these tasks using the ``-S`` switch.
 
 A script that shows an example of how to use the selection function
 files can be found in the
-`examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR3-clusters>`_
+`examples/ACT-DR3-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR3-clusters>`_
 directory. You can run it with:
 
 .. code-block::

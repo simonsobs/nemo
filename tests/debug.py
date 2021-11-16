@@ -21,8 +21,12 @@ n=NemoTests.NemoTests()
 
 # quickstart
 n.setup_quickstart()
-#n.set_config("../examples/quickstart/quickstart-clusters.yml")
-#n.run_nemo()
+n.set_config("../examples/quickstart/quickstart-clusters.yml")
+n.run_nemo()
+n.cross_match("testsCache/quickstart-clusters/quickstart-clusters_optimalCatalog.fits", "testsCache/DR5_cluster-catalog_v1.1.fits")
+n.check_recovered_ratio("fixed_y_c", "fixed_y_c", toleranceSigma = 1.0, errInKey = "fixed_err_y_c", errOutKey = "fixed_err_y_c",
+                        SNRKey = "fixed_SNR",  SNRCut = 5.0,  plotLabel = "quickstart-clusters")
+n.status_should_be("SUCCESS")
 
 #IPython.embed()
 #sys.exit()

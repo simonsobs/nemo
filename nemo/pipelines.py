@@ -27,7 +27,6 @@ from . import signals
 from . import completeness
 from . import MockSurvey
 import nemoCython
-#import IPython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
@@ -325,7 +324,7 @@ def makeSelFnCollection(config, mockSurvey):
             selFnCollection[footprintDict['label']]=[]
             
     for tileName in config.tileNames:
-        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir)
+        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
         compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
                                            numDraws = config.parDict['selFnOptions']['numDraws'],
                                            numIterations = config.parDict['selFnOptions']['numIterations'],
@@ -342,7 +341,7 @@ def makeSelFnCollection(config, mockSurvey):
             completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
             tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
-                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir, diagnosticsDir = config.diagnosticsDir, 
+                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
                                               footprintLabel = footprintDict['label'])
                 compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
                                                    numDraws = config.parDict['selFnOptions']['numDraws'],
