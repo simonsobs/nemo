@@ -3,7 +3,7 @@
 Quickstart clusters tutorial runs
     Run quickstart clusters
     Cross match             testsCache/quickstart-clusters/quickstart-clusters_optimalCatalog.fits      testsCache/DR5_cluster-catalog_v1.1.fits
-    Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.01  SNRKey=fixed_SNR  SNRCut=5.0  plotFileName=plots/quickstart-clusters.png
+    Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.01    errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=quickstart-clusters
     Status should be        SUCCESS
 
 Quickstart sources tutorial runs
@@ -25,7 +25,7 @@ Recovered sim source amplitudes are unbiased
     Set config      configs/sim_ptsrc_f090.yml
     Run nemo
     Cross match     testsCache/sim_f090_inputCatalog.fits     testsCache/sim_ptsrc_f090/sim_ptsrc_f090_optimalCatalog.fits
-    Check recovered ratio   deltaT_c    deltaT_c    tolerance=0.02  SNRKey=SNR  SNRCut=5.0  plotFileName=plots/sim_ptsrc_amplitudes.png
+    Check recovered ratio   deltaT_c    deltaT_c    toleranceSigma=1.0  SNRKey=SNR  SNRCut=5.0  plotLabel=sim_ptsrc_amplitudes
     Status should be        SUCCESS
 
 Recovered sim cluster amplitudes are unbiased
@@ -35,7 +35,7 @@ Recovered sim cluster amplitudes are unbiased
     Set config      configs/sim_cl_MFMF_pass2.yml
     Run nemo
     Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_MFMF/sim_cl_MFMF_optimalCatalog.fits
-    Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.02  SNRKey=fixed_SNR  SNRCut=5.0  plotFileName=plots/sim_cl_amplitudes.png
+    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=1.0  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=plots/sim_cl_amplitudes.png
     Status should be        SUCCESS
 
 #Recovered sim cluster amplitudes are unbiased - two pass
@@ -63,6 +63,9 @@ End-to-end A10 cluster modeling and subtraction
     Generate simulated cluster maps in parallel     A10
     Set config      configs/sim_cl_MFMF_tiles.yml
     Run parallel nemo
+    Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_MFMF_tiles/sim_cl_MFMF_tiles_optimalCatalog.fits
+    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=1.0  errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c   SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=A10_sim_cl_amplitudes
+    Status should be        SUCCESS
     Make parallel signal only sim    sim_cl_MFMF_tiles/sim_cl_MFMF_tiles_optimalCatalog.fits   f090    large
     Subtract maps   testsCache/sim_f090.fits  testsCache/signal_model_only_f090.fits  testsCache/cl_f090_A10_diff.fits
     Subtract maps   testsCache/signal_free_f090.fits  testsCache/cl_f090_A10_diff.fits  testsCache/signal_free-cl_f090_A10_diff.fits
@@ -102,16 +105,6 @@ Generate simulated cluster maps in parallel
     Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large  ${profile}
     Make signal free sim    0.0   1234  f150    large
     Make signal free sim    0.0   1234  f090    large
-
-#Generate simulated A10 cluster maps in parallel
-#    Setup quickstart
-#    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f150    large  A10
-#    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large  A10
-
-#Generate simulated B12 cluster maps in parallel
-#    Setup quickstart
-#    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f150    large  B12
-#    Make parallel sim    DR5_cluster-catalog_v1.1.fits   50.0    1234    f090    large  B12
     
 Generate simulated source maps
     Setup quickstart
@@ -131,6 +124,7 @@ Clean up
     Remove directory        testsCache/tileDir_auto_1.0_sim_f090.fits   True
     Remove directory        testsCache/tileDir_auto_1.0_sim_f150.fits   True
     Remove directory        testsCache/sim_cl_MFMF_tiles  True
+    Remove directory        testsCache/sim_cl_MFMF_tiles_B12  True
     #Remove directory        testsCache/sim_cl_MFMF_pass2  True
     Remove directory        testsCache/sim_ptsrc_f090  True
     Remove directory        testsCache/quickstart-clusters  True
