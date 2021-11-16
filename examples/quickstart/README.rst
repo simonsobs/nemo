@@ -3,7 +3,7 @@ in a small section cut from the f090, f150 ACT DR5 maps. These should take only 
 or so to run.
 
 .. note::  The config files needed for this tutorial can be found in the 
-           `examples/quickstart <https://github.com/simonsobs/nemo/tree/master/examples/quickstart>`_
+           `examples/quickstart <https://github.com/simonsobs/nemo/tree/main/examples/quickstart>`_
            directory of the **Nemo** source distribution.
            
 First, download the needed maps and beams (about 20 Mb), and extract the archive:

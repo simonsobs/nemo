@@ -300,23 +300,11 @@ class NemoTests(object):
         meanRatioErr=np.percentile(abs(bsRatios-meanRatio), 68.3)
 
         label="<input %s>/<output %s> = %.3f ± %.3f (%s > %.1f)" % (inKey, outKey, meanRatio, meanRatioErr, SNRKey, SNRCut)
-        print("... %s" % (label))
+        print("%s" % (label))
 
         if plotLabel is not None:
-            # Ratio plot
-            #plt.figure(figsize = (10, 8))
-            #plt.plot(outTab[SNRKey], ratio, 'r.')
-            #plt.xlabel(SNRKey)
-            #plt.ylabel("input %s / output %s" % (inKey, outKey))
-            #plt.plot(np.linspace(0, 16, 3), [1]*3, 'k--')
-            #plt.xlim(SNRCut, 16)
-            #plt.title(label, fontdict = {'size': plotTitleSize})
-            #plt.ylim(0.5, 1.5)
-            #plt.savefig(plotsDir+os.path.sep+plotLabel+"_ratio.png")
-            #plt.close()
-            # X vs Y
-            plotMin=0.9*min([inTab[inKey].min(), outTab[outKey].min()])
-            plotMax=1.1*max([inTab[inKey].max(), outTab[outKey].max()])
+            plotMin=0.1*min([inTab[inKey].min(), outTab[outKey].min()])
+            plotMax=10*max([inTab[inKey].max(), outTab[outKey].max()])
             plotRange=np.linspace(plotMin, plotMax, 100)
             plt.figure(figsize = (10, 8))
             if errInKey is not None and errOutKey is not None:
@@ -324,7 +312,7 @@ class NemoTests(object):
                      xerr = inTab[errInKey], elinewidth = 1.5, ecolor = '#AAAAFF',
                      fmt = 'D', ms = 6, label = None)
             else:
-                plt.plot(inTab[inKey], outTab[outKey], 'r.')
+                plt.plot(inTab[inKey], outTab[outKey], 'D')
             plt.xlabel("input "+inKey)
             plt.ylabel("output "+outKey)
             plt.plot(plotRange, plotRange, 'k--')

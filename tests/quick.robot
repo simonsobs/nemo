@@ -3,7 +3,7 @@
 Quickstart clusters tutorial runs
     Run quickstart clusters
     Cross match             testsCache/quickstart-clusters/quickstart-clusters_optimalCatalog.fits      testsCache/DR5_cluster-catalog_v1.1.fits
-    Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.01    errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=quickstart-clusters
+    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=3.0    errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=quickstart-clusters
     Status should be        SUCCESS
 
 Quickstart sources tutorial runs
@@ -14,39 +14,14 @@ Cluster sim with nemoModel runs
 
 Source sim with nemoModel runs
     Generate simulated source maps
-
-Nemo runs in parallel
-    Generate simulated cluster maps in parallel     A10
-    Set config      configs/sim_cl_MFMF_tiles.yml
-    Run parallel nemo
     
 Recovered sim source amplitudes are unbiased
     Generate simulated source maps
     Set config      configs/sim_ptsrc_f090.yml
     Run nemo
     Cross match     testsCache/sim_f090_inputCatalog.fits     testsCache/sim_ptsrc_f090/sim_ptsrc_f090_optimalCatalog.fits
-    Check recovered ratio   deltaT_c    deltaT_c    toleranceSigma=1.0  SNRKey=SNR  SNRCut=5.0  plotLabel=sim_ptsrc_amplitudes
+    Check recovered ratio   deltaT_c    deltaT_c    toleranceSigma=3.0  SNRKey=SNR  SNRCut=5.0  plotLabel=sim_ptsrc_amplitudes
     Status should be        SUCCESS
-
-Recovered sim cluster amplitudes are unbiased
-    Generate simulated cluster maps
-    Set config      configs/sim_cl_MFMF.yml
-    Run nemo
-    Set config      configs/sim_cl_MFMF_pass2.yml
-    Run nemo
-    Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_MFMF/sim_cl_MFMF_optimalCatalog.fits
-    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=1.0  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=plots/sim_cl_amplitudes.png
-    Status should be        SUCCESS
-
-#Recovered sim cluster amplitudes are unbiased - two pass
-#    Generate simulated cluster maps
-#    Set config      configs/sim_cl_MFMF.yml
-#    Run nemo
-#    Set config      configs/sim_cl_MFMF_pass2.yml
-#    Run nemo
-#    Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_MFMF_pass2/sim_cl_MFMF_pass2_optimalCatalog.fits
-#    Check recovered ratio   fixed_y_c    fixed_y_c    tolerance=0.02  SNRKey=fixed_SNR  SNRCut=5.0  plotFileName=plots/sim_cl_amplitudes_pass2.png
-#    Status should be        SUCCESS
     
 End-to-end source recovery and subtraction
     Generate simulated source maps
@@ -58,29 +33,11 @@ End-to-end source recovery and subtraction
     Check map sigma     testsCache/signal_free-sources_diff.fits    100
     Status should be        SUCCESS
 
-# Add 2nd pass?
 End-to-end A10 cluster modeling and subtraction
-    Generate simulated cluster maps in parallel     A10
-    Set config      configs/sim_cl_MFMF_tiles.yml
-    Run parallel nemo
-    Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_MFMF_tiles/sim_cl_MFMF_tiles_optimalCatalog.fits
-    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=1.0  errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c   SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=A10_sim_cl_amplitudes
-    Status should be        SUCCESS
-    Make parallel signal only sim    sim_cl_MFMF_tiles/sim_cl_MFMF_tiles_optimalCatalog.fits   f090    large
-    Subtract maps   testsCache/sim_f090.fits  testsCache/signal_model_only_f090.fits  testsCache/cl_f090_A10_diff.fits
-    Subtract maps   testsCache/signal_free_f090.fits  testsCache/cl_f090_A10_diff.fits  testsCache/signal_free-cl_f090_A10_diff.fits
-    Check map sigma     testsCache/signal_free-cl_f090_A10_diff.fits    50
-    Status should be        SUCCESS
+    End-to-end cluster modeling and subtraction     A10
 
 End-to-end B12 cluster modeling and subtraction
-    Generate simulated cluster maps in parallel     B12
-    Set config      configs/sim_cl_MFMF_tiles_B12.yml
-    Run parallel nemo
-    Make parallel signal only sim    sim_cl_MFMF_tiles_B12/sim_cl_MFMF_tiles_B12_optimalCatalog.fits   f090    large
-    Subtract maps   testsCache/sim_f090.fits  testsCache/signal_model_only_f090.fits  testsCache/cl_f090_B12_diff.fits
-    Subtract maps   testsCache/signal_free_f090.fits  testsCache/cl_f090_B12_diff.fits  testsCache/signal_free-cl_f090_B12_diff.fits
-    Check map sigma     testsCache/signal_free-cl_f090_B12_diff.fits    50
-    Status should be        SUCCESS
+    End-to-end cluster modeling and subtraction     B12
     
     
 *** Keywords ***
@@ -117,14 +74,33 @@ Generate large simulated source maps
     Make sim    pointsources-100   100.0    1234    f150    large
     Make sim    pointsources-100   100.0    1234    f090    large
     Make signal free sim    0.0   1234  f090    large
-    
+
+End-to-end cluster modeling and subtraction
+    [Arguments]   ${profile}
+    Generate simulated cluster maps in parallel     ${profile}
+    Set config      configs/sim_cl_${profile}_MFMF_tiles.yml
+    Run parallel nemo
+    Cross match     testsCache/DR5_cluster-catalog_v1.1.fits    testsCache/sim_cl_${profile}_MFMF_tiles/sim_cl_${profile}_MFMF_tiles_optimalCatalog.fits
+    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=3.0  errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c   SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=${profile}_sim_cl_amplitudes
+    Status should be        SUCCESS
+    Make parallel signal only sim    sim_cl_${profile}_MFMF_tiles/sim_cl_${profile}_MFMF_tiles_optimalCatalog.fits  f090    large   ${profile}
+    Subtract maps   testsCache/sim_f090.fits  testsCache/signal_model_only_f090.fits  testsCache/cl_${profile}_f090_diff.fits
+    Subtract maps   testsCache/signal_free_f090.fits  testsCache/cl_${profile}_f090_diff.fits  testsCache/signal_free-cl_${profile}_f090_diff.fits
+    Check map sigma     testsCache/signal_free-cl_${profile}_f090_diff.fits    50
+    Status should be        SUCCESS
+    [Teardown]  Clean up cluster sim    ${profile}
+
+Clean up cluster sim
+    [Arguments]   ${profile}
+    Remove directory        testsCache/sim_cl_${profile}_MFMF_tiles     True
+    Remove directory        testsCache/tileDir_auto_1.0_sim_f090.fits   True
+    Remove directory        testsCache/tileDir_auto_1.0_sim_f150.fits   True
+
 Clean up
     Remove directory        testsCache/sim_cl_MFMF  True
     Remove directory        testsCache/tileDir_auto_1.0_surveyMask  True
     Remove directory        testsCache/tileDir_auto_1.0_sim_f090.fits   True
     Remove directory        testsCache/tileDir_auto_1.0_sim_f150.fits   True
-    Remove directory        testsCache/sim_cl_MFMF_tiles  True
-    Remove directory        testsCache/sim_cl_MFMF_tiles_B12  True
     #Remove directory        testsCache/sim_cl_MFMF_pass2  True
     Remove directory        testsCache/sim_ptsrc_f090  True
     Remove directory        testsCache/quickstart-clusters  True

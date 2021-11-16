@@ -2,7 +2,7 @@ Here we provide a guide to reproducing the
 `ACT DR5 cluster catalog <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_.
 
 .. note::  The config files and scripts needed for this tutorial can be
-           found in the `examples/ACT-DR5-clusters <https://github.com/simonsobs/nemo/tree/master/examples/ACT-DR5-clusters>`_
+           found in the `examples/ACT-DR5-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR5-clusters>`_
            directory of the **Nemo** source distribution.
 
 
