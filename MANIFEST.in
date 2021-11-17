@@ -3,3 +3,14 @@ include README.rst
 include INSTALL.rst
 include versioneer.py
 include nemo/_version.py
+include docs/*.py
+include docs/*.rst
+include docs/Makefile
+include tests/*.rst
+include tests/*.robot
+include tests/*.py
+include tests/lib/*.py
+include tests/configs/*.yml
+include tests/configs/*.txt
+include tests/configs/*.rst
+
