@@ -56,80 +56,104 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         
     """
     
-    if config.parDict['twoPass'] == False:
-        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters, 
-                                           measureFluxes = measureFluxes, invertMap = invertMap, 
-                                           verbose = verbose, useCachedMaps = useCachedMaps)
-    
+    # Multi-pass pipeline, enabled with use of filterSets parameter in config file
+    if config.filterSets != []:
+        # If we wanted to save results from each step, could set-up filterSet specific diagnostics dir here
+        if rootOutDir is None:
+            rootOutDir=config.rootOutDir
+        for setNum in config.filterSets:
+            print(">>> Filter set: %d" % (setNum))
+            config.setFilterSet(setNum)
+            config.filterSetOptions[setNum]['catalog']=_filterMapsAndMakeCatalogs(config, verbose = True,
+                                                                                  useCachedMaps = False)
+        catalog=config.filterSetOptions[config.filterSets[-1]]['catalog']
+
     else:
-        
-        # Two pass pipeline
-        # On 1st pass, find sources (and maybe clusters) with canned settings, masking nothing.
-        # On 2nd pass, the 1st pass catalog will be used to mask or subtract sources from maps used for 
-        # noise estimation only.
-        
-        # No point doing this if we're not using the map itself for the noise term in the filter
-        for f in config.parDict['mapFilters']:
-            for key in f.keys():
-                if key == 'noiseParams' and f['noiseParams']['method'] != 'dataMap':
-                    raise Exception("There is no point running if filter noise method != 'dataMap'.")
+        # Default single pass behaviour
+        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters,
+                                           measureFluxes = measureFluxes, invertMap = invertMap,
+                                           verbose = verbose, useCachedMaps = useCachedMaps)
 
-        # Pass 1 - find point sources, save nothing
-        # NOTE: We need to do this for each map in the list, if we have a multi-frequency filter
-        pass1PtSrcSettings={'label': "Beam",
-                            'class': "BeamMatchedFilter",
-                            'params': {'noiseParams': {'method': "model",
-                                                       'noiseGridArcmin': 40.0,
-                                                       'numNoiseBins': 2},
-                            'saveFilteredMaps': False,
-                            'outputUnits': 'uK',
-                            'edgeTrimArcmin': 0.0}}
-        config.parDict['mapFilters']=[pass1PtSrcSettings]
-        config.parDict['photFilter']=None
-        config.parDict['maskPointSourcesFromCatalog']=[]    # This is only applied on the 2nd pass
-        config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
-        orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
-        config.parDict['forcedPhotometryCatalog']=None # If in this mode, only wanted on 2nd pass
-        pass1CatalogsList=[]
-        surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
-        for mapDict in orig_unfilteredMapsDictList:
-            # We use whole tile area (i.e., don't trim overlaps) so that we get everything if under MPI
-            # Otherwise, powerful sources in overlap regions mess things up under MPI
-            # Serial mode doesn't have this issue as it can see the whole catalog over all tiles
-            # But since we now use full area, we may double subtract ovelap sources when in serial mode
-            # So the removeDuplicates call fixes that, and doesn't impact anything else here
-            surveyMasksList.append(mapDict['surveyMask'])
-            mapDict['surveyMask']=None
-            config.unfilteredMapsDictList=[mapDict]
-            catalog=_filterMapsAndMakeCatalogs(config, verbose = False, writeAreaMasks = False)
-            if len(catalog) > 0 :
-                catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)
-            pass1CatalogsList.append(catalog)
-
-        # Pass 2 - subtract point sources in the maps used for noise term in filter only
-        # To avoid ringing in the pass 2, we siphon off the super bright things found in pass 1
-        # We subtract those from the maps used in pass 2 - we then need to add them back at the end
-        config.restoreConfig()
-        config.parDict['measureShapes']=True    # We'll keep this for pass 2 as well
-        siphonSNR=50
-        for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
-            #catalogs.catalog2DS9(catalog[catalog['SNR'] > siphonSNR], config.diagnosticsDir+os.path.sep+"pass1_highSNR_siphoned.reg")
-            mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]
-            mapDict['subtractPointSourcesFromCatalog']=[catalog[catalog['SNR'] > siphonSNR]]
-            mapDict['maskSubtractedPointSources']=True
-            mapDict['surveyMask']=surveyMask
-        config.unfilteredMapsDictList=orig_unfilteredMapsDictList
-        catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
-        
-        # Merge back in the bright sources that were subtracted in pass 1
-        # (but we don't do that in forced photometry mode)
-        mergeList=[catalog]
-        if config.parDict['forcedPhotometryCatalog'] is None:
-            for pass1Catalog in pass1CatalogsList:
-                mergeList.append(pass1Catalog[pass1Catalog['SNR'] > siphonSNR])
-        catalog=atpy.vstack(mergeList)
-    
     return catalog
+
+    #---
+    ## OLD: Used by Kevin
+
+    #if config.parDict['twoPass'] == False:
+        #catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters,
+                                           #measureFluxes = measureFluxes, invertMap = invertMap,
+                                           #verbose = verbose, useCachedMaps = useCachedMaps)
+    
+    #else:
+        
+        ## Two pass pipeline
+        ## On 1st pass, find sources (and maybe clusters) with canned settings, masking nothing.
+        ## On 2nd pass, the 1st pass catalog will be used to mask or subtract sources from maps used for
+        ## noise estimation only.
+        
+        ## No point doing this if we're not using the map itself for the noise term in the filter
+        #for f in config.parDict['mapFilters']:
+            #for key in f.keys():
+                #if key == 'noiseParams' and f['noiseParams']['method'] != 'dataMap':
+                    #raise Exception("There is no point running if filter noise method != 'dataMap'.")
+
+        ## Pass 1 - find point sources, save nothing
+        ## NOTE: We need to do this for each map in the list, if we have a multi-frequency filter
+        #pass1PtSrcSettings={'label': "Beam",
+                            #'class': "BeamMatchedFilter",
+                            #'params': {'noiseParams': {'method': "model",
+                                                       #'noiseGridArcmin': 40.0,
+                                                       #'numNoiseBins': 2},
+                            #'saveFilteredMaps': False,
+                            #'outputUnits': 'uK',
+                            #'edgeTrimArcmin': 0.0}}
+        #config.parDict['mapFilters']=[pass1PtSrcSettings]
+        #config.parDict['photFilter']=None
+        #config.parDict['maskPointSourcesFromCatalog']=[]    # This is only applied on the 2nd pass
+        #config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
+        #orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
+        #config.parDict['forcedPhotometryCatalog']=None # If in this mode, only wanted on 2nd pass
+        #pass1CatalogsList=[]
+        #surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
+        #for mapDict in orig_unfilteredMapsDictList:
+            ## We use whole tile area (i.e., don't trim overlaps) so that we get everything if under MPI
+            ## Otherwise, powerful sources in overlap regions mess things up under MPI
+            ## Serial mode doesn't have this issue as it can see the whole catalog over all tiles
+            ## But since we now use full area, we may double subtract ovelap sources when in serial mode
+            ## So the removeDuplicates call fixes that, and doesn't impact anything else here
+            #surveyMasksList.append(mapDict['surveyMask'])
+            #mapDict['surveyMask']=None
+            #config.unfilteredMapsDictList=[mapDict]
+            #catalog=_filterMapsAndMakeCatalogs(config, verbose = False, writeAreaMasks = False)
+            #if len(catalog) > 0 :
+                #catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)
+            #pass1CatalogsList.append(catalog)
+
+        ## Pass 2 - subtract point sources in the maps used for noise term in filter only
+        ## To avoid ringing in the pass 2, we siphon off the super bright things found in pass 1
+        ## We subtract those from the maps used in pass 2 - we then need to add them back at the end
+        #config.restoreConfig()
+        #config.parDict['measureShapes']=True    # We'll keep this for pass 2 as well
+        #siphonSNR=50
+        #for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
+            ##catalogs.catalog2DS9(catalog[catalog['SNR'] > siphonSNR], config.diagnosticsDir+os.path.sep+"pass1_highSNR_siphoned.reg")
+            #mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]
+            #mapDict['subtractPointSourcesFromCatalog']=[catalog[catalog['SNR'] > siphonSNR]]
+            #mapDict['maskSubtractedPointSources']=True
+            #mapDict['surveyMask']=surveyMask
+        #config.unfilteredMapsDictList=orig_unfilteredMapsDictList
+        #catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
+        
+        ## Merge back in the bright sources that were subtracted in pass 1
+        ## (but we don't do that in forced photometry mode)
+        #mergeList=[catalog]
+        #if config.parDict['forcedPhotometryCatalog'] is None:
+            #for pass1Catalog in pass1CatalogsList:
+                #mergeList.append(pass1Catalog[pass1Catalog['SNR'] > siphonSNR])
+        #catalog=atpy.vstack(mergeList)
+    
+    #return catalog
+    #----
     
 #------------------------------------------------------------------------------------------------------------
 def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
@@ -198,7 +222,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
             if f['label'] == photFilter:
                 continue
         filtersList.append(f)
-    if photFilter is not None:
+    if photFilter is not None and len(config.parDict['mapFilters']) > 1:
         assert(filtersList[0]['label'] == photFilter)
     photFilteredMapDict=None
     

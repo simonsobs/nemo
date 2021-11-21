@@ -182,11 +182,13 @@ class MapFilter(object):
         # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
         # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDir files
         self.unfilteredMapsDictList=[]
-        for mapDict in unfilteredMapsDictList:           
+        for mapDict in unfilteredMapsDictList:
+            if 'mapToUse' in self.params.keys() and mapDict['label'] != self.params['mapToUse']:
+                continue
             mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
             self.unfilteredMapsDictList.append(mapDict)
-        self.wcs=mapDict['wcs']
-        self.shape=mapDict['data'].shape
+        self.wcs=self.unfilteredMapsDictList[0]['wcs']
+        self.shape=self.unfilteredMapsDictList[0]['data'].shape
                                 
         # Get beam solid angle info (units: nanosteradians)... we'll need for fluxes in Jy later
         self.beamSolidAnglesDict={}
@@ -552,13 +554,17 @@ class MatchedFilter(MapFilter):
                 mapDict=self.unfilteredMapsDictList[i]
                 d=mapDict['data']
                 if self.params['noiseParams']['method'] == 'dataMap':
-                    if 'noiseMaskCatalog' in mapDict.keys() and mapDict['noiseMaskCatalog'] is not None:
+                    if 'noiseMaskCatalog' in self.params.keys() and self.params['noiseMaskCatalog'] is not None:
+                        print("is noiseMaskCatalog a list or a single entry?")
+                        import IPython
+                        IPython.embed()
+                        sys.exit()
                         modelPath=self.diagnosticsDir+os.path.sep+"noiseMaskModel_%.1f.fits" % (mapDict['obsFreqGHz'])
                         if os.path.exists(modelPath) == True:
                             with pyfits.open(modelPath) as img:
                                 model=img[0].data
                         else:
-                            model=maps.makeModelImage(d.shape, self.wcs, mapDict['noiseMaskCatalog'],
+                            model=maps.makeModelImage(d.shape, self.wcs, self.params['noiseMaskCatalog'],
                                                       mapDict['beamFileName'],
                                                       obsFreqGHz = mapDict['obsFreqGHz'],
                                                       minSNR = 5.0)

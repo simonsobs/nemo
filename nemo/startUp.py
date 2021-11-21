@@ -35,7 +35,7 @@ def parseConfigFile(parDictFileName):
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
         maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'noiseMaskCatalog', 'maskHoleDilationFactor']
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -85,6 +85,10 @@ def parseConfigFile(parDictFileName):
                     filtDict['params']['saveRMSMap']=True
                     filtDict['params']['saveFreqWeightMap']=True
                     filtDict['params']['saveFilter']=True
+        # Global noise mask catalog, if given, now goes into filter settings where it belongs
+        if 'noiseMaskCatalog' in parDict.keys() and parDict['noiseMaskCatalog'] is not None:
+            for filtDict in parDict['mapFilters']:
+                filtDict['params']['noiseMaskCatalog']=parDict['noiseMaskCatalog']
         # tileNames must be case insensitive in .yml file 
         # we force upper case here (because FITS will anyway)
         if 'tileDefinitions' in parDict.keys():
@@ -378,15 +382,79 @@ class NemoConfig(object):
             for tileName in self.tileNames:
                 for d in [self.diagnosticsDir, self.filteredMapsDir]:
                     os.makedirs(d+os.path.sep+tileName, exist_ok = True)
+
+        # Identify filter sets, for enabling new multi-pass filtering and object finding
+        self._identifyFilterSets()
         
         # For debugging...
         if verbose: print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
+    def _identifyFilterSets(self):
+        """Inspect the config dictionary to identify filter sets, which are used in multi-pass map filtering
+        and object detection.
+
+        """
+        self.filterSets=[]
+        if 'filterSetOptions' in self.parDict.keys():
+            self.filterSetOptions=self.parDict['filterSetOptions']
+            for filtDict in self.parDict['mapFilters']:
+                if 'filterSets' in filtDict.keys():
+                    for f in filtDict['filterSets']:
+                        if f not in self.filterSets:
+                            self.filterSets.append(f)
+            self.filterSets.sort()
+            self.filterSetLabels={}
+            for setNum in self.filterSetOptions.keys():
+                if 'label' in self.filterSetOptions[setNum].keys():
+                    self.filterSetLabels[setNum]=self.filterSetOptions[setNum]['label']
+                else:
+                    self.filterSetLabels[setNum]=None
+
+
     def restoreConfig(self):
         """Restores the parameters dictionary (self.parDict) to the original state specified in the config 
         .yml file.
         
         """      
         self.parDict=copy.deepcopy(self._origParDict)
-    
+
+
+    def setFilterSet(self, setNum):
+        """Choose the filter set to activate.
+
+        """
+        self.restoreConfig()
+
+        options=None
+        if setNum in self.filterSetOptions.keys():
+            options=self.filterSetOptions[setNum]
+
+        # Set the filters and add catalogs used for model subtraction from filter noise term
+        saveKeys=['saveFilteredMaps', 'saveFilter', 'saveRMSMap', 'savePlots', 'saveDS9Regions']
+        filtersToActivate=[]
+        for filtDict in self.parDict['mapFilters']:
+            if setNum in filtDict['filterSets']:
+                if options is not None:
+                    if 'mapToUse' in options.keys():
+                        filtDict['params']['mapToUse']=options['mapToUse']
+                    if 'noiseModelCatalogFromSets' in options.keys():
+                        filtDict['noiseModelCatalog']=[]
+                        for noiseSubIndex in options['noiseModelCatalogFromSets']:
+                            filtDict['noiseModelCatalog'].append(self.filterSetOptions[noiseSubIndex]['catalog'])
+                # NOTE: We prevent any filter set apart from the last one from writing maps, filters to disk
+                if setNum != self.filterSets[-1]:
+                    for saveKey in saveKeys:
+                        if saveKey in filtDict['params'].keys():
+                            filtDict['params'][saveKey]=False
+                filtersToActivate.append(filtDict)
+        self.parDict['mapFilters']=filtersToActivate
+
+        # Add catalogs for model subtraction from maps
+        if options is not None and 'subtractModelFromSets' in options.keys():
+            for mapDict in self.unfilteredMapsDictList:
+                for subtractSetIndex in options['subtractModelFromSets']:
+                    if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
+                        continue
+                    mapDict['subtractModelFromCatalog']=self.filterSetOptions[subtractSetIndex]['catalog']
+

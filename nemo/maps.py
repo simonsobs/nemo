@@ -1074,53 +1074,70 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
                 psMask[rArcminMap < maskRadiusArcmin]=0
                 data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
 
-    # Optional subtraction of point sources based on a catalog
-    # We'll also (optionally) add a small mask at these locations to the survey mask
-    if 'subtractPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['subtractPointSourcesFromCatalog'] is not None:
-        if type(mapDict['subtractPointSourcesFromCatalog']) is not list:
-            mapDict['subtractPointSourcesFromCatalog']=[mapDict['subtractPointSourcesFromCatalog']]
-        for tab in mapDict['subtractPointSourcesFromCatalog']:
+    #----
+    # NEW:
+    if 'subtractModelFromCatalog' in list(mapDict.keys()) and mapDict['subtractModelFromCatalog'] is not None:
+        if type(mapDict['subtractModelFromCatalog']) is not list:
+            mapDict['subtractModelFromCatalog']=[mapDict['subtractModelFromCatalog']]
+        for tab in mapDict['subtractModelFromCatalog']:
             if type(tab) != atpy.Table:
                 tab=atpy.Table().read(catalogPath)
-            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs) 
-            model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'], obsFreqGHz = None)
+            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+            model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'], obsFreqGHz = mapDict['obsFreqGHz'])
             if model is not None:
                 data=data-model
-            # Optionally blank small exclusion zone around these sources in survey mask
-            # (this is needed for SZ searches, to avoid any issue with possible oversubtraction)
-            # NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
-            if 'maskSubtractedPointSources' in list(mapDict.keys()) and mapDict['maskSubtractedPointSources'] == True:
-                # For hole filling extended sources
-                pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-                bckData=ndimage.median_filter(data, int(pixRad))
-                for row in tab:
-                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                    if surveyMask[int(y), int(x)] != 0:
-                        rArcminMap=np.ones(data.shape, dtype = float)*1e6
-                        if row['SNR'] > 1000:
-                            maskRadiusArcmin=10.0
-                        else:
-                            maskRadiusArcmin=4.0
-                        # Extended sources - identify by measured size > masking radius
-                        # These will mess up noise term in filter, so add to psMask also and fill + smooth
-                        # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
-                        extendedSource=False
-                        if 'ellipse_A' and 'ellipse_B' in tab.keys():
-                            xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
-                            ASizeArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
-                            if ASizeArcmin > maskRadiusArcmin:
-                                extendedSource=True
-                                maskRadiusArcmin=ASizeArcmin
-                        if 'maskHoleDilationFactor' in mapDict.keys() and mapDict['maskHoleDilationFactor'] is not None:
-                            maskRadiusArcmin=maskRadiusArcmin*mapDict['maskHoleDilationFactor']
-                        rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                                       row['RADeg'], row['decDeg'],
-                                                                                       maskRadiusArcmin/60)
-                        rArcminMap=rArcminMap*60
-                        surveyMask[rArcminMap < maskRadiusArcmin]=0
-                        if extendedSource == True:
-                            psMask[rArcminMap < maskRadiusArcmin]=0
-                            data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
+            # Will want to add mask generation from the model image here and store it somewhere
+
+    ##----
+    ## WARNING: Below should be removed and replaced with subtractModelFromCatalog
+    ## Optional subtraction of point sources based on a catalog
+    ## We'll also (optionally) add a small mask at these locations to the survey mask
+    #if 'subtractPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['subtractPointSourcesFromCatalog'] is not None:
+        #if type(mapDict['subtractPointSourcesFromCatalog']) is not list:
+            #mapDict['subtractPointSourcesFromCatalog']=[mapDict['subtractPointSourcesFromCatalog']]
+        #for tab in mapDict['subtractPointSourcesFromCatalog']:
+            #if type(tab) != atpy.Table:
+                #tab=atpy.Table().read(catalogPath)
+            #tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+            #model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'], obsFreqGHz = None)
+            #if model is not None:
+                #data=data-model
+            ## Optionally blank small exclusion zone around these sources in survey mask
+            ## (this is needed for SZ searches, to avoid any issue with possible oversubtraction)
+            ## NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
+            #if 'maskSubtractedPointSources' in list(mapDict.keys()) and mapDict['maskSubtractedPointSources'] == True:
+                ## For hole filling extended sources
+                #pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+                #bckData=ndimage.median_filter(data, int(pixRad))
+                #for row in tab:
+                    #x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                    #if surveyMask[int(y), int(x)] != 0:
+                        #rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                        #if row['SNR'] > 1000:
+                            #maskRadiusArcmin=10.0
+                        #else:
+                            #maskRadiusArcmin=4.0
+                        ## Extended sources - identify by measured size > masking radius
+                        ## These will mess up noise term in filter, so add to psMask also and fill + smooth
+                        ## We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
+                        #extendedSource=False
+                        #if 'ellipse_A' and 'ellipse_B' in tab.keys():
+                            #xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
+                            #ASizeArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
+                            #if ASizeArcmin > maskRadiusArcmin:
+                                #extendedSource=True
+                                #maskRadiusArcmin=ASizeArcmin
+                        #if 'maskHoleDilationFactor' in mapDict.keys() and mapDict['maskHoleDilationFactor'] is not None:
+                            #maskRadiusArcmin=maskRadiusArcmin*mapDict['maskHoleDilationFactor']
+                        #rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
+                                                                                       #row['RADeg'], row['decDeg'],
+                                                                                       #maskRadiusArcmin/60)
+                        #rArcminMap=rArcminMap*60
+                        #surveyMask[rArcminMap < maskRadiusArcmin]=0
+                        #if extendedSource == True:
+                            #psMask[rArcminMap < maskRadiusArcmin]=0
+                            #data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
+    ##----
     
     # Add the map data to the dict
     mapDict['data']=data
