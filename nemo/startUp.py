@@ -421,7 +421,8 @@ class NemoConfig(object):
 
 
     def setFilterSet(self, setNum):
-        """Choose the filter set to activate.
+        """For use with multi-pass mode, in conjunction with filterSets and filterSetOptions config
+        file parameters.
 
         """
         self.restoreConfig()
@@ -439,14 +440,16 @@ class NemoConfig(object):
                     if 'mapToUse' in options.keys():
                         filtDict['params']['mapToUse']=options['mapToUse']
                     if 'noiseModelCatalogFromSets' in options.keys():
-                        filtDict['noiseModelCatalog']=[]
+                        filtDict['params']['noiseModelCatalog']=[]
                         for noiseSubIndex in options['noiseModelCatalogFromSets']:
-                            filtDict['noiseModelCatalog'].append(self.filterSetOptions[noiseSubIndex]['catalog'])
+                            filtDict['params']['noiseModelCatalog'].append(self.filterSetOptions[noiseSubIndex]['catalog'])
                 # NOTE: We prevent any filter set apart from the last one from writing maps, filters to disk
+                # Similarly, no point doing forced photometry on any run except the last
                 if setNum != self.filterSets[-1]:
                     for saveKey in saveKeys:
                         if saveKey in filtDict['params'].keys():
                             filtDict['params'][saveKey]=False
+                    self.parDict['forcedPhotometryCatalog']=None
                 filtersToActivate.append(filtDict)
         self.parDict['mapFilters']=filtersToActivate
 

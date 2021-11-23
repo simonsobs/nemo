@@ -108,10 +108,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
 
         if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
             maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-            maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])            
-        # Uncomment for quicker testing/re-runs...
-        #astImages.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-        #astImages.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])   
+            maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
 
     else:
         print("... loading cached map %s ..." % (filteredMapFileName))
@@ -126,6 +123,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
         with pyfits.open(SNMapFileName) as img:
             filteredMapDict['SNMap']=img[0].data
         filteredMapDict['surveyMask'], wcs=completeness.loadAreaMask(tileName, selFnDir)
+        filteredMapDict['flagMask'], wcs=completeness.loadFlagMask(tileName, selFnDir)
         filteredMapDict['label']=f['label']
         filteredMapDict['tileName']=tileName
     
@@ -189,7 +187,12 @@ class MapFilter(object):
             self.unfilteredMapsDictList.append(mapDict)
         self.wcs=self.unfilteredMapsDictList[0]['wcs']
         self.shape=self.unfilteredMapsDictList[0]['data'].shape
-                                
+
+        # Combine flag masks (yes, we may need to think about this more...)
+        self.flagMask=np.zeros(self.shape, dtype = int)
+        for mapDict, i in zip(self.unfilteredMapsDictList, range(len(self.unfilteredMapsDictList))):
+            self.flagMask=self.flagMask+(mapDict['flagMask']*(i+1))
+
         # Get beam solid angle info (units: nanosteradians)... we'll need for fluxes in Jy later
         self.beamSolidAnglesDict={}
         for mapDict in self.unfilteredMapsDictList:    
@@ -217,7 +220,7 @@ class MapFilter(object):
         # We could make this adjustable... added after switch to pixell
         self.apodPix=20
         
-        # Sanity check that all maps are the same dimensions
+        # Check that all maps are the same dimensions
         shape=self.unfilteredMapsDictList[0]['data'].shape
         for mapDict in self.unfilteredMapsDictList:
             if mapDict['data'].shape != shape:
@@ -554,23 +557,14 @@ class MatchedFilter(MapFilter):
                 mapDict=self.unfilteredMapsDictList[i]
                 d=mapDict['data']
                 if self.params['noiseParams']['method'] == 'dataMap':
-                    if 'noiseMaskCatalog' in self.params.keys() and self.params['noiseMaskCatalog'] is not None:
-                        print("is noiseMaskCatalog a list or a single entry?")
-                        import IPython
-                        IPython.embed()
-                        sys.exit()
-                        modelPath=self.diagnosticsDir+os.path.sep+"noiseMaskModel_%.1f.fits" % (mapDict['obsFreqGHz'])
-                        if os.path.exists(modelPath) == True:
-                            with pyfits.open(modelPath) as img:
-                                model=img[0].data
-                        else:
-                            model=maps.makeModelImage(d.shape, self.wcs, self.params['noiseMaskCatalog'],
+                    if 'noiseModelCatalog' in self.params.keys() and self.params['noiseModelCatalog'] is not None:
+                        assert(type(self.params['noiseModelCatalog']) == list)
+                        for noiseModelCatalog in self.params['noiseModelCatalog']:
+                            model=maps.makeModelImage(d.shape, self.wcs, noiseModelCatalog,
                                                       mapDict['beamFileName'],
-                                                      obsFreqGHz = mapDict['obsFreqGHz'],
-                                                      minSNR = 5.0)
-                            maps.saveFITS(modelPath, model, self.wcs)
-                        if model is not None:
-                            d=d-model
+                                                      obsFreqGHz = mapDict['obsFreqGHz'])
+                            if model is not None:
+                                d=d-model
                     fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
                 elif self.params['noiseParams']['method'] == 'model':
                     # Assuming weights are actually inv var white noise level per pix
@@ -787,9 +781,9 @@ class MatchedFilter(MapFilter):
             img.writeto(self.filterFileName, overwrite = True) 
             
         # NOTE: What to do about frequency here? Generalise for non-SZ
-        return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
-                'surveyMask': surveyMask, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr,
-                'label': self.label, 'tileName': self.tileName}
+        return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap,
+                'surveyMask': surveyMask, 'flagMask': self.flagMask, 'mapUnits': mapUnits,
+                'beamSolidAngle_nsr': beamSolidAngle_nsr, 'label': self.label, 'tileName': self.tileName}
 
 
     def loadFilter(self):
@@ -1176,8 +1170,8 @@ class RealSpaceMatchedFilter(MapFilter):
             maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
 
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
-                'surveyMask': surveyMask, 'mapUnits': mapUnits, 'beamSolidAngle_nsr': beamSolidAngle_nsr,
-                'label': self.label, 'tileName': self.tileName}
+                'surveyMask': surveyMask, 'flagMask': self.flagMask, 'mapUnits': mapUnits,
+                'beamSolidAngle_nsr': beamSolidAngle_nsr, 'label': self.label, 'tileName': self.tileName}
 
     
     def applyFilter(self, mapDataToFilter, calcFRelWeights = False):

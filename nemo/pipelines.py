@@ -158,7 +158,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
 #------------------------------------------------------------------------------------------------------------
 def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
                                invertMap = False, verbose = True, useCachedMaps = True,
-                               writeAreaMasks = True):
+                               writeAreaMasks = True, writeFlagMasks = True):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -267,11 +267,11 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                 # Normal mode
                 catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
                                                minObjPix = config.parDict['minObjPix'], 
-                                               findCenterOfMass = config.parDict['findCenterOfMass'], 
+                                               findCenterOfMass = config.parDict['findCenterOfMass'],
                                                removeRings = config.parDict['removeRings'],
                                                ringThresholdSigma = config.parDict['ringThresholdSigma'],
                                                rejectBorder = config.parDict['rejectBorder'], 
-                                               objIdent = config.parDict['objIdent'], 
+                                               objIdent = config.parDict['objIdent'],
                                                longNames = config.parDict['longNames'],
                                                useInterpolator = config.parDict['useInterpolator'], 
                                                measureShapes = config.parDict['measureShapes'],
@@ -286,6 +286,13 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                 if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
                     maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True,
                                   compressionType = 'PLIO_1')
+
+            if writeFlagMasks == True:
+                flagMaskFileName=config.selFnDir+os.path.sep+"flagMask#%s.fits" % (tileName)
+                if os.path.exists(flagMaskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"flagMask.fits") == False:
+                    maps.saveFITS(flagMaskFileName, filteredMapDict['flagMask'], filteredMapDict['wcs'], compressed = True,
+                                  compressionType = 'PLIO_1')
+
             
             if measureFluxes == True:
                 photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,

@@ -46,6 +46,7 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
     data=filteredMapDict['SNMap']
     areaMask=filteredMapDict['surveyMask']
     wcs=filteredMapDict['wcs']
+    flagMask=filteredMapDict['flagMask']
     
     # This is for checking contamination
     if invertMap == True:
@@ -121,6 +122,7 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
                 objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
             else:
                 objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+            objDict['flags']=flagMask[int(round(objDict['y'])), int(round(objDict['x']))]
             # Optional SExtractor style shape measurements                
             if measureShapes == True:
                 doubleCheck=False

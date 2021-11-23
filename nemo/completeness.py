@@ -549,6 +549,26 @@ def loadAreaMask(tileName, selFnDir):
     return areaMap, wcs
 
 #------------------------------------------------------------------------------------------------------------
+def loadFlagMask(tileName, selFnDir):
+    """Loads the flag mask, i.e., areas flagged for reasons such as point source subtraction, for the given
+    tile.
+
+    Args:
+        tileName (:obj:`str`): The name of the tile for which the flag mask will be loaded.
+        selFnDir (:obj:`str`): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
+            command. This directory contains information such as the survey noise maps, area masks,
+            and information needed to construct the filter mismatch function, `Q`, used in mass
+            modeling.
+
+    Returns:
+        Map array (2d :obj:`np.ndarray`), WCS object (:obj:`astWCS.WCS`)
+
+    """
+
+    areaMap, wcs=_loadTile(tileName, selFnDir, "flagMask", extension = 'fits')
+    return areaMap, wcs
+
+#------------------------------------------------------------------------------------------------------------
 def loadRMSMap(tileName, selFnDir, photFilter):
     """Loads the RMS (noise) map for the given tile.
     
@@ -1485,7 +1505,7 @@ def tidyUp(config):
                 os.remove(QFileName)
     
     # Make MEFs
-    MEFsToBuild=["areaMask", "RMSMap_%s" % (config.parDict['photFilter'])]
+    MEFsToBuild=["areaMask", "flagMask", "RMSMap_%s" % (config.parDict['photFilter'])]
     compressionTypes=["PLIO_1", "RICE_1"]
     dtypes=[np.int32, np.float]
     if 'selFnFootprints' in config.parDict.keys():

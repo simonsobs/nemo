@@ -618,6 +618,10 @@ def stitchTiles(config):
                      'outFileName': config.selFnDir+os.path.sep+"stitched_areaMask.fits",
                      'compressed': True,
                      'compressionType': 'PLIO_1'},
+                    {'pattern': config.selFnDir+os.path.sep+"flagMask#$TILENAME.fits",
+                     'outFileName': config.selFnDir+os.path.sep+"stitched_flagMask.fits",
+                     'compressed': True,
+                     'compressionType': 'PLIO_1'},
                     {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
                      'compressed': True,
@@ -947,7 +951,10 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         psMask=loadTile(mapDict['pointSourceMask'], tileName)
     else:
         psMask=np.ones(data.shape)
-                
+
+    # Use for tracking regions where subtraction took place to make flags in catalog
+    flagMask=np.zeros(data.shape, dtype = int)
+
     # Optional map clipping
     if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] is not None:
         RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
@@ -1076,6 +1083,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
 
     #----
     # NEW:
+    # May want to implement something in the flagMask that tracks which catalog a masked pixel came from
     if 'subtractModelFromCatalog' in list(mapDict.keys()) and mapDict['subtractModelFromCatalog'] is not None:
         if type(mapDict['subtractModelFromCatalog']) is not list:
             mapDict['subtractModelFromCatalog']=[mapDict['subtractModelFromCatalog']]
@@ -1086,7 +1094,8 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
             model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'], obsFreqGHz = mapDict['obsFreqGHz'])
             if model is not None:
                 data=data-model
-            # Will want to add mask generation from the model image here and store it somewhere
+            # Threshold of > 1 uK here should be made adjustable in config
+            flagMask=flagMask+np.greater(model, 1)
 
     ##----
     ## WARNING: Below should be removed and replaced with subtractModelFromCatalog
@@ -1145,6 +1154,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
     mapDict['wcs']=wcs
     mapDict['surveyMask']=surveyMask
     mapDict['psMask']=psMask
+    mapDict['flagMask']=flagMask
     mapDict['tileName']=tileName
     
     # No point continuing if masks are different shape to map (easier to tell user here)
