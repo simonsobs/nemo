@@ -430,6 +430,16 @@ class NemoConfig(object):
         options=None
         if setNum in self.filterSetOptions.keys():
             options=self.filterSetOptions[setNum]
+            if 'saveCatalog' not in options.keys():
+                options['saveCatalog']=False
+            if 'maskSubtractedRegions' not in options.keys():
+                options['maskSubtractedRegions']=False
+
+        permittedOverrides=['thresholdSigma', 'objIdent', 'findCenterOfMass']
+        if options is not None:
+            for override in permittedOverrides:
+                if override in options.keys():
+                    self.parDict[override]=options[override]
 
         # Set the filters and add catalogs used for model subtraction from filter noise term
         saveKeys=['saveFilteredMaps', 'saveFilter', 'saveRMSMap', 'savePlots', 'saveDS9Regions']
@@ -460,4 +470,4 @@ class NemoConfig(object):
                     if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
                         continue
                     mapDict['subtractModelFromCatalog']=self.filterSetOptions[subtractSetIndex]['catalog']
-
+                    mapDict['maskSubtractedRegions']=options['maskSubtractedRegions']

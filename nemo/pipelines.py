@@ -10,6 +10,7 @@ import sys
 import glob
 import shutil
 import time
+import astropy
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astLib import astWCS
@@ -30,7 +31,7 @@ import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                              invertMap = False, verbose = True, useCachedMaps = True):
+                              invertMap = False, verbose = True, useCachedMaps = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -57,6 +58,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     """
     
     # Multi-pass pipeline, enabled with use of filterSets parameter in config file
+    writeAreaMask=False
+    writeFlagMask=False
     if config.filterSets != []:
         # If we wanted to save results from each step, could set-up filterSet specific diagnostics dir here
         if rootOutDir is None:
@@ -64,15 +67,30 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         for setNum in config.filterSets:
             print(">>> Filter set: %d" % (setNum))
             config.setFilterSet(setNum)
+            if setNum == config.filterSets[-1]:
+                writeAreaMask=True
+                writeFlagMask=True
             config.filterSetOptions[setNum]['catalog']=_filterMapsAndMakeCatalogs(config, verbose = True,
-                                                                                  useCachedMaps = False)
+                                                                                  useCachedMaps = False,
+                                                                                  writeAreaMask = writeAreaMask,
+                                                                                  writeFlagMask = writeFlagMask)
+            if config.filterSetOptions[setNum]['saveCatalog'] == True:
+                if 'label' not in config.filterSetOptions[setNum].keys():
+                    label="filterSet%d" % (setNum)
+                else:
+                    label=config.filterSetOptions[setNum]['label']
+                outFileName=rootOutDir+os.path.sep+label+"_catalog.fits"
+                catalogs.writeCatalog(config.filterSetOptions[setNum]['catalog'], outFileName)
+                catalogs.catalog2DS9(config.filterSetOptions[setNum]['catalog'], outFileName.replace(".fits", ".reg"))
+
         catalog=config.filterSetOptions[config.filterSets[-1]]['catalog']
 
     else:
         # Default single pass behaviour
         catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters,
                                            measureFluxes = measureFluxes, invertMap = invertMap,
-                                           verbose = verbose, useCachedMaps = useCachedMaps)
+                                           verbose = verbose, useCachedMaps = useCachedMaps,
+                                           writeAreaMask = True, writeFlagMask = True)
 
     return catalog
 
@@ -157,8 +175,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     
 #------------------------------------------------------------------------------------------------------------
 def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                               invertMap = False, verbose = True, useCachedMaps = True,
-                               writeAreaMasks = True, writeFlagMasks = True):
+                               invertMap = False, verbose = True, useCachedMaps = False,
+                               writeAreaMask = False, writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -279,19 +297,18 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                                                DS9RegionsPath = DS9RegionsPath)
             
             # We write area mask here, because it gets modified by findObjects if removing rings
-            # NOTE: condition added to stop writing tile maps again when running nemoMass in forced photometry mode
-            maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
-            surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
-            if writeAreaMasks == True:
-                if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
-                    maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True,
-                                  compressionType = 'PLIO_1')
+            # NOTE: condition _was_ previously added to stop writing tile maps again when running nemoMass in forced photometry mode
+            # Now we just default to not writing masks unless explicitly asked for
+            if writeAreaMask == True:
+                maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
+                surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
+                maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True,
+                              compressionType = 'PLIO_1')
 
-            if writeFlagMasks == True:
+            if writeFlagMask == True:
                 flagMaskFileName=config.selFnDir+os.path.sep+"flagMask#%s.fits" % (tileName)
-                if os.path.exists(flagMaskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"flagMask.fits") == False:
-                    maps.saveFITS(flagMaskFileName, filteredMapDict['flagMask'], filteredMapDict['wcs'], compressed = True,
-                                  compressionType = 'PLIO_1')
+                maps.saveFITS(flagMaskFileName, filteredMapDict['flagMask'], filteredMapDict['wcs'], compressed = True,
+                              compressionType = 'PLIO_1')
 
             
             if measureFluxes == True:
@@ -313,6 +330,20 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
     # Merged/optimal catalogs
     optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
     
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+        optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
+        if config.rank == 0:
+            print("... gathered catalogs ...")
+            toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
+            for collectedTab in optimalCatalogList:
+                if type(collectedTab) == astropy.table.table.Table:
+                    toStack.append(collectedTab)
+            optimalCatalog=atpy.vstack(toStack)
+            # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
+            if len(optimalCatalog) > 0:
+                optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+
     return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------

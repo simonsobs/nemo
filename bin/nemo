@@ -82,20 +82,6 @@ if __name__ == '__main__':
 
     if os.path.exists(optimalCatalogFileName) == False:
         optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
-        #print("... rank = %d; catalog length = %d" % (config.rank, len(optimalCatalog)))
-        if config.MPIEnabled == True:
-            config.comm.barrier()
-            optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
-            if config.rank == 0:
-                print("... gathered catalogs ...")
-                toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
-                for collectedTab in optimalCatalogList:
-                    if type(collectedTab) == astropy.table.table.Table:
-                        toStack.append(collectedTab)
-                optimalCatalog=atpy.vstack(toStack)
-                # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
-                if len(optimalCatalog) > 0:
-                    optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
         if config.rank == 0:
             optimalCatalog=catalogs.flagTileBoundarySplits(optimalCatalog)
             optimalCatalog.sort('name')
