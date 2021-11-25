@@ -108,9 +108,9 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         handle180Wrap=False
     
     segMap=surveyMask
-    segMap, numObjects=ndimage.label(np.greater(segMap, 0))
+    segMap, numObjects=ndimage.label(np.greater(segMap, 0), output = np.int8)
     fieldIDs=np.arange(1, numObjects+1)
-        
+
     tileList=[]
     for f in fieldIDs:
         ys, xs=np.where(segMap == f)
@@ -169,7 +169,7 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                         RARight=180.01
                 # NOTE: floats here to make tileDefinitions.yml readable
                 tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
-                                 'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})   
+                                 'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})
 
     return tileList
 
@@ -225,10 +225,10 @@ def addAutoTileDefinitions(parDict, DS9RegionFileName = None, cacheFileName = No
         with pyfits.open(surveyMaskPath) as img:    
             # Just in case RICE-compressed or similar
             if img[0].data is None:
-                surveyMask=img['COMPRESSED_IMAGE'].data
+                surveyMask=np.array(img['COMPRESSED_IMAGE'].data, dtype = np.int8)
                 wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
             else:
-                surveyMask=img[0].data
+                surveyMask=np.array(img[0].data, dtype = np.int8)
                 wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
             # One day we will write a routine to deal with the multi-plane thing sensibly...
             # But today is not that day
@@ -236,6 +236,7 @@ def addAutoTileDefinitions(parDict, DS9RegionFileName = None, cacheFileName = No
                 surveyMask=surveyMask[0, :]
             assert(surveyMask.ndim == 2)   
             surveyMask[surveyMask != 0]=1
+        del img[0].data
         parDict['tileDefinitions']=autotiler(surveyMask, wcs, 
                                              parDict['tileDefinitions']['targetTileWidthDeg'],
                                              parDict['tileDefinitions']['targetTileHeightDeg'])

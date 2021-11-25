@@ -342,12 +342,6 @@ class NemoConfig(object):
                 assert(tileCoordsDict != {})
                 self.tileCoordsDict=tileCoordsDict
                 self.tileNames=list(tileCoordsDict.keys())
-            # Loading via Q might be able to be retired?
-            #elif os.path.exists(self.selFnDir+os.path.sep+"QFit.fits") == True:
-                #tckQFitDict=signals.loadQ(self.selFnDir+os.path.sep+"QFit.fits")
-                #self.tileNames=list(tckQFitDict.keys())
-            #else:
-                #raise Exception("Need to get tile names from %s if setUpMaps is False - but file not found." % (self.selFnDir+os.path.sep+"QFit.fits"))
         
         # For convenience, keep the full list of tile names
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
