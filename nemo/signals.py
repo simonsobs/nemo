@@ -342,11 +342,9 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
     if wrt == 'critical':
         wrtDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
     elif wrt == 'mean':
-        wrtDensity=ccl.omega_x(cosmoModel, 1/(1+z), 'matter')
-        #wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z).value
+        wrtDensity=ccl.omega_x(cosmoModel, 1/(1+z), 'matter')*ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
     else:
         raise Exception("wrt should be either 'critical' or 'mean'")
-    #wrtDensity=(wrtDensity*np.power(Mpc_in_cm, 3))/MSun_in_g # NOTE: not needed for CCL units (MSun, Mpc etc.)
     RDeltaMpc=np.power((3*MDelta)/(4*np.pi*delta*wrtDensity), 1.0/3.0)
         
     return RDeltaMpc
