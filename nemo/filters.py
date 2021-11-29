@@ -2,16 +2,19 @@
 
 This module defines several filter classes, together with a function that uses them to filter maps.
 
-There are two main classes of filter: :obj:`MatchedFilter` and :obj:`RealSpaceMatchedFilter`.
+New base classes can be derived from the overall base class :obj:`MapFilter`. There are two main
+classes of filter that are currently implemented - :obj:`MatchedFilter` and :obj:`RealSpaceMatchedFilter`.
 
-New base classes can be derived from the overall base class :obj:`MapFilter`. There are also 
-base classes corresponding to filters with different signal templates (:obj:`BeamFilter`,
-:obj:`ArnaudModelFilter`). The actual filters that can be used are derived from these, e.g.:
+There are also base classes corresponding to filters with different signal templates (:obj:`BeamFilter`,
+:obj:`ArnaudModelFilter`, :obj:`BattagliaModelFilter`). The actual filters that can be used are
+derived from these:
 
 * :obj:`BeamMatchedFilter`
 * :obj:`ArnaudModelMatchedFilter`
+* :obj:`BattagliaModelMatchedFilter`
 * :obj:`BeamRealSpaceMatchedFilter`
 * :obj:`ArnaudModelRealSpaceMatchedFilter`
+* :obj:`BattagliaModelRealSpaceMatchedFilter`
 
 """
 
@@ -45,20 +48,33 @@ from . import gnfw
 from . import completeness
 import astropy.table as atpy
 import time
-#import IPython
 
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
                selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True,
                returnFilter = False):
-    """Build and applies filters to the unfiltered maps(s). The output is a filtered map in yc or uK (this
-    can be set with outputUnits in the config file). All filter operations are done in the filter objects, 
-    even if multifrequency (a change from previous behaviour).
-   
-    Filtered maps are written to rootOutDir/filteredMaps
-    Filters, if stored, are written to rootOutDir/filters
+    """Builds and applies filters to the unfiltered map(s). 
     
-    Returns a dictionary containing the filtered map and S/N map etc.
+    Args:
+        unfilteredMapsDictList (:obj:`list`): A list of dictionaries, each of which describes a map of the sky
+            at some frequency (see :ref:`InputMaps`).
+        filterParams (:obj:`dict`): A dictionary containing filter settings (see :ref:`Filters`).
+        tileName (:obj:`str`): The name of the tile.
+        filteredMapsDir (:obj:`str`, optional): The path to the directory where the filtered maps may be written.
+        diagnosticsDir (:obj:`str`, optional): Path to the `diagnostics` directory, where the filters may be
+            written to disk.
+        selFnDir (:obj:`str`, optional): Path to the `selFn` directory, where area masks may be written.
+        verbose (:obj:`bool`, optional): If True, write information about progress to the terminal.
+        undoPixelWindow (:obj:`bool`, optional): If True, undo the pixel window effect on the output filtered
+            maps.
+        useCachedMaps (:obj:`bool`, optional): If True, and previously made maps are found, these will be
+            read from disk, rather than re-calculating and re-applying the filter.
+        returnFilter (:obj:`bool`, optional): If True, the filter object is returned, as well as a dictionary
+            containing the filtered map.
+    
+    Returns:
+        A dictionary containing the filtered map in signal units, a signal-to-noise-map, area mask, WCS, and
+        a label (for housekeeping).
     
     """
         
@@ -120,20 +136,40 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
     
 #------------------------------------------------------------------------------------------------------------
 class MapFilter(object):
-    """Generic map filter base class. Defines common interface.
+    """Base class for Fourier space filters, defining a common interface.
+    
+    Args:
+        label (:obj:`str`): Unique label for the filter, can be anything.
+        unfilteredMapsDictList (:obj:`list`): A list of dictionaries, each of which describes a map of the sky
+            at some frequency (see :ref:`InputMaps`).
+        paramsDict (:obj:`dict`): Dictionary of filter settings (see :ref:`Filters`).
+        tileName (:obj:`str`): Name of the tile in which the filter will be constructed.
+        writeFilter (:obj:`bool`): If `True`, save the filter to disk in the `diagnosticsDir` directory.
+        forceRebuild (:obj:`bool`): If `True`, rebuild the filter, even a previously calculated filter is
+            found cached to disk.
+        diagnosticsDir (:obj:`str`, optional): Path to the `diagnostics` directory, where the filters may be
+            written to disk.
+        selFnDir (:obj:`str`, optional): Path to the `selFn` directory, where area masks may be written.
+    
+    Attributes:
+        label (:obj:`str`): Unique label for the filter, can be anything.
+        params (:obj:`dict`): Dictionary of filter settings (see :ref:`Filters`).
+        diagnosticsDir (:obj:`str`, optional): Path to the `diagnostics` directory, where the filters may be
+            written to disk.
+        selFnDir (:obj:`str`, optional): Path to the `selFn` directory, where area masks may be written.       
+        tileName (:obj:`str`): Name of the map tile.
+        filterFileName (:obj:`str`): Path (under `diagnosticsDir`) where the cached filter is written.
+        unfilteredMapsDictList (:obj:`list`): A list of dictionaries, each of which describes a map of the sky
+            at some frequency (see :ref:`InputMaps`).
+        wcs (:obj:`astWCS.WCS`): Object that contains the map World Coordinate System.
+        shape (:obj:`tuple`): Dimensions of the map (height, width) in pixels.
+        beamSolidAnglesDict (:obj:`dict`): Dictionary, indexed by map frequency in GHz, holding the beam
+            solid angles in nano steradians. Used only for conversion of source amplitudes to flux
+            densities in Jy.
     
     """
     def __init__(self, label, unfilteredMapsDictList, paramsDict, tileName = 'PRIMARY', writeFilter = False, 
                  forceRebuild = False, diagnosticsDir = None, selFnDir = None):
-        """Initialises a MapFilter. unfilteredMapsDictList describes the input maps, paramsDict describes
-        the filter options. The convention is that single frequency only filters (e.g. GaussianWienerFilter)
-        only operate on the first map in the unfilteredMapDictList.
-        
-        label is used to store the filter to save calculating it again. Filters are stored under filters/
-        dir. If a filter already exists under this dir with the given label, it is loaded rather than
-        recalculated. To force recalculating the filter, set forceRebuild == True.
-                        
-        """
         
         self.label=label
         self.params=paramsDict
@@ -194,7 +230,10 @@ class MapFilter(object):
                
         
     def makeRadiansMap(self):
-        """Makes a map of distance in radians from centre, for the map being filtered.
+        """Makes a map of distance in radians from the centre of the map being filtered.
+        
+        Returns:
+            None
         
         """
         
@@ -219,19 +258,32 @@ class MapFilter(object):
         
         
     def buildAndApply(self):
-        """Builds and applies the filter to the unfiltered map(s). Returns a dictionary, containing
-        keys 'data', 'wcs', 'weights', 'obsFreqGHz'. If this routine converts to yc in place, the latter is set
-        to 'yc'.
-    
+        """Builds and applies the filter to the unfiltered map(s). 
+        
+        Returns:
+            A dictionary, containing the listed keys:
+                * data (:obj:`np.ndarray`): The filtered map, in signal units.
+                * wcs (:obj:`astWCS.WCS`): WCS object for the map.
+                * obsFreqGHz (:obj:`float`): The observing frequency (in GHz) for the map. This is set to `yc` if the output units are set to the central Comptonization parameter.
+                * SNMap (:obj:`np.ndarray`): Signal-to-noise map.
+                * surveyMask (:obj:`np.ndarray`): Survey mask, where pixels with value 1 indicate valid area that can be searched for objects.
+                * mapUnits (:obj:`str`): Either `uK` (for ΔTemperature (μK) with respect to the CMB) or `yc` (for central Comptonization parameter).
+                * beamSolidAngle_nsr (:obj:`float`): The beam solid angle in nanosteradians. This is only used for conversion of source amplitudes to flux densities in Jy.
+                * label (:obj:`str`): User-defined label for the filter (see :ref:`Filters`).
+                * tileName (:obj:`str`): Name of the tile this filtered map corresponds to.
+        
         """
+        # NOTE: Long lines above to avoid breaking formatting in sphinx
         
         raise Exception("Called a base filter class without a buildAndApply() function implemented.")
         return None
     
     
     def makeForegroundsPower(self):
-        """Returns a Power2D object with foregrounds power from the CMB (this could be extended to add other
-        foregrounds if necessary).
+        """Returns 2d power spectrum in k-space, with the power set by a Planck-like CMB power spectrum.
+        
+        Returns:
+            A 2d :obj:`np.ndarray` containing the noise power.
                        
         """
 
@@ -246,10 +298,11 @@ class MapFilter(object):
         
 
     def makeRealSpaceFilterProfile(self):
-        """Makes a 1d real-space profile of the filter. This is normalised to 1 at the frequency of the 
+        """Makes a 1d real-space profile of the filter, with amplitude normalised to 1 at the frequency of the
         first map given in the unfiltered maps list.
         
-        Returns profile, arcminRange
+        Returns:
+            One dimensional profile (:obj:`np.ndarray`), corresponding angular range in arcmin (:obj:`np.ndarray`).
         
         """
         realSpace=fft.ifft2(self.filt).real
@@ -270,7 +323,10 @@ class MapFilter(object):
     
         
     def saveRealSpaceFilterProfile(self):
-        """Saves a real-space profile of the filter out as a .png plot and 2d .fits image.
+        """Saves a real-space profile of the filter as a PNG plot under the `diagnosticsDir` directory.
+        
+        Returns:
+            None
         
         """
         
@@ -305,7 +361,14 @@ class MapFilter(object):
       
 
     def makeNoiseMap(self, mapData):
-        """Estimate the noise map using local RMS measurements on a grid, over the whole filtered map.
+        """Estimate the noise map using local measurements in grid cells, over the whole filtered map
+        (see :ref:`Filters` for the config file parameters that control this).
+        
+        Args:
+            mapData (:obj:`np.ndarray`): A filtered map.
+        
+        Returns:
+            Noise map (:obj:`np.ndarray`).
         
         """
 
@@ -433,7 +496,10 @@ class MapFilter(object):
     
     
     def loadFRelWeights(self):
-        """Reads frequency weights used for relativistic corrections from filter header.
+        """Reads frequency weights used for relativistic corrections from the filter header.
+        
+        Returns:
+            None
         
         """
         with pyfits.open(self.filterFileName) as img:
@@ -442,10 +508,28 @@ class MapFilter(object):
                 if 'RW%d_GHZ' % (i) in img[0].header.keys():
                     freqGHz=img[0].header['RW%d_GHZ' % (i)]
                     self.fRelWeights[freqGHz]=img[0].header['RW%d' % (i)]
-    
+
+
+    def makeSignalTemplateMap(self, beam, amplitude = None):
+        """Makes a model signal template map. Shape parameters (if applicable) are taken from the object's
+        `params` attribute.
+        
+        Args:
+            beam (:class:`nemo.signals.BeamProfile` or str): Either a :class:`nemo.signals.BeamProfile` object,
+                or a string that gives the path to a text file that describes the beam profile.
+            amplitude (:obj:`float`): Amplitude of the signal template.
+        
+        Returns:
+            Model map (2d :obj:`np.ndarray`).
+                
+        """
+        raise Exception("Called a base filter class without a makeSignalTemplateMap() function implemented.")
+        return None
+        
+        
 #------------------------------------------------------------------------------------------------------------
 class MatchedFilter(MapFilter):
-    """Multi-frequency matched filter...
+    """A multi-frequency matched filter, implemented in Fourier space. Derived from :class:`MapFilter`.
     
     """
 
@@ -705,6 +789,9 @@ class MatchedFilter(MapFilter):
     def loadFilter(self):
         """Loads in a previously saved filter.
         
+        Returns:
+            None
+        
         """
         with pyfits.open(self.filterFileName) as img:
             self.filt=img[0].data
@@ -713,10 +800,10 @@ class MatchedFilter(MapFilter):
         
 
     def reshapeFilter(self, shape):
-        """Use linear interpolation to transform the filter to the given shape.
+        """Uses linear interpolation to transform the filter to the given shape.
         
         Returns:
-            Reshaped filter (2d numpy array)
+            Reshaped filter (2d :obj:`np.ndarray`)
         
         """
         
@@ -740,15 +827,18 @@ class MatchedFilter(MapFilter):
     
             
     def applyFilter(self, mapDataToFilter):
-        """Apply the filter to the given map data (must be a cube - with each plane corresponding to a 
-        frequency). If the map data is not complex, it will be Fourier transformed. If the map data 
-        is not the same shape as the filter, the filter will be interpolated to match.
+        """Apply the filter to the given map data (must be 3d array, i.e., a cube, with each plane
+        corresponding to a different frequency). If the map data is not complex, it will be Fourier
+        transformed. If the map data is not the same shape as the filter, the filter will be
+        interpolated to match.
         
-        An optional additional high-pass filter can be applied if 'bckSub' and 'bckSubScaleArcmin' are
-        given in self.params.
-                
+        Args:
+            mapDataToFilter (:obj:`np.ndarray`): A 3d array, where each plane corresponds to a map
+                at a different observed frequency. This must match with how the filter was defined
+                (see :ref:`Filters` and :ref:`InputMaps`).
+            
         Returns:
-            Filtered map (2d numpy array)
+            Filtered map (2d :obj:`np.ndarray`)
         
         """
         
@@ -775,33 +865,21 @@ class MatchedFilter(MapFilter):
         
 #------------------------------------------------------------------------------------------------------------
 class RealSpaceMatchedFilter(MapFilter):
-    """Makes a matched-filter kernel using the noise properties of a specified region of the map (e.g.
+    """Makes a matched-filter kernel using the noise properties of a specified region of the map (e.g.,
     the deepest part) in Fourier space, which is converted into real space and truncated such that the 
-    kernel is small enough in footprint to be applied by directly convolving with the map in real space 
-    in a short amount of time. 
-    
-    First though we high-pass filter the maps on a similar scale using a Mexican hat (difference of Gaussian
-    smoothed images), to get rid of large scale noise from CMB and atmosphere.
-    
-    Tne S/N map is constructed, measuring locally on a scale 3 x that of the filter kernel, with 3-sigma
-    clipping applied. This allows us to take into account how the noise level varies across the map.
-    
-    A rank filter is used to zap noisy regions at the edge of the map, where the RMS values are
-    not accurate.
-    
-    Optionally, a 'surveyMask' can be applied (e.g., for point source masking).
-    
-    A map of the final area searched for clusters called 'areaMask.fits' is written in the selFn/ 
-    folder.
+    kernel is small enough in footprint to be applied by direct convolution with the map in a (relatively)
+    short amount of time. Derived from :class:`MapFilter`.
         
     """       
     
     def loadFilter(self):
-        """Loads a previously cached kernel.
+        """Loads in a previously saved filter kernel.
         
-        Returns kern2d, signalNorm, bckSubScaleArcmin
+        Returns:
+            None
         
-        """        
+        """
+        
         with pyfits.open(self.filterFileName) as img:
             kern2d=img[0].data
             signalNorm=img[0].header['SIGNORM']
@@ -817,12 +895,22 @@ class RealSpaceMatchedFilter(MapFilter):
 
         
     def buildKernel(self, RADecSection, RADeg = 'centre', decDeg = 'centre'):
-        """Builds the real space kernel itself. 
+        """Builds the real space filter kernel.
         
-        RADeg, decDeg are used for figuring out pixel scales for background subtraction
-        
-        Returns kern2d, signalNorm, bckSubScaleArcmin
-        
+        Args:
+            RADecSection (:obj:`list`): List of coordinates (minimum RA, maximum RA,
+                minimum declination, maximum declination) that defines the region of map
+                from which the filter kernel will be constructed.
+            RADeg (:obj:`str` or :obj:`float`, optional): Coordinate at which the kernel
+                pixel scale will be determined (use `centre` for the middle of the map
+                section).
+            decDeg (:obj:`str` or :obj:`float`, optional): Coordinate at which the kernel
+                pixel scale will be determined (use `centre` for the middle of the map
+                section).
+                
+        Returns:
+            None
+            
         """
         
         if os.path.exists(self.filterFileName) == True:
@@ -1087,15 +1175,18 @@ class RealSpaceMatchedFilter(MapFilter):
 
     
     def applyFilter(self, mapDataToFilter, calcFRelWeights = False):
-        """Apply the kernel to the given map data (must be a cube - with each plane corresponding to a 
-        frequency).
-        
-        NOTE: calcFRelWeights = True should ONLY be set if this routine is being applied to an ideal
-        signal map (when calculating signalNorm). This operation is being done in here to save 
-        complications / time from doing unnecessary convolution operations elsewhere.
-        
+        """Apply the filter to the given map data (must be 3d array, i.e., a cube, with each plane
+        corresponding to a different frequency).
+
+        Args:
+            mapDataToFilter (:obj:`np.ndarray`): A 3d array, where each plane corresponds to a map
+                at a different observed frequency. This must match with how the filter was defined
+                (see :ref:`Filters` and :ref:`InputMaps`).
+            calcFRelWeights (:obj:`bool`, optional): This should *only* be set to `True` if this
+                routine is being applied to an ideal signal map.
+            
         Returns:
-            Filtered map (2d numpy array)
+            Filtered map (2d :obj:`np.ndarray`)
         
         """
         
@@ -1134,15 +1225,11 @@ class RealSpaceMatchedFilter(MapFilter):
         
 #------------------------------------------------------------------------------------------------------------
 class BeamFilter(MapFilter):
-    """Base class for filters using beam profile files in Matthew + Kavi's format.
+    """Base class for filters using ACT-style beam profile files. Derived from :class:`MapFilter`.
         
     """
     
     def makeSignalTemplateMap(self, beamFileName, amplitude = None):
-        """Makes a beam model signal template map.
-        
-        """
-        
         signalMap=signals.makeBeamModelSignalMap(np.degrees(self.radiansMap),
                                                             self.wcs, 
                                                             beamFileName,
@@ -1152,15 +1239,13 @@ class BeamFilter(MapFilter):
     
 #------------------------------------------------------------------------------------------------------------
 class ArnaudModelFilter(MapFilter):
-    """Base class for filters using the GNFW profile as described in Arnaud et al. (2010).
+    """Base class for filters using the GNFW profile as described in 
+    `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_.
+    Derived from :class:`MapFilter`.
     
     """
     
-    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
-        """Makes a model signal template map.
-                
-        """
-        
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):        
         signalMap=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
                                                    np.degrees(self.radiansMap),
                                                    self.wcs, beamFileName, 
@@ -1171,21 +1256,19 @@ class ArnaudModelFilter(MapFilter):
 
 #------------------------------------------------------------------------------------------------------------
 class BattagliaModelFilter(MapFilter):
-    """Base class for filters using the GNFW profile as described in Battaglia et al. (2012).
+    """Base class for filters using the GNFW profile as described in
+    `Battaglia et al. (2012) <https://ui.adsabs.harvard.edu/abs/2012ApJ...758...75B/abstract>`_.
+    Derived from :class:`MapFilter`.
     
-    NOTE: This is the same as the ArnaudModelFilter (it is still a GNFW profile), but has non-self-similar
-    evolution with redshift, which is accounted for here.
-    
-    NOTE: When it comes to the GNFW parameters, we still follow the convention used in Arnaud+2010, rather
-    than Battaglia+2012 here.
-    
+    Note:
+        This is the same as :class:`ArnaudModelFilter` (it is still a GNFW profile), but has non-self-similar
+        evolution with redshift, which is accounted for here. The convention for how the GNFW parameters are
+        defined follows `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_,
+        rather than `Battaglia et al. (2012) <https://ui.adsabs.harvard.edu/abs/2012ApJ...758...75B/abstract>`_.
+
     """
     
-    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
-        """Makes a model signal template map.
-                
-        """
-        
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):        
         signalMap=signals.makeBattagliaModelSignalMap(self.params['z'], self.params['M500MSun'], 
                                                    np.degrees(self.radiansMap),
                                                    self.wcs, beamFileName, 
@@ -1196,16 +1279,54 @@ class BattagliaModelFilter(MapFilter):
     
 #------------------------------------------------------------------------------------------------------------
 # Definitions of actual filters that can be used
+
 class ArnaudModelMatchedFilter(MatchedFilter, ArnaudModelFilter):
+    """Fourier-space multi-frequency matched filter implementation, using the GNFW profile as described in 
+    `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_.
+    Derived from :class:`MapFilter`.
+    
+    """
     pass
+
 class BattagliaModelMatchedFilter(MatchedFilter, BattagliaModelFilter):
+    """Fourier-space multi-frequency matched filter implementation, using the GNFW profile as described in
+    `Battaglia et al. (2012) <https://ui.adsabs.harvard.edu/abs/2012ApJ...758...75B/abstract>`_.
+    Derived from :class:`MapFilter`.
+    
+    Note:
+        This is the same as :class:`ArnaudModelFilter` (it is still a GNFW profile), but has non-self-similar
+        evolution with redshift, which is accounted for here. The convention for how the GNFW parameters are
+        defined follows `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_,
+        rather than `Battaglia et al. (2012) <https://ui.adsabs.harvard.edu/abs/2012ApJ...758...75B/abstract>`_.
+        
+    """
     pass
+
 class BeamMatchedFilter(MatchedFilter, BeamFilter):
+    """Fourier-space multi-frequency matched filter implementation using ACT-style beam profile files. 
+    Derived from :class:`MapFilter`.
+        
+    """
     pass
 
 class ArnaudModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, ArnaudModelFilter):
+    """Real-space filter kernel, built using the GNFW profile as described in
+    `Arnaud et al. (2010) <https://ui.adsabs.harvard.edu/abs/2010A%26A...517A..92A/abstract>`_.
+    Derived from :class:`MapFilter`.
+    
+    """
     pass
+
 class BattagliaModelRealSpaceMatchedFilter(RealSpaceMatchedFilter, BattagliaModelFilter):
+    """Real-space filter kernel, built using the GNFW profile as described in
+    `Battaglia et al. (2012) <https://ui.adsabs.harvard.edu/abs/2012ApJ...758...75B/abstract>`_.
+    Derived from :class:`MapFilter`.
+    """
     pass
+
 class BeamRealSpaceMatchedFilter(RealSpaceMatchedFilter, BeamFilter):
+    """Real-space filter kernel, built using ACT-style beam profile files. 
+    Derived from :class:`MapFilter`.
+    
+    """
     pass

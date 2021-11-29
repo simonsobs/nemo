@@ -6,7 +6,7 @@
 # This should be a list of maps at different frequencies
 # Valid units are only uK (delta T with respect to CMB) - Jy/sr has yet to be added
 unfilteredMaps:
-    - {mapFileName: "smallTest_f090.fits",
+    - {mapFileName: "sim_f090.fits",
        weightsFileName: null,
        obsFreqGHz: 97.8, units: 'uK',
        beamFileName: "maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}

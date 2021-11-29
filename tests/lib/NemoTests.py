@@ -9,16 +9,16 @@ import sys
 import subprocess
 import shutil
 import numpy as np
-from nemo import catalogs
-from nemo import maps
-#from pixell import utils, pointsrcs, enmap
+from nemo import catalogs, maps, plotSettings
 from astLib import *
 import astropy.io.fits as pyfits
 import astropy.table as atpy
-from astropy.coordinates import SkyCoord
-from astropy.coordinates import match_coordinates_sky
+from astropy.coordinates import SkyCoord, match_coordinates_sky
 import pylab as plt
 import IPython
+
+plotSettings.update_rcParams()
+plotTitleSize=14
 
 #------------------------------------------------------------------------------------------------------------
 class NemoTests(object):
@@ -133,21 +133,25 @@ class NemoTests(object):
             os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/ACT_dr5/DR5_cluster-catalog_v1.1.fits")
             os.chdir(thisDir)
         
-        # Generate mask file for simming
-        header=pyfits.Header().fromtextfile("configs/smallTestSurveyMaskHeader.txt")
-        wcs=astWCS.WCS(header, mode = 'pyfits')
-        d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
-        maps.saveFITS(self.cacheDir+os.path.sep+"smallTestSurveyMask.fits", d, wcs, 
-                      compressed = True, compressionType = 'PLIO_1')
+        # Generate mask file(s) for simming
+        headerFileNames=["configs/smallTestSurveyMaskHeader.txt", "configs/MPITestSurveyMaskHeader.txt"]
+        maskFileNames=["smallTestSurveyMask.fits", "MPITestSurveyMask.fits"]
+        for headerFileName, maskFileName in zip(headerFileNames, maskFileNames):
+            header=pyfits.Header().fromtextfile(headerFileName)
+            wcs=astWCS.WCS(header, mode = 'pyfits')
+            d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
+            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs,
+                          compressed = True, compressionType = 'PLIO_1')
         
-        # Built-in defaults
-        self.f150Beam="maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"
-        self.f090Beam="maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"
-        self.f150Freq=str(149.6)
-        self.f090Freq=str(97.8)
-        self.modelMask="smallTestSurveyMask.fits"
-        self.f150ModelMap="smallTest_f150.fits"
-        self.f090ModelMap="smallTest_f090.fits"
+        # Map/frequency-related defaults
+        self.bandsDict={'f150': {'beam': "maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt",
+                                 'freq': str(149.6)},
+                        'f090': {'beam': "maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt",
+                                 'freq': str(97.8)}
+                       }
+        self.sizesDict={'small': {'mask': "smallTestSurveyMask.fits"},
+                        'large': {'mask': "MPITestSurveyMask.fits"}
+                       }
     
 
     def set_config(self, configFileName):
@@ -165,6 +169,10 @@ class NemoTests(object):
         self._run_command(["nemo", self.configFileName])
 
 
+    def run_parallel_nemo(self):
+        self._run_command(["mpiexec", "nemo", self.configFileName, "-M"])
+
+
     def run_nemo_mass(self, catalogFileName = None):
         args=['nemoMass', self.configFileName]
         if catalogFileName != None:
@@ -172,35 +180,42 @@ class NemoTests(object):
         self._run_command(args)
 
 
-    def make_sim_f150(self, catalogFileName = None, noiseLevel = None, seed = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, self.f150ModelMap,
-              '-f', self.f150Freq, '-C', '-N', noiseLevel, '-S', seed]
+    def make_sim(self, catalogFileName = None, noiseLevel = None, seed = None, band = None, size = None):
+        args=['nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "sim_%s.fits" % (band), '-f', self.bandsDict[band]['freq'], 
+              '-C', '-N', noiseLevel, '-S', seed]
         self._run_command(args)
 
 
-    def make_sim_f090(self, catalogFileName = None, noiseLevel = None, seed = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, self.f090ModelMap,
-              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
+    def make_parallel_sim(self, catalogFileName = None, noiseLevel = None, seed = None, band = None, size = None, profile = None):
+        args=['mpiexec', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "sim_%s.fits" % (band), '-f', self.bandsDict[band]['freq'],
+              '-C', '-N', noiseLevel, '-S', seed, '-M']
+        if profile is not None:
+            args=args+['-p', profile]
         self._run_command(args)
 
 
-    def make_signal_free_sim_f090(self, noiseLevel = None, seed = None):
-        args=['nemoModel', "pointsources-0", self.modelMask, self.f090Beam, "signal_free_f090.fits",
-              '-f', self.f090Freq, '-C', '-N', noiseLevel, '-S', seed]
-        self._run_command(args)
-        
-
-    def make_signal_only_sim_f150(self, catalogFileName = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f150Beam, 
-              "signal_model_only_f150.fits", '-f', self.f150Freq]
-        self._run_command(args)
-
-
-    def make_signal_only_sim_f090(self, catalogFileName = None):
-        args=['nemoModel', catalogFileName, self.modelMask, self.f090Beam, 
-              "signal_model_only_f090.fits", '-f', self.f090Freq]
+    def make_signal_free_sim(self, noiseLevel = None, seed = None, band = None, size = None):
+        args=['nemoModel', "pointsources-0", self.sizesDict[size]['mask'], self.bandsDict[band]['beam'],
+              "signal_free_%s.fits" % (band), '-f', self.bandsDict[band]['freq'],
+              '-C', '-N', noiseLevel, '-S', seed]
         self._run_command(args)
         
+
+    def make_signal_only_sim(self, catalogFileName = None, band = None, size = None):
+        args=['nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "signal_model_only_%s.fits" % (band), '-f', self.bandsDict[band]['freq']]
+        self._run_command(args)
+        
+        
+    def make_parallel_signal_only_sim(self, catalogFileName = None, band = None, size = None, profile = None):
+        args=['mpiexec', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+              "signal_model_only_%s.fits" % (band), '-f', self.bandsDict[band]['freq'], '-M']
+        if profile is not None:
+            args=args+['-p', profile]
+        self._run_command(args)
+    
 
     def run_nemo_selfn(self, configFileName = None):
         self._run_command(["nemoSelFn", configFileName])
@@ -230,7 +245,7 @@ class NemoTests(object):
         astImages.saveFITS(outMapFileName, modelMap+mapData, wcs)
         
         
-    def cross_match(self, inCatalogFileName, outCatalogFileName, radiusArcmin = 2.5):
+    def cross_match(self, inCatalogFileName, outCatalogFileName, radiusArcmin = 1.0):
         """Cross matches input and output source catalogs.
         
         """
@@ -261,37 +276,60 @@ class NemoTests(object):
         return RAKey, decKey
         
         
-    def check_recovered_ratio(self, inKey, outKey, tolerance = 0.01, SNRCut = 4,
-                              SNRKey = 'fixed_SNR', plotFileName = None):
-        """Cross match the input and output catalogs pointed to by the respective file names, and calculate 
-        the median of the ratio of the columns pointed to by inKey, outKey. If tolerance (defined as
-        1 - median ratio) is exceeded, the test is failed. SNRCut is applied to SNRKey in the output catalog.
+    def check_recovered_ratio(self, inKey, outKey, toleranceSigma = 1.0, SNRCut = 4,
+                              SNRKey = 'fixed_SNR', errInKey = None, errOutKey = None,
+                              plotLabel = None, plotsDir = "plots"):
+        """Catalogs must have been cross matched before this can be run.
+        Calculate the ratio of the columns pointed to by inKey, outKey. If tolerance (defined as
+        1 - average ratio) is exceeded, the test is failed. SNRCut is applied to SNRKey in the output catalog.
         
         """
+
         inTab=self.inTab
         outTab=self.outTab
-        ratio=inTab[inKey]/outTab[outKey]
-        medRatio=np.median(ratio[outTab[SNRKey] > SNRCut])
-        label="median input %s / output %s = %.3f (%s > %.1f)" % (inKey, outKey, medRatio, SNRKey, SNRCut)
-        print("... %s" % (label))            
-        if plotFileName != None:
-            plt.plot(outTab[SNRKey], ratio, 'r.')
-            plt.xlabel(SNRKey)
-            plt.ylabel("input %s / output %s" % (inKey, outKey))
-            plt.plot(np.linspace(0, 16, 3), [1]*3, 'k--')
-            plt.xlim(SNRCut, 16)
-            plt.title(label)
-            plt.ylim(0.5, 1.5)
-            plt.savefig(plotFileName)
-        plt.close()
-        if abs(1.0-medRatio) > tolerance:
+        mask=outTab[SNRKey] > SNRCut
+        x=inTab[inKey]
+        y=outTab[outKey]
+        meanRatio=np.mean(y[mask])/np.mean(x[mask])
+        bsRatios=[]
+        for i in range(5000):
+            indices=np.random.randint(0, len(x[mask]), len(x[mask]))
+            bsX=x[mask][indices]
+            bsY=y[mask][indices]
+            bsRatios.append(np.mean(bsY)/np.mean(bsX))
+        meanRatioErr=np.percentile(abs(bsRatios-meanRatio), 68.3)
+
+        label="<input %s>/<output %s> = %.3f ± %.3f (%s > %.1f)" % (inKey, outKey, meanRatio, meanRatioErr, SNRKey, SNRCut)
+        print("%s" % (label))
+
+        if plotLabel is not None:
+            plotMin=0.1*min([inTab[inKey].min(), outTab[outKey].min()])
+            plotMax=10*max([inTab[inKey].max(), outTab[outKey].max()])
+            plotRange=np.linspace(plotMin, plotMax, 100)
+            plt.figure(figsize = (10, 8))
+            if errInKey is not None and errOutKey is not None:
+                plt.errorbar(inTab[inKey], outTab[outKey], yerr = outTab[errOutKey],
+                     xerr = inTab[errInKey], elinewidth = 1.5, ecolor = '#AAAAFF',
+                     fmt = 'D', ms = 6, label = None)
+            else:
+                plt.plot(inTab[inKey], outTab[outKey], 'D')
+            plt.xlabel("input "+inKey)
+            plt.ylabel("output "+outKey)
+            plt.plot(plotRange, plotRange, 'k--')
+            plt.xlim(plotMin, plotMax)
+            plt.ylim(plotMin, plotMax)
+            plt.loglog()
+            plt.title(label, fontdict = {'size': plotTitleSize})
+            plt.savefig(plotsDir+os.path.sep+plotLabel+"_XvY.png")
+            plt.close()
+        if abs((1.0-meanRatio)/meanRatioErr) > toleranceSigma:
             self._status="FAILED"
         else:
             self._status="SUCCESS"
             
             
     def check_recovered_positions(self, toleranceArcsec = 12.0, SNRKey = 'SNR', SNRMax = 10.0, 
-                                  plotFileName = None):
+                                  plotLabel = None, plotsDir = "plots"):
         """Blah
         
         """
@@ -305,13 +343,14 @@ class NemoTests(object):
         print('... median recovered position offset = %.2f" (full sample)' % (medOffsetArcmin*60))
         label='median recovered position offset = %.2f" (SNR < 10)' % (medOffsetArcmin_SNR10*60)
         print("... %s" % (label))
-        if plotFileName != None:
+        if plotLabel is not None:
+            plt.figure(figsize = (10, 8))
             plt.plot(SNRs, rDeg*3600., 'r.')
             plt.semilogx()
             plt.xlabel("SNR")
             plt.ylabel('Position offset (")')
-            plt.title(label)
-            plt.savefig(plotFileName)
+            plt.title(label, fontdict = {'size': plotTitleSize})
+            plt.savefig(plotsDir+os.path.sep+plotLabel+"_posRec.png")
             plt.close()
         if medOffsetArcmin_SNR10*60 > toleranceArcsec:
             self._status="FAILED"

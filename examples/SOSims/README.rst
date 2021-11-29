@@ -2,7 +2,7 @@
    :format: html
 
 
-The `examples/SOSims <https://github.com/simonsobs/nemo/tree/master/examples/SOSims>`_ 
+The `examples/SOSims <https://github.com/simonsobs/nemo/tree/main/examples/SOSims>`_
 directory contains scripts for working with
 the simulated Simons Observatory maps made by the 
 `Map-Based Simulation Pipeline Working Group <https://github.com/simonsobs/map_based_simulations>`_.

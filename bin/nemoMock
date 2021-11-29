@@ -31,8 +31,6 @@ import pickle
 import astropy.io.fits as pyfits
 import time
 import yaml
-#import IPython
-plt.matplotlib.interactive(False)
 
 #------------------------------------------------------------------------------------------------------------
 def makeParser():

@@ -27,7 +27,7 @@ import time
 
 #------------------------------------------------------------------------------------------------------------
 class MockSurvey(object):
-    """An object that provides routines calculating cluster counts (using `CCL <https://github.com/LSSTDESC/CCL>`_) 
+    """An object that provides routines calculating cluster counts (using `CCL <https://ccl.readthedocs.io/en/latest/>`_) 
     and generating mock catalogs for a given set of cosmological and mass scaling relation parameters.
     The Tinker et al. (2008) halo mass function is used (hardcoded at present, but in principle this can
     easily be swapped for any halo mass function supported by CCL).

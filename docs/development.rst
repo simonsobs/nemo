@@ -4,7 +4,7 @@
 Contributing to Further Development
 ===================================
 
-Nemo is hosted on `github <https://github.com/simonsobs/nemo/>`_ and will eventually be released under a free
+Nemo is hosted on `github <https://github.com/simonsobs/nemo/>`_ and is available under a free
 software license. Help is appreciated in its development.
 
 
@@ -12,14 +12,14 @@ Reporting Issues
 ----------------
 
 Found a bug? Please tell us, either on the `issues page <https://github.com/simonsobs/nemo/issues>`_
-in the Simons Observatory `#sz Slack channel <https://simonsobs.slack.com/messages/C35CDSEGJ>`_, 
-or by `email <hiltonm@ukzn.ac.za>`_.
+in the Simons Observatory `#sz Slack channel <https://simonsobs.slack.com/messages/C35CDSEGJ>`_
+(if you are an SO member), or by `email <hiltonm@ukzn.ac.za>`_.
 
 
 Contributing Code
 -----------------
 
-Want to add a feature or fix something? There are some tasks that need attention on the 
+Want to add a feature or fix something? There are some tasks that need attention listed on the 
 `issues page <https://github.com/simonsobs/nemo/issues>`_.
 
 The preferred method of contributing code is to clone the `repository <https://github.com/simonsobs/nemo>`_ 
@@ -31,7 +31,7 @@ and work on your new feature in your own branch::
 When the time comes to commit your changes, please contact `Matt Hilton <hiltonm@ukzn.ac.za>`_  with your
 github username, in order to be granted write access to the repository. You only need to do this once.
 
-The ``master`` branch itself is protected. When you are ready for your changes to be added to it, please
+The ``main`` branch itself is protected. When you are ready for your changes to be added to it, please
 issue a Pull Request for your changes to be reviewed. 
 
 

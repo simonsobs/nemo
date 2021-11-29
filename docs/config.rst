@@ -199,15 +199,16 @@ makeTileDir
     a directory with prefix ``tileDir_`` followed by the map filename will be
     created (see also `tileDefLabel`_ below). The individual tiles cut 
     from each map can be found within, in subdirectories labeled according to
-    the tile name. This is done such that
-    on subsequent :ref:`nemoCommand` runs, each process (if running in parallel
-    under MPI) can read its data from disk without any bottleneck, if using
-    a cluster file system (e.g., `Lustre <https://www.lustre.org/>`_).
+    the tile name. This is done such that on subsequent :ref:`nemoCommand` 
+    runs, each process (if running in parallel under MPI) can read its data
+    from disk without any bottleneck, if using a cluster file system
+    (e.g., `Lustre <https://www.lustre.org/>`_).
 
-    .. note::  If you change the definitions of the tiles, you *must* delete
-               the corresponding ``tileDir_*`` directories in order for your
-               changes to take effect the next time that you run
-               :ref:`nemoCommand`.
+    .. note::  If you modify your config file or the map to be tiled, then
+               **Nemo** should detect this and re-make the ``tileDir_*``
+               directories. If you have any doubts, you can always delete
+               the ``tileDir_*`` directories to force them to be re-made
+               from scratch the next time you run :ref:`nemoCommand`.
 
     *Example:*
     
@@ -339,7 +340,9 @@ tileNoiseRegions
 ^^^^^^^^^^^^^^^^
 
     To be added - this is only used by the ``RealSpaceMatchedFilter`` method.
-    
+
+
+.. _Detection:
 
 Object Detection and Photometry
 ===============================
@@ -577,10 +580,12 @@ catalogCuts
     
        catalogCuts: ['fluxJy > 0.01']
        
+
+.. _Filters:
     
 Filters
 =======
-
+    
 mapFilters
 ^^^^^^^^^^
 
@@ -604,9 +609,11 @@ mapFilters
                 * ``BeamRealSpaceMatchedFilter``
                 * ``ArnaudModelMatchedFilter``
                 * ``ArnaudModelRealSpaceMatchedFilter``
+                * ``BattagliaModelMatchedFilter``
+                * ``BattagliaModelRealSpaceMatchedFilter``
             
             As reflected in the names above, there are two broad classes of
-            filters, and two classes of signal templates that are currently
+            filters, and three classes of signal templates that are currently
             supported. 
 
             The ``MatchedFilter`` class is a Fourier-space implementation
@@ -835,6 +842,8 @@ GNFWParams
        GNFWParams: {P0: 6.41, c500: 1.81, gamma: 0.31, alpha: 1.33, beta: 4.13}
 
 
+.. _ClusterMassEstimates:
+
 Cluster Mass Estimates
 ======================
 
@@ -989,6 +998,8 @@ selFnOptions
                       method: 'montecarlo',
                       numIterations: 1000, 
                       massLimitMaps: [{z: 0.5}]}
+
+.. _selFnFootprints:
 
 selFnFootprints
 ^^^^^^^^^^^^^^^
@@ -1158,7 +1169,7 @@ sourceInjectionModels
         
         :M500 (float):
             
-            Mass (*M\ :sup:`500c`), in units of solar mass, of the
+            Mass (M\ :sub:`500c`), in units of solar mass, of the
             UPP-model cluster to be inserted.
     
     *Example:*
