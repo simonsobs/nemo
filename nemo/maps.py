@@ -1839,9 +1839,16 @@ def sourceInjectionTest(config, writeRankTable = True):
                 fluxCol='deltaT_c'
                 noiseLevelCol='err_deltaT_c'
                 SNRCol='SNR'
+                if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
+                    amplitudeRange = [1,1000]
+                else:
+                    amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
+
+                # print("sourceInjectionAmplitudeRange:",amplitudeRange)
+
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = fluxCol, 
-                                                         amplitudeRange = [1, 1000], 
+                                                         amplitudeRange = amplitudeRange, 
                                                          amplitudeDistribution = 'log', 
                                                          selFn = selFn, maskDilationPix = 20)
                 injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
