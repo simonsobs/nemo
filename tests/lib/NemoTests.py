@@ -276,7 +276,7 @@ class NemoTests(object):
         return RAKey, decKey
         
         
-    def check_recovered_ratio(self, inKey, outKey, toleranceSigma = 1.0, SNRCut = 4,
+    def check_recovered_ratio(self, inKey, outKey, toleranceSigma = 1.0, expectedRatio = 1.0, SNRCut = 4,
                               SNRKey = 'fixed_SNR', errInKey = None, errOutKey = None,
                               plotLabel = None, plotsDir = "plots"):
         """Catalogs must have been cross matched before this can be run.
@@ -322,7 +322,7 @@ class NemoTests(object):
             plt.title(label, fontdict = {'size': plotTitleSize})
             plt.savefig(plotsDir+os.path.sep+plotLabel+"_XvY.png")
             plt.close()
-        if abs((1.0-meanRatio)/meanRatioErr) > toleranceSigma:
+        if abs((expectedRatio-meanRatio)/meanRatioErr) > toleranceSigma:
             self._status="FAILED"
         else:
             self._status="SUCCESS"
