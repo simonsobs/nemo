@@ -342,7 +342,10 @@ class NemoConfig(object):
                 assert(tileCoordsDict != {})
                 self.tileCoordsDict=tileCoordsDict
                 self.tileNames=list(tileCoordsDict.keys())
-        
+
+        # We keep a copy of the original maps set-up in case we want to override later
+        self._origUnfilteredMapsDictList=copy.deepcopy(self.unfilteredMapsDictList)
+
         # For convenience, keep the full list of tile names
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
         self.allTileNames=self.tileNames.copy()
@@ -407,11 +410,12 @@ class NemoConfig(object):
 
 
     def restoreConfig(self):
-        """Restores the parameters dictionary (self.parDict) to the original state specified in the config 
-        .yml file.
+        """Restores the parameters dictionary (self.parDict) and unfiltered maps list to the original
+        state specified in the config .yml file.
         
         """      
         self.parDict=copy.deepcopy(self._origParDict)
+        self.unfilteredMapsDictList=copy.deepcopy(self._origUnfilteredMapsDictList)
 
 
     def setFilterSet(self, setNum):
@@ -428,8 +432,17 @@ class NemoConfig(object):
                 options['saveCatalog']=False
             if 'maskSubtractedRegions' not in options.keys():
                 options['maskSubtractedRegions']=False
+            if 'maskHoleDilationFactor' not in options.keys():
+                options['maskHoleDilationFactor']=None
+            if 'addSiphonedFromSets' not in options.keys():
+                options['addSiphonedFromSets']=None
+            if 'ignoreSurveyMask' not in options.keys():
+                options['ignoreSurveyMask']=False
 
-        permittedOverrides=['thresholdSigma', 'objIdent', 'findCenterOfMass']
+        # We could add some checks here for options that don't make sense
+        # e.g., if addSiphonedFromSets is present, better have subtractModelFromSets present
+
+        permittedOverrides=['thresholdSigma', 'objIdent', 'findCenterOfMass', 'measureShapes']
         if options is not None:
             for override in permittedOverrides:
                 if override in options.keys():
@@ -464,4 +477,11 @@ class NemoConfig(object):
                     if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
                         continue
                     mapDict['subtractModelFromCatalog']=self.filterSetOptions[subtractSetIndex]['catalog']
-                    mapDict['maskSubtractedRegions']=options['maskSubtractedRegions']
+
+        # Other map-level preprocessing keys
+        if options is not None:
+            for mapDict in self.unfilteredMapsDictList:
+                mapDict['maskSubtractedRegions']=options['maskSubtractedRegions']
+                mapDict['maskHoleDilationFactor']=options['maskHoleDilationFactor']
+                if options['ignoreSurveyMask'] == True:
+                    mapDict['surveyMask']=None

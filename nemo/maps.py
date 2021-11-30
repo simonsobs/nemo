@@ -1025,12 +1025,7 @@ def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
         if diagnosticsDir is not None:
             saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
             
-    # Optional smoothing with a Gaussian kernel (for approximate PSF-matching)
-    # NOTE: Turns out this is not good enough for real ACT beams - use full convolution kernel instead (see below)
-    #if 'smoothScaleDeg' in mapDict.keys():
-        #if 'smoothAttenuationFactor' in mapDict.keys():
-            #data=data*mapDict['smoothAttenuationFactor']
-        #data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
+    # Smoothing with some kernel (used, e.g., in PSF-matching between maps in nemoSpec)
     if 'smoothKernel' in mapDict.keys():
         if 'smoothAttenuationFactor' in mapDict.keys():
             data=data*mapDict['smoothAttenuationFactor']
