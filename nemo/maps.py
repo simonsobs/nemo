@@ -108,7 +108,11 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         handle180Wrap=False
     
     segMap=surveyMask
-    segMap, numObjects=ndimage.label(np.greater(segMap, 0), output = np.int8)
+    try:
+        segMap, numObjects=ndimage.label(np.greater(segMap, 0), output = np.int8)
+    except:
+        raise Exception("surveyMask given for autotiler is too complicated (breaks into > 256 regions) - check your mask and/or config file.")
+
     fieldIDs=np.arange(1, numObjects+1)
 
     tileList=[]
