@@ -74,21 +74,21 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                                                                                   useCachedMaps = False,
                                                                                   writeAreaMask = writeAreaMask,
                                                                                   writeFlagMask = writeFlagMask)
+            if config.rank == 0:
+                if config.filterSetOptions[setNum]['addSiphonedFromSets'] is not None:
+                    toStack=[config.filterSetOptions[setNum]['catalog']]
+                    for siphonSetNum in config.filterSetOptions[setNum]['addSiphonedFromSets']:
+                        toStack.append(config.filterSetOptions[siphonSetNum]['catalog'])
+                    config.filterSetOptions[setNum]['catalog']=atpy.vstack(toStack)
 
-            if config.filterSetOptions[setNum]['addSiphonedFromSets'] is not None:
-                toStack=[config.filterSetOptions[setNum]['catalog']]
-                for siphonSetNum in config.filterSetOptions[setNum]['addSiphonedFromSets']:
-                    toStack.append(config.filterSetOptions[siphonSetNum]['catalog'])
-                config.filterSetOptions[setNum]['catalog']=atpy.vstack(toStack)
-
-            if config.filterSetOptions[setNum]['saveCatalog'] == True:
-                if 'label' not in config.filterSetOptions[setNum].keys():
-                    label="filterSet%d" % (setNum)
-                else:
-                    label=config.filterSetOptions[setNum]['label']
-                outFileName=rootOutDir+os.path.sep+label+"_catalog.fits"
-                catalogs.writeCatalog(config.filterSetOptions[setNum]['catalog'], outFileName)
-                catalogs.catalog2DS9(config.filterSetOptions[setNum]['catalog'], outFileName.replace(".fits", ".reg"))
+                if config.filterSetOptions[setNum]['saveCatalog'] == True:
+                    if 'label' not in config.filterSetOptions[setNum].keys():
+                        label="filterSet%d" % (setNum)
+                    else:
+                        label=config.filterSetOptions[setNum]['label']
+                    outFileName=rootOutDir+os.path.sep+label+"_catalog.fits"
+                    catalogs.writeCatalog(config.filterSetOptions[setNum]['catalog'], outFileName)
+                    catalogs.catalog2DS9(config.filterSetOptions[setNum]['catalog'], outFileName.replace(".fits", ".reg"))
 
         catalog=config.filterSetOptions[config.filterSets[-1]]['catalog']
 

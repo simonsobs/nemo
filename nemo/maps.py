@@ -1864,10 +1864,14 @@ def sourceInjectionTest(config, writeRankTable = True):
                 fluxCol='fixed_y_c'
                 noiseLevelCol='fixed_err_y_c'
                 SNRCol='fixed_SNR'
+                if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
+                    amplitudeRange = [0.001, 1]
+                else:
+                    amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
                 # Quick test catalog - takes < 1 sec to generate
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = 'fixed_y_c', 
-                                                         amplitudeRange = [0.001, 1], 
+                                                         amplitudeRange = amplitudeRange,
                                                          amplitudeDistribution = 'linear',
                                                          selFn = selFn, maskDilationPix = 20)
                 # Or... proper mock, but this takes ~24 sec for E-D56
@@ -1879,12 +1883,9 @@ def sourceInjectionTest(config, writeRankTable = True):
                 noiseLevelCol='err_deltaT_c'
                 SNRCol='SNR'
                 if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                    amplitudeRange = [1,1000]
+                    amplitudeRange = [1, 1000]
                 else:
                     amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
-
-                # print("sourceInjectionAmplitudeRange:",amplitudeRange)
-
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = fluxCol, 
                                                          amplitudeRange = amplitudeRange, 
