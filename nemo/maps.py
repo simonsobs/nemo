@@ -1876,15 +1876,24 @@ def sourceInjectionTest(config, writeRankTable = True):
                 if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
                     amplitudeRange = [1,1000]
                 else:
-                    amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
+                    amplitudeRange = config.parDict['sourceInjectionAmplitudeRange']
 
+                if 'sourceInjectionAvoidanceRadiusArcmin' not in config.parDict.keys():
+                    avoidanceRadiusArcmin = 20.
+                else :
+                    avoidanceRadiusArcmin = config.parDict['sourceInjectionAvoidanceRadiusArcmin']
+                    
                 # print("sourceInjectionAmplitudeRange:",amplitudeRange)
 
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = fluxCol, 
                                                          amplitudeRange = amplitudeRange, 
                                                          amplitudeDistribution = 'log', 
-                                                         selFn = selFn, maskDilationPix = 20)
+                                                         selFn = selFn, avoidanceRadiusArcmin=avoidanceRadiusArcmin, maskDilationPix = 50)
+                mockCatalog=catalogs.removeCrossMatched(mockCatalog, realCatalog, radiusArcmin=avoidanceRadiusArcmin) # make sure injected sources don't land on real sources
+
+                mockCatalog=mockCatalog[ abs(mockCatalog['RADeg'] - 180) > 0.5 ] # avoid placing sources near to the wraparound
+
                 injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
@@ -1938,6 +1947,26 @@ def sourceInjectionTest(config, writeRankTable = True):
                         else:
                             print("... Warning: %s ..." % (msg))
 
+                    # Catching any crazy flux mismatches, >10 sigma
+                    if (clusterMode == False) and (sum(x_mockCatalog[fluxCol]-x_recCatalog[fluxCol] > 10*x_recCatalog[noiseLevelCol]) > 0 ): 
+                        mask = (x_mockCatalog[fluxCol]-x_recCatalog[fluxCol] > 10*x_recCatalog[noiseLevelCol])
+                        simConfig.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
+                        recCatalog2=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
+                                                                        copyFilters = True, useCachedMaps = False)
+                        recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog, radiusArcmin = 5.0)
+                        catalogs.catalog2DS9(x_recCatalog[mask],
+                                             simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-rec.reg",
+                                             addInfo = [{'key':fluxCol,'fmt':"%.1f"}])
+                        catalogs.catalog2DS9(x_mockCatalog[mask],
+                                             simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-input.reg",
+                                             color = 'red',
+                                             addInfo = [{'key':fluxCol,'fmt':"%.1f"}])
+                        msg="Caught recovered injected source with >10sigma flux discrepancy - check output under %s" % (simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName)
+                        if simConfig.parDict['haltOnPositionRecoveryProblem'] == True:
+                            raise Exception(msg)
+                        else:
+                            print("... Warning: %s ..." % (msg))
+                            
                     # Store everything - analyse later
                     SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog[SNRCol].tolist()
                     rArcminDict[sourceInjectionModel['label']]=rArcminDict[sourceInjectionModel['label']]+(rDeg*60).tolist()
