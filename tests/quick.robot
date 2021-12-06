@@ -9,6 +9,11 @@ Quickstart clusters tutorial runs
 Quickstart sources tutorial runs
     Run quickstart sources
 
+#Source injection test is robust
+#    Generate simulated source maps
+#    Set config      configs/sim_ptsrc_f090.yml
+#    Run nemo injection test
+
 Quickstart multipass config runs
     Run quickstart multipass
     Cross match             testsCache/quickstart-multipass/quickstart-multipass_optimalCatalog.fits      testsCache/DR5_cluster-catalog_v1.1.fits

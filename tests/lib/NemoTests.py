@@ -169,6 +169,10 @@ class NemoTests(object):
         self._run_command(["nemo", self.configFileName])
 
 
+    def run_nemo_injection_test(self):
+        self._run_command(["nemo", self.configFileName, "-I"])
+
+
     def run_parallel_nemo(self):
         self._run_command(["mpiexec", "nemo", self.configFileName, "-M"])
 

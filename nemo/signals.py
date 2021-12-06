@@ -6,7 +6,7 @@ This module contains routines for modeling cluster and source signals.
 
 import os
 import sys
-from pixell import enmap
+from pixell import enmap, curvedsky
 import astropy
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
@@ -77,10 +77,12 @@ else:
 class BeamProfile(object):
     """Describes the beam profile (i.e., the point spread function for some instrument in real space). This
     can be either read from a white-space delimited text file (with the angle in degrees in the first column
-    and the response in the second column), or can be set directly using arrays.
+    and the response in the second column; or as a beam transform file with *l* in the first column, and
+    *B\ :sub:`l`* in the second column), or can be set directly using arrays.
     
     Args:
-        beamFileName(:obj:`str`, optional): Path to text file containing a beam profile in the ACT format.
+        beamFileName(:obj:`str`, optional): Path to text file containing a beam profile (or transform) in
+            the ACT format.
         profile1d (:obj:`np.ndarray`, optional): One dimensional beam profile, with index 0 at the centre.
         rDeg (:obj:`np.ndarray`, optional): Corresponding angular distance in degrees from the centre for
             the beam profile.
@@ -99,12 +101,24 @@ class BeamProfile(object):
         
         if beamFileName is not None:
             beamData=np.loadtxt(beamFileName).transpose()
-            self.profile1d=beamData[1]
-            self.rDeg=beamData[0]
+            # Identify if beam file is a profile or a transform
+            if beamData[0][1]-beamData[0][0] >= 1:
+                ell=beamData[0]
+                Bell=beamData[1]
+                if len(np.unique(np.diff(ell))) != 1:
+                    raise Exception("If using a beam transform file, need delta ell = 1 between all ell values.")
+                rDeg=np.linspace(0.0, 0.5, 1800) # This may need adjusting
+                prof=curvedsky.harm2profile(Bell, np.radians(rDeg))
+                prof=prof/prof[0]
+                self.profile1d=prof
+                self.rDeg=rDeg
+            else:
+                self.profile1d=beamData[1]
+                self.rDeg=beamData[0]
         else:
             self.profile1d=profile1d
             self.rDeg=rDeg
-        
+
         if self.profile1d is not None and self.rDeg is not None:
             self.tck=interpolate.splrep(self.rDeg, self.profile1d)
         
