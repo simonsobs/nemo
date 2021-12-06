@@ -78,7 +78,7 @@ class BeamProfile(object):
     """Describes the beam profile (i.e., the point spread function for some instrument in real space). This
     can be either read from a white-space delimited text file (with the angle in degrees in the first column
     and the response in the second column; or as a beam transform file with *l* in the first column, and
-    *B\ :sub:`l`* in the second column), or can be set directly using arrays.
+    *B*\ :sub:`l` in the second column), or can be set directly using arrays.
     
     Args:
         beamFileName(:obj:`str`, optional): Path to text file containing a beam profile (or transform) in
