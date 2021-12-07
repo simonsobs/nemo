@@ -36,5 +36,5 @@ mapFilters:
 
 # Source injection test settings
 haltOnPositionRecoveryProblem: True
-sourceInjectionIterations: 100
-sourcesPerTile: 1000
+sourceInjectionIterations: 3
+sourcesPerTile: 300
