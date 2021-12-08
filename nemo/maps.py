@@ -109,7 +109,7 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
     
     segMap=surveyMask
     try:
-        segMap, numObjects=ndimage.label(np.greater(segMap, 0), output = np.int8)
+        segMap, numObjects=ndimage.label(np.greater(segMap, 0), output = np.uint8)
     except:
         raise Exception("surveyMask given for autotiler is too complicated (breaks into > 256 regions) - check your mask and/or config file.")
 
@@ -229,10 +229,10 @@ def addAutoTileDefinitions(parDict, DS9RegionFileName = None, cacheFileName = No
         with pyfits.open(surveyMaskPath) as img:    
             # Just in case RICE-compressed or similar
             if img[0].data is None:
-                surveyMask=np.array(img['COMPRESSED_IMAGE'].data, dtype = np.int8)
+                surveyMask=np.array(img['COMPRESSED_IMAGE'].data, dtype = np.uint8)
                 wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
             else:
-                surveyMask=np.array(img[0].data, dtype = np.int8)
+                surveyMask=np.array(img[0].data, dtype = np.uint8)
                 wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
             # One day we will write a routine to deal with the multi-plane thing sensibly...
             # But today is not that day
