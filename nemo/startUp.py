@@ -344,7 +344,8 @@ class NemoConfig(object):
                 self.tileNames=list(tileCoordsDict.keys())
 
         # We keep a copy of the original maps set-up in case we want to override later
-        self._origUnfilteredMapsDictList=copy.deepcopy(self.unfilteredMapsDictList)
+        if setUpMaps == True:
+            self._origUnfilteredMapsDictList=copy.deepcopy(self.unfilteredMapsDictList)
 
         # For convenience, keep the full list of tile names
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)

@@ -1503,16 +1503,18 @@ def tidyUp(config):
             QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
             if os.path.exists(QFileName):
                 os.remove(QFileName)
-    
+
     # Make MEFs
     MEFsToBuild=["areaMask", "flagMask", "RMSMap_%s" % (config.parDict['photFilter'])]
-    compressionTypes=["PLIO_1", "RICE_1"]
-    dtypes=[np.int32, np.float]
+    compressionTypes=["PLIO_1", "PLIO_1", "RICE_1"]
+    dtypes=[np.int8, np.int8, np.float]
     if 'selFnFootprints' in config.parDict.keys():
         for footprintDict in config.parDict['selFnFootprints']:
             MEFsToBuild.append("intersect_%s" % footprintDict['label'])
             compressionTypes.append("PLIO_1")
-            dtypes.append(np.int32)
+            dtypes.append(np.int8)
+    assert(len(MEFsToBuild) == len(compressionTypes))
+    assert(len(MEFsToBuild) == len(dtypes))
     for MEFBaseName, compressionType, dtype in zip(MEFsToBuild, compressionTypes, dtypes):
         outFileName=config.selFnDir+os.path.sep+MEFBaseName+".fits"
         newImg=pyfits.HDUList()
