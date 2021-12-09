@@ -124,7 +124,7 @@ RADecSection
     If given, cut all maps and masks to include only this rectangular section. This is
     specified as a list in the form ``[RAMin, RAMax, decMin, decMax]``, with all
     coordinates in decimal degrees. This option is useful for testing purposes, but it
-    should not be used for maps that are broken into tiles (see `makeTileDir`_).
+    should not be used for maps that are broken into tiles (see `Tiling`_).
     
     *Example:*
     
@@ -191,42 +191,17 @@ makeQuickLookMaps
 Tiling
 ======
 
-makeTileDir
-^^^^^^^^^^^
+useTiling:
+^^^^^^^^^^
     
     If True, break the map into tiles according to the settings specified in
-    `tileDefinitions`_. For each map and mask used by :ref:`nemoCommand`,
-    a directory with prefix ``tileDir_`` followed by the map filename will be
-    created (see also `tileDefLabel`_ below). The individual tiles cut 
-    from each map can be found within, in subdirectories labeled according to
-    the tile name. This is done such that on subsequent :ref:`nemoCommand` 
-    runs, each process (if running in parallel under MPI) can read its data
-    from disk without any bottleneck, if using a cluster file system
-    (e.g., `Lustre <https://www.lustre.org/>`_).
-
-    .. note::  If you modify your config file or the map to be tiled, then
-               **Nemo** should detect this and re-make the ``tileDir_*``
-               directories. If you have any doubts, you can always delete
-               the ``tileDir_*`` directories to force them to be re-made
-               from scratch the next time you run :ref:`nemoCommand`.
+    `tileDefinitions`_.
 
     *Example:*
     
     .. code-block:: yaml
     
-       makeTileDir: True
-       
-
-tileDefLabel
-^^^^^^^^^^^^    
-    This is used to label ``tileDir`` directories, i.e., directories will be
-    created with names in the format ``tileDir_tileDefLabel_<map file name>``.
-    
-    *Example:*
-    
-    .. code-block:: yaml
-    
-       tileDefLabel: 'auto'
+       useTiling: True
 
     
 tileDefinitions
@@ -1149,6 +1124,21 @@ sourcesPerTile
     .. code-block:: yaml
     
        sourcesPerTile: 50
+
+
+sourceInjectionAmplitudeRange
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    Sets the minimum and maximum of the range of injected source or
+    cluster model amplitudes. For sources, the amplitudes are specified
+    as ΔT (μK), while for clusters the amplitudes are specified in terms
+    of the central Comptonization parameter, y\ :sub:`0`.
+
+    *Example:*
+
+    .. code-block:: yaml
+
+       sourceInjectionAmplitudeRange: [1, 1000]
 
 
 sourceInjectionModels

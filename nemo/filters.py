@@ -183,8 +183,9 @@ class MapFilter(object):
         for mapDict in unfilteredMapsDictList:
             if 'mapToUse' in self.params.keys() and mapDict['label'] != self.params['mapToUse']:
                 continue
-            mapDict=maps.preprocessMapDict(mapDict.copy(), tileName = tileName, diagnosticsDir = diagnosticsDir)
-            self.unfilteredMapsDictList.append(mapDict)
+            newMapDict=mapDict.copy()
+            newMapDict.preprocess(tileName = tileName, diagnosticsDir = diagnosticsDir)
+            self.unfilteredMapsDictList.append(newMapDict)
         self.wcs=self.unfilteredMapsDictList[0]['wcs']
         self.shape=self.unfilteredMapsDictList[0]['data'].shape
 

@@ -104,15 +104,15 @@ if __name__ == '__main__':
     mapDict['beamFileName']=args.beamFileName
     parDict['unfilteredMaps']=[mapDict]
     parDict['mapFilters']=[]
+    parDict['useTiling']=False
     if args.MPIEnabled == True or args.breakIntoTiles == True:
-        parDict['makeTileDir']=True
+        parDict['useTiling']=True
         parDict['tileOverlapDeg']=1.0
-        parDict['tileDefLabel']='auto'
         parDict['tileDefinitions']={'mask': args.maskFileName,
                                     'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
 
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
-                              makeOutputDirs = False, setUpMaps = True, writeTileDir = False, 
+                              makeOutputDirs = False, setUpMaps = True, writeTileInfo = False,
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
     
     baseDir, fileName=os.path.split(args.outputFileName)

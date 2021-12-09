@@ -10,8 +10,9 @@ import sys
 import yaml
 import copy
 import astropy.io.fits as pyfits
-from astLib import astWCS
+from astLib import astWCS, astImages
 from nemo import signals
+import numpy as np
 import pickle
 import time
 #import IPython
@@ -114,13 +115,12 @@ def parseConfigFile(parDictFileName):
             parDict['undoPixelWindow']=True
         if 'fitQ' not in parDict.keys():
             parDict['fitQ']=True
-        # New two-pass pipeline - easiest to include and set False here to preserve old behaviour
-        if 'twoPass' not in parDict.keys():
-            parDict['twoPass']=False
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
-        # Sanity check of tile definitions
+        # Check of tile definitions
+        if 'useTiling' not in list(parDict.keys()):
+            parDict['useTiling']=False
         if 'tileDefinitions' in parDict.keys() and type(parDict['tileDefinitions']) == list:
             checkList=[]
             for entry in parDict['tileDefinitions']:
@@ -144,14 +144,14 @@ def parseConfigFile(parDictFileName):
         if 'haltOnPositionRecoveryProblem' not in parDict.keys():
             parDict['haltOnPositionRecoveryProblem']=False
 
-    # This is useful for spotting if the user changed the config between re-runs of nemo
+    # This is potentially useful for spotting if the user changed the config between re-runs of nemo
     parDict['_file_last_modified_ctime']=os.path.getctime(parDictFileName)
     
     return parDict
 
 #------------------------------------------------------------------------------------------------------------
 class NemoConfig(object):
-    """An object that keeps track of nemo's configuration, maps, and output directories etc..
+    """An object that keeps track of Nemo's configuration, maps, and output directories etc..
     
     Attributes:
         parDict (:obj:`dict`): Dictionary containing the contents of the config file.
@@ -168,8 +168,8 @@ class NemoConfig(object):
     
     """
     
-    def __init__(self, config, makeOutputDirs = True, setUpMaps = True, writeTileDir = True, 
-                 selFnDir = None, calcSelFn = True, sourceInjectionTest = False, MPIEnabled = False, 
+    def __init__(self, config, makeOutputDirs = True, setUpMaps = True, writeTileInfo = False,
+                 selFnDir = None, calcSelFn = False, sourceInjectionTest = False, MPIEnabled = False,
                  divideTilesByProcesses = True, verbose = True, strictMPIExceptions = True):
         """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
         
@@ -180,8 +180,8 @@ class NemoConfig(object):
                 catalogs are stored).
             setUpMaps (:obj:`bool`, optional): If True, set-up data structures for handling maps 
                 (inc. breaking into tiles if wanted).
-            writeTileDir (:obj:`bool`, optional): If True and set-up to break maps into tiles, write
-                the tiles to disk with a subdirectory for each tile.
+            writeTileInfo (:obj:`bool`, optional): If True and set-up to break maps into tiles, write
+                info on the tile geometry (such as a DS9 region file) into `selFnDir`.
             selFnDir (:obj:`str`, optional): Path to the selFn directory (use to override the 
                 default location).
             calcSelFn (:obj:`bool`, optional): Overrides the value given in the config file if True.
@@ -290,51 +290,19 @@ class NemoConfig(object):
             self.selFnDir=selFnDir
 
         if setUpMaps == True:
-            if self.rank == 0:
-                if writeTileDir == True:
-                    DS9RegionFileName=self.selFnDir+os.path.sep+"tiles.reg"
-                    cacheFileName=self.selFnDir+os.path.sep+"tileDefinitions.yml"
-                else:
-                    DS9RegionFileName=None
-                    cacheFileName=None
-                maps.addAutoTileDefinitions(self.parDict, DS9RegionFileName = DS9RegionFileName,
-                                            cacheFileName = cacheFileName)
-                bcastUnfilteredMapsDictList, bcastTileNames, tileCoordsDict=maps.makeTileDir(self.parDict, 
-                                                                                             writeToDisk = writeTileDir)
-                assert(tileCoordsDict != {})
-                bcastParDict=self.parDict
-                bcastTileCoordsDict=tileCoordsDict
-                if writeTileDir == True:
-                    with open(self.selFnDir+os.path.sep+"tileCoordsDict.pkl", "wb") as pickleFile:
-                        pickler=pickle.Pickler(pickleFile)
-                        pickler.dump(tileCoordsDict)
-            else:
-                bcastUnfilteredMapsDictList=None
-                bcastTileNames=None
-                bcastParDict=None
-                bcastTileCoordsDict=None
-            if self.MPIEnabled == True:
-                #self.comm.barrier()
-                bcastParDict=self.comm.bcast(bcastParDict, root = 0)
-                bcastUnfilteredMapsDictList=self.comm.bcast(bcastUnfilteredMapsDictList, root = 0)
-                bcastTileNames=self.comm.bcast(bcastTileNames, root = 0)
-                bcastTileCoordsDict=self.comm.bcast(bcastTileCoordsDict, root = 0)
-                self.comm.barrier()
-            self.unfilteredMapsDictList=bcastUnfilteredMapsDictList
-            self.tileNames=bcastTileNames
-            self.parDict=bcastParDict
-            self.tileCoordsDict=bcastTileCoordsDict
-            # For when we want to test on only a subset of tiles
-            if 'tileNameList' in list(self.parDict.keys()):
-                newList=[]
-                for name in self.tileNames:
-                    if name in self.parDict['tileNameList']:
-                        newList.append(name)
-                if newList == []:
-                    raise Exception("tileNameList given in nemo config file but no extensions in images match")
-                self.tileNames=newList
+            self._setUpMaps(writeTileInfo = writeTileInfo)
+
+        # For when we want to test on only a subset of tiles
+        if 'tileNameList' in list(self.parDict.keys()):
+            newList=[]
+            for name in self.tileNames:
+                if name in self.parDict['tileNameList']:
+                    newList.append(name)
+            if newList == []:
+                raise Exception("tileNameList given in nemo config file but no extensions in images match")
+            self.tileNames=newList
         else:
-            # If we don't have maps, we would still want the list of tile names
+            # If we don't have / didn't set-up maps, we would still want the list of tile names
             if os.path.exists(self.selFnDir+os.path.sep+"tileCoordsDict.pkl") == True:
                 with open(self.selFnDir+os.path.sep+"tileCoordsDict.pkl", "rb") as pickleFile:
                     unpickler=pickle.Unpickler(pickleFile)
@@ -342,10 +310,6 @@ class NemoConfig(object):
                 assert(tileCoordsDict != {})
                 self.tileCoordsDict=tileCoordsDict
                 self.tileNames=list(tileCoordsDict.keys())
-
-        # We keep a copy of the original maps set-up in case we want to override later
-        if setUpMaps == True:
-            self._origUnfilteredMapsDictList=copy.deepcopy(self.unfilteredMapsDictList)
 
         # For convenience, keep the full list of tile names
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
@@ -368,13 +332,6 @@ class NemoConfig(object):
             else:
                 self.tileNames=[]
 
-        # Check any mask files are valid (e.g., -ve values can cause things like -ve area if not caught)
-        if self.rank == 0 and setUpMaps == True:
-            maskKeys=['surveyMask', 'pointSourceMask']
-            for key in maskKeys:
-                if key in self.parDict.keys() and self.parDict[key] is not None:
-                    maps.checkMask(self.parDict[key])
-        
         # We're now writing maps per tile into their own dir (friendlier for Lustre)
         if makeOutputDirs == True:
             for tileName in self.tileNames:
@@ -408,6 +365,232 @@ class NemoConfig(object):
                     self.filterSetLabels[setNum]=self.filterSetOptions[setNum]['label']
                 else:
                     self.filterSetLabels[setNum]=None
+
+
+    def addAutoTileDefinitions(self, DS9RegionFileName = None, cacheFileName = None):
+        """Runs the autotiler to add automatic tile definitions into the parameters dictionary in-place.
+
+        Args:
+            DS9RegionFileName (str, optional): Path to DS9 regions file to be written.
+            cacheFileName (str, optional): Path to output a cached .yml file which will can be read instead on
+                repeated runs (for speed).
+
+        """
+
+        if cacheFileName is not None and os.path.exists(cacheFileName):
+            with open(cacheFileName, "r") as stream:
+                self.parDict['tileDefinitions']=yaml.safe_load(stream)
+            return None
+
+        if 'tileDefinitions' in self.parDict.keys() and type(self.parDict['tileDefinitions']) == dict:
+            # If we're not given a survey mask, we'll make one up from the map image itself
+            if 'mask' in self.parDict['tileDefinitions'].keys() and self.parDict['tileDefinitions']['mask'] is not None:
+                surveyMaskPath=self.parDict['tileDefinitions']['mask']
+            else:
+                surveyMaskPath=self.parDict['unfilteredMaps'][0]['mapFileName']
+            with pyfits.open(surveyMaskPath) as img:
+                # Just in case RICE/PLIO-compressed or similar
+                if img[0].data is None:
+                    surveyMask=np.array(img['COMPRESSED_IMAGE'].data, dtype = np.uint8)
+                    wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
+                else:
+                    surveyMask=np.array(img[0].data, dtype = np.uint8)
+                    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
+                # One day we will write a routine to deal with the multi-plane thing sensibly...
+                # But today is not that day
+                if surveyMask.ndim == 3:
+                    surveyMask=surveyMask[0, :]
+                assert(surveyMask.ndim == 2)
+                surveyMask[surveyMask != 0]=1
+            del img[0].data
+            self.parDict['tileDefinitions']=maps.autotiler(surveyMask, wcs,
+                                                           self.parDict['tileDefinitions']['targetTileWidthDeg'],
+                                                           self.parDict['tileDefinitions']['targetTileHeightDeg'])
+            print("... breaking map into %d tiles ..." % (len(self.parDict['tileDefinitions'])))
+            if DS9RegionFileName is not None:
+                maps.saveTilesDS9RegionsFile(self.parDict, DS9RegionFileName)
+
+            if cacheFileName is not None:
+                stream=yaml.dump(self.parDict['tileDefinitions'])
+                with open(cacheFileName, "w") as outFile:
+                    outFile.write(stream)
+
+
+    def getTileCoordsDict(self):
+        """Construct a dictionary that describes how a large map is broken up into smaller tiles
+        (see :ref:`Tiling` for information on the relevant configuration file parameters).
+
+        Returns:
+            A dictionary indexed by tile name, where each entry is a dictionary containing information
+            on pixel coordinates of each tile within the larger map, and the WCS of each tile.
+
+        """
+        # Spin through a map, figuring out the actual coords to clip based on the tile definitions
+        clipCoordsDict={}
+
+        # We can take any map, because we earlier verified they have consistent WCS and size
+        wcs=None
+        wcsPath=self.parDict['unfilteredMaps'][0]['mapFileName']
+        with pyfits.open(wcsPath) as img:
+            for ext in img:
+                if ext.data is not None:
+                    break
+            wcs=astWCS.WCS(ext.header, mode = 'pyfits')
+        assert(wcs is not None)
+
+        # Untiled
+        if self.parDict['useTiling'] == False:
+            clipCoordsDict[ext.name]={'clippedSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']],
+                                      'header': wcs.header,
+                                      'areaMaskInClipSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']]}
+
+        # Tiled - this takes about 4 sec
+        if self.parDict['useTiling'] == True:
+            print(">>> Finding tile coords ...")
+            # Extract tile definitions (may have been inserted by autotiler before calling here)
+            tileNames=[]
+            coordsList=[]
+            for tileDict in self.parDict['tileDefinitions']:
+                ra0, ra1, dec0, dec1=tileDict['RADecSection']
+                x0, y0=wcs.wcs2pix(ra0, dec0)
+                x1, y1=wcs.wcs2pix(ra1, dec1)
+                xMin=min([x0, x1])
+                xMax=max([x0, x1])
+                yMin=min([y0, y1])
+                yMax=max([y0, y1])
+                coordsList.append([xMin, xMax, yMin, yMax])
+                tileNames.append(tileDict['tileName'])
+            # Define clip regions in terms of pixels, adding overlap region
+            tileOverlapDeg=self.parDict['tileOverlapDeg']
+            mapData=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = np.uint8)
+            for c, name, tileDict in zip(coordsList, tileNames, self.parDict['tileDefinitions']):
+                y0=c[2]
+                y1=c[3]
+                x0=c[0]
+                x1=c[1]
+                ra0, dec0=wcs.pix2wcs(x0, y0)
+                ra1, dec1=wcs.pix2wcs(x1, y1)
+                # Be careful with signs here... and we're assuming approx pixel size is ok
+                if x0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
+                    ra0=ra0+tileOverlapDeg
+                if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
+                    ra1=ra1-tileOverlapDeg
+                if y0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
+                    dec0=dec0-tileOverlapDeg
+                if y1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[0]:
+                    dec1=dec1+tileOverlapDeg
+                if ra1 > ra0:
+                    ra1=-(360-ra1)
+                clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
+
+                # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
+                # (which happens if image dimensions are both odd)
+                # I _think_ this is related to the interpolation done in signals.fitQ
+                if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
+                    newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
+                    newArr[:clip['data'].shape[0], :]=clip['data']
+                    newWCS=clip['wcs'].copy()
+                    newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
+                    newWCS.updateFromHeader()
+                    testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
+                    # Check if we see the same sky, if not and we trip this, we need to think about this more
+                    assert((testClip['data']-clip['data']).sum() == 0)
+                    clip['data']=newArr
+                    clip['wcs']=newWCS
+
+                # Storing clip coords etc. so can stitch together later
+                # areaMaskSection here is used to define the region that would be kept (takes out overlap)
+                ra0, dec0=wcs.pix2wcs(x0, y0)
+                ra1, dec1=wcs.pix2wcs(x1, y1)
+                clip_x0, clip_y0=clip['wcs'].wcs2pix(ra0, dec0)
+                clip_x1, clip_y1=clip['wcs'].wcs2pix(ra1, dec1)
+                clip_x0=int(round(clip_x0))
+                clip_x1=int(round(clip_x1))
+                clip_y0=int(round(clip_y0))
+                clip_y1=int(round(clip_y1))
+                if name not in clipCoordsDict:
+                    clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
+                                          'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
+                    print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
+
+        return clipCoordsDict
+
+
+    def _setUpMaps(self, writeTileInfo = False):
+
+        if self.rank == 0:
+
+            # Check any mask files are valid (e.g., -ve values can cause things like -ve area if not caught)
+            maskKeys=['surveyMask', 'pointSourceMask']
+            for key in maskKeys:
+                if key in self.parDict.keys() and self.parDict[key] is not None:
+                    maps.checkMask(self.parDict[key])
+
+            # Check all maps have same WCS before we start
+            self._checkWCSConsistency()
+
+            if writeTileInfo == True:
+                DS9RegionFileName=self.selFnDir+os.path.sep+"tiles.reg"
+                cacheFileName=self.selFnDir+os.path.sep+"tileDefinitions.yml"
+            else:
+                DS9RegionFileName=None
+                cacheFileName=None
+
+            self.addAutoTileDefinitions(DS9RegionFileName = DS9RegionFileName, cacheFileName = cacheFileName)
+            self.tileCoordsDict=self.getTileCoordsDict()
+            assert(self.tileCoordsDict != {})
+
+            # NOTE: Replace writeTileDir with writeTileInfo, if no longer loading tiles
+            bcastParDict=self.parDict
+            bcastTileCoordsDict=self.tileCoordsDict
+            if writeTileInfo == True:
+                with open(self.selFnDir+os.path.sep+"tileCoordsDict.pkl", "wb") as pickleFile:
+                    pickler=pickle.Pickler(pickleFile)
+                    pickler.dump(self.tileCoordsDict)
+        else:
+            bcastParDict=None
+            bcastTileCoordsDict=None
+        if self.MPIEnabled == True:
+            bcastParDict=self.comm.bcast(bcastParDict, root = 0)
+            bcastTileCoordsDict=self.comm.bcast(bcastTileCoordsDict, root = 0)
+            self.comm.barrier()
+        self.tileNames=list(bcastTileCoordsDict.keys())
+        self.parDict=bcastParDict
+        self.tileCoordsDict=bcastTileCoordsDict
+
+        self.unfilteredMapsDictList=maps.MapDictList(self.parDict['unfilteredMaps'],
+                                                     tileCoordsDict = self.tileCoordsDict)
+
+        # We keep a copy of the original maps set-up in case we want to override later
+        self._origUnfilteredMapsDictList=copy.deepcopy(self.unfilteredMapsDictList)
+
+
+    def _checkWCSConsistency(self):
+        # Check consistency of WCS across maps
+        mapKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
+        refWCS=None
+        for mapDict in self.parDict['unfilteredMaps']:
+            for key in mapKeys:
+                if key in mapDict.keys() and mapDict[key] is not None:
+                    with pyfits.open(mapDict[key]) as img:
+                        wcs=None
+                        for ext in img:
+                            if ext is not None:
+                                wcs=astWCS.WCS(img[ext].header, mode = 'pyfits')
+                        if wcs is None:
+                            raise Exception("Map %s doesn't have a WCS." % (mapDict[key]))
+                        if refWCS is None:
+                            refWCS=wcs
+                        else:
+                            try:
+                                assert(refWCS.getCentreWCSCoords() == wcs.getCentreWCSCoords())
+                                assert(refWCS.getImageMinMaxWCSCoords() == wcs.getImageMinMaxWCSCoords())
+                                assert(refWCS.header['NAXIS1'] == wcs.header['NAXIS1'])
+                                assert(refWCS.header['NAXIS2'] == wcs.header['NAXIS2'])
+                                assert(refWCS.getXPixelSizeDeg() == wcs.getXPixelSizeDeg())
+                                assert(refWCS.getYPixelSizeDeg() == wcs.getYPixelSizeDeg())
+                            except:
+                                raise Exception("WCS of %s is not consistent with other maps (all maps must have the same WCS)." % (mapDict[key]))
 
 
     def restoreConfig(self):

@@ -132,12 +132,11 @@ sourceInjectionModels:
     - {redshift: 0.2, M500: 2.0e+14}
     - {redshift: 0.1, M500: 2.0e+14}
 
-# tileDir options - cut-up each map into smaller sections
-makeTileDir: True
+# Tiling options - cut-up each map into smaller sections
+useTiling: True
 makeQuickLookMaps: False
 stitchTiles: True
 tileOverlapDeg: 1.0
-tileDefLabel: 'auto'
 tileDefinitions: {mask: 'dr5_masking/AdvACTSurveyMask_v7_S18.fits',
                   targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}

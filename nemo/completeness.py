@@ -127,22 +127,16 @@ class SelFn(object):
             configFileName=self.selFnDir+os.path.sep+"config.yml"
             if os.path.exists(configFileName) == False:
                 raise Exception("No config .yml file found in selFnDir and no other location given.")
-        parDict=startUp.parseConfigFile(configFileName)
-        maps.addAutoTileDefinitions(parDict, DS9RegionFileName = self.selFnDir+os.path.sep+"tiles.reg",
-                                    cacheFileName = self.selFnDir+os.path.sep+"tileDefinitions.yml")
+        self._config=startUp.NemoConfig(configFileName, makeOutputDirs = False, setUpMaps = False, verbose = False)
+        parDict=self._config.parDict
 
-        if tileNames == None:
-            self.tileNames=[]
-            if 'tileDefinitions' not in parDict.keys():
-                self.tileNames.append('PRIMARY')
-            else:
-                for tileDef in parDict['tileDefinitions']:
-                    self.tileNames.append(tileDef['tileName'])
-        else:
+        if tileNames is not None:
             self.tileNames=tileNames
+        else:
+            self.tileNames=self._config.tileNames
         
         # Needed for generating mock samples directly
-        self.photFilterLabel=parDict['photFilter']
+        self.photFilterLabel=self._config.parDict['photFilter']
             
         # Sanity check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
