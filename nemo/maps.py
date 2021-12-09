@@ -99,20 +99,31 @@ class MapDict(dict):
                     # Zapping keywords in old ACT maps that confuse astropy.wcs
                     wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
                 data=tileData
+        elif type(pathToTileImages) == np.ndarray:
+            # Already loaded? Just do consistency check
+            if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3],
+                                          self.tileCoordsDict[tileName]['clippedSection'][1]):
+                data=pathToTileImages
         else:
-            with pyfits.open(pathToTileImages) as img:
-                for ext in img:
-                    if img[ext].data is not None:
-                        break
-                if returnWCS == True:
-                    wcs=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
-                minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
-                if img[ext].data.ndim == 3:
-                    data=img[ext].data[0, minY:maxY, minX:maxX]
-                elif img[ext].data.ndim == 2:
-                    data=img[ext].data[minY:maxY, minX:maxX]
-                else:
-                    raise Exception("Map data has %d dimensions - only ndim = 2 or ndim = 3 are currently handled." % (img[ext].data.ndim))
+            try:
+                with pyfits.open(pathToTileImages) as img:
+                    for ext in img:
+                        if img[ext].data is not None:
+                            break
+                    if returnWCS == True:
+                        wcs=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+                    minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
+                    if img[ext].data.ndim == 3:
+                        data=img[ext].data[0, minY:maxY, minX:maxX]
+                    elif img[ext].data.ndim == 2:
+                        data=img[ext].data[minY:maxY, minX:maxX]
+                    else:
+                        raise Exception("Map data has %d dimensions - only ndim = 2 or ndim = 3 are currently handled." % (img[ext].data.ndim))
+            except:
+                print("what?")
+                import IPython
+                IPython.embed()
+                sys.exit()
 
         if returnWCS == True:
             return data, wcs
@@ -225,6 +236,8 @@ class MapDict(dict):
             psMask=psClip['data']
             surveyClip=astImages.clipUsingRADecCoords(surveyMask, wcs, RAMin, RAMax, decMin, decMax)
             surveyMask=surveyClip['data']
+            flagClip=astImages.clipUsingRADecCoords(flagMask, wcs, RAMin, RAMax, decMin, decMax)
+            flagMask=flagClip['data']
             wcs=clip['wcs']
             if len(clip['data']) == 0:
                 raise Exception("Clipping using RADecSection returned empty array - check RADecSection in config .yml file is in map")

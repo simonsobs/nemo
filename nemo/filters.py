@@ -924,13 +924,13 @@ class RealSpaceMatchedFilter(MapFilter):
         # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
         #mapDict['bckSubScaleArcmin']=maxArcmin
         keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
-                    'pointSourceRemoval', 'weightsType']
+                    'pointSourceRemoval', 'weightsType', 'tileName']
         kernelUnfilteredMapsDictList=[]
         for mapDict in self.unfilteredMapsDictList:
-            kernelUnfilteredMapsDict={}
-            for k in keysWanted:
-                if k in list(mapDict.keys()):
-                    kernelUnfilteredMapsDict[k]=mapDict[k]
+            for key in list(mapDict.keys()):
+                if key not in keysWanted:
+                    del mapDict[key]
+            kernelUnfilteredMapsDict=maps.MapDict(mapDict, tileCoordsDict = mapDict.tileCoordsDict)
             kernelUnfilteredMapsDict['RADecSection']=RADecSection
             kernelUnfilteredMapsDictList.append(kernelUnfilteredMapsDict)
         kernelLabel="realSpaceKernel_%s" % (self.label)
@@ -941,11 +941,11 @@ class RealSpaceMatchedFilter(MapFilter):
             if os.path.exists(d) == False:
                 os.makedirs(d, exist_ok = True)
         matchedFilterClass=eval(self.params['noiseParams']['matchedFilterClass'])
-        matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params, 
+        matchedFilter=matchedFilterClass(kernelLabel, kernelUnfilteredMapsDictList, self.params,
                                          tileName = mapDict['tileName'],
                                          diagnosticsDir = matchedFilterDir+os.path.sep+'diagnostics',
                                          selFnDir = matchedFilterDir+os.path.sep+'selFn')
-        filteredMapDict=matchedFilter.buildAndApply()   
+        filteredMapDict=matchedFilter.buildAndApply()
         
         # Turn the matched filter into a smaller real space convolution kernel
         # This means we have to roll off the kernel to 0 at some radius
@@ -1089,7 +1089,7 @@ class RealSpaceMatchedFilter(MapFilter):
             RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
             if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
                 RADecSection=[self.wcs.header['NRAMIN'], self.wcs.header['NRAMAX'], 
-                            self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
+                              self.wcs.header['NDEMIN'], self.wcs.header['NDEMAX']]
             elif self.params['noiseParams']['RADecSection'] == 'auto':
                 cRA, cDec=self.wcs.getCentreWCSCoords()
                 halfSizeDeg=2.0
@@ -1108,10 +1108,10 @@ class RealSpaceMatchedFilter(MapFilter):
         else:
             self.loadFilter()
 
-        # Apply kernel        
+        # Apply kernel
         mapDataToFilter=[]
         for mapDict in self.unfilteredMapsDictList:
-            mapDataToFilter.append(mapDict['data'])
+            mapDataToFilter.append(mapDict.loadTile('mapFileName', tileName = self.tileName))
         mapDataToFilter=np.array(mapDataToFilter)
         filteredMap=self.applyFilter(mapDataToFilter)
                                                 
