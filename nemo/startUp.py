@@ -19,17 +19,21 @@ import time
 from . import maps
 
 #------------------------------------------------------------------------------------------------------------
-def parseConfigFile(parDictFileName):
-    """Parse a nemo .yml config file.
+def parseConfigFile(parDictFileName, verbose = False):
+    """Parse a Nemo .yml config file.
     
     Args:
         parDictFileName (:obj:`str`): Path to a nemo .yml configuration file.
+        verbose (:obj:`bool`, optional): If True, warning messages may be printed to the console, if there
+            are any.
     
     Returns:
         A dictionary of parameters.
     
     """
     
+    if verbose:
+        print(">>> Parsing config file %s" % (parDictFileName))
     with open(parDictFileName, "r") as stream:
         parDict=yaml.safe_load(stream)
         # We've moved masks out of the individual map definitions in the config file
@@ -144,9 +148,19 @@ def parseConfigFile(parDictFileName):
         if 'haltOnPositionRecoveryProblem' not in parDict.keys():
             parDict['haltOnPositionRecoveryProblem']=False
 
-    # This is potentially useful for spotting if the user changed the config between re-runs of nemo
+    # This isn't actually being used, but has been left in for now
     parDict['_file_last_modified_ctime']=os.path.getctime(parDictFileName)
     
+    # To aid user friendliness - spot any out-of-date / removed / renamed parameters here
+    # Use None for those that are totally removed
+    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None}
+    for k in oldKeyMap.keys():
+        if k in list(parDict.keys()) and oldKeyMap[k] is None:
+            del parDict[k]
+            print("... WARNING: config parameter '%s' is no longer used by Nemo and will be ignored." % (k))
+        if k in list(parDict.keys()) and type(oldKeyMap[k]) == str:
+            print("... WARNING: config parameter '%s' (old usage) has been renamed to '%s' (current usage) - you may wish to update your config file." % (k, oldKeyMap[k]))
+
     return parDict
 
 #------------------------------------------------------------------------------------------------------------
@@ -225,7 +239,7 @@ class NemoConfig(object):
             self.size=1
 
         if type(config) == str:
-            self.parDict=parseConfigFile(config)
+            self.parDict=parseConfigFile(config, verbose = verbose)
             self.configFileName=config
         elif type(config) == dict:
             self.parDict=config
