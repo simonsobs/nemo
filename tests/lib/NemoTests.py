@@ -15,7 +15,6 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 import pylab as plt
-import IPython
 
 plotSettings.update_rcParams()
 plotTitleSize=14

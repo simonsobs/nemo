@@ -160,6 +160,8 @@ def parseConfigFile(parDictFileName, verbose = False):
             print("... WARNING: config parameter '%s' is no longer used by Nemo and will be ignored." % (k))
         if k in list(parDict.keys()) and type(oldKeyMap[k]) == str:
             print("... WARNING: config parameter '%s' (old usage) has been renamed to '%s' (current usage) - you may wish to update your config file." % (k, oldKeyMap[k]))
+            parDict[oldKeyMap[k]]=parDict[k]
+            del parDict[k]
 
     return parDict
 
