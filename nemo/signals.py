@@ -86,7 +86,7 @@ class BeamProfile(object):
         profile1d (:obj:`np.ndarray`, optional): One dimensional beam profile, with index 0 at the centre.
         rDeg (:obj:`np.ndarray`, optional): Corresponding angular distance in degrees from the centre for
             the beam profile.
-        
+
     Attributes:
         profile1d (:obj:`np.ndarray`): One dimensional beam profile, with index 0 at the centre.
         rDeg (:obj:`np.ndarray`): Corresponding angular distance in degrees from the centre for the 
@@ -210,7 +210,7 @@ class QFit(object):
                     self.zMax=QTab['z'].max()
                 self.fitDict[tileName]=self._makeInterpolator(QTab)
 
-        elif os.path.exists(source) == True:
+        elif type(source) == str and os.path.exists(source) == True:
             # Inspect file and get tile names if MEF
             if tileNames is None:
                 tileNames=[]
@@ -232,7 +232,20 @@ class QFit(object):
                 if QTab['z'].max() > zMax:
                     self.zMax=QTab['z'].max()
                 self.fitDict[tileName]=self._makeInterpolator(QTab)
-    
+
+        elif type(source) == astropy.table.table.Table:
+            # Single tile Q fit table
+            QTab=source
+            tileName=QTab.meta['TILENAME']
+            if QTab['z'].min() < self._zGrid.min():
+                self.zMin=QTab['z'].min()
+            if QTab['z'].max() > self._zGrid.max():
+                self.zMax=QTab['z'].max()
+            self.fitDict[tileName]=self._makeInterpolator(QTab)
+
+        else:
+            raise Exception("Couldn't understand QFit source with type '%s'" % (type(source)))
+
 
     def _makeInterpolator(self, QTab):
         """Inspects QTab, and makes an interpolator object - 2d if there is z-dependence, 1d if not.
@@ -731,8 +744,7 @@ def loadFRelWeights(fRelWeightsFileName):
 #------------------------------------------------------------------------------------------------------------
 def fitQ(config):
     """Calculates the filter mismatch function *Q* on a grid of scale sizes for each tile in the map. The
-    results are initially cached (with a separate .fits table for each tile) under the `selFn` directory,
-    before being combined into a single file at the end of a :ref:`nemoCommand` run. 
+    results are combined into a single file written under the `selFn` directory.
     
     The `GNFWParams` key in the `config` dictionary can be used to specify a different cluster profile shape.
     
@@ -740,7 +752,7 @@ def fitQ(config):
         config (:obj:`startUp.NemoConfig`): A NemoConfig object.
     
     Note:
-        See :class:`QFit` for how to read in and use the output of this function.
+        See :class:`QFit` for how to read in and use the file produced by this function.
         
     """
     
@@ -819,6 +831,7 @@ def fitQ(config):
             
     # Here we save the fit for each tile separately... 
     # completeness.tidyUp will put them into one file at the end of a nemo run
+    QTabDict={}
     for tileName in config.tileNames:
         tileQTabFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
         if os.path.exists(tileQTabFileName) == True:
@@ -915,8 +928,8 @@ def fitQ(config):
                     Qz.append(z)
         Q=np.array(Q)
         Q=Q/Q[0]
-            
-        # Sort and save as FITS table (interim - all tile files gets combined at end of nemo run)
+
+        # Sort and make FITS table
         QTab=atpy.Table()
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
@@ -924,10 +937,11 @@ def fitQ(config):
         QTab.sort('theta500Arcmin')
         QTab.meta['NEMOVER']=nemo.__version__
         QTab.meta['ZDEPQ']=zDepQ
-        QTab.write(tileQTabFileName, overwrite = True)
+        QTab.meta['TILENAME']=tileName
+        QTabDict[tileName]=QTab
         
         # Test plot
-        Q=QFit(tileQTabFileName)
+        Q=QFit(QTab)
         plotSettings.update_rcParams()
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.12, 0.11, 0.86, 0.88])
@@ -948,48 +962,30 @@ def fitQ(config):
         
         t1=time.time()
         print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
-        
 
-#------------------------------------------------------------------------------------------------------------
-def makeCombinedQTable(config):
-    """Writes dictionary of tables (containing individual tile Q fits) as a single .fits table.
-    
-    Returns combined Q astropy table object
-    
-    """
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+        QTabDictList=config.comm.gather(QTabDict, root = 0)
+        if config.rank == 0:
+            print("... gathered Q fits ...")
+            combQTabDict={}
+            for QTabDict in QTabDictList:
+                for key in QTabDict:
+                    if key not in combQTabDict:
+                        combQTabDict[key]=QTabDict[key]
+            QTabDict=combQTabDict
+        config.comm.barrier() # needed? added today
 
-    outFileName=config.selFnDir+os.path.sep+"QFit.fits"    
-    if os.path.exists(outFileName) == True:
-        return atpy.Table().read(outFileName)
-        
-    QTabDict={}
-    for tileName in config.allTileNames:
-        QTabDict[tileName]=atpy.Table().read(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
-    
-    #----
-    # New - MEF
-    QTabMEF=pyfits.HDUList()
-    for tileName in config.allTileNames:
-        with pyfits.open(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)) as QTab:
-            QTab[1].name=tileName
-            QTabMEF.append(QTab[1].copy())
-    QTabMEF.writeto(outFileName, overwrite = True)
-    combinedQTab=QTabMEF
-    
-    #----
-    # Old
-    #combinedQTab=atpy.Table()
-    #for tabKey in list(QTabDict.keys()):
-        #for colKey in QTabDict[tabKey].keys():
-            #if colKey == 'theta500Arcmin':
-                #if colKey not in combinedQTab.keys():
-                    #combinedQTab.add_column(QTabDict[tabKey]['theta500Arcmin'], index = 0)
-            #else:
-                #combinedQTab.add_column(atpy.Column(QTabDict[tabKey][colKey].data, tabKey))
-    #combinedQTab.meta['NEMOVER']=nemo.__version__
-    #combinedQTab.write(outFileName, overwrite = True)
-    
-    return combinedQTab
+    # Write output as MEF
+    if config.rank == 0:
+        outFileName=config.selFnDir+os.path.sep+"QFit.fits"
+        QTabMEF=pyfits.HDUList()
+        for tileName in config.allTileNames:
+            if tileName in QTabDict.keys():
+                QTabHDU=pyfits.table_to_hdu(QTabDict[tileName])
+                QTabHDU.name=tileName
+                QTabMEF.append(QTabHDU)
+        QTabMEF.writeto(outFileName, overwrite = True)
 
 #------------------------------------------------------------------------------------------------------------
 def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):

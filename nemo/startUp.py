@@ -153,7 +153,7 @@ def parseConfigFile(parDictFileName, verbose = False):
     
     # To aid user friendliness - spot any out-of-date / removed / renamed parameters here
     # Use None for those that are totally removed
-    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None}
+    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None}
     for k in oldKeyMap.keys():
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]
@@ -162,6 +162,9 @@ def parseConfigFile(parDictFileName, verbose = False):
             print("... WARNING: config parameter '%s' (old usage) has been renamed to '%s' (current usage) - you may wish to update your config file." % (k, oldKeyMap[k]))
             parDict[oldKeyMap[k]]=parDict[k]
             del parDict[k]
+
+    if verbose:
+        print("... config loaded successfully")
 
     return parDict
 
@@ -240,6 +243,9 @@ class NemoConfig(object):
             self.comm=None
             self.size=1
 
+        if self.rank != 0:
+            verbose=False
+
         if type(config) == str:
             self.parDict=parseConfigFile(config, verbose = verbose)
             self.configFileName=config
@@ -276,7 +282,7 @@ class NemoConfig(object):
         if self.origWCS is not None:
             self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
         else:
-            if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail ...")
+            if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
         
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
@@ -306,6 +312,8 @@ class NemoConfig(object):
             self.selFnDir=selFnDir
 
         if setUpMaps == True:
+            if verbose == True:
+                print(">>> Setting up maps")
             self._setUpMaps(writeTileInfo = writeTileInfo)
 
         # For when we want to test on only a subset of tiles
@@ -422,7 +430,7 @@ class NemoConfig(object):
             self.parDict['tileDefinitions']=maps.autotiler(surveyMask, wcs,
                                                            self.parDict['tileDefinitions']['targetTileWidthDeg'],
                                                            self.parDict['tileDefinitions']['targetTileHeightDeg'])
-            print("... breaking map into %d tiles ..." % (len(self.parDict['tileDefinitions'])))
+            print("... breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
             if DS9RegionFileName is not None:
                 maps.saveTilesDS9RegionsFile(self.parDict, DS9RegionFileName)
 
@@ -462,7 +470,7 @@ class NemoConfig(object):
 
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
-            print(">>> Finding tile coords ...")
+            print(">>> Finding tile coords")
             # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]
             coordsList=[]
@@ -527,7 +535,7 @@ class NemoConfig(object):
                 if name not in clipCoordsDict:
                     clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
                                           'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
-                    print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
+                    print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
 
         return clipCoordsDict
 

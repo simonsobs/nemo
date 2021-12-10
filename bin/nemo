@@ -91,7 +91,7 @@ if __name__ == '__main__':
             catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                                  addInfo = addInfo, color = "cyan")
     else:
-        if config.rank == 0: print("... already made catalog %s ..." % (optimalCatalogFileName))
+        if config.rank == 0: print("... already made catalog %s" % (optimalCatalogFileName))
                 
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
@@ -99,11 +99,6 @@ if __name__ == '__main__':
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
-            if config.MPIEnabled == True:
-                config.comm.barrier()
-            if config.rank == 0:
-                signals.makeCombinedQTable(config)
-                print("... made combined Q fit file ...")
 
     # Source injection tests for quantifying position recovery accuracy and noise bias
     if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
@@ -114,7 +109,7 @@ if __name__ == '__main__':
             config.comm.barrier()
             sourceInjTableList=config.comm.gather(sourceInjTable, root = 0)
             if config.rank == 0:
-                print("... gathered source injection test results ...")
+                print("... gathered source injection test results")
                 toStack=[]
                 for sourceInjTable in sourceInjTableList:
                     if type(sourceInjTable) == astropy.table.table.Table and len(sourceInjTable) > 0:
@@ -125,25 +120,7 @@ if __name__ == '__main__':
                     sourceInjTable=None
     else:
         sourceInjTable=None
-            
-    ## Estimate of contamination from running cluster finding over inverted map
-    #if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
-        #conTabDict=maps.estimateContaminationFromInvertedMaps(config, imageDict)
-    #else:
-        #conTabDict={}
-        
-    ## Estimate of contamination by generating a fake sky with noise, and running detection algorithm over it
-    ## Ultimately we want this and the above ^^^ to appear on the same plot for comparison
-    #if 'estimateContaminationFromSkySim' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromSkySim'] == True:
-        #skySimConTabDict=maps.estimateContaminationFromSkySim(config, imageDict) 
-    #else:
-        #skySimConTabDict={}
-    
-    ## This just combines inverted maps contamination results and skySim (under different keys)
-    ## So we only feed one dictionary into the plotting routine (see below)
-    #for k in list(skySimConTabDict.keys()):
-        #conTabDict[k]=skySimConTabDict[k]
-        
+
     # Moved calculation of selection function parts here as it's very quick in parallel
     if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
         # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
@@ -162,7 +139,7 @@ if __name__ == '__main__':
             config.comm.barrier()
             gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
             if config.rank == 0:
-                print("... gathered selection function results ...")
+                print("... gathered selection function results")
                 all_selFnCollection={'full': []}
                 for key in selFnCollection.keys():
                     if key not in all_selFnCollection.keys():
@@ -231,7 +208,6 @@ if __name__ == '__main__':
                     completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
             
         # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
-        # This also puts Q fits into one file - so we need to run this regardless
         completeness.tidyUp(config)
         
     

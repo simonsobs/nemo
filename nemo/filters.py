@@ -84,7 +84,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
     SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
     if os.path.exists(filteredMapFileName) == False or useCachedMaps == False:
         
-        print("... making filtered map %s ..." % (label))
+        print("... making filtered map %s" % (label))
         filterClass=eval('%s' % (f['class']))
         filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], tileName = tileName, 
                               diagnosticsDir = diagnosticsDir, selFnDir = selFnDir)
@@ -111,7 +111,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
             maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
 
     else:
-        print("... loading cached map %s ..." % (filteredMapFileName))
+        print("... loading cached map %s" % (filteredMapFileName))
         filteredMapDict={}
         with pyfits.open(filteredMapFileName) as img:
             filteredMapDict['data']=img[0].data
