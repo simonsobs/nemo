@@ -105,25 +105,27 @@ class MapDict(dict):
                                           self.tileCoordsDict[tileName]['clippedSection'][1]):
                 data=pathToTileImages
         else:
-            try:
-                with pyfits.open(pathToTileImages) as img:
-                    for ext in img:
-                        if img[ext].data is not None:
-                            break
-                    if returnWCS == True:
-                        wcs=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
-                    minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
-                    if img[ext].data.ndim == 3:
-                        data=img[ext].data[0, minY:maxY, minX:maxX]
-                    elif img[ext].data.ndim == 2:
-                        data=img[ext].data[minY:maxY, minX:maxX]
-                    else:
-                        raise Exception("Map data has %d dimensions - only ndim = 2 or ndim = 3 are currently handled." % (img[ext].data.ndim))
-            except:
-                print("what?")
-                import IPython
-                IPython.embed()
-                sys.exit()
+            with pyfits.open(pathToTileImages) as img:
+                for ext in img:
+                    if img[ext].data is not None:
+                        break
+                if returnWCS == True:
+                    wcs=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+                minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
+                if img[ext].data.ndim == 3:
+                    data=img[ext].data[0, minY:maxY, minX:maxX]
+                elif img[ext].data.ndim == 2:
+                    data=img[ext].data[minY:maxY, minX:maxX]
+                else:
+                    raise Exception("Map data has %d dimensions - only ndim = 2 or ndim = 3 are currently handled." % (img[ext].data.ndim))
+
+        # Survey masks are special: we need to zap the border overlap area or area calculations will be wrong
+        if mapKey == 'surveyMask':
+            minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['areaMaskInClipSection']
+            data[:minY, :]=0
+            data[maxY:, :]=0
+            data[:, :minX]=0
+            data[:, maxX:]=0
 
         if returnWCS == True:
             return data, wcs

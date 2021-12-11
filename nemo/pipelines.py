@@ -180,7 +180,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
         tileDiagnosticsDir=diagnosticsDir+os.path.sep+tileName
         for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
             os.makedirs(d, exist_ok = True)
-        if verbose == True: print(">>> Making filtered maps - tileName = %s ..." % (tileName))
+        if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
         # We could load the unfiltered map only once here?
         # We could also cache 'dataMap' noise as it will always be the same
         for f in filtersList:
@@ -262,7 +262,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
         config.comm.barrier()
         optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
         if config.rank == 0:
-            print("... gathered catalogs ...")
+            print("... gathered catalogs")
             toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
             for collectedTab in optimalCatalogList:
                 if type(collectedTab) == astropy.table.table.Table:
