@@ -636,6 +636,9 @@ def _loadTile(tileName, baseDir, baseFileName, extension = 'fits'):
     # After tidyUp is run, this will be a MEF file... during first run, it won't be (written under MPI)
     if os.path.exists(baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)):
         fileName=baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)
+    elif os.path.exists(baseDir+os.path.sep+tileName+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)):
+        # Lustre-friendlier: each tile has its own directory
+        fileName=baseDir+os.path.sep+tileName+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)
     else:
         fileName=baseDir+os.path.sep+"%s.%s" % (baseFileName, extension)
     with pyfits.open(fileName) as img:
@@ -769,7 +772,7 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         for i in yOut[yMask]:
             intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
     intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
-    maps.saveFITS(intersectFileName, intersectMask, wcs, compressed = True, compressionType = 'PLIO_1')
+    maps.saveFITS(intersectFileName, intersectMask, wcs, compressionType = 'PLIO_1')
         
     return intersectMask
 
@@ -1288,7 +1291,7 @@ def makeMassLimitMap(SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRe
         t1=time.time()
         mask=np.not_equal(massLimMap, 0)
         massLimMap[mask]=np.power(10, massLimMap[mask])/1e14
-        maps.saveFITS(outFileName, massLimMap, wcs, compressed = True)
+        maps.saveFITS(outFileName, massLimMap, wcs, compressionType = "RICE_1")
         
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title = None):
@@ -1499,9 +1502,9 @@ def tidyUp(config):
                 os.remove(QFileName)
 
     # Make MEFs
-    MEFsToBuild=["areaMask", "flagMask", "RMSMap_%s" % (config.parDict['photFilter'])]
-    compressionTypes=["PLIO_1", "PLIO_1", "RICE_1"]
-    dtypes=[np.uint8, np.uint8, np.float]
+    MEFsToBuild=["RMSMap_%s" % (config.parDict['photFilter'])]
+    compressionTypes=["RICE_1"]
+    dtypes=[np.float]
     if 'selFnFootprints' in config.parDict.keys():
         for footprintDict in config.parDict['selFnFootprints']:
             MEFsToBuild.append("intersect_%s" % footprintDict['label'])

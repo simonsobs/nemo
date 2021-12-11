@@ -174,6 +174,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
     
     # Make filtered maps for each filter and tile
     catalogDict={}
+    areaMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+    flagMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
         # Now have per-tile directories (friendlier for Lustre)
         tileFilteredMapsDir=filteredMapsDir+os.path.sep+tileName
@@ -224,20 +226,13 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                                                invertMap = invertMap,
                                                DS9RegionsPath = DS9RegionsPath)
             
-            # We write area mask here, because it gets modified by findObjects if removing rings
-            # NOTE: condition _was_ previously added to stop writing tile maps again when running nemoMass in forced photometry mode
-            # Now we just default to not writing masks unless explicitly asked for
-            if writeAreaMask == True:
-                maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
-                surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
-                maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True,
-                              compressionType = 'PLIO_1')
+            # We collect the area mask here, because it gets modified by findObjects if removing rings
+            # NOTE: area mask should always be the same across all filters, could add a consistency check here
+            if writeAreaMask == True and tileName not in areaMaskDict.keys():
+                areaMaskDict[tileName]=np.array(filteredMapDict['surveyMask'], dtype = np.uint8)
 
-            if writeFlagMask == True:
-                flagMaskFileName=config.selFnDir+os.path.sep+"flagMask#%s.fits" % (tileName)
-                maps.saveFITS(flagMaskFileName, filteredMapDict['flagMask'], filteredMapDict['wcs'], compressed = True,
-                              compressionType = 'PLIO_1')
-
+            if writeFlagMask == True and tileName not in flagMaskDict.keys():
+                flagMaskDict[tileName]=filteredMapDict['flagMask']
             
             if measureFluxes == True:
                 photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,
@@ -259,6 +254,33 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
     optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
     
     if config.MPIEnabled == True:
+        # area mask
+        config.comm.barrier()
+        if config.rank > 0:
+            config.comm.send(areaMaskDict, dest = 0)
+        elif config.rank == 0:
+            gathered_tileDicts=[]
+            gathered_tileDicts.append(areaMaskDict)
+            for source in range(1, config.size):
+                gathered_tileDicts.append(config.comm.recv(source = source))
+            print("... gathered area mask")
+            for tileDict in gathered_tileDicts:
+                for tileName in tileDict.keys():
+                    areaMaskDict[tileName]=tileDict[tileName]
+        # flag mask
+        config.comm.barrier()
+        if config.rank > 0:
+            config.comm.send(flagMaskDict, dest = 0)
+        elif config.rank == 0:
+            gathered_tileDicts=[]
+            gathered_tileDicts.append(flagMaskDict)
+            for source in range(1, config.size):
+                gathered_tileDicts.append(config.comm.recv(source = source))
+            print("... gathered flag mask")
+            for tileDict in gathered_tileDicts:
+                for tileName in tileDict.keys():
+                    flagMaskDict[tileName]=tileDict[tileName]
+        # catalogs
         config.comm.barrier()
         optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
         if config.rank == 0:
@@ -271,6 +293,21 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
             # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
             if len(optimalCatalog) > 0:
                 optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+
+    # Write masks
+    if config.rank == 0:
+        if writeAreaMask == True:
+            areaMaskDict.saveMEF(config.selFnDir+os.path.sep+"areaMask.fits", compressionType = 'PLIO_1')
+            if config.parDict['stitchTiles'] == True:
+                areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
+                                              config.origWCS, compressionType = 'PLIO_1')
+
+
+        if writeFlagMask == True:
+            flagMaskDict.saveMEF(config.selFnDir+os.path.sep+"flagMask.fits", compressionType = 'PLIO_1')
+            if config.parDict['stitchTiles'] == True:
+                flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
+                                              config.origWCS, compressionType = 'PLIO_1')
 
     return optimalCatalog
 

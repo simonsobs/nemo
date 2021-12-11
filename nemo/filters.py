@@ -758,14 +758,10 @@ class MatchedFilter(MapFilter):
         SNMap=SNMap*surveyMask
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
-        #maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
-        #surveyMask=np.array(surveyMask, dtype = int)
-        #if os.path.exists(maskFileName) == False:
-            #maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True)
                 
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
-            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
+            RMSFileName=self.selFnDir+os.path.sep+self.tileName+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
+            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressionType = "RICE_1")
 
         if 'savePlots' in self.params and self.params['savePlots'] == True:
             self.saveRealSpaceFilterProfile()
@@ -1161,14 +1157,9 @@ class RealSpaceMatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        maskFileName=self.selFnDir+os.path.sep+"areaMask#%s.fits" % (self.tileName)
-        surveyMask=np.array(surveyMask, dtype = int)
-        if os.path.exists(maskFileName) == False:
-            maps.saveFITS(maskFileName, surveyMask, self.wcs, compressed = True, compressionType = 'PLIO_1')
-        
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
-            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressed = True)
+            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressionType = 'RICE_1')
 
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
                 'surveyMask': surveyMask, 'flagMask': self.flagMask, 'mapUnits': mapUnits,

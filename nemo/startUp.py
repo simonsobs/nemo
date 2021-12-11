@@ -359,7 +359,7 @@ class NemoConfig(object):
         # We're now writing maps per tile into their own dir (friendlier for Lustre)
         if makeOutputDirs == True:
             for tileName in self.tileNames:
-                for d in [self.diagnosticsDir, self.filteredMapsDir]:
+                for d in [self.diagnosticsDir, self.filteredMapsDir, self.selFnDir]:
                     os.makedirs(d+os.path.sep+tileName, exist_ok = True)
 
         # Identify filter sets, for enabling new multi-pass filtering and object finding

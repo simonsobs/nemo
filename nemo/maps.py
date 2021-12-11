@@ -435,6 +435,85 @@ class MapDictList(object):
         yield from self.mapDictList
 
 
+#------------------------------------------------------------------------------------------------------------
+class TileDict(dict):
+    """A dictionary for collecting tile images, for later saving as multi-extension FITS or outputting as a
+    single monolithic FITS image. Keys within the dictionary map to tile names.
+
+    Args:
+        inputDict (:obj:`dict`): Input dictionary (keys map to tile names).
+        tileCoordsDict (:obj:`dict`, optional): A dictionary that describes the tiling of a large map, as
+            produced by :meth:`startUp.NemoConfig.getTileCoordsDict`.
+
+    Attributes:
+        tileCoordsDict (:obj:`dict`): A dictionary that describes the tiling of a large map, as
+            produced by :meth:`startUp.NemoConfig.getTileCoordsDict`.
+
+    """
+
+    def __init__(self, inputDict, tileCoordsDict = None):
+        super(TileDict, self).__init__(inputDict)
+        self.tileCoordsDict=tileCoordsDict
+
+
+    def copy(self):
+        return TileDict(self, tileCoordsDict = self.tileCoordsDict)
+
+
+    def saveMEF(self, outFileName, compressionType = None):
+        """Save the tile images as a multi-extension FITS file.
+
+        Args:
+            outFileName (:obj:`str`): Path where the MEF file will be written.
+            compressionType (:obj:`str`): If given, the data will be compressed using the given
+                method (as understood by :module:`astropy.io.fits`). Use `PLIO_1` for masks,
+                and `RICE_1` for other image data that can stand lossy compression. If None,
+                the image data is not compressed.
+
+        Returns:
+            None
+
+        """
+        newImg=pyfits.HDUList()
+        for tileName in self.keys():
+            if compressionType is not None:
+                if compressionType == 'PLIO_1':
+                    dtype=np.uint8
+                else:
+                    dtype=np.float
+                hdu=pyfits.CompImageHDU(np.array(self[tileName], dtype = dtype),
+                                        self.tileCoordsDict[tileName]['header'], name = tileName,
+                                        compression_type = compressionType)
+            else:
+                hdu=pyfits.ImageHDU(self[tileName], self.tileCoordsDict[tileName]['header'],
+                                    name = tileName)
+            newImg.append(hdu)
+        newImg.writeto(outFileName, overwrite = True)
+
+
+    def saveStitchedFITS(self, outFileName, stitchedWCS, compressionType = None):
+        """Stitch together the tiles into a monolithic image and save in a FITS file.
+
+        Args:
+            outFileName (:obj:`str`): Path where the stitched image FITS file will be written.
+            stitchedWCS (:obj:`astWCS.WCS`): WCS object corresponding to the stitched map
+                that will be produced.
+            compressionType (:obj:`str`): If given, the data will be compressed using the given
+                method (as understood by :module:`astropy.io.fits`). Use `PLIO_1` for masks,
+                and `RICE_1` for other image data that can stand lossy compression. If None,
+                the image data is not compressed.
+
+        Returns:
+            None
+
+        """
+        wcs=stitchedWCS
+        d=np.zeros([stitchedWCS.header['NAXIS2'], stitchedWCS.header['NAXIS1']])
+        for tileName in self.keys():
+            minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
+            d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+self[tileName]
+        saveFITS(outFileName, d, wcs, compressionType = compressionType)
+
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
     """Converts an array (e.g., a map) in ΔTemperature (μK) with respect to the CMB to Compton y parameter
@@ -680,23 +759,12 @@ def stitchTiles(config):
     # Defining the maps to stitch together and where they will go
     stitchDictList=[{'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_filteredMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_filteredMap.fits",
-                     'compressed': False,
                      'compressionType': None},
                     {'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_SNMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_SNMap.fits",
-                     'compressed': False,
                      'compressionType': None},
-                    {'pattern': config.selFnDir+os.path.sep+"areaMask#$TILENAME.fits",
-                     'outFileName': config.selFnDir+os.path.sep+"stitched_areaMask.fits",
-                     'compressed': True,
-                     'compressionType': 'PLIO_1'},
-                    {'pattern': config.selFnDir+os.path.sep+"flagMask#$TILENAME.fits",
-                     'outFileName': config.selFnDir+os.path.sep+"stitched_flagMask.fits",
-                     'compressed': True,
-                     'compressionType': 'PLIO_1'},
                     {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
-                     'compressed': True,
                      'compressionType': 'RICE_1'}]
 
     tileCoordsDict=config.tileCoordsDict
@@ -705,7 +773,6 @@ def stitchTiles(config):
             for stitchDict in stitchDictList:
                 pattern=stitchDict['pattern']
                 outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
-                compressed=stitchDict['compressed']
                 compressionType=stitchDict['compressionType']
                 d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
                 wcs=config.origWCS
@@ -728,7 +795,7 @@ def stitchTiles(config):
                     # Accounting for tiles that may have been extended by 1 pix for FFT purposes (Q-related)
                     height=maxY-minY; width=maxX-minX
                     d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask[:height, :width]*tileData[:height, :width]
-                saveFITS(outFileName, d, wcs, compressed = compressed, compressionType = compressionType)
+                saveFITS(outFileName, d, wcs, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
 def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
@@ -784,7 +851,7 @@ def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale
                 outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
             except:
                 raise Exception("Output pixel coords invalid - if you see this, probably outWCS.header has keywords that confuse astropy.wcs (PC1_1 etc. - in old ACT maps)")
-    saveFITS(outFileName, outData*fluxRescale, outWCS, compressed = True)
+    saveFITS(outFileName, outData*fluxRescale, outWCS, compressionType = 'RICE_1')
 
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
@@ -1949,16 +2016,17 @@ def noiseBiasAnalysis(sourceInjTable, plotFileName, sourceInjectionModel = None)
     return None
         
 #---------------------------------------------------------------------------------------------------
-def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType = 'RICE_1'):
-    """Writes a map (2d image array) to a new .fits file.
+def saveFITS(outputFileName, mapData, wcs, compressionType = None):
+    """Writes a map (2d image array) to a new FITS file.
     
     Args:
         outputFileName (str): Filename of output FITS image.
         mapData (:obj:`np.ndarray`): Map data array.
         wcs (:obj:`astWCS.WCS`): Map WCS object.
-        compressed (bool, optional): If True, writes a compressed image.
-        compressionType (str, optional): The type of compression to use ('PLIO_1' for masks and
-            'RICE_1' for images are recommended).
+        compressionType (str, optional): If given, the data will be compressed using the given
+            method (as understood by :module:`astropy.io.fits`). Use `PLIO_1` for masks,
+            and `RICE_1` for other image data that can stand lossy compression. If None,
+            the image data is not compressed.
     
     """
     
@@ -1967,18 +2035,16 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType =
     if os.path.exists(outputFileName):
         os.remove(outputFileName)
     
-    if compressed == False:
+    if compressionType is None:
         if wcs is not None:
             hdu=pyfits.PrimaryHDU(mapData, wcs.header)
         else:
             hdu=pyfits.PrimaryHDU(mapData, None)
     
-    if compressed == True:
+    if compressionType is not None:
         if wcs is not None:
             if compressionType == 'PLIO_1':
-                #wcs.header['BITPIX']=8
-                #wcs.updateFromHeader()
-                dtype=np.int32
+                dtype=np.uint8
             else:
                 dtype=np.float
             hdu=pyfits.CompImageHDU(np.array(mapData, dtype = dtype), wcs.header, 
