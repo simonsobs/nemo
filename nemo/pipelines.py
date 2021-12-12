@@ -349,7 +349,7 @@ def makeSelFnCollection(config, mockSurvey):
     for footprintDict in footprintsList:
         if footprintDict['label'] not in selFnCollection.keys():
             selFnCollection[footprintDict['label']]=[]
-            
+
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
         compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
@@ -361,7 +361,15 @@ def makeSelFnCollection(config, mockSurvey):
                    'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                    'compMz': compMz}
         selFnCollection['full'].append(selFnDict)
-        
+
+        # Optional mass-limit maps [no footprint option here as yet]
+        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
+            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+                completeness.makeMassLimitMap(RMSTab, SNRCut, massLimitDict['z'],
+                                              tileName, photFilterLabel, mockSurvey,
+                                              config.parDict['massOptions'], Q, config.diagnosticsDir,
+                                              config.selFnDir)
+
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
         for footprintDict in footprintsList:
@@ -379,14 +387,47 @@ def makeSelFnCollection(config, mockSurvey):
                            'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                            'compMz': compMz}
                 selFnCollection[footprintDict['label']].append(selFnDict)
-            
-        # Optional mass-limit maps
-        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
-            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
-                                            config.parDict['massOptions'], Q, config.diagnosticsDir,
-                                            config.selFnDir) 
-    
+
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+        gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
+        if config.rank == 0:
+            print("... gathered selection function results")
+            all_selFnCollection={'full': []}
+            for key in selFnCollection.keys():
+                if key not in all_selFnCollection.keys():
+                    all_selFnCollection[key]=[]
+            for selFnCollection in gathered_selFnCollections:
+                for key in all_selFnCollection.keys():
+                    all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
+            selFnCollection=all_selFnCollection
+
+    # Combine RMSTab files (we can downsample further later if needed)
+    # We add a column for the tileName just in case want to select on this later
+    if config.rank == 0:
+        strLen=0
+        for tileName in config.allTileNames:
+            if len(tileName) > strLen:
+                strLen=len(tileName)
+        for footprint in selFnCollection.keys():
+            if footprint == "full":
+                label=""
+            else:
+                label="_"+footprint
+            outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
+            tabList=[]
+            for selFnDict in selFnCollection[footprint]:
+                tileName=selFnDict['tileName']
+                tileTab=selFnDict['RMSTab']
+                tileTab['tileName']=atpy.Column(np.array([tileName]*len(tileTab),
+                                                dtype = '<U%d' % (strLen)), "tileName")
+                tabList.append(tileTab)
+            if len(tabList) > 0:
+                tab=atpy.vstack(tabList)
+                tab.sort('y0RMS')
+                tab.meta['NEMOVER']=nemo.__version__
+                tab.write(outFileName, overwrite = True)
+
     return selFnCollection
                 
 #------------------------------------------------------------------------------------------------------------

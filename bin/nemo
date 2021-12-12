@@ -135,26 +135,13 @@ if __name__ == '__main__':
         ns=0.95
         mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, enableDrawSample = True)
         selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
-        if config.MPIEnabled == True:
-            config.comm.barrier()
-            gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
-            if config.rank == 0:
-                print("... gathered selection function results")
-                all_selFnCollection={'full': []}
-                for key in selFnCollection.keys():
-                    if key not in all_selFnCollection.keys():
-                        all_selFnCollection[key]=[]
-                for selFnCollection in gathered_selFnCollections:
-                    for key in all_selFnCollection.keys():
-                        all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
-                selFnCollection=all_selFnCollection
     else:
         selFnCollection={}
         
     # Tidying up etc.
     if config.rank == 0:
 
-        # Stitch together map tiles - full fat versions (this will only work 'saveFilteredMaps: True')
+        # Stitch together map tiles - full fat versions (this will only work if 'saveFilteredMaps: True')
         if 'stitchTiles' in config.parDict.keys() and config.parDict['stitchTiles'] == True:
             maps.stitchTiles(config)
 
@@ -197,7 +184,7 @@ if __name__ == '__main__':
             # Survey completeness stats now all lumped together in one routine
             # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
             completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
-                                                additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
+                                                 additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
             # If we made mass limit maps...
             # ... make cumulative area versus mass limit plot(s)
             # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit
