@@ -986,9 +986,9 @@ def fitQ(config):
                 QTabMEF.append(QTabHDU)
         QTabMEF.writeto(outFileName, overwrite = True)
 
-    # Make sure we all leave here together
-    if config.MPIEnabled == True:
-        config.comm.barrier()
+    ## Make sure we all leave here together
+    #if config.MPIEnabled == True:
+        #config.comm.barrier()
 
 #------------------------------------------------------------------------------------------------------------
 def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):

@@ -309,6 +309,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                 flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
                                               config.origWCS, compressionType = 'PLIO_1')
 
+
     return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------

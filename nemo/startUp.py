@@ -343,14 +343,14 @@ class NemoConfig(object):
         if self.MPIEnabled == True and divideTilesByProcesses == True:
             # New - bit clunky but distributes more evenly
             rankExtNames={}
-            rankCounter=0
+            rankCounter=1
             for e in self.tileNames:
                 if rankCounter not in rankExtNames:
                     rankExtNames[rankCounter]=[]
                 rankExtNames[rankCounter].append(e)
                 rankCounter=rankCounter+1
                 if rankCounter > self.size-1:
-                    rankCounter=0
+                    rankCounter=1
             if self.rank in rankExtNames.keys():
                 self.tileNames=rankExtNames[self.rank]
             else:
