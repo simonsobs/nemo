@@ -833,10 +833,6 @@ def fitQ(config):
     # completeness.tidyUp will put them into one file at the end of a nemo run
     QTabDict={}
     for tileName in config.tileNames:
-        tileQTabFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
-        if os.path.exists(tileQTabFileName) == True:
-            print("... already done Q fit for tile %s ..." % (tileName))
-            continue
         print("... fitting Q in tile %s ..." % (tileName))
 
         # Load reference scale filter
@@ -962,6 +958,7 @@ def fitQ(config):
         
         t1=time.time()
         print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
+        del Q, signalMapDict, clipDict, filterObj
 
     if config.MPIEnabled == True:
         config.comm.barrier()
@@ -985,6 +982,9 @@ def fitQ(config):
                 QTabHDU.name=tileName
                 QTabMEF.append(QTabHDU)
         QTabMEF.writeto(outFileName, overwrite = True)
+
+    if config.rank == 0:
+        print("... after Q fits completed: time since start = %.3f sec" % (time.time()-config._timeStarted))
 
     ## Make sure we all leave here together
     #if config.MPIEnabled == True:

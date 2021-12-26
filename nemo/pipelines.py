@@ -99,6 +99,9 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                                            verbose = verbose, useCachedMaps = useCachedMaps,
                                            writeAreaMask = True, writeFlagMask = True)
 
+    if verbose == True and config.rank == 0:
+        print("... after map filtering and making catalogs: time since start = %.3f sec" % (time.time()-config._timeStarted))
+
     return catalog
 
 #------------------------------------------------------------------------------------------------------------

@@ -365,8 +365,13 @@ class NemoConfig(object):
         # Identify filter sets, for enabling new multi-pass filtering and object finding
         self._identifyFilterSets()
         
+        # Timekeeping for benchmarking
+        if self.rank == 0:
+            self._timeStarted=time.time()
+
         # For debugging...
-        if verbose: print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
+        if self.MPIEnabled == True:
+            print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
     def _identifyFilterSets(self):
