@@ -250,7 +250,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                                             filteredMapDict['wcs'], prefix = 'fixed_', 
                                             useInterpolator = config.parDict['useInterpolator'],
                                             invertMap = invertMap)
-            
+            del filteredMapDict
             catalogDict[label]['catalog']=catalog
 
     # Merged/optimal catalogs
@@ -312,6 +312,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                 flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
                                               config.origWCS, compressionType = 'PLIO_1')
 
+    del areaMaskDict, flagMaskDict, catalogDict
 
     return optimalCatalog
 

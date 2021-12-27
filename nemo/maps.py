@@ -314,7 +314,7 @@ class MapDict(dict):
             psMask=np.ones(data.shape)
             pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad))
-            rArcminMap=np.ones(data.shape, dtype = float)*1e6
+            rDegMap=np.ones(data.shape, dtype = float)*1e6
             for catalogInfo in self['maskPointSourcesFromCatalog']:
                 if type(catalogInfo) == str:
                     catalogPath=catalogInfo
@@ -342,13 +342,12 @@ class MapDict(dict):
                         maskRadiusArcmin=ASizeArcmin/2
                     else:
                         raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
-                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
-                                                                                    row['RADeg'], row['decDeg'],
-                                                                                    maskRadiusArcmin/60)
-                    rArcminMap=rArcminMap*60
-                    surveyMask[rArcminMap < maskRadiusArcmin]=0
-                    psMask[rArcminMap < maskRadiusArcmin]=0
-                    data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
+                    rDegMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rDegMap, wcs,
+                                                                                row['RADeg'], row['decDeg'],
+                                                                                maskRadiusArcmin/60)
+                    surveyMask[rDegMap < maskRadiusArcmin/60.0]=0
+                    psMask[rDegMap < maskRadiusArcmin/60.0]=0
+                    data[rDegMap < maskRadiusArcmin/60.0]=bckData[rDegMap < maskRadiusArcmin/60.0]
 
         if 'subtractModelFromCatalog' in list(self.keys()) and self['subtractModelFromCatalog'] is not None:
             if type(self['subtractModelFromCatalog']) is not list:

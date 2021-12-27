@@ -807,7 +807,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
         return tab[np.where(tab['tileName'] == tileName)]
 
     # Table doesn't exist, so make it...
-    print(("... making RMS table for tile =  %s, footprint = %s" % (tileName, footprintLabel)))
+    print(("... making RMS table for tile = %s, footprint = %s" % (tileName, footprintLabel)))
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)

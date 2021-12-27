@@ -756,7 +756,6 @@ def fitQ(config):
         
     """
     
-    t0=time.time()
     cosmoModel=fiducialCosmoModel
         
     # Spin through the filter kernels
@@ -830,10 +829,10 @@ def fitQ(config):
         raise Exception("valid values for zDepQ are 0 or 1")
             
     # Here we save the fit for each tile separately... 
-    # completeness.tidyUp will put them into one file at the end of a nemo run
     QTabDict={}
     for tileName in config.tileNames:
-        print("... fitting Q in tile %s ..." % (tileName))
+        t0=time.time()
+        print("... fitting Q in tile %s" % (tileName))
 
         # Load reference scale filter
         foundFilt=False
@@ -869,15 +868,17 @@ def fitQ(config):
         RADeg, decDeg=wcs.getCentreWCSCoords()                
         clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         wcs=clipDict['wcs']
-        extMap=clipDict['data']
+        shape=clipDict['data'].shape
         
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
-        signalMapDict={}
-        signalMap=np.zeros(extMap.shape)
+        signalMap=np.zeros(shape)
         degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
         degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, signalMapSizeDeg)
+        Q=[]
+        QTheta500Arcmin=[]
+        Qz=[]
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
@@ -903,24 +904,13 @@ def fitQ(config):
                 else:
                     signalMaps.append(enmap.fft(signalMap))
             signalMaps=np.array(signalMaps)
-            # Skip any failed ones (see above - CCL blowing up for extreme masses)
+            # Filter maps with ref kernel
             if len(signalMaps) == len(list(beamsDict.keys())):
-                signalMapDict[key]=signalMaps
-                theta500ArcminDict[key]=calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel)
-        
-        # Filter maps with the ref kernel
-        # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
-        Q=[]
-        QTheta500Arcmin=[]
-        Qz=[]
-        for z, M500MSun in zip(zRange, MRange):
-            key='%.2f_%.2f' % (z, np.log10(M500MSun))
-            if key in signalMapDict.keys():
-                filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
+                filteredSignal=filterObj.applyFilter(signalMaps)
                 peakFilteredSignal=filteredSignal.max()
                 if peakFilteredSignal not in Q:
-                    Q.append(peakFilteredSignal)      
-                    QTheta500Arcmin.append(theta500ArcminDict[key])
+                    Q.append(peakFilteredSignal)
+                    QTheta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
                     Qz.append(z)
         Q=np.array(Q)
         Q=Q/Q[0]
@@ -958,13 +948,13 @@ def fitQ(config):
         
         t1=time.time()
         print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
-        del Q, signalMapDict, clipDict, filterObj
+        del Q, clipDict, filterObj
 
     if config.MPIEnabled == True:
         config.comm.barrier()
         QTabDictList=config.comm.gather(QTabDict, root = 0)
         if config.rank == 0:
-            print("... gathered Q fits ...")
+            print("... gathered Q fits")
             combQTabDict={}
             for QTabDict in QTabDictList:
                 for key in QTabDict:
