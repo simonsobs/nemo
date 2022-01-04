@@ -178,20 +178,14 @@ class MapFilter(object):
         self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
         
         # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
-        # NOTE: This is a copy to deal with repeated runs/resets? Is this still necessary?
+        # NOTE: This is a copy to deal with repeated runs (yes, it's necessary)
         self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:
-            # old (definitely works)
-            #if 'mapToUse' in self.params.keys() and mapDict['label'] != self.params['mapToUse']:
-                #continue
-            #newMapDict=mapDict.copy()
-            #newMapDict.preprocess(tileName = tileName, diagnosticsDir = diagnosticsDir)
-            #self.unfilteredMapsDictList.append(newMapDict)
-            # new (memory efficient, if it doesn't cause bugs)
             if 'mapToUse' in self.params.keys() and mapDict['label'] != self.params['mapToUse']:
                 continue
-            mapDict.preprocess(tileName = tileName, diagnosticsDir = diagnosticsDir)
-            self.unfilteredMapsDictList.append(mapDict)
+            newMapDict=mapDict.copy()
+            newMapDict.preprocess(tileName = tileName, diagnosticsDir = diagnosticsDir)
+            self.unfilteredMapsDictList.append(newMapDict)
         self.wcs=self.unfilteredMapsDictList[0]['wcs']
         self.shape=self.unfilteredMapsDictList[0]['data'].shape
 

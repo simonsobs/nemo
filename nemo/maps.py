@@ -107,12 +107,14 @@ class MapDict(dict):
                     wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
                 data=tileData
         elif type(pathToTileImages) == np.ndarray:
+            # We no longer want to support this kind of thing... clean this up later
+            raise Exception("Expected a path but got an array instead (image already loaded).")
             # Already loaded? Just do consistency check
-            if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3]-self.tileCoordsDict[tileName]['clippedSection'][2],
-                                          self.tileCoordsDict[tileName]['clippedSection'][1]-self.tileCoordsDict[tileName]['clippedSection'][0]):
-                data=pathToTileImages
-            else:
-                raise Exception("Map data that is already loaded is not the expected shape.")
+            #if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3]-self.tileCoordsDict[tileName]['clippedSection'][2],
+                                          #self.tileCoordsDict[tileName]['clippedSection'][1]-self.tileCoordsDict[tileName]['clippedSection'][0]):
+                #data=pathToTileImages
+            #else:
+                #raise Exception("Map data that is already loaded is not the expected shape.")
         else:
             with pyfits.open(pathToTileImages) as img:
                 for ext in img:
