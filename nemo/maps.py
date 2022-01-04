@@ -1906,6 +1906,13 @@ def sourceInjectionTest(config, writeRankTable = True):
                 for m in mapFileNames:
                     os.remove(m)
 
+            # Set mock-to-recovered match distance
+            if 'sourceInjectionMatchRadiusArcmin' not in config.parDict.keys():
+                    mockRecMatchRadiusArcmin = 5.
+            else :
+                    mockRecMatchRadiusArcmin = config.parDict['sourceInjectionMatchRadiusArcmin']
+
+                    
             # Ideally we shouldn't have blank tiles... but if we do, skip
             if len(mockCatalog) > 0:
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
@@ -1918,7 +1925,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                     recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 5.0)
                 if len(recCatalog) > 0:
                     try:
-                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
+                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = mockRecMatchRadiusArcmin)
                     except:
                         raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(simConfig.tileNames), len(mockCatalog), len(recCatalog)))
                     # If we're using clusters, we need to put in the Q correction
