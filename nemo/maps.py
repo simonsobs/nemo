@@ -53,14 +53,15 @@ class MapDict(dict):
         tileCoordsDict (:obj:`dict`): A dictionary that describes the tiling of a large map, as
             produced by :meth:`startUp.NemoConfig.getTileCoordsDict`.
         validMapKeys (:obj:`list`): A list of keys that may contain a path to a map in FITS image format.
-            These are: ['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask'].
+            These are: ['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask', 'flagMask'].
 
     """
 
     def __init__(self, inputDict, tileCoordsDict = None):
         super(MapDict, self).__init__(inputDict)
         self.tileCoordsDict=tileCoordsDict
-        self.validMapKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
+        self._maskKeys=['pointSourceMask', 'surveyMask', 'flagMask']
+        self.validMapKeys=['mapFileName', 'weightsFileName']+self._maskKeys
 
 
     def copy(self):
@@ -107,9 +108,11 @@ class MapDict(dict):
                 data=tileData
         elif type(pathToTileImages) == np.ndarray:
             # Already loaded? Just do consistency check
-            if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3],
-                                          self.tileCoordsDict[tileName]['clippedSection'][1]):
+            if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3]-self.tileCoordsDict[tileName]['clippedSection'][2],
+                                          self.tileCoordsDict[tileName]['clippedSection'][1]-self.tileCoordsDict[tileName]['clippedSection'][0]):
                 data=pathToTileImages
+            else:
+                raise Exception("Map data that is already loaded is not the expected shape.")
         else:
             with pyfits.open(pathToTileImages) as img:
                 for ext in img:
@@ -124,6 +127,11 @@ class MapDict(dict):
                     data=img[ext].data[minY:maxY, minX:maxX]
                 else:
                     raise Exception("Map data has %d dimensions - only ndim = 2 or ndim = 3 are currently handled." % (img[ext].data.ndim))
+
+        # Convert any mask to 8-bit unsigned ints to save memory
+        if mapKey in self._maskKeys:
+            if data.dtype != np.uint8:
+                data=np.array(data, dtype = np.uint8)
 
         # Survey masks are special: we need to zap the border overlap area or area calculations will be wrong
         if mapKey == 'surveyMask':
@@ -210,7 +218,7 @@ class MapDict(dict):
         if 'surveyMask' in list(self.keys()) and self['surveyMask'] is not None:
             surveyMask=self.loadTile('surveyMask', tileName)
         else:
-            surveyMask=np.ones(data.shape)
+            surveyMask=np.ones(data.shape, dtype = np.uint8)
             surveyMask[weights == 0]=0
 
         # Some apodisation of the data outside the survey mask
@@ -228,10 +236,10 @@ class MapDict(dict):
         if 'pointSourceMask' in list(self.keys()) and self['pointSourceMask'] is not None:
             psMask=self.loadTile('pointSourceMask', tileName)
         else:
-            psMask=np.ones(data.shape)
+            psMask=np.ones(data.shape, dtype = np.uint8)
 
         # Use for tracking regions where subtraction took place to make flags in catalog
-        flagMask=np.zeros(data.shape, dtype = int)
+        flagMask=np.zeros(data.shape, dtype = np.uint8)
 
         # Optional map clipping
         if 'RADecSection' in list(self.keys()) and self['RADecSection'] is not None:
@@ -317,7 +325,7 @@ class MapDict(dict):
             # If our masking/filling is effective enough, we may not need to mask so much here...
             if type(self['maskPointSourcesFromCatalog']) is not list:
                 self['maskPointSourcesFromCatalog']=[self['maskPointSourcesFromCatalog']]
-            psMask=np.ones(data.shape)
+            psMask=np.ones(data.shape, dtype = np.uint8)
             pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad))
             rDegMap=np.ones(data.shape, dtype = float)*1e6
@@ -409,12 +417,12 @@ class MapDict(dict):
         self['weights']=weights
         self['wcs']=wcs
         self['surveyMask']=surveyMask
-        self['psMask']=psMask
+        self['pointSourceMask']=psMask
         self['flagMask']=flagMask
         self['tileName']=tileName
 
         # No point continuing if masks are different shape to map (easier to tell user here)
-        if self['data'].shape != self['psMask'].shape:
+        if self['data'].shape != self['pointSourceMask'].shape:
             raise Exception("Map and point source mask dimensions are not the same (they should also have same WCS)")
         if self['data'].shape != self['surveyMask'].shape:
             raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")

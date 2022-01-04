@@ -178,14 +178,20 @@ class MapFilter(object):
         self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
         
         # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
-        # NOTE: we're now copying the input unfilteredMapsDictList, for supporting multi-ext tileDir files
+        # NOTE: This is a copy to deal with repeated runs/resets? Is this still necessary?
         self.unfilteredMapsDictList=[]
         for mapDict in unfilteredMapsDictList:
+            # old (definitely works)
+            #if 'mapToUse' in self.params.keys() and mapDict['label'] != self.params['mapToUse']:
+                #continue
+            #newMapDict=mapDict.copy()
+            #newMapDict.preprocess(tileName = tileName, diagnosticsDir = diagnosticsDir)
+            #self.unfilteredMapsDictList.append(newMapDict)
+            # new (memory efficient, if it doesn't cause bugs)
             if 'mapToUse' in self.params.keys() and mapDict['label'] != self.params['mapToUse']:
                 continue
-            newMapDict=mapDict.copy()
-            newMapDict.preprocess(tileName = tileName, diagnosticsDir = diagnosticsDir)
-            self.unfilteredMapsDictList.append(newMapDict)
+            mapDict.preprocess(tileName = tileName, diagnosticsDir = diagnosticsDir)
+            self.unfilteredMapsDictList.append(mapDict)
         self.wcs=self.unfilteredMapsDictList[0]['wcs']
         self.shape=self.unfilteredMapsDictList[0]['data'].shape
 
@@ -549,7 +555,7 @@ class MatchedFilter(MapFilter):
         # NOTE: We've tidied up the config file, so we don't have to feed in surveyMask and psMask like this
         # (see startUp.parseConfig)
         surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
-        psMask=self.unfilteredMapsDictList[0]['psMask']
+        psMask=self.unfilteredMapsDictList[0]['pointSourceMask']
             
         if os.path.exists(self.filterFileName) == False:
                         
@@ -1077,7 +1083,7 @@ class RealSpaceMatchedFilter(MapFilter):
     def buildAndApply(self):
 
         surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
-        psMask=self.unfilteredMapsDictList[0]['psMask']
+        psMask=self.unfilteredMapsDictList[0]['pointSourceMask']
             
         if os.path.exists(self.filterFileName) == False:
             
