@@ -6,7 +6,7 @@ This module contains routines for modeling cluster and source signals.
 
 import os
 import sys
-from pixell import enmap
+from pixell import enmap, curvedsky
 import astropy
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
@@ -77,14 +77,16 @@ else:
 class BeamProfile(object):
     """Describes the beam profile (i.e., the point spread function for some instrument in real space). This
     can be either read from a white-space delimited text file (with the angle in degrees in the first column
-    and the response in the second column), or can be set directly using arrays.
+    and the response in the second column; or as a beam transform file with *l* in the first column, and
+    *B*\ :sub:`l` in the second column), or can be set directly using arrays.
     
     Args:
-        beamFileName(:obj:`str`, optional): Path to text file containing a beam profile in the ACT format.
+        beamFileName(:obj:`str`, optional): Path to text file containing a beam profile (or transform) in
+            the ACT format.
         profile1d (:obj:`np.ndarray`, optional): One dimensional beam profile, with index 0 at the centre.
         rDeg (:obj:`np.ndarray`, optional): Corresponding angular distance in degrees from the centre for
             the beam profile.
-        
+
     Attributes:
         profile1d (:obj:`np.ndarray`): One dimensional beam profile, with index 0 at the centre.
         rDeg (:obj:`np.ndarray`): Corresponding angular distance in degrees from the centre for the 
@@ -99,12 +101,24 @@ class BeamProfile(object):
         
         if beamFileName is not None:
             beamData=np.loadtxt(beamFileName).transpose()
-            self.profile1d=beamData[1]
-            self.rDeg=beamData[0]
+            # Identify if beam file is a profile or a transform
+            if beamData[0][1]-beamData[0][0] >= 1:
+                ell=beamData[0]
+                Bell=beamData[1]
+                if len(np.unique(np.diff(ell))) != 1:
+                    raise Exception("If using a beam transform file, need delta ell = 1 between all ell values.")
+                rDeg=np.linspace(0.0, 0.5, 1800) # This may need adjusting
+                prof=curvedsky.harm2profile(Bell, np.radians(rDeg))
+                prof=prof/prof[0]
+                self.profile1d=prof
+                self.rDeg=rDeg
+            else:
+                self.profile1d=beamData[1]
+                self.rDeg=beamData[0]
         else:
             self.profile1d=profile1d
             self.rDeg=rDeg
-        
+
         if self.profile1d is not None and self.rDeg is not None:
             self.tck=interpolate.splrep(self.rDeg, self.profile1d)
         
@@ -196,7 +210,7 @@ class QFit(object):
                     self.zMax=QTab['z'].max()
                 self.fitDict[tileName]=self._makeInterpolator(QTab)
 
-        elif os.path.exists(source) == True:
+        elif type(source) == str and os.path.exists(source) == True:
             # Inspect file and get tile names if MEF
             if tileNames is None:
                 tileNames=[]
@@ -218,7 +232,20 @@ class QFit(object):
                 if QTab['z'].max() > zMax:
                     self.zMax=QTab['z'].max()
                 self.fitDict[tileName]=self._makeInterpolator(QTab)
-    
+
+        elif type(source) == astropy.table.table.Table:
+            # Single tile Q fit table
+            QTab=source
+            tileName=QTab.meta['TILENAME']
+            if QTab['z'].min() < self._zGrid.min():
+                self.zMin=QTab['z'].min()
+            if QTab['z'].max() > self._zGrid.max():
+                self.zMax=QTab['z'].max()
+            self.fitDict[tileName]=self._makeInterpolator(QTab)
+
+        else:
+            raise Exception("Couldn't understand QFit source with type '%s'" % (type(source)))
+
 
     def _makeInterpolator(self, QTab):
         """Inspects QTab, and makes an interpolator object - 2d if there is z-dependence, 1d if not.
@@ -342,11 +369,9 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
     if wrt == 'critical':
         wrtDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
     elif wrt == 'mean':
-        wrtDensity=ccl.omega_x(cosmoModel, 1/(1+z), 'matter')
-        #wrtDensity=cosmoModel.Om(z)*cosmoModel.critical_density(z).value
+        wrtDensity=ccl.omega_x(cosmoModel, 1/(1+z), 'matter')*ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
     else:
         raise Exception("wrt should be either 'critical' or 'mean'")
-    #wrtDensity=(wrtDensity*np.power(Mpc_in_cm, 3))/MSun_in_g # NOTE: not needed for CCL units (MSun, Mpc etc.)
     RDeltaMpc=np.power((3*MDelta)/(4*np.pi*delta*wrtDensity), 1.0/3.0)
         
     return RDeltaMpc
@@ -719,8 +744,7 @@ def loadFRelWeights(fRelWeightsFileName):
 #------------------------------------------------------------------------------------------------------------
 def fitQ(config):
     """Calculates the filter mismatch function *Q* on a grid of scale sizes for each tile in the map. The
-    results are initially cached (with a separate .fits table for each tile) under the `selFn` directory,
-    before being combined into a single file at the end of a :ref:`nemoCommand` run. 
+    results are combined into a single file written under the `selFn` directory.
     
     The `GNFWParams` key in the `config` dictionary can be used to specify a different cluster profile shape.
     
@@ -728,11 +752,10 @@ def fitQ(config):
         config (:obj:`startUp.NemoConfig`): A NemoConfig object.
     
     Note:
-        See :class:`QFit` for how to read in and use the output of this function.
+        See :class:`QFit` for how to read in and use the file produced by this function.
         
     """
     
-    t0=time.time()
     cosmoModel=fiducialCosmoModel
         
     # Spin through the filter kernels
@@ -806,13 +829,10 @@ def fitQ(config):
         raise Exception("valid values for zDepQ are 0 or 1")
             
     # Here we save the fit for each tile separately... 
-    # completeness.tidyUp will put them into one file at the end of a nemo run
+    QTabDict={}
     for tileName in config.tileNames:
-        tileQTabFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
-        if os.path.exists(tileQTabFileName) == True:
-            print("... already done Q fit for tile %s ..." % (tileName))
-            continue
-        print("... fitting Q in tile %s ..." % (tileName))
+        t0=time.time()
+        print("... fitting Q in tile %s" % (tileName))
 
         # Load reference scale filter
         foundFilt=False
@@ -848,15 +868,17 @@ def fitQ(config):
         RADeg, decDeg=wcs.getCentreWCSCoords()                
         clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         wcs=clipDict['wcs']
-        extMap=clipDict['data']
+        shape=clipDict['data'].shape
         
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
-        signalMapDict={}
-        signalMap=np.zeros(extMap.shape)
+        signalMap=np.zeros(shape)
         degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
         degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, signalMapSizeDeg)
+        Q=[]
+        QTheta500Arcmin=[]
+        Qz=[]
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
@@ -882,29 +904,18 @@ def fitQ(config):
                 else:
                     signalMaps.append(enmap.fft(signalMap))
             signalMaps=np.array(signalMaps)
-            # Skip any failed ones (see above - CCL blowing up for extreme masses)
+            # Filter maps with ref kernel
             if len(signalMaps) == len(list(beamsDict.keys())):
-                signalMapDict[key]=signalMaps
-                theta500ArcminDict[key]=calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel)
-        
-        # Filter maps with the ref kernel
-        # NOTE: keep only unique values of Q, theta500Arcmin (or interpolation routines will fail)
-        Q=[]
-        QTheta500Arcmin=[]
-        Qz=[]
-        for z, M500MSun in zip(zRange, MRange):
-            key='%.2f_%.2f' % (z, np.log10(M500MSun))
-            if key in signalMapDict.keys():
-                filteredSignal=filterObj.applyFilter(signalMapDict[key]) 
+                filteredSignal=filterObj.applyFilter(signalMaps)
                 peakFilteredSignal=filteredSignal.max()
                 if peakFilteredSignal not in Q:
-                    Q.append(peakFilteredSignal)      
-                    QTheta500Arcmin.append(theta500ArcminDict[key])
+                    Q.append(peakFilteredSignal)
+                    QTheta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
                     Qz.append(z)
         Q=np.array(Q)
         Q=Q/Q[0]
-            
-        # Sort and save as FITS table (interim - all tile files gets combined at end of nemo run)
+
+        # Sort and make FITS table
         QTab=atpy.Table()
         QTab.add_column(atpy.Column(Q, 'Q'))
         QTab.add_column(atpy.Column(QTheta500Arcmin, 'theta500Arcmin'))
@@ -912,10 +923,11 @@ def fitQ(config):
         QTab.sort('theta500Arcmin')
         QTab.meta['NEMOVER']=nemo.__version__
         QTab.meta['ZDEPQ']=zDepQ
-        QTab.write(tileQTabFileName, overwrite = True)
+        QTab.meta['TILENAME']=tileName
+        QTabDict[tileName]=QTab
         
         # Test plot
-        Q=QFit(tileQTabFileName)
+        Q=QFit(QTab)
         plotSettings.update_rcParams()
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.12, 0.11, 0.86, 0.88])
@@ -936,48 +948,37 @@ def fitQ(config):
         
         t1=time.time()
         print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
-        
+        del Q, clipDict, filterObj
 
-#------------------------------------------------------------------------------------------------------------
-def makeCombinedQTable(config):
-    """Writes dictionary of tables (containing individual tile Q fits) as a single .fits table.
-    
-    Returns combined Q astropy table object
-    
-    """
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+        QTabDictList=config.comm.gather(QTabDict, root = 0)
+        if config.rank == 0:
+            print("... gathered Q fits")
+            combQTabDict={}
+            for QTabDict in QTabDictList:
+                for key in QTabDict:
+                    if key not in combQTabDict:
+                        combQTabDict[key]=QTabDict[key]
+            QTabDict=combQTabDict
 
-    outFileName=config.selFnDir+os.path.sep+"QFit.fits"    
-    if os.path.exists(outFileName) == True:
-        return atpy.Table().read(outFileName)
-        
-    QTabDict={}
-    for tileName in config.allTileNames:
-        QTabDict[tileName]=atpy.Table().read(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
-    
-    #----
-    # New - MEF
-    QTabMEF=pyfits.HDUList()
-    for tileName in config.allTileNames:
-        with pyfits.open(config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)) as QTab:
-            QTab[1].name=tileName
-            QTabMEF.append(QTab[1].copy())
-    QTabMEF.writeto(outFileName, overwrite = True)
-    combinedQTab=QTabMEF
-    
-    #----
-    # Old
-    #combinedQTab=atpy.Table()
-    #for tabKey in list(QTabDict.keys()):
-        #for colKey in QTabDict[tabKey].keys():
-            #if colKey == 'theta500Arcmin':
-                #if colKey not in combinedQTab.keys():
-                    #combinedQTab.add_column(QTabDict[tabKey]['theta500Arcmin'], index = 0)
-            #else:
-                #combinedQTab.add_column(atpy.Column(QTabDict[tabKey][colKey].data, tabKey))
-    #combinedQTab.meta['NEMOVER']=nemo.__version__
-    #combinedQTab.write(outFileName, overwrite = True)
-    
-    return combinedQTab
+    # Write output as MEF
+    if config.rank == 0:
+        outFileName=config.selFnDir+os.path.sep+"QFit.fits"
+        QTabMEF=pyfits.HDUList()
+        for tileName in config.allTileNames:
+            if tileName in QTabDict.keys():
+                QTabHDU=pyfits.table_to_hdu(QTabDict[tileName])
+                QTabHDU.name=tileName
+                QTabMEF.append(QTabHDU)
+        QTabMEF.writeto(outFileName, overwrite = True)
+
+    if config.rank == 0:
+        print("... after Q fits completed: time since start = %.3f sec" % (time.time()-config._timeStarted))
+
+    ## Make sure we all leave here together
+    #if config.MPIEnabled == True:
+        #config.comm.barrier()
 
 #------------------------------------------------------------------------------------------------------------
 def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):

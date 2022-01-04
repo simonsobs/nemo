@@ -10,6 +10,7 @@ import sys
 import glob
 import shutil
 import time
+import astropy
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astLib import astWCS
@@ -30,7 +31,7 @@ import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                              invertMap = False, verbose = True, useCachedMaps = True):
+                              invertMap = False, verbose = True, useCachedMaps = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -56,85 +57,57 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         
     """
     
-    if config.parDict['twoPass'] == False:
-        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters, 
-                                           measureFluxes = measureFluxes, invertMap = invertMap, 
-                                           verbose = verbose, useCachedMaps = useCachedMaps)
-    
+    # Multi-pass pipeline, enabled with use of filterSets parameter in config file
+    writeAreaMask=False
+    writeFlagMask=False
+    if config.filterSets != []:
+        # If we wanted to save results from each step, could set-up filterSet specific diagnostics dir here
+        if rootOutDir is None:
+            rootOutDir=config.rootOutDir
+        for setNum in config.filterSets:
+            print(">>> Filter set: %d" % (setNum))
+            config.setFilterSet(setNum)
+            if setNum == config.filterSets[-1]:
+                writeAreaMask=True
+                writeFlagMask=True
+            config.filterSetOptions[setNum]['catalog']=_filterMapsAndMakeCatalogs(config, verbose = True,
+                                                                                  useCachedMaps = False,
+                                                                                  writeAreaMask = writeAreaMask,
+                                                                                  writeFlagMask = writeFlagMask)
+            if config.rank == 0:
+                if config.filterSetOptions[setNum]['addSiphonedFromSets'] is not None:
+                    toStack=[config.filterSetOptions[setNum]['catalog']]
+                    for siphonSetNum in config.filterSetOptions[setNum]['addSiphonedFromSets']:
+                        toStack.append(config.filterSetOptions[siphonSetNum]['catalog'])
+                    config.filterSetOptions[setNum]['catalog']=atpy.vstack(toStack)
+
+                if config.filterSetOptions[setNum]['saveCatalog'] == True:
+                    if 'label' not in config.filterSetOptions[setNum].keys():
+                        label="filterSet%d" % (setNum)
+                    else:
+                        label=config.filterSetOptions[setNum]['label']
+                    outFileName=rootOutDir+os.path.sep+label+"_catalog.fits"
+                    catalogs.writeCatalog(config.filterSetOptions[setNum]['catalog'], outFileName)
+                    catalogs.catalog2DS9(config.filterSetOptions[setNum]['catalog'], outFileName.replace(".fits", ".reg"))
+
+        catalog=config.filterSetOptions[config.filterSets[-1]]['catalog']
+
     else:
-        
-        # Two pass pipeline
-        # On 1st pass, find sources (and maybe clusters) with canned settings, masking nothing.
-        # On 2nd pass, the 1st pass catalog will be used to mask or subtract sources from maps used for 
-        # noise estimation only.
-        
-        # No point doing this if we're not using the map itself for the noise term in the filter
-        for f in config.parDict['mapFilters']:
-            for key in f.keys():
-                if key == 'noiseParams' and f['noiseParams']['method'] != 'dataMap':
-                    raise Exception("There is no point running if filter noise method != 'dataMap'.")
+        # Default single pass behaviour
+        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters,
+                                           measureFluxes = measureFluxes, invertMap = invertMap,
+                                           verbose = verbose, useCachedMaps = useCachedMaps,
+                                           writeAreaMask = True, writeFlagMask = True)
 
-        # Pass 1 - find point sources, save nothing
-        # NOTE: We need to do this for each map in the list, if we have a multi-frequency filter
-        pass1PtSrcSettings={'label': "Beam",
-                            'class': "BeamMatchedFilter",
-                            'params': {'noiseParams': {'method': "model",
-                                                       'noiseGridArcmin': 40.0,
-                                                       'numNoiseBins': 2},
-                            'saveFilteredMaps': False,
-                            'outputUnits': 'uK',
-                            'edgeTrimArcmin': 0.0}}
-        config.parDict['mapFilters']=[pass1PtSrcSettings]
-        config.parDict['photFilter']=None
-        config.parDict['maskPointSourcesFromCatalog']=[]    # This is only applied on the 2nd pass
-        config.parDict['measureShapes']=True    # Double-lobed extended source at f090 causes havoc in one tile
-        orig_unfilteredMapsDictList=list(config.unfilteredMapsDictList)
-        config.parDict['forcedPhotometryCatalog']=None # If in this mode, only wanted on 2nd pass
-        pass1CatalogsList=[]
-        surveyMasksList=[] # ok, these should all be the same, otherwise we have problems...
-        for mapDict in orig_unfilteredMapsDictList:
-            # We use whole tile area (i.e., don't trim overlaps) so that we get everything if under MPI
-            # Otherwise, powerful sources in overlap regions mess things up under MPI
-            # Serial mode doesn't have this issue as it can see the whole catalog over all tiles
-            # But since we now use full area, we may double subtract ovelap sources when in serial mode
-            # So the removeDuplicates call fixes that, and doesn't impact anything else here
-            surveyMasksList.append(mapDict['surveyMask'])
-            mapDict['surveyMask']=None
-            config.unfilteredMapsDictList=[mapDict]
-            catalog=_filterMapsAndMakeCatalogs(config, verbose = False, writeAreaMasks = False)
-            if len(catalog) > 0 :
-                catalog, numDuplicatesFound, names=catalogs.removeDuplicates(catalog)
-            pass1CatalogsList.append(catalog)
+    if verbose == True and config.rank == 0:
+        print("... after map filtering and making catalogs: time since start = %.3f sec" % (time.time()-config._timeStarted))
 
-        # Pass 2 - subtract point sources in the maps used for noise term in filter only
-        # To avoid ringing in the pass 2, we siphon off the super bright things found in pass 1
-        # We subtract those from the maps used in pass 2 - we then need to add them back at the end
-        config.restoreConfig()
-        config.parDict['measureShapes']=True    # We'll keep this for pass 2 as well
-        siphonSNR=50
-        for mapDict, catalog, surveyMask in zip(orig_unfilteredMapsDictList, pass1CatalogsList, surveyMasksList):
-            #catalogs.catalog2DS9(catalog[catalog['SNR'] > siphonSNR], config.diagnosticsDir+os.path.sep+"pass1_highSNR_siphoned.reg")
-            mapDict['noiseMaskCatalog']=catalog[catalog['SNR'] < siphonSNR]
-            mapDict['subtractPointSourcesFromCatalog']=[catalog[catalog['SNR'] > siphonSNR]]
-            mapDict['maskSubtractedPointSources']=True
-            mapDict['surveyMask']=surveyMask
-        config.unfilteredMapsDictList=orig_unfilteredMapsDictList
-        catalog=_filterMapsAndMakeCatalogs(config, verbose = False)
-        
-        # Merge back in the bright sources that were subtracted in pass 1
-        # (but we don't do that in forced photometry mode)
-        mergeList=[catalog]
-        if config.parDict['forcedPhotometryCatalog'] is None:
-            for pass1Catalog in pass1CatalogsList:
-                mergeList.append(pass1Catalog[pass1Catalog['SNR'] > siphonSNR])
-        catalog=atpy.vstack(mergeList)
-    
     return catalog
-    
+
 #------------------------------------------------------------------------------------------------------------
 def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                               invertMap = False, verbose = True, useCachedMaps = True,
-                               writeAreaMasks = True):
+                               invertMap = False, verbose = True, useCachedMaps = False,
+                               writeAreaMask = False, writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -198,19 +171,21 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
             if f['label'] == photFilter:
                 continue
         filtersList.append(f)
-    if photFilter is not None:
+    if photFilter is not None and len(config.parDict['mapFilters']) > 1:
         assert(filtersList[0]['label'] == photFilter)
     photFilteredMapDict=None
     
     # Make filtered maps for each filter and tile
     catalogDict={}
+    areaMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+    flagMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
         # Now have per-tile directories (friendlier for Lustre)
         tileFilteredMapsDir=filteredMapsDir+os.path.sep+tileName
         tileDiagnosticsDir=diagnosticsDir+os.path.sep+tileName
         for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
             os.makedirs(d, exist_ok = True)
-        if verbose == True: print(">>> Making filtered maps - tileName = %s ..." % (tileName))
+        if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
         # We could load the unfiltered map only once here?
         # We could also cache 'dataMap' noise as it will always be the same
         for f in filtersList:
@@ -243,25 +218,24 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                 # Normal mode
                 catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
                                                minObjPix = config.parDict['minObjPix'], 
-                                               findCenterOfMass = config.parDict['findCenterOfMass'], 
+                                               findCenterOfMass = config.parDict['findCenterOfMass'],
                                                removeRings = config.parDict['removeRings'],
                                                ringThresholdSigma = config.parDict['ringThresholdSigma'],
                                                rejectBorder = config.parDict['rejectBorder'], 
-                                               objIdent = config.parDict['objIdent'], 
+                                               objIdent = config.parDict['objIdent'],
                                                longNames = config.parDict['longNames'],
                                                useInterpolator = config.parDict['useInterpolator'], 
                                                measureShapes = config.parDict['measureShapes'],
                                                invertMap = invertMap,
                                                DS9RegionsPath = DS9RegionsPath)
             
-            # We write area mask here, because it gets modified by findObjects if removing rings
-            # NOTE: condition added to stop writing tile maps again when running nemoMass in forced photometry mode
-            maskFileName=config.selFnDir+os.path.sep+"areaMask#%s.fits" % (tileName)
-            surveyMask=np.array(filteredMapDict['surveyMask'], dtype = int)
-            if writeAreaMasks == True:
-                if os.path.exists(maskFileName) == False and os.path.exists(config.selFnDir+os.path.sep+"areaMask.fits") == False:
-                    maps.saveFITS(maskFileName, surveyMask, filteredMapDict['wcs'], compressed = True,
-                                  compressionType = 'PLIO_1')
+            # We collect the area mask here, because it gets modified by findObjects if removing rings
+            # NOTE: area mask should always be the same across all filters, could add a consistency check here
+            if writeAreaMask == True and tileName not in areaMaskDict.keys():
+                areaMaskDict[tileName]=np.array(filteredMapDict['surveyMask'], dtype = np.uint8)
+
+            if writeFlagMask == True and tileName not in flagMaskDict.keys():
+                flagMaskDict[tileName]=filteredMapDict['flagMask']
             
             if measureFluxes == True:
                 photometry.measureFluxes(catalog, filteredMapDict, config.diagnosticsDir,
@@ -276,12 +250,70 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                                             filteredMapDict['wcs'], prefix = 'fixed_', 
                                             useInterpolator = config.parDict['useInterpolator'],
                                             invertMap = invertMap)
-            
+            del filteredMapDict
             catalogDict[label]['catalog']=catalog
 
     # Merged/optimal catalogs
     optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
     
+    if config.MPIEnabled == True:
+        # area mask
+        config.comm.barrier()
+        if config.rank > 0:
+            config.comm.send(areaMaskDict, dest = 0)
+        elif config.rank == 0:
+            gathered_tileDicts=[]
+            gathered_tileDicts.append(areaMaskDict)
+            for source in range(1, config.size):
+                gathered_tileDicts.append(config.comm.recv(source = source))
+            print("... gathered area mask")
+            for tileDict in gathered_tileDicts:
+                for tileName in tileDict.keys():
+                    areaMaskDict[tileName]=tileDict[tileName]
+        # flag mask
+        config.comm.barrier()
+        if config.rank > 0:
+            config.comm.send(flagMaskDict, dest = 0)
+        elif config.rank == 0:
+            gathered_tileDicts=[]
+            gathered_tileDicts.append(flagMaskDict)
+            for source in range(1, config.size):
+                gathered_tileDicts.append(config.comm.recv(source = source))
+            print("... gathered flag mask")
+            for tileDict in gathered_tileDicts:
+                for tileName in tileDict.keys():
+                    flagMaskDict[tileName]=tileDict[tileName]
+        # catalogs
+        config.comm.barrier()
+        optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
+        if config.rank == 0:
+            print("... gathered catalogs")
+            toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
+            for collectedTab in optimalCatalogList:
+                if type(collectedTab) == astropy.table.table.Table:
+                    toStack.append(collectedTab)
+            optimalCatalog=atpy.vstack(toStack)
+            # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
+            if len(optimalCatalog) > 0:
+                optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+
+    # Write masks
+    if config.rank == 0:
+        if writeAreaMask == True:
+            areaMaskDict.saveMEF(config.selFnDir+os.path.sep+"areaMask.fits", compressionType = 'PLIO_1')
+            if config.parDict['stitchTiles'] == True:
+                areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
+                                              config.origWCS, compressionType = 'PLIO_1')
+
+
+        if writeFlagMask == True:
+            flagMaskDict.saveMEF(config.selFnDir+os.path.sep+"flagMask.fits", compressionType = 'PLIO_1')
+            if config.parDict['stitchTiles'] == True:
+                flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
+                                              config.origWCS, compressionType = 'PLIO_1')
+
+    del areaMaskDict, flagMaskDict, catalogDict
+
     return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------
@@ -322,7 +354,7 @@ def makeSelFnCollection(config, mockSurvey):
     for footprintDict in footprintsList:
         if footprintDict['label'] not in selFnCollection.keys():
             selFnCollection[footprintDict['label']]=[]
-            
+
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
         compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
@@ -334,7 +366,15 @@ def makeSelFnCollection(config, mockSurvey):
                    'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                    'compMz': compMz}
         selFnCollection['full'].append(selFnDict)
-        
+
+        # Optional mass-limit maps [no footprint option here as yet]
+        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
+            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+                completeness.makeMassLimitMap(RMSTab, SNRCut, massLimitDict['z'],
+                                              tileName, photFilterLabel, mockSurvey,
+                                              config.parDict['massOptions'], Q, config.diagnosticsDir,
+                                              config.selFnDir)
+
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
         for footprintDict in footprintsList:
@@ -352,14 +392,47 @@ def makeSelFnCollection(config, mockSurvey):
                            'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
                            'compMz': compMz}
                 selFnCollection[footprintDict['label']].append(selFnDict)
-            
-        # Optional mass-limit maps
-        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
-            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                completeness.makeMassLimitMap(SNRCut, massLimitDict['z'], tileName, photFilterLabel, mockSurvey, 
-                                            config.parDict['massOptions'], Q, config.diagnosticsDir,
-                                            config.selFnDir) 
-    
+
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+        gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
+        if config.rank == 0:
+            print("... gathered selection function results")
+            all_selFnCollection={'full': []}
+            for key in selFnCollection.keys():
+                if key not in all_selFnCollection.keys():
+                    all_selFnCollection[key]=[]
+            for selFnCollection in gathered_selFnCollections:
+                for key in all_selFnCollection.keys():
+                    all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
+            selFnCollection=all_selFnCollection
+
+    # Combine RMSTab files (we can downsample further later if needed)
+    # We add a column for the tileName just in case want to select on this later
+    if config.rank == 0:
+        strLen=0
+        for tileName in config.allTileNames:
+            if len(tileName) > strLen:
+                strLen=len(tileName)
+        for footprint in selFnCollection.keys():
+            if footprint == "full":
+                label=""
+            else:
+                label="_"+footprint
+            outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
+            tabList=[]
+            for selFnDict in selFnCollection[footprint]:
+                tileName=selFnDict['tileName']
+                tileTab=selFnDict['RMSTab']
+                tileTab['tileName']=atpy.Column(np.array([tileName]*len(tileTab),
+                                                dtype = '<U%d' % (strLen)), "tileName")
+                tabList.append(tileTab)
+            if len(tabList) > 0:
+                tab=atpy.vstack(tabList)
+                tab.sort('y0RMS')
+                tab.meta['NEMOVER']=nemo.__version__
+                tab.write(outFileName, overwrite = True)
+
     return selFnCollection
                 
 #------------------------------------------------------------------------------------------------------------

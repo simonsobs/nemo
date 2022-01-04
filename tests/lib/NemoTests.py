@@ -15,7 +15,6 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 import pylab as plt
-import IPython
 
 plotSettings.update_rcParams()
 plotTitleSize=14
@@ -140,8 +139,7 @@ class NemoTests(object):
             header=pyfits.Header().fromtextfile(headerFileName)
             wcs=astWCS.WCS(header, mode = 'pyfits')
             d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
-            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs,
-                          compressed = True, compressionType = 'PLIO_1')
+            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs, compressionType = 'PLIO_1')
         
         # Map/frequency-related defaults
         self.bandsDict={'f150': {'beam': "maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt",
@@ -167,6 +165,10 @@ class NemoTests(object):
         
     def run_nemo(self):
         self._run_command(["nemo", self.configFileName])
+
+
+    def run_nemo_injection_test(self):
+        self._run_command(["nemo", self.configFileName, "-I"])
 
 
     def run_parallel_nemo(self):
@@ -276,7 +278,7 @@ class NemoTests(object):
         return RAKey, decKey
         
         
-    def check_recovered_ratio(self, inKey, outKey, toleranceSigma = 1.0, SNRCut = 4,
+    def check_recovered_ratio(self, inKey, outKey, toleranceSigma = 1.0, expectedRatio = 1.0, SNRCut = 4,
                               SNRKey = 'fixed_SNR', errInKey = None, errOutKey = None,
                               plotLabel = None, plotsDir = "plots"):
         """Catalogs must have been cross matched before this can be run.
@@ -322,7 +324,7 @@ class NemoTests(object):
             plt.title(label, fontdict = {'size': plotTitleSize})
             plt.savefig(plotsDir+os.path.sep+plotLabel+"_XvY.png")
             plt.close()
-        if abs((1.0-meanRatio)/meanRatioErr) > toleranceSigma:
+        if abs((expectedRatio-meanRatio)/meanRatioErr) > toleranceSigma:
             self._status="FAILED"
         else:
             self._status="SUCCESS"

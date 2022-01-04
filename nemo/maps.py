@@ -36,7 +36,505 @@ from . import plotSettings
 from . import pipelines
 from . import completeness
 np.random.seed()
-              
+
+#------------------------------------------------------------------------------------------------------------
+class MapDict(dict):
+    """A dictionary for managing a sky map (a 2d array with an associated WCS) within Nemo. Keys within the
+    dictionary can be set to values that control preprocessing of the map (usually done before filtering).
+    Many of the keys in the dictionary map to entries in the .yml config file used by Nemo.
+
+    Args:
+        inputDict (:obj:`dict`): Input dictionary (usually this mirrors the contents of `unfilteredMaps` in
+            Nemo .yml config files).
+        tileCoordsDict (:obj:`dict`, optional): A dictionary that describes the tiling of a large map, as
+            produced by :meth:`startUp.NemoConfig.getTileCoordsDict`.
+
+    Attributes:
+        tileCoordsDict (:obj:`dict`): A dictionary that describes the tiling of a large map, as
+            produced by :meth:`startUp.NemoConfig.getTileCoordsDict`.
+        validMapKeys (:obj:`list`): A list of keys that may contain a path to a map in FITS image format.
+            These are: ['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask', 'flagMask'].
+
+    """
+
+    def __init__(self, inputDict, tileCoordsDict = None):
+        super(MapDict, self).__init__(inputDict)
+        self.tileCoordsDict=tileCoordsDict
+        self._maskKeys=['pointSourceMask', 'surveyMask', 'flagMask']
+        self.validMapKeys=['mapFileName', 'weightsFileName']+self._maskKeys
+
+
+    def copy(self):
+        """Make a copy of this :class:`MapDict` object.
+
+        Returns:
+            A deep copy of the :class:`MapDict` object.
+
+        """
+        return MapDict(self, tileCoordsDict = self.tileCoordsDict)
+
+
+    def loadTile(self, mapKey, tileName, returnWCS = False):
+        """Given a key in the map dictionary that contains the path to a FITS image, return the map
+        as a 2d array and (optionally) the WCS.
+
+        Args:
+            mapKey (:obj:`str`): Name of a key in a map dictionary that contains the path to map FITS image.
+                See self.`validMapKeys` for a list.
+            tileName (:obj:`str`): The name of the tile to load.
+
+        Returns:
+            Map data as a 2d array (and optionally a WCS)
+
+        """
+
+        if mapKey not in self.validMapKeys:
+            raise Exception("mapKey must be one of %s - given mapKey = '%s'." % (self.validMapKeys, mapKey))
+
+        pathToTileImages=self.get(mapKey)
+        if os.path.isdir(pathToTileImages) == True:
+            with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
+                extName=0
+                tileData=img[extName].data
+                if tileData is None:
+                    for extName in img:
+                        tileData=img[extName].data
+                        if tileData is not None:
+                            break
+                assert tileData is not None
+                if returnWCS == True:
+                    # Zapping keywords in old ACT maps that confuse astropy.wcs
+                    wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
+                data=tileData
+        elif type(pathToTileImages) == np.ndarray:
+            # We no longer want to support this kind of thing... clean this up later
+            raise Exception("Expected a path but got an array instead (image already loaded).")
+            # Already loaded? Just do consistency check
+            #if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3]-self.tileCoordsDict[tileName]['clippedSection'][2],
+                                          #self.tileCoordsDict[tileName]['clippedSection'][1]-self.tileCoordsDict[tileName]['clippedSection'][0]):
+                #data=pathToTileImages
+            #else:
+                #raise Exception("Map data that is already loaded is not the expected shape.")
+        else:
+            with pyfits.open(pathToTileImages) as img:
+                for ext in img:
+                    if img[ext].data is not None:
+                        break
+                if returnWCS == True:
+                    wcs=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+                minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
+                if img[ext].data.ndim == 3:
+                    data=img[ext].data[0, minY:maxY, minX:maxX]
+                elif img[ext].data.ndim == 2:
+                    data=img[ext].data[minY:maxY, minX:maxX]
+                else:
+                    raise Exception("Map data has %d dimensions - only ndim = 2 or ndim = 3 are currently handled." % (img[ext].data.ndim))
+
+        # Convert any mask to 8-bit unsigned ints to save memory
+        if mapKey in self._maskKeys:
+            if data.dtype != np.uint8:
+                data=np.array(data, dtype = np.uint8)
+
+        # Survey masks are special: we need to zap the border overlap area or area calculations will be wrong
+        if mapKey == 'surveyMask':
+            minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['areaMaskInClipSection']
+            data[:minY, :]=0
+            data[maxY:, :]=0
+            data[:, :minX]=0
+            data[:, maxX:]=0
+
+        if returnWCS == True:
+            return data, wcs
+        else:
+            return data
+
+
+    def preprocess(self, tileName = 'PRIMARY', diagnosticsDir = None):
+        """Applies a number of pre-processing steps to the map described by this :class:`MapDict` object,
+        typically used before filtering.
+
+        The first step is to load the map itself and the associated weights. Some other operations that may be
+        applied are controlled by keys added to the MapDict. Some of these may be specified in the .yml
+        configuration file, while others are applied by particular filter objects or by routines that generate
+        simulated data. The following keys are understood:
+
+        surveyMask (:obj:`str`)
+            Path to a mask (.fits image; 1 = valid, 0 = masked) that defines the valid object search area.
+
+        pointSourceMask (:obj:`str`)
+            Path to a mask (.fits image; 1 = valid, 0 = masked) that contains holes at the locations of point
+            sources, defining regions that are excluded from the object search area.
+
+        RADecSection (:obj:`list`)
+            Defines a region to extract from the map. Use the format [RAMin, RAMax, decMin, decMax] (units:
+            decimal degrees).
+
+        CMBSimSeed (:obj:`int`)
+            If present, replace the map with a source-free simulated CMB realisation, generated using the given
+            seed number. Used by :meth:`estimateContaminationFromSkySim`.
+
+        applyBeamConvolution (:obj:`bool`)
+            If True, the map is convolved with the beam given in the beamFileName key. This should only be
+            needed when using preliminary y-maps made by tILe-C.
+
+        Args:
+            tileName (:obj:`str`): Name of the map tile (extension name) to operate on.
+            diagnosticsDir (:obj:`str`): Path to a directory where miscellaneous diagnostic data may be written.
+
+        Returns:
+            None - values in the map dictionary are updated in-place, and additional keys may be added.
+
+        """
+
+        data, wcs=self.loadTile('mapFileName', tileName, returnWCS = True)
+
+        # Optional calibration factor
+        if 'calibFactor' in self.keys():
+            data=data*self['calibFactor']
+
+        if self['units'] == 'Jy/sr':
+            if self['obsFreqGHz'] == 148:
+                data=(data/1.072480e+09)*2.726*1e6
+            elif self['obsFreqGHz'] == 219:
+                data=(data/1.318837e+09)*2.726*1e6
+            else:
+                raise Exception("no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
+                        % (self['obsFreqGHz']))
+
+        # Load weight map if given
+        if 'weightsFileName' in list(self.keys()) and self['weightsFileName'] is not None:
+            weights=self.loadTile('weightsFileName', tileName)
+            # For Enki maps... take only I (temperature) for now, add options for this later
+            if weights.ndim == 3:       # I, Q, U
+                weights=weights[0, :]
+            elif weights.ndim == 4:     # I, Q, U and also a covariance matrix
+                weights=weights[0, 0, :]
+        else:
+            weights=np.ones(data.shape)
+
+        # We rely on pixels with zero weight having zero value in actual maps later (automated edge trimming)
+        # This might not be the case if the map has been filtered slightly before being fed into nemo
+        data[weights == 0]=0
+
+        # Load survey and point source masks, if given
+        if 'surveyMask' in list(self.keys()) and self['surveyMask'] is not None:
+            surveyMask=self.loadTile('surveyMask', tileName)
+        else:
+            surveyMask=np.ones(data.shape, dtype = np.uint8)
+            surveyMask[weights == 0]=0
+
+        # Some apodisation of the data outside the survey mask
+        # NOTE: should add adjustable parameter for this somewhere later
+        if 'apodizeUsingSurveyMask' in list(self.keys()) and self['apodizeUsingSurveyMask'] == True:
+            # We need to remain unapodized to at least noiseGridArcmin beyond the edge of the survey mask
+            # We'll need to make these adjustable parameters
+            apodMask=np.array(surveyMask, dtype = bool)
+            for i in range(120):
+                apodMask=mahotas.dilate(apodMask)
+            apodMask=ndimage.gaussian_filter(np.array(apodMask, dtype = float), 20)
+            data=data*apodMask
+            del apodMask
+
+        if 'pointSourceMask' in list(self.keys()) and self['pointSourceMask'] is not None:
+            psMask=self.loadTile('pointSourceMask', tileName)
+        else:
+            psMask=np.ones(data.shape, dtype = np.uint8)
+
+        # Use for tracking regions where subtraction took place to make flags in catalog
+        flagMask=np.zeros(data.shape, dtype = np.uint8)
+
+        # Optional map clipping
+        if 'RADecSection' in list(self.keys()) and self['RADecSection'] is not None:
+            RAMin, RAMax, decMin, decMax=self['RADecSection']
+            clip=astImages.clipUsingRADecCoords(data, wcs, RAMin, RAMax, decMin, decMax)
+            data=clip['data']
+            whtClip=astImages.clipUsingRADecCoords(weights, wcs, RAMin, RAMax, decMin, decMax)
+            weights=whtClip['data']
+            psClip=astImages.clipUsingRADecCoords(psMask, wcs, RAMin, RAMax, decMin, decMax)
+            psMask=psClip['data']
+            surveyClip=astImages.clipUsingRADecCoords(surveyMask, wcs, RAMin, RAMax, decMin, decMax)
+            surveyMask=surveyClip['data']
+            flagClip=astImages.clipUsingRADecCoords(flagMask, wcs, RAMin, RAMax, decMin, decMax)
+            flagMask=flagClip['data']
+            wcs=clip['wcs']
+            if len(clip['data']) == 0:
+                raise Exception("Clipping using RADecSection returned empty array - check RADecSection in config .yml file is in map")
+            #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (self['obsFreqGHz'])+"_weights.fits", weights, wcs)
+
+        # For source-free simulations (contamination tests)
+        if 'CMBSimSeed' in list(self.keys()):
+            randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beamFileName = self['beamFileName'],
+                            seed = self['CMBSimSeed'])
+            randMap[np.equal(weights, 0)]=0
+            # Add white noise that varies according to inv var map...
+            # Noise needed is the extra noise we need to add to match the real data, scaled by inv var map
+            # This initial estimate is too high, so we use a grid search to get a better estimate
+            mask=np.nonzero(data)
+            dataSigma=data[mask].std()
+            whiteNoiseLevel=np.zeros(weights.shape)
+            whiteNoiseLevel[mask]=1/np.sqrt(weights[mask])
+            noiseNeeded=np.sqrt(data[mask].var()-randMap[mask].var()-np.median(whiteNoiseLevel[mask])**2)
+            noiseBoostFactor=noiseNeeded/np.median(whiteNoiseLevel[mask])
+            # NOTE: disabled finding boost factor below for now...
+            bestBoostFactor=1.
+            # --- disabled
+            #bestDiff=1e6
+            #bestBoostFactor=noiseBoostFactor
+            #simNoiseValues=simNoise[mask]
+            #for boostFactor in np.linspace(noiseBoostFactor*0.5, noiseBoostFactor, 10):
+                #diff=abs(dataSigma-(simNoiseValues+generatedNoise*boostFactor).std())
+                #if diff < bestDiff:
+                    #bestBoostFactor=boostFactor
+                    #bestDiff=diff
+            # ---
+            data[mask]=np.random.normal(randMap[mask], bestBoostFactor*whiteNoiseLevel[mask],
+                                        whiteNoiseLevel[mask].shape)
+            outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (self['obsFreqGHz'], tileName)
+            saveFITS(outFileName, data, wcs)
+
+        # For position recovery tests
+        if 'injectSources' in list(self.keys()):
+            # NOTE: Need to add varying GNFWParams here
+            if 'GNFWParams' in self['injectSources'].keys():
+                GNFWParams=self['injectSources']['GNFWParams']
+                obsFreqGHz=self['obsFreqGHz']
+            else:
+                GNFWParams=None
+                obsFreqGHz=None
+            modelMap=makeModelImage(data.shape, wcs, self['injectSources']['catalog'],
+                                    self['beamFileName'], obsFreqGHz = obsFreqGHz,
+                                    GNFWParams = GNFWParams,
+                                    override = self['injectSources']['override'])
+            modelMap[weights == 0]=0
+            data=data+modelMap
+
+        # Should only be needed for handling preliminary tILe-C maps
+        if 'applyBeamConvolution' in self.keys() and self['applyBeamConvolution'] == True:
+            data=convolveMapWithBeam(data, wcs, self['beamFileName'], maxDistDegrees = 1.0)
+            if diagnosticsDir is not None:
+                saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
+
+        # Smoothing with some kernel (used, e.g., in PSF-matching between maps in nemoSpec)
+        if 'smoothKernel' in self.keys():
+            if 'smoothAttenuationFactor' in self.keys():
+                data=data*self['smoothAttenuationFactor']
+            data=convolveMapWithBeam(data, wcs, self['smoothKernel'], maxDistDegrees = 1.0)
+
+        # Optional masking of point sources from external catalog
+        # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
+        if 'maskPointSourcesFromCatalog' in list(self.keys()) and self['maskPointSourcesFromCatalog'] is not None:
+            # This is fast enough if using small tiles and running in parallel...
+            # If our masking/filling is effective enough, we may not need to mask so much here...
+            if type(self['maskPointSourcesFromCatalog']) is not list:
+                self['maskPointSourcesFromCatalog']=[self['maskPointSourcesFromCatalog']]
+            psMask=np.ones(data.shape, dtype = np.uint8)
+            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+            bckData=ndimage.median_filter(data, int(pixRad))
+            rDegMap=np.ones(data.shape, dtype = float)*1e6
+            for catalogInfo in self['maskPointSourcesFromCatalog']:
+                if type(catalogInfo) == str:
+                    catalogPath=catalogInfo
+                    fluxCutJy=0.0
+                elif type(catalogInfo) == dict:
+                    catalogPath=catalogInfo['path']
+                    fluxCutJy=catalogInfo['fluxCutJy']
+                else:
+                    raise Exception("Didn't understand contents of 'maskPointSourcesFromCatalog' - should be a path, or a dict with 'path' key.")
+                tab=atpy.Table().read(catalogPath)
+                if 'fluxJy' in tab.keys():
+                    tab=tab[tab['fluxJy'] > fluxCutJy]
+                tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+                # If we're given a catalog that already has rArcmin in it, we use that to set hole size
+                # Otherwise, if we have shape measurements (ellipse_A at least), we can use that
+                for row in tab:
+                    # Extended sources - identify by measured size > masking radius
+                    # These will mess up noise term in filter, so add to psMask also and fill + smooth
+                    # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
+                    if 'rArcmin' in tab.keys():
+                        maskRadiusArcmin=row['rArcmin']
+                    elif 'ellipse_A' in tab.keys():
+                        xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
+                        ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
+                        maskRadiusArcmin=ASizeArcmin/2
+                    else:
+                        raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
+                    rDegMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rDegMap, wcs,
+                                                                                row['RADeg'], row['decDeg'],
+                                                                                maskRadiusArcmin/60)
+                    surveyMask[rDegMap < maskRadiusArcmin/60.0]=0
+                    psMask[rDegMap < maskRadiusArcmin/60.0]=0
+                    data[rDegMap < maskRadiusArcmin/60.0]=bckData[rDegMap < maskRadiusArcmin/60.0]
+
+        if 'subtractModelFromCatalog' in list(self.keys()) and self['subtractModelFromCatalog'] is not None:
+            if type(self['subtractModelFromCatalog']) is not list:
+                self['subtractModelFromCatalog']=[self['subtractModelFromCatalog']]
+            for tab in self['subtractModelFromCatalog']:
+                if type(tab) != atpy.Table:
+                    tab=atpy.Table().read(catalogPath)
+                tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+                model=makeModelImage(data.shape, wcs, tab, self['beamFileName'], obsFreqGHz = self['obsFreqGHz'])
+                if model is not None:
+                    data=data-model
+                # Threshold of > 1 uK here should be made adjustable in config
+                flagMask=flagMask+np.greater(model, 1)
+                # Debugging
+                #saveFITS(diagnosticsDir+os.path.sep+"subtracted_%s.fits" % (self['label']), data, wcs)
+                # Optionally blank small exclusion zone around these sources in survey mask
+                # NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
+                if 'maskSubtractedRegions' in list(self.keys()) and self['maskSubtractedRegions'] == True:
+                    # For hole filling extended sources
+                    pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+                    bckData=ndimage.median_filter(data, int(pixRad))
+                    for row in tab:
+                        x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                        if surveyMask[int(y), int(x)] != 0:
+                            rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                            if row['SNR'] > 1000:
+                                maskRadiusArcmin=10.0
+                            else:
+                                maskRadiusArcmin=4.0
+                            # Extended sources - identify by measured size > masking radius
+                            # These will mess up noise term in filter, so add to psMask also and fill + smooth
+                            # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
+                            extendedSource=False
+                            if 'ellipse_A' and 'ellipse_B' in tab.keys():
+                                xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
+                                ASizeArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
+                                if ASizeArcmin > maskRadiusArcmin:
+                                    extendedSource=True
+                                    maskRadiusArcmin=ASizeArcmin
+                            if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
+                                maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
+                            rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
+                                                                                        row['RADeg'], row['decDeg'],
+                                                                                        maskRadiusArcmin/60)
+                            rArcminMap=rArcminMap*60
+                            surveyMask[rArcminMap < maskRadiusArcmin]=0
+                            if extendedSource == True:
+                                psMask[rArcminMap < maskRadiusArcmin]=0
+                                data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
+
+        # Add the map data to the dict
+        self['data']=data
+        self['weights']=weights
+        self['wcs']=wcs
+        self['surveyMask']=surveyMask
+        self['pointSourceMask']=psMask
+        self['flagMask']=flagMask
+        self['tileName']=tileName
+
+        # No point continuing if masks are different shape to map (easier to tell user here)
+        if self['data'].shape != self['pointSourceMask'].shape:
+            raise Exception("Map and point source mask dimensions are not the same (they should also have same WCS)")
+        if self['data'].shape != self['surveyMask'].shape:
+            raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
+
+
+#------------------------------------------------------------------------------------------------------------
+class MapDictList(object):
+    """Blah. We want this to iterate over the mapDictList and be indexable.
+
+    """
+
+    def __init__(self, mapDictList, tileCoordsDict = None):
+        """Blah.
+
+        """
+
+        self.mapDictList=[]
+        for mapDict in mapDictList:
+            self.mapDictList.append(MapDict(mapDict, tileCoordsDict))
+
+
+    def __iter__(self):
+        yield from self.mapDictList
+
+
+#------------------------------------------------------------------------------------------------------------
+class TileDict(dict):
+    """A dictionary for collecting tile images, for later saving as multi-extension FITS or outputting as a
+    single monolithic FITS image. Keys within the dictionary map to tile names.
+
+    Args:
+        inputDict (:obj:`dict`): Input dictionary (keys map to tile names).
+        tileCoordsDict (:obj:`dict`, optional): A dictionary that describes the tiling of a large map, as
+            produced by :meth:`startUp.NemoConfig.getTileCoordsDict`.
+
+    Attributes:
+        tileCoordsDict (:obj:`dict`): A dictionary that describes the tiling of a large map, as
+            produced by :meth:`startUp.NemoConfig.getTileCoordsDict`.
+
+    """
+
+    def __init__(self, inputDict, tileCoordsDict = None):
+        super(TileDict, self).__init__(inputDict)
+        self.tileCoordsDict=tileCoordsDict
+
+
+    def copy(self):
+        """Make a copy of this :class:`TileDict` object.
+
+        Returns:
+            A deep copy of the :class:`TileDict` object.
+
+        """
+        return TileDict(self, tileCoordsDict = self.tileCoordsDict)
+
+
+    def saveMEF(self, outFileName, compressionType = None):
+        """Save the tile images as a multi-extension FITS file.
+
+        Args:
+            outFileName (:obj:`str`): Path where the MEF file will be written.
+            compressionType (:obj:`str`): If given, the data will be compressed using the given
+                method (as understood by :mod:`astropy.io.fits`). Use `PLIO_1` for masks,
+                and `RICE_1` for other image data that can stand lossy compression. If None,
+                the image data is not compressed.
+
+        Returns:
+            None
+
+        """
+        newImg=pyfits.HDUList()
+        for tileName in self.keys():
+            if compressionType is not None:
+                if compressionType == 'PLIO_1':
+                    dtype=np.uint8
+                else:
+                    dtype=np.float
+                hdu=pyfits.CompImageHDU(np.array(self[tileName], dtype = dtype),
+                                        self.tileCoordsDict[tileName]['header'], name = tileName,
+                                        compression_type = compressionType)
+            else:
+                hdu=pyfits.ImageHDU(self[tileName], self.tileCoordsDict[tileName]['header'],
+                                    name = tileName)
+            newImg.append(hdu)
+        newImg.writeto(outFileName, overwrite = True)
+
+
+    def saveStitchedFITS(self, outFileName, stitchedWCS, compressionType = None):
+        """Stitch together the tiles into a monolithic image and save in a FITS file.
+
+        Args:
+            outFileName (:obj:`str`): Path where the stitched image FITS file will be written.
+            stitchedWCS (:obj:`astWCS.WCS`): WCS object corresponding to the stitched map
+                that will be produced.
+            compressionType (:obj:`str`): If given, the data will be compressed using the given
+                method (as understood by :mod:`astropy.io.fits`). Use `PLIO_1` for masks,
+                and `RICE_1` for other image data that can stand lossy compression. If None,
+                the image data is not compressed.
+
+        Returns:
+            None
+
+        """
+        wcs=stitchedWCS
+        d=np.zeros([stitchedWCS.header['NAXIS2'], stitchedWCS.header['NAXIS1']])
+        for tileName in self.keys():
+            minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
+            d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+self[tileName]
+        saveFITS(outFileName, d, wcs, compressionType = compressionType)
+
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
     """Converts an array (e.g., a map) in ΔTemperature (μK) with respect to the CMB to Compton y parameter
@@ -95,7 +593,8 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
     
     Note:
         While this routine will try to match the target file sizes, it may not match exactly. Also,
-        makeTileDir will expand tiles by a user-specified amount such that they overlap.
+        :meth:`startUp.NemoConfig.getTileCoordsDict` will expand tiles by a user-specified amount such that
+        they overlap.
     
     """
     
@@ -108,18 +607,22 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         handle180Wrap=False
     
     segMap=surveyMask
-    segMap, numObjects=ndimage.label(np.greater(segMap, 0))
-    fieldIDs=np.arange(1, numObjects+1)
-        
+    try:
+        numObjects=ndimage.label(segMap, output = segMap)
+    except:
+        raise Exception("surveyMask given for autotiler is probably too complicated (breaks into > 256 regions) - check your mask and/or config file.")
+
+    # More memory efficient than previous version
+    fieldIDs=np.arange(1, numObjects+1, dtype = segMap.dtype)
+    maskSections=ndimage.find_objects(segMap)
     tileList=[]
-    for f in fieldIDs:
-        ys, xs=np.where(segMap == f)
-        if len(ys) < 1000:  # In case of stray individual pixels (e.g., combined with extended sources mask)
+    for maskSection, f in zip(maskSections, fieldIDs):
+        yMin=maskSection[0].start
+        yMax=maskSection[0].stop-1
+        if yMax-yMin < 1000:  # In case of stray individual pixels (e.g., combined with extended sources mask)
             continue
-        yMin=ys.min()
-        yMax=ys.max()
-        xc=int((xs.min()+xs.max())/2)
-        
+        xc=int((maskSection[1].start+(maskSection[1].stop-1))/2)
+
         # Some people want to run on full sky CAR ... so we have to avoid that blowing up at the poles
         decMin, decMax=np.nan, np.nan
         deltaY=0
@@ -127,7 +630,7 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             RAc, decMin=wcs.pix2wcs(xc, yMin+deltaY)
             RAc, decMax=wcs.pix2wcs(xc, yMax-deltaY)
             deltaY=deltaY+0.01
-        
+
         numRows=int((decMax-decMin)/targetTileHeight)
         if numRows == 0:
             raise Exception("targetTileHeight is larger than the height of the map - edit your config file accordingly.")
@@ -141,19 +644,20 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             yBottom=int(yBottom)
             yTop=int(yTop)
             yc=int((yTop+yBottom)/2)
-            
+
             strip=segMap[yBottom:yTop]
             ys, xs=np.where(strip == f)
             xMin=xs.min()
             xMax=xs.max()
+            del ys, xs, strip
             stripWidthDeg=(xMax-xMin)*wcs.getXPixelSizeDeg()
             RAMax, decc=wcs.pix2wcs(xMin, yc)
             RAMin, decc=wcs.pix2wcs(xMax, yc)
             numCols=int(stripWidthDeg/targetTileWidth)
             tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
             #assert(tileWidth < targetTileWidth*1.1)
-        
-            stretchFactor=1/np.cos(np.radians(decTop)) 
+
+            stretchFactor=1/np.cos(np.radians(decTop))
             numCols=int(stripWidthDeg/(targetTileWidth*stretchFactor))
             for j in range(numCols):
                 tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
@@ -168,8 +672,8 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                     if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
                         RARight=180.01
                 # NOTE: floats here to make tileDefinitions.yml readable
-                tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
-                                 'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})   
+                tileList.append({'tileName': '%d_%d_%d' % (f, i, j),
+                                 'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})
 
     return tileList
 
@@ -198,337 +702,6 @@ def saveTilesDS9RegionsFile(parDict, DS9RegionFileName):
         outFile.write("fk5\n")
         for c, name in zip(coordsList, tileNames):
             outFile.write('polygon(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f) # text="%s"\n' % (c[0], c[2], c[0], c[3], c[1], c[3], c[1], c[2], name))  
-                
-#------------------------------------------------------------------------------------------------------------
-def addAutoTileDefinitions(parDict, DS9RegionFileName = None, cacheFileName = None):
-    """Runs autotiler to add automatic tile definitions into the parameters dictionary in-place.
-    
-    Args:
-        parDict (:obj:`dict`): Dictionary containing the contents of the Nemo config file.
-        DS9RegionFileName (str, optional): Path to DS9 regions file to be written.
-        cacheFileName (str, optional): Path to output a cached .yml file which will can be read instead on 
-            repeated runs (for speed).
-
-    """
-    
-    if cacheFileName is not None and os.path.exists(cacheFileName):
-        with open(cacheFileName, "r") as stream:
-            parDict['tileDefinitions']=yaml.safe_load(stream)
-        return None
-
-    if 'tileDefinitions' in parDict.keys() and type(parDict['tileDefinitions']) == dict:
-        # If we're not given a survey mask, we'll make one up from the map image itself
-        if 'mask' in parDict['tileDefinitions'].keys() and parDict['tileDefinitions']['mask'] is not None:
-            surveyMaskPath=parDict['tileDefinitions']['mask']
-        else:
-            surveyMaskPath=parDict['unfilteredMaps'][0]['mapFileName']
-        with pyfits.open(surveyMaskPath) as img:    
-            # Just in case RICE-compressed or similar
-            if img[0].data is None:
-                surveyMask=img['COMPRESSED_IMAGE'].data
-                wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
-            else:
-                surveyMask=img[0].data
-                wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-            # One day we will write a routine to deal with the multi-plane thing sensibly...
-            # But today is not that day
-            if surveyMask.ndim == 3:
-                surveyMask=surveyMask[0, :]
-            assert(surveyMask.ndim == 2)   
-            surveyMask[surveyMask != 0]=1
-        parDict['tileDefinitions']=autotiler(surveyMask, wcs, 
-                                             parDict['tileDefinitions']['targetTileWidthDeg'],
-                                             parDict['tileDefinitions']['targetTileHeightDeg'])
-        print("... breaking map into %d tiles ..." % (len(parDict['tileDefinitions'])))
-        if DS9RegionFileName is not None:
-            saveTilesDS9RegionsFile(parDict, DS9RegionFileName)
-    
-        if cacheFileName is not None:
-            stream=yaml.dump(parDict['tileDefinitions'])
-            with open(cacheFileName, "w") as outFile: 
-                outFile.write(stream) 
-
-#-------------------------------------------------------------------------------------------------------------
-def loadTile(pathToTileImages, tileName, returnWCS = False):
-    """Given a path to a directory full of tiles, or a .fits file, return the map array and (optionally)
-    the WCS.
-    
-    Args:
-        pathToTileImages(str): Path to either a .fits file, or a directory full of .fits files named by tileName.
-        tileName(str): The name of the tile to load.
-        
-    Returns:
-        Map data (and optionally wcs)
-    
-    """
-
-    if os.path.isdir(pathToTileImages) == True:
-        with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
-            extName=0
-            tileData=img[extName].data
-            if tileData is None:
-                for extName in img:
-                    tileData=img[extName].data
-                    if tileData is not None:
-                        break
-            assert tileData is not None
-            if returnWCS == True:
-                # Zapping keywords in old ACT maps that confuse astropy.wcs
-                wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
-            data=tileData
-    else:
-        with pyfits.open(pathToTileImages) as img:
-            # Handle compressed full-size masks
-            if tileName == 'PRIMARY':
-                for ext in img:
-                    if img[ext].data is not None:
-                        break
-            else:
-                ext=tileName
-            if returnWCS == True:
-                wcs=astWCS.WCS(img[ext].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
-            data=img[ext].data
-        
-    if returnWCS == True:
-        return data, wcs
-    else:
-        return data
-
-#-------------------------------------------------------------------------------------------------------------
-def makeTileDir(parDict, writeToDisk = True):
-    """Update this later. Revised version. Instead of making a MEF, makes a directory for each map and puts
-    individual tile images there. We'll only need to edit preprocessMapDict to handle the difference. Why
-    are we doing this? Just in case reading from the same file is gumming up MPI runs on hippo when using lots
-    of nodes.
-    
-    Makes a tileDir (directory containing .fits images, one per tile) file, if the needed parameters are 
-    given in parDict. Adjusts unfilteredMapsDictList accordingly and returns it.
-    
-    If the options for making a tileDir image aren't given in parDict, then we pass through a standard
-    single extension file (or rather the path to it, as originally given)
-    
-    NOTE: If the map given in unfilteredMaps is 3d (enki gives I, Q, U as a datacube), then this will extract
-    only the I (temperature) part and save that in the tileDir file. This will need changing if hunting for
-    polarized sources...
-    
-    Returns unfilteredMapsDictList [input for filterMaps], list of extension names, dictionary of clip coords
-    
-    NOTE: Under MPI, this should only be called by the rank = 0 process
-    
-    """
-    
-    if 'makeTileDir' not in list(parDict.keys()):
-        parDict['makeTileDir']=False
-    
-    # Some of this is rather clunky...
-    unfilteredMapsDictList=[]
-    clipCoordsDict={}
-    if parDict['makeTileDir'] == False:
-        tileNames=[]        
-        for mapDict in parDict['unfilteredMaps']:
-            unfilteredMapsDictList.append(mapDict.copy())
-            with pyfits.open(mapDict['mapFileName']) as img:
-                if tileNames == []:
-                    for ext in img:
-                        if img[ext].data is not None:
-                            tileNames.append(ext.name)
-                            clipCoordsDict[ext.name]={'clippedSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']],
-                                                      'header': ext.header,
-                                                      'areaMaskInClipSection': [0, ext.header['NAXIS1'], 0, ext.header['NAXIS2']]}
-                else:
-                    for ext in img:
-                        if ext.name not in tileNames:
-                            raise Exception("extension names do not match between all maps in unfilteredMapsDictList")
-    else:
-        tileNames=[]
-        wcs=None
-        for mapDict in parDict['unfilteredMaps']:
-            if 'tileDefLabel' in list(parDict.keys()):
-                tileDefLabel=parDict['tileDefLabel']
-            else:
-                tileDefLabel='userDefined'
-            tileDirFileNameLabel="%s_%.1f" % (tileDefLabel, parDict['tileOverlapDeg'])
-            
-            # Figure out what the input / output files will be called
-            # NOTE: we always need to make a survey mask if none exists, as used to zap over regions, so that gets special treatment
-            fileNameKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
-            inFileNames=[]
-            outFileNames=[]
-            mapTypeList=[]
-            for f in fileNameKeys:
-                if f in list(mapDict.keys()) and mapDict[f] is not None:
-                    inFileNames.append(mapDict[f])
-                    mapDir, mapFileName=os.path.split(mapDict[f])
-                    if mapDir != '':
-                        mapDirStr=mapDir+os.path.sep
-                    else:
-                        mapDirStr=''
-                    outFileNames.append(mapDirStr+"tileDir_%s_" % (tileDirFileNameLabel)+mapFileName)
-                    mapTypeList.append(f)
-            if 'surveyMask' not in mapTypeList:
-                inFileNames.append(None)
-                mapTypeList.append('surveyMask')
-                outFileNames.append('tileDir_%s_surveyMask' % (tileDirFileNameLabel))
-
-            if wcs is None:
-                wcsPath=parDict['unfilteredMaps'][0]['mapFileName']
-                # Allows compressed format (yes, we should tidy this up properly...)
-                with pyfits.open(wcsPath) as img:
-                    for extName in img:
-                        if img[extName].data is not None:
-                            break
-                    wcs=astWCS.WCS(img[extName].header, mode = 'pyfits')
-                
-            # Extract tile definitions (may have been inserted by autotiler before calling here)
-            tileNames=[]
-            coordsList=[]
-            for tileDict in parDict['tileDefinitions']:
-                ra0, ra1, dec0, dec1=tileDict['RADecSection']
-                x0, y0=wcs.wcs2pix(ra0, dec0)
-                x1, y1=wcs.wcs2pix(ra1, dec1)
-                xMin=min([x0, x1])
-                xMax=max([x0, x1])
-                yMin=min([y0, y1])
-                yMax=max([y0, y1])
-                coordsList.append([xMin, xMax, yMin, yMax])
-                tileNames.append(tileDict['tileName'])   
-            
-            # Make tiles
-            # NOTE: we accommodate having user-defined regions for calculating noise power in filters here
-            # Since we would only use such an option with tileDir files, this should be okay
-            # Although since we do this by modifying headers, would need to remake tileDir files each time adjusted in .par file
-            # NOTE: now treating surveyMask as special, and zapping overlap regions there (simplify selection function stuff later)
-            tileOverlapDeg=parDict['tileOverlapDeg']
-            for mapType, inMapFileName, outMapFileName in zip(mapTypeList, inFileNames, outFileNames):
-                mapData=None    # only load the map if we have to
-                if writeToDisk == True:
-                    os.makedirs(outMapFileName, exist_ok = True)
-                for c, name, tileDict in zip(coordsList, tileNames, parDict['tileDefinitions']):
-                    tileFileName=outMapFileName+os.path.sep+name+".fits"
-                    
-                    # If config or map was modified more recently than tile was written, re-write tile
-                    # (this is a fairly blunt instrument, but should be a little more user friendly)
-                    writeNewTileFile=False
-                    if os.path.exists(tileFileName) == True:
-                        if '_file_last_modified_ctime' in parDict.keys():
-                            if parDict['_file_last_modified_ctime'] > os.path.getctime(tileFileName):
-                                writeNewTileFile=True
-                            if inMapFileName is not None and parDict['_file_last_modified_ctime'] > os.path.getctime(inMapFileName):
-                                writeNewTileFile=True
-                            
-                    if mapData is None:
-                        # Special handling for case where surveyMask not supplied
-                        if mapType == 'surveyMask' and inMapFileName is None:
-                            with pyfits.open(inFileNames[0]) as img:
-                                for extName in img:
-                                    mapData=img[extName].data
-                                    if mapData is not None:
-                                        break
-                                mapData=np.ones(img[extName].data.shape, dtype = int)
-                        else:
-                            # Allows compressed format masks
-                            with pyfits.open(inMapFileName) as img:
-                                for extName in img:
-                                    mapData=img[extName].data
-                                    if mapData is not None:
-                                        break
-                                mapData=img[extName].data
-                        # Deal with Sigurd's maps which have T, Q, U as one 3d array
-                        # If anyone wants to find polarized sources, this will need changing...
-                        if mapData.ndim == 3:
-                            mapData=mapData[0, :]
-                    # Defining clip region
-                    y0=c[2]
-                    y1=c[3]
-                    x0=c[0]
-                    x1=c[1]
-                    ra0, dec0=wcs.pix2wcs(x0, y0)
-                    ra1, dec1=wcs.pix2wcs(x1, y1)
-                    # Be careful with signs here... and we're assuming approx pixel size is ok
-                    if x0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
-                        ra0=ra0+tileOverlapDeg
-                    if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
-                        ra1=ra1-tileOverlapDeg
-                    if y0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
-                        dec0=dec0-tileOverlapDeg
-                    if y1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[0]:
-                        dec1=dec1+tileOverlapDeg
-                    if ra1 > ra0:
-                        ra1=-(360-ra1)
-                    clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
-                    
-                    # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
-                    # (which happens if image dimensions are both odd)
-                    # I _think_ this is related to the interpolation done in signals.fitQ
-                    if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
-                        newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
-                        newArr[:clip['data'].shape[0], :]=clip['data']
-                        newWCS=clip['wcs'].copy()
-                        newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
-                        newWCS.updateFromHeader()
-                        testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
-                        # Check if we see the same sky, if not and we trip this, we need to think about this more
-                        assert((testClip['data']-clip['data']).sum() == 0)
-                        clip['data']=newArr
-                        clip['wcs']=newWCS
-                    
-                    # Storing clip coords etc. so can stitch together later
-                    # areaMaskSection here is used to define the region that would be kept (takes out overlap)
-                    ra0, dec0=wcs.pix2wcs(x0, y0)
-                    ra1, dec1=wcs.pix2wcs(x1, y1)
-                    clip_x0, clip_y0=clip['wcs'].wcs2pix(ra0, dec0)
-                    clip_x1, clip_y1=clip['wcs'].wcs2pix(ra1, dec1)
-                    clip_x0=int(round(clip_x0))
-                    clip_x1=int(round(clip_x1))
-                    clip_y0=int(round(clip_y0))
-                    clip_y1=int(round(clip_y1))
-                    if name not in clipCoordsDict:
-                        clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
-                                              'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
-                    else:
-                        assert(clipCoordsDict[name]['clippedSection'] == clip['clippedSection'])
-                    print("... adding %s [%d, %d, %d, %d ; %d, %d] ..." % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
-                    header=clip['wcs'].header#.copy()
-                    if 'tileNoiseRegions' in list(parDict.keys()):
-                        if name in list(parDict['tileNoiseRegions'].keys()):
-                            noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=parDict['tileNoiseRegions'][name]
-                        else:
-                            if 'autoBorderDeg' in parDict['tileNoiseRegions']:
-                                autoBorderDeg=parDict['tileNoiseRegions']['autoBorderDeg']
-                                for tileDef in parDict['tileDefinitions']:
-                                    if tileDef['tileName'] == name:
-                                        break
-                                noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax=tileDef['RADecSection']
-                                noiseRAMin=noiseRAMin+autoBorderDeg
-                                noiseRAMax=noiseRAMax-autoBorderDeg
-                                noiseDecMin=noiseDecMin+autoBorderDeg
-                                noiseDecMax=noiseDecMax-autoBorderDeg
-                            else:
-                                raise Exception("No entry in tileNoiseRegions in config file for tileName '%s' - either add one, or add 'autoBorderDeg': 0.5 (or similar) to tileNoiseRegions" % (name))
-                        print("... adding noise region [%.3f, %.3f, %.3f, %.3f] to header %s ..." % (noiseRAMin, noiseRAMax, noiseDecMin, noiseDecMax, name))
-                        header['NRAMIN']=noiseRAMin
-                        header['NRAMAX']=noiseRAMax
-                        header['NDEMIN']=noiseDecMin
-                        header['NDEMAX']=noiseDecMax
-                    # Survey mask is special: zap overlap regions outside of tile definitions
-                    if mapType == 'surveyMask':
-                        clip_x0, clip_x1, clip_y0, clip_y1=clipCoordsDict[name]['areaMaskInClipSection']
-                        zapMask=np.zeros(clip['data'].shape)
-                        zapMask[clip_y0:clip_y1, clip_x0:clip_x1]=1.
-                        clip['data']=clip['data']*zapMask
-                    if (os.path.exists(tileFileName) == False or writeNewTileFile == True)  and writeToDisk == True:
-                        if mapType == 'surveyMask' or mapType == 'pointSourceMask':
-                            saveFITS(tileFileName, clip['data'], clip['wcs'], compressed = True,
-                                     compressionType = 'PLIO_1')
-                        else:
-                            saveFITS(tileFileName, clip['data'], clip['wcs'])
-                                
-            # Replace entries in unfilteredMapsDictList in place
-            for key, outFileName in zip(mapTypeList, outFileNames):
-                mapDict[key]=outFileName
-            unfilteredMapsDictList.append(mapDict.copy())
-        
-    return unfilteredMapsDictList, tileNames, clipCoordsDict
 
 #-------------------------------------------------------------------------------------------------------------
 def shrinkWCS(origShape, origWCS, scaleFactor):
@@ -584,19 +757,85 @@ def shrinkWCS(origShape, origWCS, scaleFactor):
     return scaledShape, scaledWCS
 
 #-------------------------------------------------------------------------------------------------------------
-def checkMask(fileName):
-    """Checks whether a mask contains negative values (invalid) and throws an exception if this is the case.
-    
+def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
+    """Load a FITS-format mask file (with 8-bit integer values) in chunks, for memory efficiency, at the
+    expense of some speed. Masks in compressed format (see :meth:`saveFITS`) are supported.
+
     Args:
-        fileName (str): Name of the .fits format mask file to check
-        
+        fileName (:obj:`str`): Path to the FITS-format mask file.
+        numChunks (:obj:`int`): Number of chunks in which to load the file. Largers numbers use less memory,
+            but it takes a little longer for the mask to load.
+        returnWCS (:obj:`bool`, optional): If given, return the WCS of the mask.
+
+    Returns:
+        Mask image (2d array of 8-bit unsigned integers), and optionally a WCS object.
+
     """
-    
+
+    shape=None
     with pyfits.open(fileName) as img:
         for hdu in img:
             if hdu.data is not None:
-                if np.less(hdu.data, 0).sum() > 0:
-                    raise Exception("Mask file '%s' contains negative values - please fix your mask." % (fileName))
+                shape=hdu.data.shape
+                if returnWCS == True:
+                    wcs=astWCS.WCS(hdu.header, mode = 'pyfits')
+                break
+    del img
+
+    height=shape[0]
+    chunkSize=int(height/numChunks)
+    maskArr=np.zeros(shape, dtype = np.uint8)
+    for i in range(numChunks):
+        with pyfits.open(fileName) as img:
+            for hdu in img:
+                if hdu.data is not None:
+                    start=i*chunkSize
+                    end=(i+1)*chunkSize
+                    if end >= height:
+                        end=height-1
+                    chunk=hdu.data[start:end]
+                    maskArr[start:end]=chunk
+                    del chunk
+            del hdu.data
+        del img
+
+    if returnWCS == True:
+        return maskArr, wcs
+    else:
+        return maskArr
+
+#-------------------------------------------------------------------------------------------------------------
+def checkMask(fileName, numChunks = 8):
+    """Checks whether a mask contains negative values (invalid) and throws an exception if this is the case.
+    
+    Args:
+        fileName (str): Name of the FITS format mask file to check.
+        
+    """
+
+    # This is now more horrid looking to save memory, at the expense of speed
+    height=None
+    with pyfits.open(fileName) as img:
+        for hdu in img:
+            if hdu.data is not None:
+                height=hdu.data.shape[0]
+    del img
+
+    chunkSize=int(height/numChunks)
+    for i in range(numChunks):
+        with pyfits.open(fileName) as img:
+            for hdu in img:
+                if hdu.data is not None:
+                    start=i*chunkSize
+                    end=(i+1)*chunkSize
+                    if end >= height:
+                        end=height-1
+                    chunk=hdu.data[start:end].flatten()
+                    if np.any(chunk < 0) == True:
+                        raise Exception("Mask file '%s' contains negative values - please fix your mask." % (fileName))
+                    del chunk
+            del hdu.data
+        del img
 
 #-------------------------------------------------------------------------------------------------------------
 def stitchTiles(config):
@@ -608,19 +847,12 @@ def stitchTiles(config):
     # Defining the maps to stitch together and where they will go
     stitchDictList=[{'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_filteredMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_filteredMap.fits",
-                     'compressed': False,
                      'compressionType': None},
                     {'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_SNMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_SNMap.fits",
-                     'compressed': False,
                      'compressionType': None},
-                    {'pattern': config.selFnDir+os.path.sep+"areaMask#$TILENAME.fits",
-                     'outFileName': config.selFnDir+os.path.sep+"stitched_areaMask.fits",
-                     'compressed': True,
-                     'compressionType': 'PLIO_1'},
                     {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
-                     'compressed': True,
                      'compressionType': 'RICE_1'}]
 
     tileCoordsDict=config.tileCoordsDict
@@ -629,7 +861,6 @@ def stitchTiles(config):
             for stitchDict in stitchDictList:
                 pattern=stitchDict['pattern']
                 outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
-                compressed=stitchDict['compressed']
                 compressionType=stitchDict['compressionType']
                 d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
                 wcs=config.origWCS
@@ -652,7 +883,7 @@ def stitchTiles(config):
                     # Accounting for tiles that may have been extended by 1 pix for FFT purposes (Q-related)
                     height=maxY-minY; width=maxX-minX
                     d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask[:height, :width]*tileData[:height, :width]
-                saveFITS(outFileName, d, wcs, compressed = compressed, compressionType = compressionType)
+                saveFITS(outFileName, d, wcs, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
 def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale = 1.0):
@@ -708,7 +939,7 @@ def stitchTilesQuickLook(filePattern, outFileName, outWCS, outShape, fluxRescale
                 outData[yOut[i]][xOut]=outData[yOut[i]][xOut]+d[yIn[i], xIn]
             except:
                 raise Exception("Output pixel coords invalid - if you see this, probably outWCS.header has keywords that confuse astropy.wcs (PC1_1 etc. - in old ACT maps)")
-    saveFITS(outFileName, outData*fluxRescale, outWCS, compressed = True)
+    saveFITS(outFileName, outData*fluxRescale, outWCS, compressionType = 'RICE_1')
 
 #-------------------------------------------------------------------------------------------------------------
 def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMaskedArea = 1.0):
@@ -849,294 +1080,6 @@ def addWhiteNoise(mapData, noisePerPix):
     mapData=mapData+noise
     
     return mapData
-    
-#-------------------------------------------------------------------------------------------------------------
-def preprocessMapDict(mapDict, tileName = 'PRIMARY', diagnosticsDir = None):
-    """Applies a number of pre-processing steps to the map described by `mapDict`, prior to filtering.
-    
-    The first step is to load the map itself and the associated weights. Some other operations that may be 
-    applied are controlled by keys added to `mapDict`. Some of these may be specified in the .yml configuration
-    file, while others are applied by particular filter objects or by routines that generate simulated data. 
-    The following keys are understood:
-    
-    surveyMask (:obj:`str`)
-        Path to a mask (.fits image; 1 = valid, 0 = masked) that defines the valid object search area.
-    
-    pointSourceMask (:obj:`str`) 
-        Path to a mask (.fits image; 1 = valid, 0 = masked) that contains holes at the locations of point
-        sources, defining regions that are excluded from the object search area.
-        
-    RADecSection (:obj:`list`)
-        Defines a region to extract from the map. Use the format [RAMin, RAMax, decMin, decMax] (units: 
-        decimal degrees).
-        
-    CMBSimSeed (:obj:`int`)
-        If present, replace the map with a source-free simulated CMB realisation, generated using the given
-        seed number. Used by :meth:`estimateContaminationFromSkySim`.
-    
-    applyBeamConvolution (:obj: `str`)
-        If True, the map is convolved with the beam given in the beamFileName key. This should only be 
-        needed when using preliminary y-maps made by tILe-C.
-            
-    Args:
-        mapDict (:obj:`dict`): A dictionary with the same keys as given in the unfilteredMaps list in the 
-            .yml configuration file (i.e., it must contain at least the keys 'mapFileName', 'units', and
-            'weightsFileName', and may contain some of the optional keys listed above).
-        tileName (:obj:`str`): Name of the map tile (extension name) to operate on.
-        diagnosticsDir (:obj:`str`): Path to a directory where miscellaneous diagnostic data are written.
-    
-    Returns:
-        A dictionary with keys that point to the map itself ('data'), weights ('weights'), masks 
-        ('surveyMask', 'pointSourceMask'), and WCS object ('wcs').
-    
-    """
-    
-    data, wcs=loadTile(mapDict['mapFileName'], tileName, returnWCS = True)
-        
-    # Optional calibration factor
-    if 'calibFactor' in mapDict.keys():
-        data=data*mapDict['calibFactor']
-    
-    # For Enki maps... take only I (temperature) for now, add options for this later
-    if data.ndim == 3:
-        data=data[0, :]
-    if mapDict['units'] == 'Jy/sr':
-        if mapDict['obsFreqGHz'] == 148:
-            data=(data/1.072480e+09)*2.726*1e6
-        elif mapDict['obsFreqGHz'] == 219:
-            data=(data/1.318837e+09)*2.726*1e6
-        else:
-            raise Exception("no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
-                    % (mapDict['obsFreqGHz']))
-
-    # Load weight map if given
-    if 'weightsFileName' in list(mapDict.keys()) and mapDict['weightsFileName'] is not None:
-        weights=loadTile(mapDict['weightsFileName'], tileName)
-        # For Enki maps... take only I (temperature) for now, add options for this later
-        if weights.ndim == 3:       # I, Q, U
-            weights=weights[0, :]
-        elif weights.ndim == 4:     # I, Q, U and also a covariance matrix
-            weights=weights[0, 0, :]
-    else:
-        weights=np.ones(data.shape)
-
-    # We rely on pixels with zero weight having zero value in actual maps later (automated edge trimming)
-    # This might not be the case if the map has been filtered slightly before being fed into nemo
-    data[weights == 0]=0
-
-    # Load survey and point source masks, if given
-    if 'surveyMask' in list(mapDict.keys()) and mapDict['surveyMask'] is not None:
-        surveyMask=loadTile(mapDict['surveyMask'], tileName)
-    else:
-        surveyMask=np.ones(data.shape)
-        surveyMask[weights == 0]=0
-    
-    # Some apodisation of the data outside the survey mask
-    # NOTE: should add adjustable parameter for this somewhere later
-    if 'apodizeUsingSurveyMask' in list(mapDict.keys()) and mapDict['apodizeUsingSurveyMask'] == True:
-        # We need to remain unapodized to at least noiseGridArcmin beyond the edge of the survey mask
-        # We'll need to make these adjustable parameters
-        apodMask=np.array(surveyMask, dtype = bool)
-        for i in range(120):
-            apodMask=mahotas.dilate(apodMask)
-        apodMask=ndimage.gaussian_filter(np.array(apodMask, dtype = float), 20)
-        data=data*apodMask
-        del apodMask
-
-    if 'pointSourceMask' in list(mapDict.keys()) and mapDict['pointSourceMask'] is not None:
-        psMask=loadTile(mapDict['pointSourceMask'], tileName)
-    else:
-        psMask=np.ones(data.shape)
-                
-    # Optional map clipping
-    if 'RADecSection' in list(mapDict.keys()) and mapDict['RADecSection'] is not None:
-        RAMin, RAMax, decMin, decMax=mapDict['RADecSection']
-        clip=astImages.clipUsingRADecCoords(data, wcs, RAMin, RAMax, decMin, decMax)
-        data=clip['data']
-        whtClip=astImages.clipUsingRADecCoords(weights, wcs, RAMin, RAMax, decMin, decMax)
-        weights=whtClip['data']
-        psClip=astImages.clipUsingRADecCoords(psMask, wcs, RAMin, RAMax, decMin, decMax)
-        psMask=psClip['data']
-        surveyClip=astImages.clipUsingRADecCoords(surveyMask, wcs, RAMin, RAMax, decMin, decMax)
-        surveyMask=surveyClip['data']
-        wcs=clip['wcs']
-        if len(clip['data']) == 0:
-            raise Exception("Clipping using RADecSection returned empty array - check RADecSection in config .yml file is in map")
-        #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (mapDict['obsFreqGHz'])+"_weights.fits", weights, wcs)
-    
-    # For source-free simulations (contamination tests)
-    if 'CMBSimSeed' in list(mapDict.keys()):
-        randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beamFileName = mapDict['beamFileName'], 
-                          seed = mapDict['CMBSimSeed'])
-        randMap[np.equal(weights, 0)]=0
-        # Add white noise that varies according to inv var map...
-        # Noise needed is the extra noise we need to add to match the real data, scaled by inv var map
-        # This initial estimate is too high, so we use a grid search to get a better estimate
-        mask=np.nonzero(data)
-        dataSigma=data[mask].std()
-        whiteNoiseLevel=np.zeros(weights.shape)
-        whiteNoiseLevel[mask]=1/np.sqrt(weights[mask])
-        noiseNeeded=np.sqrt(data[mask].var()-randMap[mask].var()-np.median(whiteNoiseLevel[mask])**2)
-        noiseBoostFactor=noiseNeeded/np.median(whiteNoiseLevel[mask])
-        # NOTE: disabled finding boost factor below for now...
-        bestBoostFactor=1.
-        # --- disabled
-        #bestDiff=1e6
-        #bestBoostFactor=noiseBoostFactor
-        #simNoiseValues=simNoise[mask]
-        #for boostFactor in np.linspace(noiseBoostFactor*0.5, noiseBoostFactor, 10):
-            #diff=abs(dataSigma-(simNoiseValues+generatedNoise*boostFactor).std())
-            #if diff < bestDiff:
-                #bestBoostFactor=boostFactor
-                #bestDiff=diff
-        # ---
-        data[mask]=np.random.normal(randMap[mask], bestBoostFactor*whiteNoiseLevel[mask], 
-                                    whiteNoiseLevel[mask].shape)
-        outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (mapDict['obsFreqGHz'], tileName) 
-        saveFITS(outFileName, data, wcs)
-    
-    # For position recovery tests
-    if 'injectSources' in list(mapDict.keys()):
-        # NOTE: Need to add varying GNFWParams here
-        if 'GNFWParams' in mapDict['injectSources'].keys():
-            GNFWParams=mapDict['injectSources']['GNFWParams']
-            obsFreqGHz=mapDict['obsFreqGHz']
-        else:
-            GNFWParams=None
-            obsFreqGHz=None
-        modelMap=makeModelImage(data.shape, wcs, mapDict['injectSources']['catalog'], 
-                                mapDict['beamFileName'], obsFreqGHz = obsFreqGHz, 
-                                GNFWParams = GNFWParams,
-                                override = mapDict['injectSources']['override'])
-        modelMap[weights == 0]=0
-        data=data+modelMap
-
-    # Should only be needed for handling preliminary tILe-C maps
-    if 'applyBeamConvolution' in mapDict.keys() and mapDict['applyBeamConvolution'] == True:
-        data=convolveMapWithBeam(data, wcs, mapDict['beamFileName'], maxDistDegrees = 1.0)
-        if diagnosticsDir is not None:
-            saveFITS(diagnosticsDir+os.path.sep+"beamConvolved#%s.fits" % (tileName), data, wcs)
-            
-    # Optional smoothing with a Gaussian kernel (for approximate PSF-matching)
-    # NOTE: Turns out this is not good enough for real ACT beams - use full convolution kernel instead (see below)
-    #if 'smoothScaleDeg' in mapDict.keys():
-        #if 'smoothAttenuationFactor' in mapDict.keys():
-            #data=data*mapDict['smoothAttenuationFactor']
-        #data=smoothMap(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = mapDict['smoothScaleDeg'])
-    if 'smoothKernel' in mapDict.keys():
-        if 'smoothAttenuationFactor' in mapDict.keys():
-            data=data*mapDict['smoothAttenuationFactor']
-        data=convolveMapWithBeam(data, wcs, mapDict['smoothKernel'], maxDistDegrees = 1.0)
-                
-    # Optional masking of point sources from external catalog
-    # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
-    if 'maskPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['maskPointSourcesFromCatalog'] is not None:  
-        # This is fast enough if using small tiles and running in parallel...
-        # If our masking/filling is effective enough, we may not need to mask so much here...
-        if type(mapDict['maskPointSourcesFromCatalog']) is not list:
-            mapDict['maskPointSourcesFromCatalog']=[mapDict['maskPointSourcesFromCatalog']]
-        psMask=np.ones(data.shape)
-        pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-        bckData=ndimage.median_filter(data, int(pixRad))
-        rArcminMap=np.ones(data.shape, dtype = float)*1e6
-        for catalogInfo in mapDict['maskPointSourcesFromCatalog']:
-            if type(catalogInfo) == str:
-                catalogPath=catalogInfo
-                fluxCutJy=0.0
-            elif type(catalogInfo) == dict:
-                catalogPath=catalogInfo['path']
-                fluxCutJy=catalogInfo['fluxCutJy']
-            else:
-                raise Exception("Didn't understand contents of 'maskPointSourcesFromCatalog' - should be a path, or a dict with 'path' key.")
-            tab=atpy.Table().read(catalogPath)
-            if 'fluxJy' in tab.keys():
-                tab=tab[tab['fluxJy'] > fluxCutJy]
-            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-            # If we're given a catalog that already has rArcmin in it, we use that to set hole size
-            # Otherwise, if we have shape measurements (ellipse_A at least), we can use that
-            for row in tab:
-                # Extended sources - identify by measured size > masking radius
-                # These will mess up noise term in filter, so add to psMask also and fill + smooth
-                # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
-                if 'rArcmin' in tab.keys():
-                    maskRadiusArcmin=row['rArcmin']
-                elif 'ellipse_A' in tab.keys():
-                    xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
-                    ASizeArcmin=row['ellipse_A']/xPixSizeArcmin
-                    maskRadiusArcmin=ASizeArcmin/2
-                else:
-                    raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
-                rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                                row['RADeg'], row['decDeg'],
-                                                                                maskRadiusArcmin/60)
-                rArcminMap=rArcminMap*60
-                surveyMask[rArcminMap < maskRadiusArcmin]=0
-                psMask[rArcminMap < maskRadiusArcmin]=0
-                data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
-
-    # Optional subtraction of point sources based on a catalog
-    # We'll also (optionally) add a small mask at these locations to the survey mask
-    if 'subtractPointSourcesFromCatalog' in list(mapDict.keys()) and mapDict['subtractPointSourcesFromCatalog'] is not None:
-        if type(mapDict['subtractPointSourcesFromCatalog']) is not list:
-            mapDict['subtractPointSourcesFromCatalog']=[mapDict['subtractPointSourcesFromCatalog']]
-        for tab in mapDict['subtractPointSourcesFromCatalog']:
-            if type(tab) != atpy.Table:
-                tab=atpy.Table().read(catalogPath)
-            tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs) 
-            model=makeModelImage(data.shape, wcs, tab, mapDict['beamFileName'], obsFreqGHz = None)
-            if model is not None:
-                data=data-model
-            # Optionally blank small exclusion zone around these sources in survey mask
-            # (this is needed for SZ searches, to avoid any issue with possible oversubtraction)
-            # NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
-            if 'maskSubtractedPointSources' in list(mapDict.keys()) and mapDict['maskSubtractedPointSources'] == True:
-                # For hole filling extended sources
-                pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-                bckData=ndimage.median_filter(data, int(pixRad))
-                for row in tab:
-                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                    if surveyMask[int(y), int(x)] != 0:
-                        rArcminMap=np.ones(data.shape, dtype = float)*1e6
-                        if row['SNR'] > 1000:
-                            maskRadiusArcmin=10.0
-                        else:
-                            maskRadiusArcmin=4.0
-                        # Extended sources - identify by measured size > masking radius
-                        # These will mess up noise term in filter, so add to psMask also and fill + smooth
-                        # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
-                        extendedSource=False
-                        if 'ellipse_A' and 'ellipse_B' in tab.keys():
-                            xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
-                            ASizeArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
-                            if ASizeArcmin > maskRadiusArcmin:
-                                extendedSource=True
-                                maskRadiusArcmin=ASizeArcmin
-                        if 'maskHoleDilationFactor' in mapDict.keys() and mapDict['maskHoleDilationFactor'] is not None:
-                            maskRadiusArcmin=maskRadiusArcmin*mapDict['maskHoleDilationFactor']
-                        rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs, 
-                                                                                       row['RADeg'], row['decDeg'],
-                                                                                       maskRadiusArcmin/60)
-                        rArcminMap=rArcminMap*60
-                        surveyMask[rArcminMap < maskRadiusArcmin]=0
-                        if extendedSource == True:
-                            psMask[rArcminMap < maskRadiusArcmin]=0
-                            data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
-    
-    # Add the map data to the dict
-    mapDict['data']=data
-    mapDict['weights']=weights
-    mapDict['wcs']=wcs
-    mapDict['surveyMask']=surveyMask
-    mapDict['psMask']=psMask
-    mapDict['tileName']=tileName
-    
-    # No point continuing if masks are different shape to map (easier to tell user here)
-    if mapDict['data'].shape != mapDict['psMask'].shape:
-        raise Exception("Map and point source mask dimensions are not the same (they should also have same WCS)")
-    if mapDict['data'].shape != mapDict['surveyMask'].shape:
-        raise Exception("Map and survey mask dimensions are not the same (they should also have same WCS)")
-    
-    return mapDict
 
 #------------------------------------------------------------------------------------------------------------
 def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fixNoiseSeed = False):
@@ -1859,10 +1802,14 @@ def sourceInjectionTest(config, writeRankTable = True):
                 fluxCol='fixed_y_c'
                 noiseLevelCol='fixed_err_y_c'
                 SNRCol='fixed_SNR'
+                if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
+                    amplitudeRange = [0.001, 1]
+                else:
+                    amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
                 # Quick test catalog - takes < 1 sec to generate
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = 'fixed_y_c', 
-                                                         amplitudeRange = [0.001, 1], 
+                                                         amplitudeRange = amplitudeRange,
                                                          amplitudeDistribution = 'linear',
                                                          selFn = selFn, maskDilationPix = 20)
                 # Or... proper mock, but this takes ~24 sec for E-D56
@@ -1874,12 +1821,9 @@ def sourceInjectionTest(config, writeRankTable = True):
                 noiseLevelCol='err_deltaT_c'
                 SNRCol='SNR'
                 if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                    amplitudeRange = [1,1000]
+                    amplitudeRange = [1, 1000]
                 else:
                     amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
-
-                # print("sourceInjectionAmplitudeRange:",amplitudeRange)
-
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = fluxCol, 
                                                          amplitudeRange = amplitudeRange, 
@@ -2160,16 +2104,17 @@ def noiseBiasAnalysis(sourceInjTable, plotFileName, sourceInjectionModel = None)
     return None
         
 #---------------------------------------------------------------------------------------------------
-def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType = 'RICE_1'):
-    """Writes a map (2d image array) to a new .fits file.
+def saveFITS(outputFileName, mapData, wcs, compressionType = None):
+    """Writes a map (2d image array) to a new FITS file.
     
     Args:
         outputFileName (str): Filename of output FITS image.
         mapData (:obj:`np.ndarray`): Map data array.
         wcs (:obj:`astWCS.WCS`): Map WCS object.
-        compressed (bool, optional): If True, writes a compressed image.
-        compressionType (str, optional): The type of compression to use ('PLIO_1' for masks and
-            'RICE_1' for images are recommended).
+        compressionType (str, optional): If given, the data will be compressed using the given
+            method (as understood by :mod:`astropy.io.fits`). Use `PLIO_1` for masks,
+            and `RICE_1` for other image data that can stand lossy compression. If None,
+            the image data is not compressed.
     
     """
     
@@ -2178,18 +2123,16 @@ def saveFITS(outputFileName, mapData, wcs, compressed = False, compressionType =
     if os.path.exists(outputFileName):
         os.remove(outputFileName)
     
-    if compressed == False:
+    if compressionType is None:
         if wcs is not None:
             hdu=pyfits.PrimaryHDU(mapData, wcs.header)
         else:
             hdu=pyfits.PrimaryHDU(mapData, None)
     
-    if compressed == True:
+    if compressionType is not None:
         if wcs is not None:
             if compressionType == 'PLIO_1':
-                #wcs.header['BITPIX']=8
-                #wcs.updateFromHeader()
-                dtype=np.int32
+                dtype=np.uint8
             else:
                 dtype=np.float
             hdu=pyfits.CompImageHDU(np.array(mapData, dtype = dtype), wcs.header, 
