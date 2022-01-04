@@ -70,7 +70,7 @@ if __name__ == '__main__':
     parDictFileName=args.configFileName
     config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
-                              strictMPIExceptions = strictMPIExceptions)
+                              strictMPIExceptions = strictMPIExceptions, writeTileInfo = True)
     
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
     if config.parDict['forcedPhotometryCatalog'] is not None:
@@ -196,5 +196,8 @@ if __name__ == '__main__':
             
         # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
         completeness.tidyUp(config)
+
+    else:
+        del selFnCollection
         
     

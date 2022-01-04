@@ -15,7 +15,6 @@ from nemo import signals
 import numpy as np
 import pickle
 import time
-#import IPython
 from . import maps
 
 #------------------------------------------------------------------------------------------------------------
@@ -131,6 +130,8 @@ def parseConfigFile(parDictFileName, verbose = False):
                 if entry['tileName'] in checkList:
                     raise Exception("Duplicate tileName '%s' in tileDefinitions - fix in config file" % (entry['tileName']))
                 checkList.append(entry['tileName'])
+        if 'stitchTiles' not in list(parDict.keys()):
+            parDict['stitchTiles']=False
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
         if 'GNFWParams' not in list(parDict.keys()):
             parDict['GNFWParams']='default'
@@ -157,9 +158,11 @@ def parseConfigFile(parDictFileName, verbose = False):
     for k in oldKeyMap.keys():
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]
-            print("... WARNING: config parameter '%s' is no longer used by Nemo and will be ignored." % (k))
+            if verbose:
+                print("... WARNING: config parameter '%s' is no longer used by Nemo and will be ignored." % (k))
         if k in list(parDict.keys()) and type(oldKeyMap[k]) == str:
-            print("... WARNING: config parameter '%s' (old usage) has been renamed to '%s' (current usage) - you may wish to update your config file." % (k, oldKeyMap[k]))
+            if verbose:
+                print("... WARNING: config parameter '%s' (old usage) has been renamed to '%s' (current usage) - you may wish to update your config file." % (k, oldKeyMap[k]))
             parDict[oldKeyMap[k]]=parDict[k]
             del parDict[k]
 
@@ -246,6 +249,10 @@ class NemoConfig(object):
         if self.rank != 0:
             verbose=False
 
+        # Timekeeping for benchmarking
+        if self.rank == 0:
+            self._timeStarted=time.time()
+
         if type(config) == str:
             self.parDict=parseConfigFile(config, verbose = verbose)
             self.configFileName=config
@@ -283,7 +290,7 @@ class NemoConfig(object):
             self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
         else:
             if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
-        
+
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
         self._origParDict=copy.deepcopy(self.parDict)
@@ -338,7 +345,7 @@ class NemoConfig(object):
         # For convenience, keep the full list of tile names
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
         self.allTileNames=self.tileNames.copy()
-        
+
         # MPI: just divide up tiles pointed at by tileNames among processes
         if self.MPIEnabled == True and divideTilesByProcesses == True:
             # New - bit clunky but distributes more evenly
@@ -365,10 +372,6 @@ class NemoConfig(object):
         # Identify filter sets, for enabling new multi-pass filtering and object finding
         self._identifyFilterSets()
         
-        # Timekeeping for benchmarking
-        if self.rank == 0:
-            self._timeStarted=time.time()
-
         # For debugging...
         if self.MPIEnabled == True:
             print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
@@ -415,27 +418,31 @@ class NemoConfig(object):
             # If we're not given a survey mask, we'll make one up from the map image itself
             if 'mask' in self.parDict['tileDefinitions'].keys() and self.parDict['tileDefinitions']['mask'] is not None:
                 surveyMaskPath=self.parDict['tileDefinitions']['mask']
+                maskProvided=True
             else:
                 surveyMaskPath=self.parDict['unfilteredMaps'][0]['mapFileName']
-            with pyfits.open(surveyMaskPath) as img:
-                # Just in case RICE/PLIO-compressed or similar
-                if img[0].data is None:
-                    surveyMask=np.array(img['COMPRESSED_IMAGE'].data, dtype = np.uint8)
-                    wcs=astWCS.WCS(img['COMPRESSED_IMAGE'].header, mode = 'pyfits')
-                else:
-                    surveyMask=np.array(img[0].data, dtype = np.uint8)
-                    wcs=astWCS.WCS(img[0].header, mode = 'pyfits')
-                # One day we will write a routine to deal with the multi-plane thing sensibly...
-                # But today is not that day
-                if surveyMask.ndim == 3:
-                    surveyMask=surveyMask[0, :]
-                assert(surveyMask.ndim == 2)
-                surveyMask[surveyMask != 0]=1
-            del img[0].data
+                maskProvided=False
+            if maskProvided == True:
+                surveyMask, wcs=maps.chunkLoadMask(surveyMaskPath) # memory efficient
+            else:
+                with pyfits.open(surveyMaskPath, do_not_scale_image_data = True) as img:
+                    for ext in img:
+                        if ext.data is not None:
+                            break
+                    surveyMask=np.array(ext.data, dtype = np.uint8)
+                    wcs=astWCS.WCS(ext.header, mode = 'pyfits')
+                    # One day we will write a routine to deal with the multi-plane thing sensibly...
+                    # But today is not that day
+                    if surveyMask.ndim == 3:
+                        surveyMask=surveyMask[0, :]
+                    assert(surveyMask.ndim == 2)
+                    surveyMask[surveyMask != 0]=1
+                del img
             self.parDict['tileDefinitions']=maps.autotiler(surveyMask, wcs,
                                                            self.parDict['tileDefinitions']['targetTileWidthDeg'],
                                                            self.parDict['tileDefinitions']['targetTileHeightDeg'])
             print("... breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
+
             if DS9RegionFileName is not None:
                 maps.saveTilesDS9RegionsFile(self.parDict, DS9RegionFileName)
 

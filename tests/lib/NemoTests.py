@@ -139,8 +139,7 @@ class NemoTests(object):
             header=pyfits.Header().fromtextfile(headerFileName)
             wcs=astWCS.WCS(header, mode = 'pyfits')
             d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
-            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs,
-                          compressed = True, compressionType = 'PLIO_1')
+            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs, compressionType = 'PLIO_1')
         
         # Map/frequency-related defaults
         self.bandsDict={'f150': {'beam': "maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt",

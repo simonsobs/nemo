@@ -64,6 +64,12 @@ class MapDict(dict):
 
 
     def copy(self):
+        """Make a copy of this :class:`MapDict` object.
+
+        Returns:
+            A deep copy of the :class:`MapDict` object.
+
+        """
         return MapDict(self, tileCoordsDict = self.tileCoordsDict)
 
 
@@ -157,7 +163,7 @@ class MapDict(dict):
             If present, replace the map with a source-free simulated CMB realisation, generated using the given
             seed number. Used by :meth:`estimateContaminationFromSkySim`.
 
-        applyBeamConvolution (:obj: `str`)
+        applyBeamConvolution (:obj:`bool`)
             If True, the map is convolved with the beam given in the beamFileName key. This should only be
             needed when using preliminary y-maps made by tILe-C.
 
@@ -456,6 +462,12 @@ class TileDict(dict):
 
 
     def copy(self):
+        """Make a copy of this :class:`TileDict` object.
+
+        Returns:
+            A deep copy of the :class:`TileDict` object.
+
+        """
         return TileDict(self, tileCoordsDict = self.tileCoordsDict)
 
 
@@ -465,7 +477,7 @@ class TileDict(dict):
         Args:
             outFileName (:obj:`str`): Path where the MEF file will be written.
             compressionType (:obj:`str`): If given, the data will be compressed using the given
-                method (as understood by :module:`astropy.io.fits`). Use `PLIO_1` for masks,
+                method (as understood by :mod:`astropy.io.fits`). Use `PLIO_1` for masks,
                 and `RICE_1` for other image data that can stand lossy compression. If None,
                 the image data is not compressed.
 
@@ -498,7 +510,7 @@ class TileDict(dict):
             stitchedWCS (:obj:`astWCS.WCS`): WCS object corresponding to the stitched map
                 that will be produced.
             compressionType (:obj:`str`): If given, the data will be compressed using the given
-                method (as understood by :module:`astropy.io.fits`). Use `PLIO_1` for masks,
+                method (as understood by :mod:`astropy.io.fits`). Use `PLIO_1` for masks,
                 and `RICE_1` for other image data that can stand lossy compression. If None,
                 the image data is not compressed.
 
@@ -586,21 +598,21 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
     
     segMap=surveyMask
     try:
-        segMap, numObjects=ndimage.label(np.greater(segMap, 0), output = np.uint8)
+        numObjects=ndimage.label(segMap, output = segMap)
     except:
-        raise Exception("surveyMask given for autotiler is too complicated (breaks into > 256 regions) - check your mask and/or config file.")
+        raise Exception("surveyMask given for autotiler is probably too complicated (breaks into > 256 regions) - check your mask and/or config file.")
 
-    fieldIDs=np.arange(1, numObjects+1)
-
+    # More memory efficient than previous version
+    fieldIDs=np.arange(1, numObjects+1, dtype = segMap.dtype)
+    maskSections=ndimage.find_objects(segMap)
     tileList=[]
-    for f in fieldIDs:
-        ys, xs=np.where(segMap == f)
-        if len(ys) < 1000:  # In case of stray individual pixels (e.g., combined with extended sources mask)
+    for maskSection, f in zip(maskSections, fieldIDs):
+        yMin=maskSection[0].start
+        yMax=maskSection[0].stop-1
+        if yMax-yMin < 1000:  # In case of stray individual pixels (e.g., combined with extended sources mask)
             continue
-        yMin=ys.min()
-        yMax=ys.max()
-        xc=int((xs.min()+xs.max())/2)
-        
+        xc=int((maskSection[1].start+(maskSection[1].stop-1))/2)
+
         # Some people want to run on full sky CAR ... so we have to avoid that blowing up at the poles
         decMin, decMax=np.nan, np.nan
         deltaY=0
@@ -608,7 +620,7 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             RAc, decMin=wcs.pix2wcs(xc, yMin+deltaY)
             RAc, decMax=wcs.pix2wcs(xc, yMax-deltaY)
             deltaY=deltaY+0.01
-        
+
         numRows=int((decMax-decMin)/targetTileHeight)
         if numRows == 0:
             raise Exception("targetTileHeight is larger than the height of the map - edit your config file accordingly.")
@@ -622,19 +634,20 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             yBottom=int(yBottom)
             yTop=int(yTop)
             yc=int((yTop+yBottom)/2)
-            
+
             strip=segMap[yBottom:yTop]
             ys, xs=np.where(strip == f)
             xMin=xs.min()
             xMax=xs.max()
+            del ys, xs, strip
             stripWidthDeg=(xMax-xMin)*wcs.getXPixelSizeDeg()
             RAMax, decc=wcs.pix2wcs(xMin, yc)
             RAMin, decc=wcs.pix2wcs(xMax, yc)
             numCols=int(stripWidthDeg/targetTileWidth)
             tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
             #assert(tileWidth < targetTileWidth*1.1)
-        
-            stretchFactor=1/np.cos(np.radians(decTop)) 
+
+            stretchFactor=1/np.cos(np.radians(decTop))
             numCols=int(stripWidthDeg/(targetTileWidth*stretchFactor))
             for j in range(numCols):
                 tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
@@ -649,7 +662,7 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                     if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
                         RARight=180.01
                 # NOTE: floats here to make tileDefinitions.yml readable
-                tileList.append({'tileName': '%d_%d_%d' % (f, i, j), 
+                tileList.append({'tileName': '%d_%d_%d' % (f, i, j),
                                  'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})
 
     return tileList
@@ -734,19 +747,85 @@ def shrinkWCS(origShape, origWCS, scaleFactor):
     return scaledShape, scaledWCS
 
 #-------------------------------------------------------------------------------------------------------------
-def checkMask(fileName):
+def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
+    """Load a FITS-format mask file (with 8-bit integer values) in chunks, for memory efficiency, at the
+    expense of some speed. Masks in compressed format (see :meth:`saveFITS`) are supported.
+
+    Args:
+        fileName (:obj:`str`): Path to the FITS-format mask file.
+        numChunks (:obj:`int`): Number of chunks in which to load the file. Largers numbers use less memory,
+            but it takes a little longer for the mask to load.
+        returnWCS (:obj:`bool`, optional): If given, return the WCS of the mask.
+
+    Returns:
+        Mask image (2d array of 8-bit unsigned integers), and optionally a WCS object.
+
+    """
+
+    shape=None
+    with pyfits.open(fileName) as img:
+        for hdu in img:
+            if hdu.data is not None:
+                shape=hdu.data.shape
+                if returnWCS == True:
+                    wcs=astWCS.WCS(hdu.header, mode = 'pyfits')
+                break
+    del img
+
+    height=shape[0]
+    chunkSize=int(height/numChunks)
+    maskArr=np.zeros(shape, dtype = np.uint8)
+    for i in range(numChunks):
+        with pyfits.open(fileName) as img:
+            for hdu in img:
+                if hdu.data is not None:
+                    start=i*chunkSize
+                    end=(i+1)*chunkSize
+                    if end >= height:
+                        end=height-1
+                    chunk=hdu.data[start:end]
+                    maskArr[start:end]=chunk
+                    del chunk
+            del hdu.data
+        del img
+
+    if returnWCS == True:
+        return maskArr, wcs
+    else:
+        return maskArr
+
+#-------------------------------------------------------------------------------------------------------------
+def checkMask(fileName, numChunks = 8):
     """Checks whether a mask contains negative values (invalid) and throws an exception if this is the case.
     
     Args:
         fileName (str): Name of the FITS format mask file to check.
         
     """
-    
+
+    # This is now more horrid looking to save memory, at the expense of speed
+    height=None
     with pyfits.open(fileName) as img:
         for hdu in img:
             if hdu.data is not None:
-                if np.less(hdu.data, 0).sum() > 0:
-                    raise Exception("Mask file '%s' contains negative values - please fix your mask." % (fileName))
+                height=hdu.data.shape[0]
+    del img
+
+    chunkSize=int(height/numChunks)
+    for i in range(numChunks):
+        with pyfits.open(fileName) as img:
+            for hdu in img:
+                if hdu.data is not None:
+                    start=i*chunkSize
+                    end=(i+1)*chunkSize
+                    if end >= height:
+                        end=height-1
+                    chunk=hdu.data[start:end].flatten()
+                    if np.any(chunk < 0) == True:
+                        raise Exception("Mask file '%s' contains negative values - please fix your mask." % (fileName))
+                    del chunk
+            del hdu.data
+        del img
 
 #-------------------------------------------------------------------------------------------------------------
 def stitchTiles(config):
@@ -2023,7 +2102,7 @@ def saveFITS(outputFileName, mapData, wcs, compressionType = None):
         mapData (:obj:`np.ndarray`): Map data array.
         wcs (:obj:`astWCS.WCS`): Map WCS object.
         compressionType (str, optional): If given, the data will be compressed using the given
-            method (as understood by :module:`astropy.io.fits`). Use `PLIO_1` for masks,
+            method (as understood by :mod:`astropy.io.fits`). Use `PLIO_1` for masks,
             and `RICE_1` for other image data that can stand lossy compression. If None,
             the image data is not compressed.
     
