@@ -375,8 +375,8 @@ class MapDict(dict):
                 model=makeModelImage(data.shape, wcs, tab, self['beamFileName'], obsFreqGHz = self['obsFreqGHz'])
                 if model is not None:
                     data=data-model
-                # Threshold of > 1 uK here should be made adjustable in config
-                flagMask=flagMask+np.greater(model, 1)
+                    # Threshold of > 1 uK here should be made adjustable in config
+                    flagMask=flagMask+np.greater(model, 1)
                 # Debugging
                 #saveFITS(diagnosticsDir+os.path.sep+"subtracted_%s.fits" % (self['label']), data, wcs)
                 # Optionally blank small exclusion zone around these sources in survey mask
