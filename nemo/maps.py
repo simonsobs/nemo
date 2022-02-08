@@ -450,6 +450,10 @@ class MapDictList(object):
         yield from self.mapDictList
 
 
+    def __getitem__(self, item):
+        return self.mapDictList[item]
+
+
 #------------------------------------------------------------------------------------------------------------
 class TileDict(dict):
     """A dictionary for collecting tile images, for later saving as multi-extension FITS or outputting as a
