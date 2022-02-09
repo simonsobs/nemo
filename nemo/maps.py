@@ -320,6 +320,50 @@ class MapDict(dict):
                 data=data*self['smoothAttenuationFactor']
             data=convolveMapWithBeam(data, wcs, self['smoothKernel'], maxDistDegrees = 1.0)
 
+        # Check if we're going to need to fill holes - if so, set-up smooth background only once
+        holeFillingKeys=['findAndMaskExtended', 'maskPointSourcesFromCatalog', 'maskSubtractedRegions']
+        holeFilling=False
+        for h in holeFillingKeys:
+            if h in list(self.keys()):
+                holeFilling=True
+                break
+        if holeFilling == True:
+            pixRad=(15.0/60.0)/wcs.getPixelSizeDeg() # was 10
+            bckData=ndimage.median_filter(data, int(pixRad))
+
+        # Finding and masking of extended sources
+        if 'findAndMaskExtended' in list(self.keys()):
+            settings=self['findAndMaskExtended']
+            #findAndMaskExtended: {bigScaleDeg: 0.1, smallScaleDeg: 0.05, thresholdSigma: 3}
+            # Isolate a scale that's extended
+            s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
+            s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
+            s=s1-s2
+            del s1, s2
+            # Simple global 3-sigma clipped noise estimate
+            mean=0
+            sigma=1e6
+            vals=s.flatten()
+            for i in range(10):
+                mask=np.less(abs(vals-mean), 3*sigma)
+                mean=np.mean(vals[mask])
+                sigma=np.std(vals[mask])
+            s=s/sigma
+            # Mask set such that 1 = masked, 0 = not masked
+            extendedMask=np.array(np.less(s, settings['thresholdSigma']), dtype = np.uint8)
+            for i in range(5):
+                extendedMask=mahotas.dilate(extendedMask)
+            #surveyMask=surveyMask*extendedMask
+            #psMask=psMask*extendedMask  # Needed?
+            data[extendedMask == 1]=bckData[extendedMask == 1]
+            saveFITS("debug-%s.fits" % (self['label']), data, wcs)
+            #print("add to flag mask")
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
+            #flagMask=flagMask+np.greater(model, 1)
+
+
         # Optional masking of point sources from external catalog
         # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
         if 'maskPointSourcesFromCatalog' in list(self.keys()) and self['maskPointSourcesFromCatalog'] is not None:
@@ -328,8 +372,8 @@ class MapDict(dict):
             if type(self['maskPointSourcesFromCatalog']) is not list:
                 self['maskPointSourcesFromCatalog']=[self['maskPointSourcesFromCatalog']]
             psMask=np.ones(data.shape, dtype = np.uint8)
-            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-            bckData=ndimage.median_filter(data, int(pixRad))
+            #pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+            #bckData=ndimage.median_filter(data, int(pixRad))
             rDegMap=np.ones(data.shape, dtype = float)*1e6
             for catalogInfo in self['maskPointSourcesFromCatalog']:
                 if type(catalogInfo) == str:
@@ -383,8 +427,8 @@ class MapDict(dict):
                 # NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
                 if 'maskSubtractedRegions' in list(self.keys()) and self['maskSubtractedRegions'] == True:
                     # For hole filling extended sources
-                    pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-                    bckData=ndimage.median_filter(data, int(pixRad))
+                    #pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
+                    #bckData=ndimage.median_filter(data, int(pixRad))
                     for row in tab:
                         x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                         if surveyMask[int(y), int(x)] != 0:

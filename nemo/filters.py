@@ -51,7 +51,7 @@ import time
 
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
-               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True,
+               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = False,
                returnFilter = False):
     """Builds and applies filters to the unfiltered map(s). 
     

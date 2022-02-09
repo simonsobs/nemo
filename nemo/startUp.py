@@ -684,6 +684,10 @@ class NemoConfig(object):
                         if saveKey in filtDict['params'].keys():
                             filtDict['params'][saveKey]=False
                     self.parDict['forcedPhotometryCatalog']=None
+                # However, we do allow intermediate filter sets to write maps, if explicitly asked for
+                # (e.g., useful for debugging a point source run before a cluster run)
+                if type(options) == dict and 'saveFilteredMaps' in options.keys():
+                    filtDict['params']['saveFilteredMaps']=options['saveFilteredMaps']
                 filtersToActivate.append(filtDict)
         self.parDict['mapFilters']=filtersToActivate
 
