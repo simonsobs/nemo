@@ -900,7 +900,7 @@ def stitchTiles(config):
                     {'pattern': config.filteredMapsDir+os.path.sep+"$TILENAME"+os.path.sep+"$FILTLABEL#$TILENAME_SNMap.fits",
                      'outFileName': config.filteredMapsDir+os.path.sep+"stitched_$FILTLABEL_SNMap.fits",
                      'compressionType': None},
-                    {'pattern': config.selFnDir+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
+                    {'pattern': config.selFnDir+os.path.sep+"$TILENAME"+os.path.sep+"RMSMap_$FILTLABEL#$TILENAME.fits",
                      'outFileName': config.selFnDir+os.path.sep+"stitched_RMSMap_$FILTLABEL.fits",
                      'compressionType': 'RICE_1'}]
 

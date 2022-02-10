@@ -1479,14 +1479,6 @@ def tidyUp(config):
     
     shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
-    # Delete single tile Q fits (combined Q file should be made before this)
-    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
-        #signals.makeCombinedQTable(config)
-        for tileName in config.allTileNames:
-            QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
-            if os.path.exists(QFileName):
-                os.remove(QFileName)
-
     # Make MEFs
     MEFsToBuild=["RMSMap_%s" % (config.parDict['photFilter'])]
     compressionTypes=["RICE_1"]
@@ -1503,7 +1495,7 @@ def tidyUp(config):
         newImg=pyfits.HDUList()
         filesToRemove=[]
         for tileName in config.allTileNames:
-            fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits"
+            fileName=config.selFnDir+os.path.sep+tileName+os.path.sep+MEFBaseName+"#"+tileName+".fits"
             if os.path.exists(fileName):
                 with pyfits.open(fileName) as img:
                     for extName in img:
