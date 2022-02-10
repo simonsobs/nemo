@@ -240,7 +240,8 @@ class MapDict(dict):
         else:
             psMask=np.ones(data.shape, dtype = np.uint8)
 
-        # Use for tracking regions where subtraction took place to make flags in catalog
+        # Use for tracking regions where subtraction/in-painting took place to make flags in catalog
+        # NOTE: flag masks for each frequency map get combined within filter objects
         flagMask=np.zeros(data.shape, dtype = np.uint8)
 
         # Optional map clipping
@@ -259,7 +260,6 @@ class MapDict(dict):
             wcs=clip['wcs']
             if len(clip['data']) == 0:
                 raise Exception("Clipping using RADecSection returned empty array - check RADecSection in config .yml file is in map")
-            #astImages.saveFITS(diagnosticsDir+os.path.sep+'%d' % (self['obsFreqGHz'])+"_weights.fits", weights, wcs)
 
         # For source-free simulations (contamination tests)
         if 'CMBSimSeed' in list(self.keys()):
@@ -321,20 +321,20 @@ class MapDict(dict):
             data=convolveMapWithBeam(data, wcs, self['smoothKernel'], maxDistDegrees = 1.0)
 
         # Check if we're going to need to fill holes - if so, set-up smooth background only once
-        holeFillingKeys=['findAndMaskExtended', 'maskPointSourcesFromCatalog', 'maskSubtractedRegions']
+        # NOTE: If this needs changing, needs parametrizing as used in e.g. ACT DR5 results
+        holeFillingKeys=['maskPointSourcesFromCatalog', 'maskSubtractedRegions']
         holeFilling=False
         for h in holeFillingKeys:
             if h in list(self.keys()):
                 holeFilling=True
                 break
         if holeFilling == True:
-            pixRad=(15.0/60.0)/wcs.getPixelSizeDeg() # was 10
+            pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad))
 
         # Finding and masking of extended sources
         if 'findAndMaskExtended' in list(self.keys()):
             settings=self['findAndMaskExtended']
-            #findAndMaskExtended: {bigScaleDeg: 0.1, smallScaleDeg: 0.05, thresholdSigma: 3}
             # Isolate a scale that's extended
             s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
             s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
@@ -348,21 +348,22 @@ class MapDict(dict):
                 mask=np.less(abs(vals-mean), 3*sigma)
                 mean=np.mean(vals[mask])
                 sigma=np.std(vals[mask])
-            s=s/sigma
+            snr=s/sigma
             # Mask set such that 1 = masked, 0 = not masked
-            extendedMask=np.array(np.less(s, settings['thresholdSigma']), dtype = np.uint8)
-            for i in range(5):
+            extendedMask=np.array(np.greater(snr, settings['thresholdSigma']), dtype = np.uint8)
+            for i in range(settings['dilationPix']):
                 extendedMask=mahotas.dilate(extendedMask)
-            #surveyMask=surveyMask*extendedMask
-            #psMask=psMask*extendedMask  # Needed?
-            data[extendedMask == 1]=bckData[extendedMask == 1]
-            saveFITS("debug-%s.fits" % (self['label']), data, wcs)
-            #print("add to flag mask")
-            #import IPython
-            #IPython.embed()
-            #sys.exit()
-            #flagMask=flagMask+np.greater(model, 1)
-
+            extendedMask[extendedMask > 0]=1
+            # Inpainting with white noise + smooth large scale image
+            # WARNING: Assumes weights are ivar maps [true for Sigurd's maps]
+            mask=np.nonzero(weights)
+            whiteNoiseLevel=np.zeros(weights.shape)
+            whiteNoiseLevel[mask]=1/np.sqrt(weights[mask])
+            data[extendedMask == 1]=s[extendedMask == 1]+np.random.normal(0, whiteNoiseLevel[extendedMask == 1])
+            #saveFITS("debug-%s-s.fits" % (self['label']), s, wcs)
+            #saveFITS("debug-%s-inpainted.fits" % (self['label']), data, wcs)
+            del s, snr
+            flagMask=flagMask+extendedMask
 
         # Optional masking of point sources from external catalog
         # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
