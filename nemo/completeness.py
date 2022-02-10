@@ -1457,7 +1457,7 @@ def makeFullSurveyMassLimitMapPlot(z, config):
             cbAspect=40
             cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18, 
                             shrink = cbShrink, aspect = cbAspect)
-            plt.figtext(0.53, 0.04, cbLabel, size = 20, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
+            plt.figtext(0.53, 0.04, cbLabel, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
             plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
             plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
             plt.close()
