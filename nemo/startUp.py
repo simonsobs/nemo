@@ -173,7 +173,7 @@ def parseConfigFile(parDictFileName, verbose = False):
 
 #------------------------------------------------------------------------------------------------------------
 class NemoConfig(object):
-    """An object that keeps track of Nemo's configuration, maps, and output directories etc..
+    """An object that manages Nemo's configuration (paths to maps, output directories, filter settings etc.).
     
     Attributes:
         parDict (:obj:`dict`): Dictionary containing the contents of the config file.
@@ -193,7 +193,8 @@ class NemoConfig(object):
     def __init__(self, config, makeOutputDirs = True, setUpMaps = True, writeTileInfo = False,
                  selFnDir = None, calcSelFn = False, sourceInjectionTest = False, MPIEnabled = False,
                  divideTilesByProcesses = True, verbose = True, strictMPIExceptions = True):
-        """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
+        """Creates an object that manages Nemo's configuration (paths to maps, output directories,
+        filter settings etc.).
         
         Args:
             config (:obj:`str` or :obj:`dict`): Either the path to a nemo .yml configuration
@@ -695,8 +696,9 @@ class NemoConfig(object):
         if options is not None and 'subtractModelFromSets' in options.keys():
             for mapDict in self.unfilteredMapsDictList:
                 for subtractSetIndex in options['subtractModelFromSets']:
-                    if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
-                        continue
+                    if 'mapToUse' in self.filterSetOptions[subtractSetIndex].keys():
+                        if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
+                            continue
                     mapDict['subtractModelFromCatalog']=self.filterSetOptions[subtractSetIndex]['catalog']
 
         # Other map-level preprocessing keys
