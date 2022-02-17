@@ -845,7 +845,7 @@ def fitQ(config):
         filterClass=eval('filters.%s' % (filt['class']))
         filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
                               tileName = tileName, 
-                              diagnosticsDir = config.diagnosticsDir+os.path.sep+tileName)
+                              diagnosticsDir = config.diagnosticsDir)
         filterObj.loadFilter()
         
         # Real space kernel or Fourier space filter?
