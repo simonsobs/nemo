@@ -1371,7 +1371,7 @@ def estimateContaminationFromSkySim(config, imageDict):
                 
         simImageDict=pipelines.filterMapsAndMakeCatalogs(simConfig, 
                                                          rootOutDir = simRootOutDir,
-                                                         copyFilters = True)
+                                                         useCachedFilters = True)
         
         # Write out the last sim map catalog for debugging
         # NOTE: tileName here makes no sense - this should be happening in the pipeline call above
@@ -1734,7 +1734,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
-def sourceInjectionTest(config, writeRankTable = True):
+def sourceInjectionTest(config, writeRankTable = False):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
     offset with respect to the true location as a function of S/N (for the fixed reference scale only).
     If the inserted sources are clusters, the Q function will be applied to the output fluxes, to account 
@@ -1752,19 +1752,15 @@ def sourceInjectionTest(config, writeRankTable = True):
         sources.
     
     """
-    
-    simRootOutDir=config.diagnosticsDir+os.path.sep+"sourceInjection_rank%d" % (config.rank)
-    SNRKeys=['fixed_SNR']
-    
-    # We don't copy this, because it's complicated due to containing MPI-related things (comm)
-    # So... we modify the config parameters in-place, and restore them before exiting this method
-    simConfig=config
-    simConfig.parDict['twoPass']=False      # We re-use filters we already made, so no need to do full two pass
-    
+
+    # WARNING: For multi-pass mode, this has the desired behaviour IF this is called after a nemo run
+    # (i.e., the config is already set to the last filterSet)
+    # But, can we guarantee that? Probably not. But we could put a warning in the docs for now?
+
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
-                             enableCompletenessCalc = False, setUpAreaMask = True,
-                             tileNames = config.tileNames)
+                            enableCompletenessCalc = False, setUpAreaMask = True,
+                            tileNames = config.tileNames)
     
     print(">>> Position recovery test [rank = %d] ..." % (config.rank))
 
@@ -1772,16 +1768,11 @@ def sourceInjectionTest(config, writeRankTable = True):
         numIterations=1
     else:
         numIterations=config.parDict['sourceInjectionIterations']
-    
-    # For clusters, we may want to run multiple scales
-    # We're using theta500Arcmin as the label here
-    filtDict=simConfig.parDict['mapFilters'][0]
-    if filtDict['class'].find("ArnaudModel") != -1:
+
+    # Change to previous behavior - if config doesn't specify models to use, assume it's point sources
+    if 'clusterInjectionModels' in config.parDict.keys():
         clusterMode=True
-        if 'sourceInjectionModels' not in config.parDict.keys():
-            sourceInjectionModelList=[{'redshift': 0.4, 'M500': 2e14}]
-        else:
-            sourceInjectionModelList=config.parDict['sourceInjectionModels']
+        sourceInjectionModelList=config.parDict['sourceInjectionModels']
         for sourceInjectionModel in sourceInjectionModelList:
             label='%.2f' % (signals.calcTheta500Arcmin(sourceInjectionModel['redshift'], 
                                                        sourceInjectionModel['M500'], signals.fiducialCosmoModel))
@@ -1792,6 +1783,7 @@ def sourceInjectionTest(config, writeRankTable = True):
         # Sources
         clusterMode=False
         sourceInjectionModelList=[{'label': 'pointSource'}]
+
     # This isn't really important as avoidance radius will stop us putting in too many sources
     if 'sourcesPerTile' not in config.parDict.keys():
         numSourcesPerTile=300
@@ -1822,16 +1814,16 @@ def sourceInjectionTest(config, writeRankTable = True):
         tileNamesDict[sourceInjectionModel['label']]=[]
         for i in range(numIterations):        
             print(">>> Source injection and recovery test %d/%d [rank = %d] ..." % (i+1, numIterations, config.rank))
-                        
+
             # NOTE: This block below should be handled when parsing the config file - fix/remove
             # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
-            if 'GNFWParams' not in list(simConfig.parDict.keys()):
-                simConfig.parDict['GNFWParams']='default'
-            for filtDict in simConfig.parDict['mapFilters']:
-                filtDict['params']['GNFWParams']=simConfig.parDict['GNFWParams']
+            if 'GNFWParams' not in list(config.parDict.keys()):
+                config.parDict['GNFWParams']='default'
+            for filtDict in config.parDict['mapFilters']:
+                filtDict['params']['GNFWParams']=config.parDict['GNFWParams']
             
             # We don't want to save/cache position recovery test maps
-            for filtDict in simConfig.parDict['mapFilters']:
+            for filtDict in config.parDict['mapFilters']:
                 keysToFalsify=['saveFilteredMaps', 'savePlots']
                 for key in keysToFalsify:
                     filtDict['params'][key]=False
@@ -1839,10 +1831,10 @@ def sourceInjectionTest(config, writeRankTable = True):
             # Delete all non-reference scale filters (otherwise we'd want to cache all filters for speed)
             # NOTE: As it stands, point-source only runs may not define photFilter - we need to handle that
             # That should be obvious, as mapFilters will only have one entry
-            for filtDict in simConfig.parDict['mapFilters']:
-                if filtDict['label'] == simConfig.parDict['photFilter']:
+            for filtDict in config.parDict['mapFilters']:
+                if filtDict['label'] == config.parDict['photFilter']:
                     break
-            simConfig.parDict['mapFilters']=[filtDict] 
+            config.parDict['mapFilters']=[filtDict]
                 
             # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
             # So, we only generate the catalog here
@@ -1852,9 +1844,9 @@ def sourceInjectionTest(config, writeRankTable = True):
                 noiseLevelCol='fixed_err_y_c'
                 SNRCol='fixed_SNR'
                 if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                    amplitudeRange = [0.001, 1]
+                    amplitudeRange=[0.001, 1]
                 else:
-                    amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
+                    amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
                 # Quick test catalog - takes < 1 sec to generate
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = 'fixed_y_c', 
@@ -1870,9 +1862,9 @@ def sourceInjectionTest(config, writeRankTable = True):
                 noiseLevelCol='err_deltaT_c'
                 SNRCol='SNR'
                 if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                    amplitudeRange = [1, 1000]
+                    amplitudeRange=[1, 1000]
                 else:
-                    amplitudeRange = simConfig.parDict['sourceInjectionAmplitudeRange']
+                    amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
                 mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
                                                          amplitudeColumnName = fluxCol, 
                                                          amplitudeRange = amplitudeRange, 
@@ -1881,19 +1873,13 @@ def sourceInjectionTest(config, writeRankTable = True):
                 injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
             else:
                 raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
-            for mapDict in simConfig.unfilteredMapsDictList:
+            for mapDict in config.unfilteredMapsDictList:
                 mapDict['injectSources']=injectSources
             
-            # NOTE: we need to zap ONLY specific maps for when we are running in parallel
-            for tileName in simConfig.tileNames:
-                mapFileNames=glob.glob(simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+"*#%s_*.fits" % (tileName))
-                for m in mapFileNames:
-                    os.remove(m)
-
             # Ideally we shouldn't have blank tiles... but if we do, skip
             if len(mockCatalog) > 0:
-                recCatalog=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
-                                                               copyFilters = True, useCachedMaps = False)
+                recCatalog=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
+                                                               writeAreaMask = False, writeFlagMask = False)
                 # We should be conservative in removing potential matches with real objects
                 # Because we have a huge sky area and there's no reason to risk contamination of this kind
                 # Effectively this is the same as using 5' circular holes in the survey mask on real objects
@@ -1904,7 +1890,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                     try:
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
                     except:
-                        raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(simConfig.tileNames), len(mockCatalog), len(recCatalog)))
+                        raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
                     # If we're using clusters, we need to put in the Q correction
                     # NOTE: This assumes the model name gives theta500c in arcmin!
                     if clusterMode == True:
@@ -1916,9 +1902,9 @@ def sourceInjectionTest(config, writeRankTable = True):
                     # Catching any crazy mismatches, writing output for debugging
                     if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
                         mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)
-                        simConfig.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
-                        recCatalog2=pipelines.filterMapsAndMakeCatalogs(simConfig, rootOutDir = simRootOutDir,
-                                                                       copyFilters = True, useCachedMaps = False)
+                        config.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
+                        recCatalog2=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
+                                                                        writeAreaMask = False, writeFlagMask = False)
                         recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog, radiusArcmin = 5.0)
                         catalogs.catalog2DS9(x_recCatalog[mask],
                                              simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-rec.reg")
@@ -1926,7 +1912,7 @@ def sourceInjectionTest(config, writeRankTable = True):
                                              simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-input.reg",
                                              color = 'red')
                         msg="Caught recovered source at large offset - check output under %s" % (simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName)
-                        if simConfig.parDict['haltOnPositionRecoveryProblem'] == True:
+                        if config.parDict['haltOnPositionRecoveryProblem'] == True:
                             raise Exception(msg)
                         else:
                             print("... Warning: %s ..." % (msg))

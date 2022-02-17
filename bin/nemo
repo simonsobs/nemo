@@ -71,7 +71,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions, writeTileInfo = True)
-    
+
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
     if config.parDict['forcedPhotometryCatalog'] is not None:
         label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]

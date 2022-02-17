@@ -154,7 +154,8 @@ def parseConfigFile(parDictFileName, verbose = False):
     
     # To aid user friendliness - spot any out-of-date / removed / renamed parameters here
     # Use None for those that are totally removed
-    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None}
+    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None,
+               'sourceInjectionModels': 'clusterInjectionModels'}
     for k in oldKeyMap.keys():
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]
@@ -268,7 +269,7 @@ class NemoConfig(object):
             self.parDict['calcSelFn']=True
         if sourceInjectionTest == True:
             self.parDict['sourceInjectionTest']=True
-            
+
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
@@ -321,6 +322,14 @@ class NemoConfig(object):
             if verbose == True:
                 print(">>> Setting up maps")
             self._setUpMaps(writeTileInfo = writeTileInfo)
+        else:
+            pickleFileName=self.selFnDir+os.path.sep+"tileCoordsDict.pkl"
+            if os.path.exists(pickleFileName) == False:
+                raise Exception("You can only use setUpMaps = False if a previous run has created the file %s" % (pickleFileName))
+            with open(pickleFileName, "rb") as pickleFile:
+                unpickler=pickle.Unpickler(pickleFile)
+                self.tileCoordsDict=unpickler.load()
+                self.tileNames=self.tileCoordsDict.keys()
 
         # For when we want to test on only a subset of tiles
         if 'tileNameList' in list(self.parDict.keys()):

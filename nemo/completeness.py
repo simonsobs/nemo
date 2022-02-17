@@ -138,7 +138,7 @@ class SelFn(object):
         # Needed for generating mock samples directly
         self.photFilterLabel=self._config.parDict['photFilter']
             
-        # Sanity check that any given footprint is defined - if not, give a useful error message
+        # Check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
             if 'selFnFootprints' not in parDict.keys():
                 raise Exception("No footprints defined in .yml config file")

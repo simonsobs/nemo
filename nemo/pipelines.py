@@ -30,19 +30,16 @@ from . import MockSurvey
 import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
-def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                              invertMap = False, verbose = True, useCachedMaps = False):
+def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, measureFluxes = True,
+                              invertMap = False, verbose = True, writeAreaMask = False, writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
         config (:obj: 'startup.NemoConfig'): Nemo configuration object.
         rootOutDir (str): If None, use the default given by config. Otherwise, use this to override where the
             output filtered maps and catalogs are written.
-        copyFilters (bool, optional): If True, and rootOutDir is given (not None), then filters will be
-            copied from the default output location (from a pre-existing nemo run) to the appropriate
-            directory under rootOutDir. This is used by, e.g., contamination tests based on sky sims, where
-            the same kernels as used on the real data are applied to simulated maps. If rootOutDir = None,
-            setting copyKernels = True has no effect.
+        useCachedFilters (:obj:`bool`, optional): If True, and previously made filters are found, they will be
+            read from disk, rather than re-calculated (used by source injection simulations).
         measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
             detected objects.
         invertMap (bool, optional): If True, multiply all maps by -1; needed by 
@@ -58,9 +55,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     """
     
     # Multi-pass pipeline, enabled with use of filterSets parameter in config file
-    writeAreaMask=False
-    writeFlagMask=False
-    if config.filterSets != []:
+    if config.filterSets != [] and useCachedFilters == False:
         # If we wanted to save results from each step, could set-up filterSet specific diagnostics dir here
         if rootOutDir is None:
             rootOutDir=config.rootOutDir
@@ -71,7 +66,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
                 writeAreaMask=True
                 writeFlagMask=True
             config.filterSetOptions[setNum]['catalog']=_filterMapsAndMakeCatalogs(config, verbose = True,
-                                                                                  useCachedMaps = False,
+                                                                                  useCachedFilters = False,
                                                                                   writeAreaMask = writeAreaMask,
                                                                                   writeFlagMask = writeFlagMask)
             if config.rank == 0:
@@ -93,10 +88,10 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
         catalog=config.filterSetOptions[config.filterSets[-1]]['catalog']
 
     else:
-        # Default single pass behaviour
-        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, copyFilters = copyFilters,
+        # Default single pass behaviour (also used by source injection tests)
+        catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, useCachedFilters = useCachedFilters,
                                            measureFluxes = measureFluxes, invertMap = invertMap,
-                                           verbose = verbose, useCachedMaps = useCachedMaps,
+                                           verbose = verbose,
                                            writeAreaMask = True, writeFlagMask = True)
 
     if verbose == True and config.rank == 0:
@@ -105,8 +100,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, me
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, measureFluxes = True, 
-                               invertMap = False, verbose = True, useCachedMaps = False,
+def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, measureFluxes = True,
+                               invertMap = False, verbose = True,
                                writeAreaMask = False, writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
@@ -114,11 +109,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
         config (:obj: 'startup.NemoConfig'): Nemo configuration object.
         rootOutDir (str): If None, use the default given by config. Otherwise, use this to override where the
             output filtered maps and catalogs are written.
-        copyFilters (bool, optional): If True, and rootOutDir is given (not None), then filters will be
-            copied from the default output location (from a pre-existing nemo run) to the appropriate
-            directory under rootOutDir. This is used by, e.g., contamination tests based on sky sims, where
-            the same kernels as used on the real data are applied to simulated maps. If rootOutDir = None,
-            setting copyKernels = True has no effect.
+        useCachedFilters (:obj:`bool`, optional): If True, and previously made filters are found, they will be
+            read from disk, rather than re-calculated (used by source injection simulations).
         measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
             detected objects.
         invertMap (bool, optional): If True, multiply all maps by -1; needed by 
@@ -142,18 +134,6 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
         dirList=[rootOutDir, filteredMapsDir, diagnosticsDir]
         for d in dirList:
             os.makedirs(d, exist_ok = True)
-        if copyFilters == True:
-            for tileName in config.tileNames:
-                fileNames=glob.glob(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"filter*#%s*.fits" % (tileName))
-                if len(fileNames) == 0:
-                    raise Exception("Could not find pre-computed filters to copy - you need to add 'saveFilter: True' to the filter params in the config file (this is essential for doing source injection sims quickly).")
-                kernelCopyDestDir=diagnosticsDir+os.path.sep+tileName
-                os.makedirs(kernelCopyDestDir, exist_ok = True)
-                for f in fileNames:
-                    dest=kernelCopyDestDir+os.path.sep+os.path.split(f)[-1]
-                    if os.path.exists(dest) == False:
-                        shutil.copyfile(f, dest) 
-                        print("... copied filter %s to %s ..." % (f, dest))
     else:
         rootOutDir=config.rootOutDir
         filteredMapsDir=config.filteredMapsDir
@@ -180,11 +160,6 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
     areaMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     flagMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
-        # Now have per-tile directories (friendlier for Lustre)
-        tileFilteredMapsDir=filteredMapsDir+os.path.sep+tileName
-        tileDiagnosticsDir=diagnosticsDir+os.path.sep+tileName
-        for d in [tileFilteredMapsDir, tileDiagnosticsDir]:
-            os.makedirs(d, exist_ok = True)
         if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
         # We could load the unfiltered map only once here?
         # We could also cache 'dataMap' noise as it will always be the same
@@ -196,12 +171,17 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, copyFilters = False, m
                 DS9RegionsPath=config.filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.reg"  % (label)
             else:
                 DS9RegionsPath=None
-                
+
             filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName, 
-                                               filteredMapsDir = tileFilteredMapsDir,
-                                               diagnosticsDir = tileDiagnosticsDir, selFnDir = config.selFnDir, 
+                                               diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
                                                verbose = True, undoPixelWindow = True,
-                                               useCachedMaps = useCachedMaps)
+                                               useCachedFilter = useCachedFilters)
+
+            if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
+                filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
+                SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
+                maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
             
             if f['label'] == photFilter:
                 photFilteredMapDict={}
