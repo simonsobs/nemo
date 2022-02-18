@@ -71,7 +71,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions, writeTileInfo = True)
-    
+
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
     if config.parDict['forcedPhotometryCatalog'] is not None:
         label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]
@@ -81,7 +81,7 @@ if __name__ == '__main__':
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
 
     if os.path.exists(optimalCatalogFileName) == False:
-        optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
+        optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config, writeAreaMask = True, writeFlagMask = True)
         if config.rank == 0:
             optimalCatalog=catalogs.flagTileBoundarySplits(optimalCatalog)
             optimalCatalog.sort('name')
@@ -101,25 +101,11 @@ if __name__ == '__main__':
             signals.fitQ(config)
 
     # Source injection tests for quantifying position recovery accuracy and noise bias
+    sourceInjTable=None
     if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
         if config.MPIEnabled == True:
             config.comm.barrier()   # Otherwise, some processes can begin before catalog written to disk and then crash
         sourceInjTable=maps.sourceInjectionTest(config)
-        if config.MPIEnabled == True:
-            config.comm.barrier()
-            sourceInjTableList=config.comm.gather(sourceInjTable, root = 0)
-            if config.rank == 0:
-                print("... gathered source injection test results")
-                toStack=[]
-                for sourceInjTable in sourceInjTableList:
-                    if type(sourceInjTable) == astropy.table.table.Table and len(sourceInjTable) > 0:
-                        toStack.append(sourceInjTable)
-                if len(toStack) > 0:
-                    sourceInjTable=atpy.vstack(toStack)
-                else:
-                    sourceInjTable=None
-    else:
-        sourceInjTable=None
 
     # Moved calculation of selection function parts here as it's very quick in parallel
     if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:

@@ -138,7 +138,7 @@ class SelFn(object):
         # Needed for generating mock samples directly
         self.photFilterLabel=self._config.parDict['photFilter']
             
-        # Sanity check that any given footprint is defined - if not, give a useful error message
+        # Check that any given footprint is defined - if not, give a useful error message
         if footprintLabel is not None:
             if 'selFnFootprints' not in parDict.keys():
                 raise Exception("No footprints defined in .yml config file")
@@ -1457,7 +1457,7 @@ def makeFullSurveyMassLimitMapPlot(z, config):
             cbAspect=40
             cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18, 
                             shrink = cbShrink, aspect = cbAspect)
-            plt.figtext(0.53, 0.04, cbLabel, size = 20, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
+            plt.figtext(0.53, 0.04, cbLabel, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
             plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
             plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
             plt.close()
@@ -1479,14 +1479,6 @@ def tidyUp(config):
     
     shutil.copy(config.configFileName, config.selFnDir+os.path.sep+"config.yml")
 
-    # Delete single tile Q fits (combined Q file should be made before this)
-    if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
-        #signals.makeCombinedQTable(config)
-        for tileName in config.allTileNames:
-            QFileName=config.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName)
-            if os.path.exists(QFileName):
-                os.remove(QFileName)
-
     # Make MEFs
     MEFsToBuild=["RMSMap_%s" % (config.parDict['photFilter'])]
     compressionTypes=["RICE_1"]
@@ -1503,7 +1495,7 @@ def tidyUp(config):
         newImg=pyfits.HDUList()
         filesToRemove=[]
         for tileName in config.allTileNames:
-            fileName=config.selFnDir+os.path.sep+MEFBaseName+"#"+tileName+".fits"
+            fileName=config.selFnDir+os.path.sep+tileName+os.path.sep+MEFBaseName+"#"+tileName+".fits"
             if os.path.exists(fileName):
                 with pyfits.open(fileName) as img:
                     for extName in img:

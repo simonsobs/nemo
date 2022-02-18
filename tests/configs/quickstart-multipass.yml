@@ -114,8 +114,8 @@ mapFilters:
        params: {M500MSun: 2.0e+14, z: 0.4,
                 saveFilteredMaps: True,
                 savePlots: True}}
-    #- {label: "Arnaud_M4e14_z0p4",
-       #params: {M500MSun: 4.0e+14, z: 0.4}}
+    - {label: "Arnaud_M4e14_z0p4",
+       params: {M500MSun: 4.0e+14, z: 0.4}}
     #- {label: "Arnaud_M8e14_z0p4",
        #params: {M500MSun: 8.0e+14, z: 0.4}}              
     #- {label: "Arnaud_M1e14_z0p8",

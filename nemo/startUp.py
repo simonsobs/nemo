@@ -154,7 +154,8 @@ def parseConfigFile(parDictFileName, verbose = False):
     
     # To aid user friendliness - spot any out-of-date / removed / renamed parameters here
     # Use None for those that are totally removed
-    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None}
+    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None,
+               'sourceInjectionModels': 'clusterInjectionModels'}
     for k in oldKeyMap.keys():
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]
@@ -173,7 +174,7 @@ def parseConfigFile(parDictFileName, verbose = False):
 
 #------------------------------------------------------------------------------------------------------------
 class NemoConfig(object):
-    """An object that keeps track of Nemo's configuration, maps, and output directories etc..
+    """An object that manages Nemo's configuration (paths to maps, output directories, filter settings etc.).
     
     Attributes:
         parDict (:obj:`dict`): Dictionary containing the contents of the config file.
@@ -193,7 +194,8 @@ class NemoConfig(object):
     def __init__(self, config, makeOutputDirs = True, setUpMaps = True, writeTileInfo = False,
                  selFnDir = None, calcSelFn = False, sourceInjectionTest = False, MPIEnabled = False,
                  divideTilesByProcesses = True, verbose = True, strictMPIExceptions = True):
-        """Creates an object that keeps track of nemo's configuration, maps, output directories etc..
+        """Creates an object that manages Nemo's configuration (paths to maps, output directories,
+        filter settings etc.).
         
         Args:
             config (:obj:`str` or :obj:`dict`): Either the path to a nemo .yml configuration
@@ -267,7 +269,7 @@ class NemoConfig(object):
             self.parDict['calcSelFn']=True
         if sourceInjectionTest == True:
             self.parDict['sourceInjectionTest']=True
-            
+
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
@@ -320,6 +322,14 @@ class NemoConfig(object):
             if verbose == True:
                 print(">>> Setting up maps")
             self._setUpMaps(writeTileInfo = writeTileInfo)
+        else:
+            pickleFileName=self.selFnDir+os.path.sep+"tileCoordsDict.pkl"
+            if os.path.exists(pickleFileName) == False:
+                raise Exception("You can only use setUpMaps = False if a previous run has created the file %s" % (pickleFileName))
+            with open(pickleFileName, "rb") as pickleFile:
+                unpickler=pickle.Unpickler(pickleFile)
+                self.tileCoordsDict=unpickler.load()
+                self.tileNames=self.tileCoordsDict.keys()
 
         # For when we want to test on only a subset of tiles
         if 'tileNameList' in list(self.parDict.keys()):
@@ -684,6 +694,10 @@ class NemoConfig(object):
                         if saveKey in filtDict['params'].keys():
                             filtDict['params'][saveKey]=False
                     self.parDict['forcedPhotometryCatalog']=None
+                # However, we do allow intermediate filter sets to write maps, if explicitly asked for
+                # (e.g., useful for debugging a point source run before a cluster run)
+                if type(options) == dict and 'saveFilteredMaps' in options.keys():
+                    filtDict['params']['saveFilteredMaps']=options['saveFilteredMaps']
                 filtersToActivate.append(filtDict)
         self.parDict['mapFilters']=filtersToActivate
 
@@ -691,8 +705,9 @@ class NemoConfig(object):
         if options is not None and 'subtractModelFromSets' in options.keys():
             for mapDict in self.unfilteredMapsDictList:
                 for subtractSetIndex in options['subtractModelFromSets']:
-                    if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
-                        continue
+                    if 'mapToUse' in self.filterSetOptions[subtractSetIndex].keys():
+                        if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
+                            continue
                     mapDict['subtractModelFromCatalog']=self.filterSetOptions[subtractSetIndex]['catalog']
 
         # Other map-level preprocessing keys

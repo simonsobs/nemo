@@ -50,8 +50,8 @@ import astropy.table as atpy
 import time
 
 #-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir = '.', diagnosticsDir = '.', 
-               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedMaps = True,
+def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = '.',
+               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedFilter = False,
                returnFilter = False):
     """Builds and applies filters to the unfiltered map(s). 
     
@@ -60,15 +60,14 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
             at some frequency (see :ref:`InputMaps`).
         filterParams (:obj:`dict`): A dictionary containing filter settings (see :ref:`Filters`).
         tileName (:obj:`str`): The name of the tile.
-        filteredMapsDir (:obj:`str`, optional): The path to the directory where the filtered maps may be written.
         diagnosticsDir (:obj:`str`, optional): Path to the `diagnostics` directory, where the filters may be
             written to disk.
         selFnDir (:obj:`str`, optional): Path to the `selFn` directory, where area masks may be written.
         verbose (:obj:`bool`, optional): If True, write information about progress to the terminal.
         undoPixelWindow (:obj:`bool`, optional): If True, undo the pixel window effect on the output filtered
             maps.
-        useCachedMaps (:obj:`bool`, optional): If True, and previously made maps are found, these will be
-            read from disk, rather than re-calculating and re-applying the filter.
+        useCachedFilter (:obj:`bool`, optional): If True, and a previously made filter is found, it will be
+            read from disk, rather than re-calculated (used by source injection simulations).
         returnFilter (:obj:`bool`, optional): If True, the filter object is returned, as well as a dictionary
             containing the filtered map.
     
@@ -80,53 +79,29 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, filteredMapsDir =
         
     f=filterParams
     label=f['label']+"#"+tileName
-    filteredMapFileName=filteredMapsDir+os.path.sep+"%s_filteredMap.fits"  % (label)
-    SNMapFileName=filteredMapsDir+os.path.sep+"%s_SNMap.fits" % (label)
-    if os.path.exists(filteredMapFileName) == False or useCachedMaps == False:
         
-        print("... making filtered map %s" % (label))
-        filterClass=eval('%s' % (f['class']))
-        filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], tileName = tileName, 
-                              diagnosticsDir = diagnosticsDir, selFnDir = selFnDir)
-        filteredMapDict=filterObj.buildAndApply()
-            
-        # Keywords we need for photometry later
-        filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
-        if 'beamSolidAngle_nsr' in filteredMapDict.keys() and filteredMapDict['beamSolidAngle_nsr'] > 0:
-            filteredMapDict['wcs'].header['BEAMNSR']=filteredMapDict['beamSolidAngle_nsr']
-            filteredMapDict['wcs'].header['FREQGHZ']=filteredMapDict['obsFreqGHz']
-        filteredMapDict['wcs'].updateFromHeader()
-                                    
-        # Undo pixel window function using Sigurd's FFT method (takes into account variable pixel scale etc.)
-        # We only need to do this for maps of signal (cancels in S/N map)
-        # We do this once because it does take some time... 
-        # ... and then we can forget about if e.g. stacking or doing forced photometry later
-        if undoPixelWindow == True:
-            mask=np.equal(filteredMapDict['data'], 0)
-            filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
-            filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
+    print("... making filtered map %s" % (label))
+    filterClass=eval('%s' % (f['class']))
+    filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], tileName = tileName,
+                            diagnosticsDir = diagnosticsDir, selFnDir = selFnDir)
+    filteredMapDict=filterObj.buildAndApply(useCachedFilter = useCachedFilter)
 
-        if 'saveFilteredMaps' in filterObj.params and filterObj.params['saveFilteredMaps'] == True:
-            maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-            maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
+    # Keywords we need for photometry later
+    filteredMapDict['wcs'].header['BUNIT']=filteredMapDict['mapUnits']
+    if 'beamSolidAngle_nsr' in filteredMapDict.keys() and filteredMapDict['beamSolidAngle_nsr'] > 0:
+        filteredMapDict['wcs'].header['BEAMNSR']=filteredMapDict['beamSolidAngle_nsr']
+        filteredMapDict['wcs'].header['FREQGHZ']=filteredMapDict['obsFreqGHz']
+    filteredMapDict['wcs'].updateFromHeader()
 
-    else:
-        print("... loading cached map %s" % (filteredMapFileName))
-        filteredMapDict={}
-        with pyfits.open(filteredMapFileName) as img:
-            filteredMapDict['data']=img[0].data
-            filteredMapDict['wcs']=astWCS.WCS(img[0].header, mode = 'pyfits')
-            filteredMapDict['mapUnits']=filteredMapDict['wcs'].header['BUNIT']
-            if 'BEAMNSR' in filteredMapDict['wcs'].header.keys():
-                filteredMapDict['beamSolidAngle_nsr']=filteredMapDict['wcs'].header['BEAMNSR']
-                filteredMapDict['obsFreqGHz']=filteredMapDict['wcs'].header['FREQGHZ']
-        with pyfits.open(SNMapFileName) as img:
-            filteredMapDict['SNMap']=img[0].data
-        filteredMapDict['surveyMask'], wcs=completeness.loadAreaMask(tileName, selFnDir)
-        filteredMapDict['flagMask'], wcs=completeness.loadFlagMask(tileName, selFnDir)
-        filteredMapDict['label']=f['label']
-        filteredMapDict['tileName']=tileName
-    
+    # Undo pixel window function using Sigurd's FFT method (takes into account variable pixel scale etc.)
+    # We only need to do this for maps of signal (cancels in S/N map)
+    # We do this once because it does take some time...
+    # ... and then we can forget about if e.g. stacking or doing forced photometry later
+    if undoPixelWindow == True:
+        mask=np.equal(filteredMapDict['data'], 0)
+        filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+        filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
+
     if returnFilter == True:
         return filteredMapDict, filterObj
     
@@ -175,7 +150,7 @@ class MapFilter(object):
         self.diagnosticsDir=diagnosticsDir
         self.selFnDir=selFnDir
         self.tileName=tileName
-        self.filterFileName=self.diagnosticsDir+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
+        self.filterFileName=self.diagnosticsDir+os.path.sep+self.tileName+os.path.sep+"filter_%s#%s.fits" % (self.label, self.tileName)
         
         # Prepare all the unfilteredMaps (in terms of cutting sections, masks etc.)
         # NOTE: This is a copy to deal with repeated runs (yes, it's necessary)
@@ -539,7 +514,7 @@ class MatchedFilter(MapFilter):
     
     """
 
-    def buildAndApply(self):
+    def buildAndApply(self, useCachedFilter = False):
         
         fMapsToFilter=[]
         for mapDict in self.unfilteredMapsDictList:
@@ -550,9 +525,9 @@ class MatchedFilter(MapFilter):
         # (see startUp.parseConfig)
         surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
         psMask=self.unfilteredMapsDictList[0]['pointSourceMask']
-            
-        if os.path.exists(self.filterFileName) == False:
-                        
+
+        if os.path.exists(self.filterFileName) == False and useCachedFilter == False:
+
             fMapsForNoise=[]
             for i in range(len(self.unfilteredMapsDictList)):
                 mapDict=self.unfilteredMapsDictList[i]
@@ -1078,9 +1053,9 @@ class RealSpaceMatchedFilter(MapFilter):
 
         surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
         psMask=self.unfilteredMapsDictList[0]['pointSourceMask']
-            
+
         if os.path.exists(self.filterFileName) == False:
-            
+
             # Noise region to use
             RAMin, RAMax, decMin, decMax=self.wcs.getImageMinMaxWCSCoords()
             if self.params['noiseParams']['RADecSection'] == 'tileNoiseRegions':
