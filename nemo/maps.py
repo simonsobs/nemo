@@ -1886,7 +1886,6 @@ def sourceInjectionTest(config):
                 mapDict['injectSources']=injectSources
             
             # Ideally we shouldn't have blank tiles... but if we do, skip
-            print("rank = %d len(mockCatalog) = %d" % (config.rank, len(mockCatalog)))
             if len(mockCatalog) > 0:
 
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
