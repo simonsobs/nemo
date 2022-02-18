@@ -661,7 +661,8 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources, seed = None):
 #------------------------------------------------------------------------------------------------------------
 def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_y_c', 
                         amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None,
-                        avoidanceRadiusArcmin = 20.0, maskDilationPix = 0):
+                        avoidanceRadiusArcmin = 20.0, maskDilationPix = 0,
+                        tileNames = None):
     """Generate a catalog of objects with random positions and amplitudes. This is for testing purposes - 
     see, e.g., :meth:`nemo.maps.sourceInjectionTest`.
     
@@ -693,12 +694,15 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
     
     if selFn is None:
         selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName, 
-                                 enableCompletenessCalc = False, setUpAreaMask = True)
+                                 enableCompletenessCalc = False, setUpAreaMask = True,
+                                 tileNames = tileNames)
+    if tileNames is None:
+        tileNames=selFn.tileNames
 
     RAs=[]
     decs=[]
     amps=[]
-    for tileName in config.tileNames:
+    for tileName in tileNames:
         mapData=selFn.areaMaskDict[tileName]
         if mapData.sum() == 0:  # Skip any empty/blank tile
             continue

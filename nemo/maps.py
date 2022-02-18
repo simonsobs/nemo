@@ -1734,7 +1734,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------
-def sourceInjectionTest(config, writeRankTable = False):
+def sourceInjectionTest(config):
     """Insert sources with known positions and properties into the map, apply the filter, and record their
     offset with respect to the true location as a function of S/N (for the fixed reference scale only).
     If the inserted sources are clusters, the Q function will be applied to the output fluxes, to account 
@@ -1744,9 +1744,7 @@ def sourceInjectionTest(config, writeRankTable = False):
     
     Args:
         config (:obj:`nemo.startUp.NemoConfig`): Nemo configuration object.
-        writeRankTable (bool, optional): If True, saves a table as output for this MPI rank under the 
-            diagnostics/ directory. Useful for MPI debugging only.
-    
+
     Returns:
         An astropy Table containing recovered position offsets and fluxes versus fixed_SNR for inserted
         sources.
@@ -1759,8 +1757,8 @@ def sourceInjectionTest(config, writeRankTable = False):
 
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
-                            enableCompletenessCalc = False, setUpAreaMask = True,
-                            tileNames = config.tileNames)
+                             enableCompletenessCalc = False, setUpAreaMask = True,
+                             tileNames = config.allTileNames)
     
     print(">>> Position recovery test [rank = %d] ..." % (config.rank))
 
@@ -1773,16 +1771,21 @@ def sourceInjectionTest(config, writeRankTable = False):
     if 'clusterInjectionModels' in config.parDict.keys():
         clusterMode=True
         sourceInjectionModelList=config.parDict['sourceInjectionModels']
+        SNRCol='fixed_SNR'
+        fluxCol='fixed_y_c'
+        noiseLevelCol='fixed_err_y_c'
         for sourceInjectionModel in sourceInjectionModelList:
             label='%.2f' % (signals.calcTheta500Arcmin(sourceInjectionModel['redshift'], 
                                                        sourceInjectionModel['M500'], signals.fiducialCosmoModel))
             sourceInjectionModel['label']=label
-        # We need Q for flux recovery stuff...
         QFit=signals.QFit(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
     else:
         # Sources
         clusterMode=False
         sourceInjectionModelList=[{'label': 'pointSource'}]
+        SNRCol='SNR'
+        fluxCol='deltaT_c'
+        noiseLevelCol='err_deltaT_c'
 
     # This isn't really important as avoidance radius will stop us putting in too many sources
     if 'sourcesPerTile' not in config.parDict.keys():
@@ -1838,48 +1841,59 @@ def sourceInjectionTest(config, writeRankTable = False):
                 
             # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
             # So, we only generate the catalog here
-            print("... generating mock catalog ...")
-            if filtDict['class'].find("ArnaudModel") != -1:
-                fluxCol='fixed_y_c'
-                noiseLevelCol='fixed_err_y_c'
-                SNRCol='fixed_SNR'
-                if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                    amplitudeRange=[0.001, 1]
+            print("... generating mock catalog")
+            if config.rank == 0:
+                if filtDict['class'].find("ArnaudModel") != -1:
+                    if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
+                        amplitudeRange=[0.001, 1]
+                    else:
+                        amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                    # Quick test catalog - takes < 1 sec to generate
+                    mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
+                                                            amplitudeColumnName = 'fixed_y_c',
+                                                            amplitudeRange = amplitudeRange,
+                                                            amplitudeDistribution = 'linear',
+                                                            selFn = selFn, maskDilationPix = 20)
+                    # Or... proper mock, but this takes ~24 sec for E-D56
+                    #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]
+                    injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'],
+                                'override': sourceInjectionModel}
+                elif filtDict['class'].find("Beam") != -1:
+                    if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
+                        amplitudeRange=[1, 1000]
+                    else:
+                        amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                    mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
+                                                            amplitudeColumnName = fluxCol,
+                                                            amplitudeRange = amplitudeRange,
+                                                            amplitudeDistribution = 'log',
+                                                            selFn = selFn, maskDilationPix = 20)
+                    injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
                 else:
-                    amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
-                # Quick test catalog - takes < 1 sec to generate
-                mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
-                                                         amplitudeColumnName = 'fixed_y_c', 
-                                                         amplitudeRange = amplitudeRange,
-                                                         amplitudeDistribution = 'linear',
-                                                         selFn = selFn, maskDilationPix = 20)
-                # Or... proper mock, but this takes ~24 sec for E-D56
-                #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]                
-                injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'], 
-                               'override': sourceInjectionModel}
-            elif filtDict['class'].find("Beam") != -1:
-                fluxCol='deltaT_c'
-                noiseLevelCol='err_deltaT_c'
-                SNRCol='SNR'
-                if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                    amplitudeRange=[1, 1000]
-                else:
-                    amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
-                mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile, 
-                                                         amplitudeColumnName = fluxCol, 
-                                                         amplitudeRange = amplitudeRange, 
-                                                         amplitudeDistribution = 'log', 
-                                                         selFn = selFn, maskDilationPix = 20)
-                injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
+                    raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
             else:
-                raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
+                injectSources=None
+                mockCatalog=None
+
+            if config.MPIEnabled == True:
+                bcastInjectSources=config.comm.bcast(injectSources, root = 0)
+                config.comm.barrier()
+                if config.rank > 0:
+                    injectSources=bcastInjectSources
+                    mockCatalog=bcastInjectSources['catalog']
+
             for mapDict in config.unfilteredMapsDictList:
                 mapDict['injectSources']=injectSources
             
             # Ideally we shouldn't have blank tiles... but if we do, skip
+            print("rank = %d len(mockCatalog) = %d" % (config.rank, len(mockCatalog)))
             if len(mockCatalog) > 0:
+
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
                                                                writeAreaMask = False, writeFlagMask = False)
+
+                # NOTE: Below here only rank 0 really needed (could then broadcast result)
+
                 # We should be conservative in removing potential matches with real objects
                 # Because we have a huge sky area and there's no reason to risk contamination of this kind
                 # Effectively this is the same as using 5' circular holes in the survey mask on real objects
@@ -1932,8 +1946,7 @@ def sourceInjectionTest(config, writeRankTable = False):
         noiseLevelDict[sourceInjectionModel['label']]=np.array(noiseLevelDict[sourceInjectionModel['label']])
         tileNamesDict[sourceInjectionModel['label']]=np.array(tileNamesDict[sourceInjectionModel['label']])
         
-    # Just collect results as long tables (model, SNR, rArcmin, inFlux, outFlux) that we can later stack and average etc.
-    # (see positionRecoveryAnalysis below)
+    # Collecting all results into one giant table
     models=[]
     SNRs=[]
     rArcmin=[]
@@ -1959,13 +1972,6 @@ def sourceInjectionTest(config, writeRankTable = False):
     resultsTable.add_column(atpy.Column(noiseLevel, 'noiseLevel'))
     resultsTable.add_column(atpy.Column(tileNames, 'tileName'))
 
-    # Shouldn't be necessary BUT seems we have trouble gathering very large runs
-    # So it's actually more reliable to write/read from disk
-    if writeRankTable == True:
-        fitsOutFileName=config.diagnosticsDir+os.path.sep+"sourceInjection_rank%d.fits" % (config.rank)
-        resultsTable.meta['NEMOVER']=nemo.__version__
-        resultsTable.write(fitsOutFileName, overwrite = True)
-    
     # Restore the original config parameters (which we overrode here)
     config.restoreConfig()
 

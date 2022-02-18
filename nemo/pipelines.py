@@ -92,7 +92,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
         catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, useCachedFilters = useCachedFilters,
                                            measureFluxes = measureFluxes, invertMap = invertMap,
                                            verbose = verbose,
-                                           writeAreaMask = True, writeFlagMask = True)
+                                           writeAreaMask = writeAreaMask, writeFlagMask = writeFlagMask)
 
     if verbose == True and config.rank == 0:
         print("... after map filtering and making catalogs: time since start = %.3f sec" % (time.time()-config._timeStarted))
@@ -238,31 +238,33 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     
     if config.MPIEnabled == True:
         # area mask
-        config.comm.barrier()
-        if config.rank > 0:
-            config.comm.send(areaMaskDict, dest = 0)
-        elif config.rank == 0:
-            gathered_tileDicts=[]
-            gathered_tileDicts.append(areaMaskDict)
-            for source in range(1, config.size):
-                gathered_tileDicts.append(config.comm.recv(source = source))
-            print("... gathered area mask")
-            for tileDict in gathered_tileDicts:
-                for tileName in tileDict.keys():
-                    areaMaskDict[tileName]=tileDict[tileName]
+        if writeAreaMask == True:
+            config.comm.barrier()
+            if config.rank > 0:
+                config.comm.send(areaMaskDict, dest = 0)
+            elif config.rank == 0:
+                gathered_tileDicts=[]
+                gathered_tileDicts.append(areaMaskDict)
+                for source in range(1, config.size):
+                    gathered_tileDicts.append(config.comm.recv(source = source))
+                print("... gathered area mask")
+                for tileDict in gathered_tileDicts:
+                    for tileName in tileDict.keys():
+                        areaMaskDict[tileName]=tileDict[tileName]
         # flag mask
-        config.comm.barrier()
-        if config.rank > 0:
-            config.comm.send(flagMaskDict, dest = 0)
-        elif config.rank == 0:
-            gathered_tileDicts=[]
-            gathered_tileDicts.append(flagMaskDict)
-            for source in range(1, config.size):
-                gathered_tileDicts.append(config.comm.recv(source = source))
-            print("... gathered flag mask")
-            for tileDict in gathered_tileDicts:
-                for tileName in tileDict.keys():
-                    flagMaskDict[tileName]=tileDict[tileName]
+        if writeFlagMask == True:
+            config.comm.barrier()
+            if config.rank > 0:
+                config.comm.send(flagMaskDict, dest = 0)
+            elif config.rank == 0:
+                gathered_tileDicts=[]
+                gathered_tileDicts.append(flagMaskDict)
+                for source in range(1, config.size):
+                    gathered_tileDicts.append(config.comm.recv(source = source))
+                print("... gathered flag mask")
+                for tileDict in gathered_tileDicts:
+                    for tileName in tileDict.keys():
+                        flagMaskDict[tileName]=tileDict[tileName]
         # catalogs
         config.comm.barrier()
         optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
