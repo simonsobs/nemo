@@ -161,8 +161,9 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     flagMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
         if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
-        # We could load the unfiltered map only once here?
-        # We could also cache 'dataMap' noise as it will always be the same
+        # Operations that only need to be done once go here
+        if 'findAndMaskExtended' in config.parDict.keys():
+            maps.findAndMaskExtended(config, tileName)
         for f in filtersList:
 
             label=f['label']+"#"+tileName            

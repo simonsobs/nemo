@@ -322,7 +322,7 @@ class MapDict(dict):
 
         # Check if we're going to need to fill holes - if so, set-up smooth background only once
         # NOTE: If this needs changing, needs parametrizing as used in e.g. ACT DR5 results
-        holeFillingKeys=['maskPointSourcesFromCatalog', 'maskSubtractedRegions']
+        holeFillingKeys=['maskPointSourcesFromCatalog', 'maskSubtractedRegions', 'extendedMask']
         holeFilling=False
         for h in holeFillingKeys:
             if h in list(self.keys()):
@@ -332,38 +332,17 @@ class MapDict(dict):
             pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad))
 
-        # Finding and masking of extended sources
-        if 'findAndMaskExtended' in list(self.keys()):
-            settings=self['findAndMaskExtended']
-            # Isolate a scale that's extended
-            s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
-            s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
-            s=s1-s2
-            del s1, s2
-            # Simple global 3-sigma clipped noise estimate
-            mean=0
-            sigma=1e6
-            vals=s.flatten()
-            for i in range(10):
-                mask=np.less(abs(vals-mean), 3*sigma)
-                mean=np.mean(vals[mask])
-                sigma=np.std(vals[mask])
-            snr=s/sigma
-            # Mask set such that 1 = masked, 0 = not masked
-            extendedMask=np.array(np.greater(snr, settings['thresholdSigma']), dtype = np.uint8)
-            for i in range(settings['dilationPix']):
-                extendedMask=mahotas.dilate(extendedMask)
-            extendedMask[extendedMask > 0]=1
-            # Inpainting with white noise + smooth large scale image
+        if 'extendedMask' in list(self.keys()):
+            # Filling with white noise + smooth large scale image
             # WARNING: Assumes weights are ivar maps [true for Sigurd's maps]
+            assert(type(self['extendedMask']) == np.ndarray)
+            extendedMask=self['extendedMask']
             mask=np.nonzero(weights)
             whiteNoiseLevel=np.zeros(weights.shape)
             whiteNoiseLevel[mask]=1/np.sqrt(weights[mask])
-            data[extendedMask == 1]=s[extendedMask == 1]+np.random.normal(0, whiteNoiseLevel[extendedMask == 1])
-            #saveFITS("debug-%s-s.fits" % (self['label']), s, wcs)
-            #saveFITS("debug-%s-inpainted.fits" % (self['label']), data, wcs)
-            del s, snr
-            flagMask=flagMask+extendedMask
+            data[extendedMask == 1]=bckData[extendedMask == 1]+np.random.normal(0, whiteNoiseLevel[extendedMask == 1])
+            surveyMask=surveyMask*(1-extendedMask)
+            #flagMask=flagMask+extendedMask
 
         # Optional masking of point sources from external catalog
         # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
@@ -2185,3 +2164,47 @@ def saveFITS(outputFileName, mapData, wcs, compressionType = None):
     newImg.append(hdu)
     newImg.writeto(outputFileName)
     newImg.close()
+
+#---------------------------------------------------------------------------------------------------
+def findAndMaskExtended(config, tileName, writeToDiagnosticsDir = True):
+    """Find extended sources in all maps, adding an extended mask to the Nemo config.Each frequency
+    map will then have extended mask holes filled when preprocess is called.
+
+    """
+
+    settings=config.parDict['findAndMaskExtended']
+
+    maskCube=[]
+    for mapDict in config.unfilteredMapsDictList:
+        data, wcs=mapDict.loadTile('mapFileName', tileName, returnWCS = True)
+        # Isolate a scale that's extended
+        s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
+        s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
+        s=s1-s2
+        del s1, s2
+        # Simple global 3-sigma clipped noise estimate
+        mean=0
+        sigma=1e6
+        vals=s.flatten()
+        for i in range(10):
+            mask=np.less(abs(vals-mean), 3*sigma)
+            mean=np.mean(vals[mask])
+            sigma=np.std(vals[mask])
+        snr=s/sigma
+        # Mask set such that 1 = masked, 0 = not masked
+        extendedMask=np.array(np.greater(snr, settings['thresholdSigma']), dtype = np.uint8)
+        for i in range(settings['dilationPix']):
+            extendedMask=mahotas.dilate(extendedMask)
+        extendedMask[extendedMask > 0]=1
+        maskCube.append(extendedMask)
+    maskCube=np.array(maskCube, dtype = np.uint8)
+    extendedMask=maskCube.sum(axis = 0)
+    extendedMask[extendedMask > 0]=1
+
+    if writeToDiagnosticsDir == True:
+        outFileName=config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"extendedMask#%s.fits" % (tileName)
+        saveFITS(outFileName, extendedMask, wcs, compressionType = 'PLIO_1')
+
+    for mapDict in config.unfilteredMapsDictList:
+        mapDict['extendedMask']=extendedMask
+
