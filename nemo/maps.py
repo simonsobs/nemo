@@ -60,7 +60,7 @@ class MapDict(dict):
     def __init__(self, inputDict, tileCoordsDict = None):
         super(MapDict, self).__init__(inputDict)
         self.tileCoordsDict=tileCoordsDict
-        self._maskKeys=['pointSourceMask', 'surveyMask', 'flagMask']
+        self._maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'extendedMask']
         self.validMapKeys=['mapFileName', 'weightsFileName']+self._maskKeys
 
 
@@ -93,6 +93,7 @@ class MapDict(dict):
 
         pathToTileImages=self.get(mapKey)
         if os.path.isdir(pathToTileImages) == True:
+            # Directory full of tile images (used by, e.g., on-the-fly extended source masking)
             with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
                 extName=0
                 tileData=img[extName].data
@@ -109,13 +110,8 @@ class MapDict(dict):
         elif type(pathToTileImages) == np.ndarray:
             # We no longer want to support this kind of thing... clean this up later
             raise Exception("Expected a path but got an array instead (image already loaded).")
-            # Already loaded? Just do consistency check
-            #if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3]-self.tileCoordsDict[tileName]['clippedSection'][2],
-                                          #self.tileCoordsDict[tileName]['clippedSection'][1]-self.tileCoordsDict[tileName]['clippedSection'][0]):
-                #data=pathToTileImages
-            #else:
-                #raise Exception("Map data that is already loaded is not the expected shape.")
         else:
+            # On-the-fly tile clipping
             with pyfits.open(pathToTileImages) as img:
                 for ext in img:
                     if img[ext].data is not None:
@@ -335,8 +331,7 @@ class MapDict(dict):
         if 'extendedMask' in list(self.keys()):
             # Filling with white noise + smooth large scale image
             # WARNING: Assumes weights are ivar maps [true for Sigurd's maps]
-            assert(type(self['extendedMask']) == np.ndarray)
-            extendedMask=self['extendedMask']
+            extendedMask=self.loadTile('extendedMask', tileName = tileName)
             mask=np.nonzero(weights)
             whiteNoiseLevel=np.zeros(weights.shape)
             whiteNoiseLevel[mask]=1/np.sqrt(weights[mask])
@@ -2166,8 +2161,8 @@ def saveFITS(outputFileName, mapData, wcs, compressionType = None):
     newImg.close()
 
 #---------------------------------------------------------------------------------------------------
-def findAndMaskExtended(config, tileName, writeToDiagnosticsDir = True):
-    """Find extended sources in all maps, adding an extended mask to the Nemo config.Each frequency
+def makeExtendedSourceMask(config, tileName):
+    """Find extended sources in all maps, adding an extended mask to the Nemo config. Each frequency
     map will then have extended mask holes filled when preprocess is called.
 
     """
@@ -2177,34 +2172,51 @@ def findAndMaskExtended(config, tileName, writeToDiagnosticsDir = True):
     maskCube=[]
     for mapDict in config.unfilteredMapsDictList:
         data, wcs=mapDict.loadTile('mapFileName', tileName, returnWCS = True)
+        weights=mapDict.loadTile('weightsFileName', tileName)
+        mask=np.nonzero(weights)
+        whiteNoiseLevel=np.zeros(weights.shape)
+        whiteNoiseLevel[mask]=1/np.sqrt(weights[mask]) # Assumed inverse variance
         # Isolate a scale that's extended
         s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
         s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
         s=s1-s2
         del s1, s2
-        # Simple global 3-sigma clipped noise estimate
-        mean=0
-        sigma=1e6
-        vals=s.flatten()
-        for i in range(10):
-            mask=np.less(abs(vals-mean), 3*sigma)
-            mean=np.mean(vals[mask])
-            sigma=np.std(vals[mask])
-        snr=s/sigma
+        # Using the weight map [assuming it's an inverse variance map]
+        snr=np.zeros(s.shape)
+        snr[mask]=s[mask]/whiteNoiseLevel[mask]
+        # Or simple global 3-sigma clipped noise estimate
+        # (this has a problem in tiles where noise changes abruptly)
+        #mean=0
+        #sigma=1e6
+        #vals=s.flatten()
+        #for i in range(10):
+            #mask=np.less(abs(vals-mean), 3*sigma)
+            #mean=np.mean(vals[mask])
+            #sigma=np.std(vals[mask])
+        #snr=s/sigma
         # Mask set such that 1 = masked, 0 = not masked
         extendedMask=np.array(np.greater(snr, settings['thresholdSigma']), dtype = np.uint8)
-        for i in range(settings['dilationPix']):
-            extendedMask=mahotas.dilate(extendedMask)
+        if 'dilationPix' in settings.keys() and settings['dilationPix'] > 0:
+            for i in range(settings['dilationPix']):
+                extendedMask=mahotas.dilate(extendedMask)
         extendedMask[extendedMask > 0]=1
         maskCube.append(extendedMask)
     maskCube=np.array(maskCube, dtype = np.uint8)
     extendedMask=maskCube.sum(axis = 0)
     extendedMask[extendedMask > 0]=1
 
-    if writeToDiagnosticsDir == True:
-        outFileName=config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"extendedMask#%s.fits" % (tileName)
-        saveFITS(outFileName, extendedMask, wcs, compressionType = 'PLIO_1')
+    # Optionally cut any small objects
+    if 'minSizeArcmin2' in settings.keys() and settings['minSizeArcmin2'] > 0:
+        arcmin2Map=getPixelAreaArcmin2Map(extendedMask.shape, wcs)
+        segMap, numObjects=ndimage.label(extendedMask)
+        for i in range(1, numObjects+1):
+            if arcmin2Map[segMap == i].sum() < settings['minSizeArcmin2']:
+                extendedMask[segMap == i]=0
+
+    os.makedirs(config.diagnosticsDir+os.path.sep+"extendedMask", exist_ok = True)
+    outFileName=config.diagnosticsDir+os.path.sep+"extendedMask"+os.path.sep+tileName+".fits"
+    saveFITS(outFileName, extendedMask, wcs, compressionType = 'PLIO_1')
 
     for mapDict in config.unfilteredMapsDictList:
-        mapDict['extendedMask']=extendedMask
+        mapDict['extendedMask']=config.diagnosticsDir+os.path.sep+"extendedMask"
 

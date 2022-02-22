@@ -163,7 +163,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
         if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
         # Operations that only need to be done once go here
         if 'findAndMaskExtended' in config.parDict.keys():
-            maps.findAndMaskExtended(config, tileName)
+            maps.makeExtendedSourceMask(config, tileName)
         for f in filtersList:
 
             label=f['label']+"#"+tileName            
