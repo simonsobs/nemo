@@ -1976,6 +1976,8 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
 
     # Sources or clusters table?
     tab=posRecTable
+    if len(tab) == 0:
+        return None
     if np.unique(tab['sourceInjectionModel'])[0] == 'pointSource':
         SNRCol='SNR'
         plotSNRLabel="SNR"

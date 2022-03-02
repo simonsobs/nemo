@@ -735,6 +735,9 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
                 keepIndices.append(i)
             if len(keepIndices) == numSourcesPerTile:
                 break
+        # Edge case where we have tiny but non-zero area and didn't manage to insert anything
+        if len(coords) == 0:
+            continue
         RAs=RAs+coords[keepIndices, 0].tolist()
         decs=decs+coords[keepIndices, 1].tolist()
         if amplitudeDistribution == 'linear':
