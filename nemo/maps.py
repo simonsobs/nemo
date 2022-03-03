@@ -301,8 +301,9 @@ class MapDict(dict):
                                     self['beamFileName'], obsFreqGHz = obsFreqGHz,
                                     GNFWParams = GNFWParams,
                                     override = self['injectSources']['override'])
-            modelMap[weights == 0]=0
-            data=data+modelMap
+            if modelMap is not None:
+                modelMap[weights == 0]=0
+                data=data+modelMap
 
         # Should only be needed for handling preliminary tILe-C maps
         if 'applyBeamConvolution' in self.keys() and self['applyBeamConvolution'] == True:
