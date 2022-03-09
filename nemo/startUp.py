@@ -633,7 +633,7 @@ class NemoConfig(object):
                                 assert(refWCS.getXPixelSizeDeg() == wcs.getXPixelSizeDeg())
                                 assert(refWCS.getYPixelSizeDeg() == wcs.getYPixelSizeDeg())
                             except:
-                                raise Exception("WCS of %s is not consistent with other maps (all maps must have the same WCS)." % (mapDict[key]))
+                                raise Exception("WCS of %s is not consistent with other maps (all maps and masks must have the same WCS)." % (mapDict[key]))
 
 
     def restoreConfig(self):
