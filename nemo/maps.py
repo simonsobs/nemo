@@ -2176,27 +2176,28 @@ def makeExtendedSourceMask(config, tileName):
     for mapDict in config.unfilteredMapsDictList:
         data, wcs=mapDict.loadTile('mapFileName', tileName, returnWCS = True)
         weights=mapDict.loadTile('weightsFileName', tileName)
-        mask=np.nonzero(weights)
+        validMask=np.nonzero(weights)
         whiteNoiseLevel=np.zeros(weights.shape)
-        whiteNoiseLevel[mask]=1/np.sqrt(weights[mask]) # Assumed inverse variance
+        whiteNoiseLevel[validMask]=1/np.sqrt(weights[validMask]) # Assumed inverse variance
         # Isolate a scale that's extended
         s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
         s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
         s=s1-s2
         del s1, s2
-        # Using the weight map [assuming it's an inverse variance map]
+        # Make a simple global 3-sigma clipped noise estimate from the filtered map
+        # Then scale that according to the white noise level map from the map maker
+        # Assume that mean white noise level there should correspond with our global clipped noise estimate
+        mean=0
+        sigma=1e6
+        vals=s.flatten()
+        for i in range(10):
+            mask=np.less(abs(vals-mean), 3*sigma)
+            mean=np.mean(vals[mask])
+            sigma=np.std(vals[mask])
+        scaleFactor=sigma/np.mean(whiteNoiseLevel[validMask])
+        whiteNoiseLevel[validMask]=whiteNoiseLevel[validMask]*scaleFactor
         snr=np.zeros(s.shape)
-        snr[mask]=s[mask]/whiteNoiseLevel[mask]
-        # Or simple global 3-sigma clipped noise estimate
-        # (this has a problem in tiles where noise changes abruptly)
-        #mean=0
-        #sigma=1e6
-        #vals=s.flatten()
-        #for i in range(10):
-            #mask=np.less(abs(vals-mean), 3*sigma)
-            #mean=np.mean(vals[mask])
-            #sigma=np.std(vals[mask])
-        #snr=s/sigma
+        snr[validMask]=s[validMask]/whiteNoiseLevel[validMask]
         # Mask set such that 1 = masked, 0 = not masked
         extendedMask=np.array(np.greater(snr, settings['thresholdSigma']), dtype = np.uint8)
         if 'dilationPix' in settings.keys() and settings['dilationPix'] > 0:
