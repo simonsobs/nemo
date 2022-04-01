@@ -69,13 +69,14 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
                                                                                   useCachedFilters = False,
                                                                                   writeAreaMask = writeAreaMask,
                                                                                   writeFlagMask = writeFlagMask)
-            if config.rank == 0:
-                if config.filterSetOptions[setNum]['addSiphonedFromSets'] is not None:
-                    toStack=[config.filterSetOptions[setNum]['catalog']]
-                    for siphonSetNum in config.filterSetOptions[setNum]['addSiphonedFromSets']:
-                        toStack.append(config.filterSetOptions[siphonSetNum]['catalog'])
-                    config.filterSetOptions[setNum]['catalog']=atpy.vstack(toStack)
 
+            if config.filterSetOptions[setNum]['addSiphonedFromSets'] is not None:
+                toStack=[config.filterSetOptions[setNum]['catalog']]
+                for siphonSetNum in config.filterSetOptions[setNum]['addSiphonedFromSets']:
+                    toStack.append(config.filterSetOptions[siphonSetNum]['catalog'])
+                config.filterSetOptions[setNum]['catalog']=atpy.vstack(toStack)
+
+            if config.rank == 0:
                 if config.filterSetOptions[setNum]['saveCatalog'] == True:
                     if 'label' not in config.filterSetOptions[setNum].keys():
                         label="filterSet%d" % (setNum)
