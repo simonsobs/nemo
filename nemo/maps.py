@@ -2186,7 +2186,8 @@ def makeExtendedSourceMask(config, tileName):
         del s1, s2
         # Make a simple global 3-sigma clipped noise estimate from the filtered map
         # Then scale that according to the white noise level map from the map maker
-        # Assume that mean white noise level there should correspond with our global clipped noise estimate
+        # Assume that median white noise level there should correspond with our global clipped noise estimate
+        # (we were using mean but that blows up in edge tiles)
         mean=0
         sigma=1e6
         vals=s.flatten()
@@ -2194,7 +2195,7 @@ def makeExtendedSourceMask(config, tileName):
             mask=np.less(abs(vals-mean), 3*sigma)
             mean=np.mean(vals[mask])
             sigma=np.std(vals[mask])
-        scaleFactor=sigma/np.mean(whiteNoiseLevel[validMask])
+        scaleFactor=sigma/np.median(whiteNoiseLevel[validMask])
         whiteNoiseLevel[validMask]=whiteNoiseLevel[validMask]*scaleFactor
         snr=np.zeros(s.shape)
         snr[validMask]=s[validMask]/whiteNoiseLevel[validMask]
