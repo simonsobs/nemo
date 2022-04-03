@@ -184,7 +184,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
                 maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
                 maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
-            
+
             if f['label'] == photFilter:
                 photFilteredMapDict={}
                 photFilteredMapDict['SNMap']=filteredMapDict['SNMap']

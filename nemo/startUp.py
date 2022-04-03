@@ -657,8 +657,8 @@ class NemoConfig(object):
             options=self.filterSetOptions[setNum]
             if 'saveCatalog' not in options.keys():
                 options['saveCatalog']=False
-            if 'maskSubtractedRegions' not in options.keys():
-                options['maskSubtractedRegions']=False
+            #if 'maskSubtractedRegions' not in options.keys():
+                #options['maskSubtractedRegions']=False
             if 'maskHoleDilationFactor' not in options.keys():
                 options['maskHoleDilationFactor']=None
             if 'addSiphonedFromSets' not in options.keys():
@@ -710,10 +710,19 @@ class NemoConfig(object):
                             continue
                     mapDict['subtractModelFromCatalog']=self.filterSetOptions[subtractSetIndex]['catalog']
 
+        # Add catalogs for masking and filling
+        if options is not None and 'maskAndFillFromSets' in options.keys():
+            for mapDict in self.unfilteredMapsDictList:
+                for subtractSetIndex in options['maskAndFillFromSets']:
+                    if 'mapToUse' in self.filterSetOptions[subtractSetIndex].keys():
+                        if 'label' in mapDict.keys() and mapDict['label'] != self.filterSetOptions[subtractSetIndex]['mapToUse']:
+                            continue
+                    mapDict['maskAndFillFromCatalog']=self.filterSetOptions[subtractSetIndex]['catalog']
+
         # Other map-level preprocessing keys
         if options is not None:
             for mapDict in self.unfilteredMapsDictList:
-                mapDict['maskSubtractedRegions']=options['maskSubtractedRegions']
+                #mapDict['maskSubtractedRegions']=options['maskSubtractedRegions']
                 mapDict['maskHoleDilationFactor']=options['maskHoleDilationFactor']
                 if options['ignoreSurveyMask'] == True:
                     mapDict['surveyMask']=None

@@ -319,7 +319,7 @@ class MapDict(dict):
 
         # Check if we're going to need to fill holes - if so, set-up smooth background only once
         # NOTE: If this needs changing, needs parametrizing as used in e.g. ACT DR5 results
-        holeFillingKeys=['maskPointSourcesFromCatalog', 'maskSubtractedRegions', 'extendedMask']
+        holeFillingKeys=['maskPointSourcesFromCatalog', 'maskAndFillFromCatalog', 'extendedMask']
         holeFilling=False
         for h in holeFillingKeys:
             if h in list(self.keys()):
@@ -397,42 +397,31 @@ class MapDict(dict):
                     data=data-model
                     # Threshold of > 1 uK here should be made adjustable in config
                     flagMask=flagMask+np.greater(model, 1)
-                # Debugging
-                #saveFITS(diagnosticsDir+os.path.sep+"subtracted_%s.fits" % (self['label']), data, wcs)
-                # Optionally blank small exclusion zone around these sources in survey mask
-                # NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
-                if 'maskSubtractedRegions' in list(self.keys()) and self['maskSubtractedRegions'] == True:
-                    # For hole filling extended sources
-                    #pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-                    #bckData=ndimage.median_filter(data, int(pixRad))
-                    for row in tab:
-                        x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                        if surveyMask[int(y), int(x)] != 0:
-                            rArcminMap=np.ones(data.shape, dtype = float)*1e6
-                            if row['SNR'] > 1000:
-                                maskRadiusArcmin=10.0
-                            else:
-                                maskRadiusArcmin=4.0
-                            # Extended sources - identify by measured size > masking radius
-                            # These will mess up noise term in filter, so add to psMask also and fill + smooth
-                            # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
-                            extendedSource=False
-                            if 'ellipse_A' and 'ellipse_B' in tab.keys():
-                                xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
-                                ASizeArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
-                                if ASizeArcmin > maskRadiusArcmin:
-                                    extendedSource=True
-                                    maskRadiusArcmin=ASizeArcmin
-                            if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
-                                maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
-                            rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
-                                                                                        row['RADeg'], row['decDeg'],
-                                                                                        maskRadiusArcmin/60)
-                            rArcminMap=rArcminMap*60
-                            surveyMask[rArcminMap < maskRadiusArcmin]=0
-                            if extendedSource == True:
-                                psMask[rArcminMap < maskRadiusArcmin]=0
-                                data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
+
+        if 'maskAndFillFromCatalog' in list(self.keys()) and self['maskAndFillFromCatalog'] is not None:
+            if type(self['maskAndFillFromCatalog']) is not list:
+                self['maskAndFillFromCatalog']=[self['maskAndFillFromCatalog']]
+            for tab in self['maskAndFillFromCatalog']:
+                if type(tab) != atpy.Table:
+                    tab=atpy.Table().read(catalogPath)
+                tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+                if 'ellipse_A' not in tab.keys():
+                    raise Exception("Need to set measureShapes: True to use maskAndFillFromCatalog")
+                for row in tab:
+                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                    rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                    if 'ellipse_A' and 'ellipse_B' in tab.keys():
+                        xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
+                        maskRadiusArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
+                    if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
+                        maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
+                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
+                                                                                row['RADeg'], row['decDeg'],
+                                                                                maskRadiusArcmin/60)
+                    rArcminMap=rArcminMap*60
+                    surveyMask[rArcminMap < maskRadiusArcmin]=0
+                    psMask[rArcminMap < maskRadiusArcmin]=0
+                    data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
 
         # Add the map data to the dict
         self['data']=data
