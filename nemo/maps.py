@@ -405,7 +405,7 @@ class MapDict(dict):
                 if type(tab) != atpy.Table:
                     tab=atpy.Table().read(catalogPath)
                 tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-                if 'ellipse_A' not in tab.keys():
+                if len(tab) > 0 and 'ellipse_A' not in tab.keys():
                     raise Exception("Need to set measureShapes: True to use maskAndFillFromCatalog")
                 for row in tab:
                     x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
