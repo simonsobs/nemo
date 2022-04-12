@@ -60,7 +60,7 @@ class MapDict(dict):
     def __init__(self, inputDict, tileCoordsDict = None):
         super(MapDict, self).__init__(inputDict)
         self.tileCoordsDict=tileCoordsDict
-        self._maskKeys=['pointSourceMask', 'surveyMask', 'flagMask']
+        self._maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'extendedMask']
         self.validMapKeys=['mapFileName', 'weightsFileName']+self._maskKeys
 
 
@@ -93,6 +93,7 @@ class MapDict(dict):
 
         pathToTileImages=self.get(mapKey)
         if os.path.isdir(pathToTileImages) == True:
+            # Directory full of tile images (used by, e.g., on-the-fly extended source masking)
             with pyfits.open(pathToTileImages+os.path.sep+tileName+".fits") as img:
                 extName=0
                 tileData=img[extName].data
@@ -109,13 +110,8 @@ class MapDict(dict):
         elif type(pathToTileImages) == np.ndarray:
             # We no longer want to support this kind of thing... clean this up later
             raise Exception("Expected a path but got an array instead (image already loaded).")
-            # Already loaded? Just do consistency check
-            #if pathToTileImages.shape == (self.tileCoordsDict[tileName]['clippedSection'][3]-self.tileCoordsDict[tileName]['clippedSection'][2],
-                                          #self.tileCoordsDict[tileName]['clippedSection'][1]-self.tileCoordsDict[tileName]['clippedSection'][0]):
-                #data=pathToTileImages
-            #else:
-                #raise Exception("Map data that is already loaded is not the expected shape.")
         else:
+            # On-the-fly tile clipping
             with pyfits.open(pathToTileImages) as img:
                 for ext in img:
                     if img[ext].data is not None:
@@ -305,8 +301,9 @@ class MapDict(dict):
                                     self['beamFileName'], obsFreqGHz = obsFreqGHz,
                                     GNFWParams = GNFWParams,
                                     override = self['injectSources']['override'])
-            modelMap[weights == 0]=0
-            data=data+modelMap
+            if modelMap is not None:
+                modelMap[weights == 0]=0
+                data=data+modelMap
 
         # Should only be needed for handling preliminary tILe-C maps
         if 'applyBeamConvolution' in self.keys() and self['applyBeamConvolution'] == True:
@@ -322,7 +319,7 @@ class MapDict(dict):
 
         # Check if we're going to need to fill holes - if so, set-up smooth background only once
         # NOTE: If this needs changing, needs parametrizing as used in e.g. ACT DR5 results
-        holeFillingKeys=['maskPointSourcesFromCatalog', 'maskSubtractedRegions']
+        holeFillingKeys=['maskPointSourcesFromCatalog', 'maskAndFillFromCatalog', 'extendedMask']
         holeFilling=False
         for h in holeFillingKeys:
             if h in list(self.keys()):
@@ -332,38 +329,16 @@ class MapDict(dict):
             pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
             bckData=ndimage.median_filter(data, int(pixRad))
 
-        # Finding and masking of extended sources
-        if 'findAndMaskExtended' in list(self.keys()):
-            settings=self['findAndMaskExtended']
-            # Isolate a scale that's extended
-            s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
-            s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
-            s=s1-s2
-            del s1, s2
-            # Simple global 3-sigma clipped noise estimate
-            mean=0
-            sigma=1e6
-            vals=s.flatten()
-            for i in range(10):
-                mask=np.less(abs(vals-mean), 3*sigma)
-                mean=np.mean(vals[mask])
-                sigma=np.std(vals[mask])
-            snr=s/sigma
-            # Mask set such that 1 = masked, 0 = not masked
-            extendedMask=np.array(np.greater(snr, settings['thresholdSigma']), dtype = np.uint8)
-            for i in range(settings['dilationPix']):
-                extendedMask=mahotas.dilate(extendedMask)
-            extendedMask[extendedMask > 0]=1
-            # Inpainting with white noise + smooth large scale image
+        if 'extendedMask' in list(self.keys()):
+            # Filling with white noise + smooth large scale image
             # WARNING: Assumes weights are ivar maps [true for Sigurd's maps]
+            extendedMask=self.loadTile('extendedMask', tileName = tileName)
             mask=np.nonzero(weights)
             whiteNoiseLevel=np.zeros(weights.shape)
             whiteNoiseLevel[mask]=1/np.sqrt(weights[mask])
-            data[extendedMask == 1]=s[extendedMask == 1]+np.random.normal(0, whiteNoiseLevel[extendedMask == 1])
-            #saveFITS("debug-%s-s.fits" % (self['label']), s, wcs)
-            #saveFITS("debug-%s-inpainted.fits" % (self['label']), data, wcs)
-            del s, snr
-            flagMask=flagMask+extendedMask
+            data[extendedMask == 1]=bckData[extendedMask == 1]+np.random.normal(0, whiteNoiseLevel[extendedMask == 1])
+            surveyMask=surveyMask*(1-extendedMask)
+            #flagMask=flagMask+extendedMask
 
         # Optional masking of point sources from external catalog
         # Especially needed if using Fourier-space matched filter (and maps not already point source subtracted)
@@ -422,42 +397,31 @@ class MapDict(dict):
                     data=data-model
                     # Threshold of > 1 uK here should be made adjustable in config
                     flagMask=flagMask+np.greater(model, 1)
-                # Debugging
-                #saveFITS(diagnosticsDir+os.path.sep+"subtracted_%s.fits" % (self['label']), data, wcs)
-                # Optionally blank small exclusion zone around these sources in survey mask
-                # NOTE: Also masking and filling extended sources (no other way to deal with right now) - these are rare
-                if 'maskSubtractedRegions' in list(self.keys()) and self['maskSubtractedRegions'] == True:
-                    # For hole filling extended sources
-                    #pixRad=(10.0/60.0)/wcs.getPixelSizeDeg()
-                    #bckData=ndimage.median_filter(data, int(pixRad))
-                    for row in tab:
-                        x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                        if surveyMask[int(y), int(x)] != 0:
-                            rArcminMap=np.ones(data.shape, dtype = float)*1e6
-                            if row['SNR'] > 1000:
-                                maskRadiusArcmin=10.0
-                            else:
-                                maskRadiusArcmin=4.0
-                            # Extended sources - identify by measured size > masking radius
-                            # These will mess up noise term in filter, so add to psMask also and fill + smooth
-                            # We won't fiddle with PA here, we'll just maximise based on x-pixel scale (because CAR)
-                            extendedSource=False
-                            if 'ellipse_A' and 'ellipse_B' in tab.keys():
-                                xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
-                                ASizeArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
-                                if ASizeArcmin > maskRadiusArcmin:
-                                    extendedSource=True
-                                    maskRadiusArcmin=ASizeArcmin
-                            if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
-                                maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
-                            rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
-                                                                                        row['RADeg'], row['decDeg'],
-                                                                                        maskRadiusArcmin/60)
-                            rArcminMap=rArcminMap*60
-                            surveyMask[rArcminMap < maskRadiusArcmin]=0
-                            if extendedSource == True:
-                                psMask[rArcminMap < maskRadiusArcmin]=0
-                                data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
+
+        if 'maskAndFillFromCatalog' in list(self.keys()) and self['maskAndFillFromCatalog'] is not None:
+            if type(self['maskAndFillFromCatalog']) is not list:
+                self['maskAndFillFromCatalog']=[self['maskAndFillFromCatalog']]
+            for tab in self['maskAndFillFromCatalog']:
+                if type(tab) != atpy.Table:
+                    tab=atpy.Table().read(catalogPath)
+                tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+                if len(tab) > 0 and 'ellipse_A' not in tab.keys():
+                    raise Exception("Need to set measureShapes: True to use maskAndFillFromCatalog")
+                for row in tab:
+                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                    rArcminMap=np.ones(data.shape, dtype = float)*1e6
+                    if 'ellipse_A' and 'ellipse_B' in tab.keys():
+                        xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
+                        maskRadiusArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
+                    if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
+                        maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
+                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
+                                                                                row['RADeg'], row['decDeg'],
+                                                                                maskRadiusArcmin/60)
+                    rArcminMap=rArcminMap*60
+                    surveyMask[rArcminMap < maskRadiusArcmin]=0
+                    psMask[rArcminMap < maskRadiusArcmin]=0
+                    data[rArcminMap < maskRadiusArcmin]=bckData[rArcminMap < maskRadiusArcmin]
 
         # Add the map data to the dict
         self['data']=data
@@ -2002,6 +1966,8 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
 
     # Sources or clusters table?
     tab=posRecTable
+    if len(tab) == 0:
+        return None
     if np.unique(tab['sourceInjectionModel'])[0] == 'pointSource':
         SNRCol='SNR'
         plotSNRLabel="SNR"
@@ -2185,3 +2151,66 @@ def saveFITS(outputFileName, mapData, wcs, compressionType = None):
     newImg.append(hdu)
     newImg.writeto(outputFileName)
     newImg.close()
+
+#---------------------------------------------------------------------------------------------------
+def makeExtendedSourceMask(config, tileName):
+    """Find extended sources in all maps, adding an extended mask to the Nemo config. Each frequency
+    map will then have extended mask holes filled when preprocess is called.
+
+    """
+
+    settings=config.parDict['findAndMaskExtended']
+
+    maskCube=[]
+    for mapDict in config.unfilteredMapsDictList:
+        data, wcs=mapDict.loadTile('mapFileName', tileName, returnWCS = True)
+        weights=mapDict.loadTile('weightsFileName', tileName)
+        validMask=np.nonzero(weights)
+        whiteNoiseLevel=np.zeros(weights.shape)
+        whiteNoiseLevel[validMask]=1/np.sqrt(weights[validMask]) # Assumed inverse variance
+        # Isolate a scale that's extended
+        s1=subtractBackground(data, wcs, smoothScaleDeg = settings['bigScaleDeg'])
+        s2=subtractBackground(data, wcs, smoothScaleDeg = settings['smallScaleDeg'])
+        s=s1-s2
+        del s1, s2
+        # Make a simple global 3-sigma clipped noise estimate from the filtered map
+        # Then scale that according to the white noise level map from the map maker
+        # Assume that median white noise level there should correspond with our global clipped noise estimate
+        # (we were using mean but that blows up in edge tiles)
+        mean=0
+        sigma=1e6
+        vals=s.flatten()
+        for i in range(10):
+            mask=np.less(abs(vals-mean), 3*sigma)
+            mean=np.mean(vals[mask])
+            sigma=np.std(vals[mask])
+        scaleFactor=sigma/np.median(whiteNoiseLevel[validMask])
+        whiteNoiseLevel[validMask]=whiteNoiseLevel[validMask]*scaleFactor
+        snr=np.zeros(s.shape)
+        snr[validMask]=s[validMask]/whiteNoiseLevel[validMask]
+        # Mask set such that 1 = masked, 0 = not masked
+        extendedMask=np.array(np.greater(snr, settings['thresholdSigma']), dtype = np.uint8)
+        if 'dilationPix' in settings.keys() and settings['dilationPix'] > 0:
+            for i in range(settings['dilationPix']):
+                extendedMask=mahotas.dilate(extendedMask)
+        extendedMask[extendedMask > 0]=1
+        maskCube.append(extendedMask)
+    maskCube=np.array(maskCube, dtype = np.uint8)
+    extendedMask=maskCube.sum(axis = 0)
+    extendedMask[extendedMask > 0]=1
+
+    # Optionally cut any small objects
+    if 'minSizeArcmin2' in settings.keys() and settings['minSizeArcmin2'] > 0:
+        arcmin2Map=getPixelAreaArcmin2Map(extendedMask.shape, wcs)
+        segMap, numObjects=ndimage.label(extendedMask)
+        for i in range(1, numObjects+1):
+            if arcmin2Map[segMap == i].sum() < settings['minSizeArcmin2']:
+                extendedMask[segMap == i]=0
+
+    os.makedirs(config.diagnosticsDir+os.path.sep+"extendedMask", exist_ok = True)
+    outFileName=config.diagnosticsDir+os.path.sep+"extendedMask"+os.path.sep+tileName+".fits"
+    saveFITS(outFileName, extendedMask, wcs, compressionType = 'PLIO_1')
+
+    for mapDict in config.unfilteredMapsDictList:
+        mapDict['extendedMask']=config.diagnosticsDir+os.path.sep+"extendedMask"
+

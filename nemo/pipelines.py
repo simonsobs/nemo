@@ -69,13 +69,14 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
                                                                                   useCachedFilters = False,
                                                                                   writeAreaMask = writeAreaMask,
                                                                                   writeFlagMask = writeFlagMask)
-            if config.rank == 0:
-                if config.filterSetOptions[setNum]['addSiphonedFromSets'] is not None:
-                    toStack=[config.filterSetOptions[setNum]['catalog']]
-                    for siphonSetNum in config.filterSetOptions[setNum]['addSiphonedFromSets']:
-                        toStack.append(config.filterSetOptions[siphonSetNum]['catalog'])
-                    config.filterSetOptions[setNum]['catalog']=atpy.vstack(toStack)
 
+            if config.filterSetOptions[setNum]['addSiphonedFromSets'] is not None:
+                toStack=[config.filterSetOptions[setNum]['catalog']]
+                for siphonSetNum in config.filterSetOptions[setNum]['addSiphonedFromSets']:
+                    toStack.append(config.filterSetOptions[siphonSetNum]['catalog'])
+                config.filterSetOptions[setNum]['catalog']=atpy.vstack(toStack)
+
+            if config.rank == 0:
                 if config.filterSetOptions[setNum]['saveCatalog'] == True:
                     if 'label' not in config.filterSetOptions[setNum].keys():
                         label="filterSet%d" % (setNum)
@@ -161,8 +162,9 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     flagMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
         if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
-        # We could load the unfiltered map only once here?
-        # We could also cache 'dataMap' noise as it will always be the same
+        # Operations that only need to be done once go here
+        if 'findAndMaskExtended' in config.parDict.keys():
+            maps.makeExtendedSourceMask(config, tileName)
         for f in filtersList:
 
             label=f['label']+"#"+tileName            
@@ -182,7 +184,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
                 maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
                 maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
-            
+
             if f['label'] == photFilter:
                 photFilteredMapDict={}
                 photFilteredMapDict['SNMap']=filteredMapDict['SNMap']
