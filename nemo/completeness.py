@@ -127,7 +127,8 @@ class SelFn(object):
             configFileName=self.selFnDir+os.path.sep+"config.yml"
             if os.path.exists(configFileName) == False:
                 raise Exception("No config .yml file found in selFnDir and no other location given.")
-        self._config=startUp.NemoConfig(configFileName, makeOutputDirs = False, setUpMaps = False, verbose = False)
+        self._config=startUp.NemoConfig(configFileName, makeOutputDirs = False, setUpMaps = False, verbose = False,
+                                        selFnDir = self.selFnDir)
         parDict=self._config.parDict
 
         if tileNames is not None:
