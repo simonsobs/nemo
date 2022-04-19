@@ -62,7 +62,7 @@ class MockSurvey(object):
     """
     def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, zStep = 0.01, 
                  enableDrawSample = False, delta = 500, rhoType = 'critical', 
-                 transferFunction = 'boltzmann_camb'):
+                 transferFunction = 'boltzmann_camb', massFunction = 'Tinker08'):
         """Create a MockSurvey object, for performing calculations of cluster counts or generating mock
         catalogs. The Tinker et al. (2008) halo mass function is used (hardcoded at present, but in 
         principle this can easily be swapped for any halo mass function supported by CCL).
@@ -86,6 +86,8 @@ class MockSurvey(object):
             rhoType (:obj:`str`): Density definition, either 'matter' or 'critical', used for mass definition.
             transferFunction (:obj:`str`): Transfer function to use, as understood by CCL (e.g., 'eisenstein_hu', 
                 'boltzmann_camb').
+            massFunction (:obj:`str`): Name of the mass function to use, currently either 'Tinker08' or
+                'Tinker10'. Mass function calculations are done by CCL.
                 
         """
         
@@ -108,6 +110,7 @@ class MockSurvey(object):
             c_m_relation=None
         self.mdef=ccl.halos.MassDef(self.delta, self.rhoType, c_m_relation = c_m_relation)
         self.transferFunction=transferFunction
+        self.massFuncName=massFunction
         
         # Just for convenience when used elsewhere
         self.mdefLabel="M%d%s" % (self.delta, self.rhoType[0])
@@ -146,8 +149,12 @@ class MockSurvey(object):
                                             sigma8=sigma8,
                                             n_s=ns,
                                             transfer_function=self.transferFunction)
-            self.mfunc = ccl.halos.MassFuncTinker08(self.cosmoModel,
-                                                    self.mdef)
+            if self.massFuncName == 'Tinker10':
+                self.mfunc=ccl.halos.MassFuncTinker10(self.cosmoModel,
+                                                      self.mdef)
+            elif self.massFuncName == 'Tinker08':
+                self.mfunc=ccl.halos.MassFuncTinker08(self.cosmoModel,
+                                                      self.mdef)
 
             
     def update(self, H0, Om0, Ob0, sigma8, ns):

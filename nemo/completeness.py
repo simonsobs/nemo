@@ -76,6 +76,8 @@ class SelFn(object):
             checks can be done (e.g., by :meth:`SelFn.checkCoordsAreInMask`).
         enableCompletenessCalc (:obj:`bool`, optional): If `True`, set up the machinery needed to do
             completeness calculations.
+        massFunction (:obj:`str`): Name of the mass function to use, currently either 'Tinker08' or
+            'Tinker10'. Mass function calculations are done by CCL.
 
     Attributes:
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection cut
@@ -113,7 +115,8 @@ class SelFn(object):
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
                  tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0, 
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
-                 setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical'):
+                 setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
+                 massFunction = 'Tinker08'):
         
         self.SNRCut=SNRCut
         self.footprintLabel=footprintLabel
@@ -215,7 +218,7 @@ class SelFn(object):
             ns=0.95
             self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                                   zStep = self.zStep, enableDrawSample = enableDrawSample,
-                                                  delta = delta, rhoType = rhoType)
+                                                  delta = delta, rhoType = rhoType, massFunction = massFunction)
             self.update(H0, Om0, Ob0, sigma8, ns)
 
 
