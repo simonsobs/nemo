@@ -164,6 +164,13 @@ class SelFn(object):
         if enableCompletenessCalc == True:
             
             self.scalingRelationDict=parDict['massOptions']
+
+            # If the config didn't give cosmological parameters, put in defaults
+            defaults={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.8, 'ns': 0.95}
+            for key in defaults:
+                if key not in self.scalingRelationDict.keys():
+                    self.scalingRelationDict[key]=defaults[key]
+
             self.Q=signals.QFit(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
             
             # We should be able to do everything (except clustering) with this
@@ -211,11 +218,11 @@ class SelFn(object):
             minMass=5e13
             zMin=0.0
             zMax=2.0
-            H0=70.
-            Om0=0.30
-            Ob0=0.05
-            sigma8=0.8
-            ns=0.95
+            H0=self.scalingRelationDict['H0']
+            Om0=self.scalingRelationDict['Om0']
+            Ob0=self.scalingRelationDict['Ob0']
+            sigma8=self.scalingRelationDict['sigma8']
+            ns=self.scalingRelationDict['ns']
             self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                                   zStep = self.zStep, enableDrawSample = enableDrawSample,
                                                   delta = delta, rhoType = rhoType, massFunction = massFunction)
