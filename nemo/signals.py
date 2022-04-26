@@ -1351,6 +1351,34 @@ def meanDensity(z):
     return rho_mean  
 
 #------------------------------------------------------------------------------------------------------------
+def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel):
+    """Convert some mass at some z defined using MDef1 into a mass defined according to MDef2.
+
+    Args:
+        mass (float): Halo mass in MSun.
+        z (float): Redshift of the halo.
+        MDef1 (`obj`:ccl.halos.MassDef): CCL halo mass definition you want to convert from.
+        MDef2 (`obj`:ccl.halos.MassDef): CCL halo mass definition you want to convert to.
+
+    """
+
+    tolerance=1e-5
+    scaleFactor=3.0
+    ratio=1e6
+    count=0
+    while abs(1.0-ratio) > tolerance:
+        testMass=MDef2.translate_mass(cosmoModel, scaleFactor*mass, 1/(1+z), MDef1)
+        ratio=mass/testMass
+        scaleFactor=scaleFactor*ratio
+        count=count+1
+        if count > 10:
+            raise Exception("MDef1 -> MDef2 mass conversion didn't converge quickly enough")
+
+    massX=scaleFactor*mass
+
+    return massX
+
+#------------------------------------------------------------------------------------------------------------
 def M500cToMdef(M500c, z, massDef, cosmoModel):
     """Convert M500c to some other mass definition.
     
@@ -1358,23 +1386,7 @@ def M500cToMdef(M500c, z, massDef, cosmoModel):
     
     """
 
-    M500cDef=ccl.halos.MassDef(500, "critical")
-
-    tolerance=1e-5
-    scaleFactor=3.0
-    ratio=1e6
-    count=0
-    while abs(1.0-ratio) > tolerance:
-        testM500c=massDef.translate_mass(cosmoModel, scaleFactor*M500c, 1/(1+z), M500cDef)
-        ratio=M500c/testM500c
-        scaleFactor=scaleFactor*ratio
-        count=count+1
-        if count > 10:
-            raise Exception("M500c -> massDef conversion didn't converge quickly enough")
-        
-    massX=scaleFactor*M500c
-    
-    return massX
+    return MDef1ToMDef2(M500c, z, ccl.halos.MassDef(500, "critical"), MDef2, cosmoModel)
 
 #------------------------------------------------------------------------------------------------------------
 def convertM200mToM500c(M200m, z):
