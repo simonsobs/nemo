@@ -505,7 +505,8 @@ class SelFn(object):
                                                areaDeg2 = areaDeg2*self.mockOversampleFactor,
                                                applyPoissonScatter = True,
                                                applyIntrinsicScatter = True,
-                                               applyNoiseScatter = True)
+                                               applyNoiseScatter = True,
+                                               applyRelativisticCorrection = self.applyRelativisticCorrection)
             if mockTab is not None:
                 mockTabsList.append(mockTab)
         tab=atpy.vstack(mockTabsList)

@@ -339,7 +339,8 @@ class MockSurvey(object):
     def drawSample(self, y0Noise, scalingRelationDict, QFit, wcs = None, photFilterLabel = None, 
                    tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
                    areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
-                   applyIntrinsicScatter = True, applyNoiseScatter = True):
+                   applyIntrinsicScatter = True, applyNoiseScatter = True,
+                   applyRelativisticCorrection = True):
         """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
         Nemo catalogs) by applying the given scaling relation parameters, and then (optionally) applying
         a survey selection function.
@@ -385,6 +386,8 @@ class MockSurvey(object):
             applyNoiseScatter (:obj:`bool`, optional): If True, apply measurement noise, generated
                 from the given noise level or noise map (`y0Noise`), to the output SZ measurements
                 (`fixed_y_c`).
+            applyRelativisticCorrection (:obj:`bool`, optional): If True, apply the relativistic
+                correction.
                 
         Returns:
             A catalog as an :obj:`astropy.table.Table` object, in the same format as produced by
@@ -514,10 +517,12 @@ class MockSurvey(object):
         fRels[fRels <= 0]=0.1
         fRels[fRels > 1]=1.0
         try:
-            true_y0s=tenToA0*Ez2s*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs*fRels
+            true_y0s=tenToA0*Ez2s*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
         except:
             raise Exception("Negative y0 values (probably spline related) for H0 = %.6f Om0 = %.6f sigma8 = %.6f at z = %.3f" % (self.H0, self.Om0, self.sigma8, zk))
-            
+        if applyRelativisticCorrection == True:
+            true_y0s=true_y0s*fRels
+
         # Add noise and intrinsic scatter everywhere
         if applyIntrinsicScatter == True:
             scattered_y0s=np.exp(np.random.normal(np.log(true_y0s), sigma_int, len(true_y0s)))
