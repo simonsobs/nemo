@@ -1366,15 +1366,17 @@ def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel):
     scaleFactor=3.0
     ratio=1e6
     count=0
-    while abs(1.0-ratio) > tolerance:
-        testMass=MDef2.translate_mass(cosmoModel, scaleFactor*mass, 1/(1+z), MDef1)
-        ratio=mass/testMass
-        scaleFactor=scaleFactor*ratio
-        count=count+1
-        if count > 10:
-            raise Exception("MDef1 -> MDef2 mass conversion didn't converge quickly enough")
-
-    massX=scaleFactor*mass
+    try:
+        massX=MDef1.translate_mass(cosmoModel, mass, 1/(1+z), MDef2)
+    except:
+        while abs(1.0-ratio) > tolerance:
+            testMass=MDef2.translate_mass(cosmoModel, scaleFactor*mass, 1/(1+z), MDef1)
+            ratio=mass/testMass
+            scaleFactor=scaleFactor*ratio
+            count=count+1
+            if count > 10:
+                raise Exception("MDef1 -> MDef2 mass conversion didn't converge quickly enough")
+        massX=scaleFactor*mass
 
     return massX
 
@@ -1386,7 +1388,7 @@ def M500cToMdef(M500c, z, massDef, cosmoModel):
     
     """
 
-    return MDef1ToMDef2(M500c, z, ccl.halos.MassDef(500, "critical"), MDef2, cosmoModel)
+    return MDef1ToMDef2(M500c, z, ccl.halos.MassDef(500, "critical"), massDef, cosmoModel)
 
 #------------------------------------------------------------------------------------------------------------
 def convertM200mToM500c(M200m, z):

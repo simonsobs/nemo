@@ -462,7 +462,7 @@ class MockSurvey(object):
         t0=time.time()
         currentIndex=0
         log10Ms=np.random.random_sample(y0Noise.shape) # These will be converted from random numbers to masses below
-        log10M500c=np.zeros(y0Noise.shape)
+        log10M500cs=np.zeros(y0Noise.shape)
         zs=np.zeros(y0Noise.shape)
         zErrs=np.zeros(y0Noise.shape)
         Ez2s=np.zeros(y0Noise.shape)
@@ -497,14 +497,14 @@ class MockSurvey(object):
             # We generalised mass definitions, but still need M500c, theta500c for Q, fRel calc
             # So... we may as well convert and add that to output (below) as well
             if self.delta != 500 or self.rhoType != "critical":
-                log10M500c=np.log10(self.mdef.translate_mass(self.cosmoModel, np.power(10, log10Ms[mask]),
+                log10M500cs[mask]=np.log10(self.mdef.translate_mass(self.cosmoModel, np.power(10, log10Ms[mask]),
                                                                 1/(1+zk), self._M500cDef))
             else:
-                log10M500c=log10Ms[mask]
+                log10M500cs[mask]=log10Ms[mask]
 
-            theta500s=interpolate.splev(log10M500c, self.theta500Splines[k], ext = 3)
+            theta500s=interpolate.splev(log10M500cs[mask], self.theta500Splines[k], ext = 3)
             Qs[mask]=QFit.getQ(theta500s, z = zk, tileName = tileName)
-            fRels[mask]=interpolate.splev(log10M500c, self.fRelSplines[k], ext = 3)
+            fRels[mask]=interpolate.splev(log10M500cs[mask], self.fRelSplines[k], ext = 3)
             Ez2s[mask]=self.Ez2[k]
             zs[mask]=zk
       
@@ -542,7 +542,7 @@ class MockSurvey(object):
         tab.add_column(atpy.Column(decs, 'decDeg'))
         tab.add_column(atpy.Column(np.power(10, log10Ms)/1e14, massColLabel))
         if 'true_M500c' not in tab.keys():
-            tab.add_column(atpy.Column(np.power(10, log10M500c)/1e14, 'true_M500c'))
+            tab.add_column(atpy.Column(np.power(10, log10M500cs)/1e14, 'true_M500c'))
         tab.add_column(atpy.Column(Qs, 'true_Q'))
         tab.add_column(atpy.Column(true_y0s/1e-4, 'true_fixed_y_c'))
         tab.add_column(atpy.Column(measured_y0s/1e-4, 'fixed_y_c'))
