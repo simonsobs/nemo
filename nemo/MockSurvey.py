@@ -225,6 +225,7 @@ class MockSurvey(object):
                 mask=ngtm > 0
                 self.log10MRollers.append(_spline((ngtm[mask] / ngtm[0])[::-1], np.log10(self.M[mask][::-1]), k=3))
     
+
     def _cumulativeNumberDensity(self, z):
         """Returns N > M (per cubic Mpc).
         

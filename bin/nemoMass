@@ -103,13 +103,11 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
     
     """
 
-    if 'delta' not in massOptions.keys():
-        massOptions['delta']=500
-
-    if 'rhoType' not in massOptions.keys():
-        massOptions['rhoType']='critical'
-
-    refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'])
+    try:
+        refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'],
+                                     c_m_relation = massOptions['concMassRelation'])
+    except:
+        refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'])
 
     if 'relativisticCorrection' not in massOptions.keys():
         massOptions['relativisticCorrection']=True
@@ -203,8 +201,13 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
                 suffixList.append('Cal')
             for resultDict, suffix in zip(resultsList, suffixList):
                 for massDefDict in otherMassEstimates:
+                    if 'concMassRelation' not in massDefDict.keys():
+                        massDefDict['concMassRelation']=None
                     thisLabel='M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0])
-                    thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'], c_m_relation = massDefDict['concMassRelation'])
+                    try:
+                        thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'], c_m_relation = massDefDict['concMassRelation'])
+                    except:
+                        thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'])
                     thisMass=signals.MDef1ToMDef2(resultDict[label]*1e14, row['redshift'], refMassDef, thisMassDef, mockSurvey.cosmoModel)/1e14
                     row[thisLabel+suffix]=thisMass
                     row[thisLabel+suffix+'_errPlus']=(row[label+suffix+'_errPlus']/row[label+suffix])*row[thisLabel+suffix]
@@ -350,7 +353,15 @@ if __name__ == '__main__':
         ns=massOptions['ns']
     else:
         ns=0.95
-    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns)
+    if 'delta' not in list(massOptions.keys()):
+        massOptions['delta']=500
+    if 'rhoType' not in list(massOptions.keys()):
+        massOptions['rhoType']='critical'
+    if 'concMassRelation' not in list(massOptions.keys()):
+        massOptions['concMassRelation']='Bhattacharya13'
+
+    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
+                                     rhoType = massOptions['rhoType'], delta = massOptions['delta'])
         
     # Seems like multiprocessing doesn't work under slurm...   
     # So use MPI instead: just divide up catalog among processes
