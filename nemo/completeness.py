@@ -486,15 +486,25 @@ class SelFn(object):
         return tab
 
     
-    def generateMockSample(self):
+    def generateMockSample(self, mockOversampleFactor = None, applyPoissonScatter = True):
         """Returns a mock catalog (but with no object coordinate information).
         
+        Args:
+            mockOversampleFactor (:obj:`float`, optional): Scale the number of objects in the mock by this
+                factor (e.g., this can be used to apply an overall area re-scaling). If given, this
+                overrides self.mockOversampleFactor.
+            applyPoissonScatter (:obj:`bool`, optional): If True, apply Poisson scatter to the cluster
+                number counts when generating the mock catalog.
+
         Note:
             This currently uses the average noise level in each tile, rather than the full noise
             distribution in each tile.
         
         """
         
+        if mockOversampleFactor is None:
+            mockOversampleFactor=self.mockOversampleFactor
+
         mockTabsList=[]
         for tileName, areaDeg2 in zip(self.tileNames, self.tileAreas):
             mockTab=self.mockSurvey.drawSample(self.y0NoiseAverageDict[tileName], self.scalingRelationDict, 
@@ -502,8 +512,8 @@ class SelFn(object):
                                                photFilterLabel = self.photFilterLabel, tileName = tileName, 
                                                makeNames = False,
                                                SNRLimit = self.SNRCut, applySNRCut = True,
-                                               areaDeg2 = areaDeg2*self.mockOversampleFactor,
-                                               applyPoissonScatter = True,
+                                               areaDeg2 = areaDeg2*mockOversampleFactor,
+                                               applyPoissonScatter = applyPoissonScatter,
                                                applyIntrinsicScatter = True,
                                                applyNoiseScatter = True,
                                                applyRelativisticCorrection = self.applyRelativisticCorrection)

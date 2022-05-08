@@ -93,11 +93,10 @@ class MockSurvey(object):
         
         if areaDeg2 == 0:
             raise Exception("Cannot create a MockSurvey object with zero area")
+        self.areaDeg2=areaDeg2
+        self.areaSr=np.radians(np.sqrt(areaDeg2))**2
 
         zRange=np.arange(zMin, zMax+zStep, zStep)
-        areaSr=np.radians(np.sqrt(areaDeg2))**2
-        self.areaSr=areaSr
-        self.areaDeg2=areaDeg2
         self.zBinEdges=zRange
         self.z=(zRange[:-1]+zRange[1:])/2.
         self.a=1./(1+self.z)
@@ -133,6 +132,24 @@ class MockSurvey(object):
 
         self.enableDrawSample=enableDrawSample
         self.update(H0, Om0, Ob0, sigma8, ns)
+
+
+    def setSurveyArea(self, areaDeg2):
+        """Change the area of the survey to a user-specified value, updating the cluster
+        counts accordingly.
+
+        Args:
+            areaDeg2 (:obj:`float`): Area of the survey in square degrees.
+
+        """
+
+        if areaDeg2 == 0:
+            raise Exception("Cannot create a MockSurvey object with zero area")
+        areaSr=np.radians(np.sqrt(areaDeg2))**2
+        if areaDeg2 != self.areaDeg2:
+            self.areaSr=areaSr
+            self.areaDeg2=areaDeg2
+            self._doClusterCount()
 
 
     def _get_new_cosmo(self, H0, Om0, Ob0, sigma8, ns):
@@ -183,14 +200,15 @@ class MockSurvey(object):
         for k in range(len(self.z)):
             # NOTE: Q fit uses theta500, as does fRel (hardcoded M500 - T relation in there)
             # This bit here may not be strictly necessary, since we don't need to map on to binning
-            if self.delta != 500 or self.rhoType != "critical":
+            if self.delta == 500 and self.rhoType == "critical":
+                interpLim_minLog10M500c=self.log10M.min()
+                interpLim_maxLog10M500c=self.log10M.max()
+            else:
                 interpLim_minLog10M500c=np.log10(self.mdef.translate_mass(self.cosmoModel, self.M.min(), 
                                                                           self.a[k], self._M500cDef))
                 interpLim_maxLog10M500c=np.log10(self.mdef.translate_mass(self.cosmoModel, self.M.max(), 
                                                                           self.a[k], self._M500cDef))
-            else:
-                interpLim_minLog10M500c=self.log10M.min()
-                interpLim_maxLog10M500c=self.log10M.max()
+
             zk=self.z[k]
             interpPoints=100
             fitM500s=np.power(10, np.linspace(interpLim_minLog10M500c, interpLim_maxLog10M500c, interpPoints))
@@ -257,6 +275,8 @@ class MockSurvey(object):
         """Updates cluster count etc. after mass function object is updated.
         
         """
+
+        assert(self.areaSr == np.radians(np.sqrt(self.areaDeg2))**2)
 
         zRange=self.zBinEdges
         h = self.cosmoModel['h']
@@ -497,11 +517,11 @@ class MockSurvey(object):
             
             # We generalised mass definitions, but still need M500c, theta500c for Q, fRel calc
             # So... we may as well convert and add that to output (below) as well
-            if self.delta != 500 or self.rhoType != "critical":
+            if self.delta == 500 and self.rhoType == "critical":
+                log10M500cs[mask]=log10Ms[mask]
+            else:
                 log10M500cs[mask]=np.log10(self.mdef.translate_mass(self.cosmoModel, np.power(10, log10Ms[mask]),
                                                                 1/(1+zk), self._M500cDef))
-            else:
-                log10M500cs[mask]=log10Ms[mask]
 
             theta500s=interpolate.splev(log10M500cs[mask], self.theta500Splines[k], ext = 3)
             Qs[mask]=QFit.getQ(theta500s, z = zk, tileName = tileName)
