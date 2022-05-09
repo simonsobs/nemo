@@ -1522,7 +1522,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
                    profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,
-                   validAreaSection = None, minSNR = 0.0, TCMBAlpha = 0):
+                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.

@@ -122,7 +122,7 @@ class MockSurvey(object):
         self._get_new_cosmo(H0, Om0, Ob0, sigma8, ns)
 
         # NOTE: These are just MSun now (NOT MSun/h); always defined according to mdef
-        self.log10M=np.arange(13, 16, 0.01)
+        self.log10M=np.arange(np.log10(minMass), 16, 0.01)
         self.M=np.power(10, self.log10M)
         self.log10MBinEdges=np.linspace(self.log10M.min()-(self.log10M[1]-self.log10M[0])/2, 
                                         self.log10M.max()+(self.log10M[1]-self.log10M[0])/2, len(self.log10M)+1)  
@@ -361,7 +361,7 @@ class MockSurvey(object):
                    tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
                    areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
                    applyIntrinsicScatter = True, applyNoiseScatter = True,
-                   applyRelativisticCorrection = True):
+                   applyRelativisticCorrection = True, verbose = False):
         """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
         Nemo catalogs) by applying the given scaling relation parameters, and then (optionally) applying
         a survey selection function.
@@ -450,7 +450,7 @@ class MockSurvey(object):
 
         tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
                                         scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
-                    
+
         # If given y0Noise as RMSMap, draw coords (assuming clusters aren't clustered - which they are...)
         # NOTE: switched to using valid part of RMSMap here rather than areaMask - we need to fix the latter to same area
         # It isn't a significant issue though
@@ -489,7 +489,12 @@ class MockSurvey(object):
         Ez2s=np.zeros(y0Noise.shape)
         Qs=np.zeros(y0Noise.shape)
         fRels=np.zeros(y0Noise.shape)
+        if verbose:
+            print(">>> Generating mock sample in redshift slices")
         for k in range(len(zRange)):
+
+            if verbose:
+                print("... z = %.3f [%d/%d]" % (zRange[k], k+1, len(zRange)))
             
             t00=time.time()
             zk=zRange[k]
