@@ -229,6 +229,9 @@ def makeParser():
     parser.add_argument("-o", "--output", dest="outFileName", help = "Output catalog file name \
                         (.fits format). If not given, the name of the output catalog file will be based on\
                         either configFileName or catFileName.", default = None)
+    parser.add_argument("-x", "--x-match-arcmin", dest="xMatchArcmin", default = 2.5,
+                        help = "Specifies the cross-match radius (in arcmin) to use when matching the redshift\
+                        catalog onto the cluster candidate catalog.")
     parser.add_argument("-z", "--z-column", dest="zColumnName", help = "Specifies the name of the redshift\
                         column in the input catalog.", default = None)
     parser.add_argument("-e", "--z-error-column", dest="zErrColumnName", help = "Specifies the name of the \
@@ -275,7 +278,11 @@ if __name__ == '__main__':
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(config.parDict['massOptions']['redshiftCatalog'])
-        nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = 2.5)
+        if args.xMatchArcmin != 'act':
+            xMatchArcmin=float(args.xMatchArcmin)
+            nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = xMatchArcmin)
+        else:
+            raise Exception("Fancier cross-matching not implemented yet.")
         nemoTab['redshift']=zTab['redshift']
         if 'redshiftErr' in zTab.keys():
             nemoTab['redshiftErr']=zTab['redshiftErr']
