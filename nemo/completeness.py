@@ -517,7 +517,7 @@ class SelFn(object):
                                                applyIntrinsicScatter = True,
                                                applyNoiseScatter = True,
                                                applyRelativisticCorrection = self.applyRelativisticCorrection)
-            if mockTab is not None:
+            if mockTab is not None and len(mockTab) > 0:
                 mockTabsList.append(mockTab)
         tab=atpy.vstack(mockTabsList)
 
