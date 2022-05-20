@@ -274,7 +274,8 @@ if __name__ == '__main__':
     # NOTE: This is now done using coord matching (nearest within some maximum tolerance), rather than names
     if catFileName is None:
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = False,
-                                  setUpMaps = False, verbose = False, strictMPIExceptions = strictMPIExceptions)
+                                  makeOutputDirs = False, setUpMaps = False, verbose = False,
+                                  strictMPIExceptions = strictMPIExceptions)
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(config.parDict['massOptions']['redshiftCatalog'])
