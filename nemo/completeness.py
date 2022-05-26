@@ -88,6 +88,7 @@ class SelFn(object):
         applyMFDebiasCorrection (:obj:`bool`): Set to `False` to disable the Eddington bias correction of
             mass estimates. Probably only useful for debugging.
         zStep (:obj:`float`): Use this to set the binning in redshift for completeness calculations.
+        zMax (:obj:`float`): Sets the maximum z used for completeness calculations.
         tileNames (:obj:`list`): The list of tiles used by the SelFn object (default of None uses all tiles).
         WCSDict (:obj:`dict`): A dictionary indexed by `tileName`, containing :obj:`astWCS.WCS` objects
             that describe the mapping between pixel coords and (RA, dec) coords in each tile.
@@ -112,8 +113,8 @@ class SelFn(object):
             
     """
         
-    def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01, 
-                 tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0, 
+    def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01,
+                 zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08'):
@@ -217,7 +218,6 @@ class SelFn(object):
             # Initial cosmology set-up
             minMass=5e13
             zMin=0.0
-            zMax=2.0
             H0=self.scalingRelationDict['H0']
             Om0=self.scalingRelationDict['Om0']
             Ob0=self.scalingRelationDict['Ob0']
