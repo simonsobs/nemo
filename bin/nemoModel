@@ -58,9 +58,11 @@ def makeParser():
                         help = "Random seed used only for generating (optional) cosmic microwave\
                         background or source catalog realizations (i.e., the seed is not used for\
                         noise realizations).")
-    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", type = float, default = 0.0,
+    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", default = 0.0,
                         help = "If a random cosmic microwave background realization had been added, add\
-                        uniform per-pixel white noise at the specified level.")
+                        white noise. If a number is given, uniform per-pixel white noise at the specified\
+                        level is added. Otherwise, a path to an inverse variance map can be given (must\
+                        have the same pixelization as the supplied mask).")
     parser.add_argument("--split-noise-test", dest = "splitNoiseTest", action = "store_true",
                         help = "If set, and -N and -C switches are used, split the map into two\
                         sections, with the white noise level doubled in one half of the map.")
@@ -87,8 +89,8 @@ def makeParser():
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
 
-    parser = makeParser()
-    args = parser.parse_args()
+    parser=makeParser()
+    args=parser.parse_args()
     
     if args.noStrictMPIExceptions == True:
         strictMPIExceptions=False
@@ -186,6 +188,17 @@ if __name__ == '__main__':
                 for tileName in tileModelDict.keys():
                     modelsDict[tileName]=tileModelDict[tileName]
 
+    # Noise - if number, uniform white noise level, if string, a path to ivar map
+    try:
+        addWhiteNoise=float(args.addWhiteNoise)
+    except:
+        with pyfits.open(args.addWhiteNoise) as img:
+            sigma=img[0].data[0]
+        valid=sigma > 1e-7
+        sigma[valid]=np.sqrt(1/sigma[valid])
+        #sigma=np.random.normal(0, sigma)#*noiseBoost # simCMBMap generates noise
+        addWhiteNoise=sigma
+
     # Stitching
     print(">>> Stitching tiles ...")
     if config.rank == 0:
@@ -201,7 +214,7 @@ if __name__ == '__main__':
             # Save e.g. tSZ-only map for debugging
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
             shape=(d.shape)
-            d=d+maps.simCMBMap(shape, wcs, noiseLevel = args.addWhiteNoise, beamFileName = args.beamFileName, 
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = addWhiteNoise, beamFileName = args.beamFileName,
                                seed = args.seed)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
