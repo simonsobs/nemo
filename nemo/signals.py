@@ -6,7 +6,7 @@ This module contains routines for modeling cluster and source signals.
 
 import os
 import sys
-from pixell import enmap, curvedsky
+from pixell import enmap, curvedsky, utils
 import astropy
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
@@ -112,6 +112,8 @@ class BeamProfile(object):
                 prof=prof/prof[0]
                 self.profile1d=prof
                 self.rDeg=rDeg
+                self.Bell=Bell
+                self.ell=ell
             else:
                 self.profile1d=beamData[1]
                 self.rDeg=beamData[0]
@@ -605,8 +607,7 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
             Not needed for generating filter kernels.
         maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done, 
             for optimization purposes.
-        convolveWithBeam (bool, optional): If False, no beam convolution is done (it can be quicker to apply
-            beam convolution over a whole source-injected map rather than per object).
+        convolveWithBeam (bool, optional): If False, no beam convolution is done.
     
     Returns:
         signalMap (:obj:`np.ndarray`).
@@ -617,21 +618,49 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
         
     """
 
+    #----
+    # Old
     # Making the 1d profile itself is the slowest part (~1 sec)
+    #signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
+    #tckP=signalDict['tckP']
+
+    ## Make cluster map (unit-normalised profile)
+    #rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+    #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+    #if amplitude is not None:
+        #profile1d=profile1d*amplitude
+    #r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+    #signalMap=r2p(degreesMap)
+    
+    #if convolveWithBeam == True:
+        #signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+
+    #---
+    # New - Sigurd style beam convolution (may be 2-3% amplitude difference)
     signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
-    
-    # Make cluster map (unit-normalised profile)
-    rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-    profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-    if amplitude is not None:
-        profile1d=profile1d*amplitude
+    if convolveWithBeam == True:
+        if type(beam) == str:
+            beam=BeamProfile(beamFileName = beam)
+        rht=utils.RadialFourierTransform()
+        lbeam=np.interp(rht.l, beam.ell, beam.Bell)
+        rprof=interpolate.splev(np.degrees(rht.r), tckP, ext = 1)
+        if amplitude is not None:
+            rprof=rprof*amplitude
+        lprof=rht.real2harm(rprof)
+        lprof*=lbeam
+        rprof=rht.harm2real(lprof)
+        r, rprof=rht.unpad(rht.r, rprof)
+        tckP=interpolate.splrep(np.degrees(r), rprof)
+        rDeg=np.linspace(np.degrees(r).min(), maxSizeDeg, 5000)
+        profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+        degreesMap[degreesMap == 0]=np.degrees(r).min() # avoids going out-of-bounds for interpolation
+    else:
+        rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+        profile1d=interpolate.splev(rDeg, tckP, ext = 1)
     r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
     signalMap=r2p(degreesMap)
-    
-    if convolveWithBeam == True:        
-        signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
-    
+
     return signalMap
 
 #------------------------------------------------------------------------------------------------------------
