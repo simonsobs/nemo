@@ -1203,23 +1203,24 @@ def calcMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08,
     if y0 > 1e-2:
         raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
             
-    P=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
-                sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power, 
-                applyMFDebiasCorrection = applyMFDebiasCorrection,
-                applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
-                tileName = tileName)
+    P, bestQ=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot,
+                       sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power,
+                       applyMFDebiasCorrection = applyMFDebiasCorrection,
+                       applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
+                       tileName = tileName, returnQ = True)
     
     M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     
     label=mockSurvey.mdefLabel
     
-    return {'%s' % (label): M500, '%s_errPlus' % (label): errM500Plus, '%s_errMinus' % (label): errM500Minus}
+    return {'%s' % (label): M500, '%s_errPlus' % (label): errM500Plus, '%s_errMinus' % (label): errM500Minus,
+            'Q': bestQ}
 
 #------------------------------------------------------------------------------------------------------------
 def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
               sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, 
               applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False,
-              tileName = None):
+              returnQ = False, tileName = None):
     """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
     et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
@@ -1309,6 +1310,10 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
     P=np.sum(PArr, axis = 0)
     P=P/np.trapz(P, log10Ms)
     
+    # If we want Q corresponding to mass (need more work to add errors if we really want them)
+    PQ=P/np.trapz(P, Qs)
+    fittedQ=Qs[np.argmax(PQ)]
+
     # Reshape to (M, z) grid - use this if use different log10M range to mockSurvey
     #tck=interpolate.splrep(log10Ms, P)
     #P=interpolate.splev(mockSurvey.log10M, tck, ext = 1)
@@ -1321,8 +1326,11 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
             P2D[zMask]=PArr
         P=P2D/P2D.sum()
         #astImages.saveFITS("test.fits", P.transpose(), None)
-        
-    return P
+
+    if returnQ == True:
+        return P, fittedQ
+    else:
+        return P
 
 #------------------------------------------------------------------------------------------------------------
 # Mass conversion routines

@@ -135,6 +135,8 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
             tab['%s' % (c)]=np.zeros(len(tab))
             tab['%s_errPlus' % (c)]=np.zeros(len(tab))
             tab['%s_errMinus' % (c)]=np.zeros(len(tab))
+            if l == labels[0]:
+                tab['Q']=np.zeros(len(tab))
     label=labels[0]
     assert(label == mockSurvey.mdefLabel)
 
@@ -165,6 +167,7 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
             row['%s' % (label)]=massDict['%s' % (label)]
             row['%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
             row['%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
+            row['Q']=massDict['Q']
             # Uncorrected for mass function steepness
             unCorrMassDict=signals.calcMass(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                                     row['redshift'], row['redshiftErr'],
