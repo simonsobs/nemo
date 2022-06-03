@@ -1659,13 +1659,13 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 # Set convolveWithBeam = False if not using Sigurd-style beam convolution
                 signalMap=makeClusterSignalMap(z, M500, degreesMap, wcs, beam, 
                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True)
+                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
                 if obsFreqGHz is not None:
                     signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
                                               TCMBAlpha = TCMBAlpha, z = z)
                 modelMap=modelMap+signalMap
             # Enable below if not using new Sigurd-style beam convolution
-            #modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
     else:
         # Sources - slower but more accurate way

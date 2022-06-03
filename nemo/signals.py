@@ -117,6 +117,9 @@ class BeamProfile(object):
             else:
                 self.profile1d=beamData[1]
                 self.rDeg=beamData[0]
+                self.Bell=curvedsky.profile2harm(self.profile1d, np.radians(self.rDeg))
+                self.ell=np.arange(len(self.Bell))
+                #prof=curvedsky.harm2profile(Bell, np.radians(self.rDeg))
         else:
             self.profile1d=profile1d
             self.rDeg=rDeg
@@ -169,7 +172,7 @@ class QFit(object):
                 ``None``.
         
         Returns:
-            A dictionary (with tilNames as keys), containing spline knots for the Q function for each tile.
+            A dictionary (with tileNames as keys), containing spline knots for the Q function for each tile.
             Q values can then be obtained by using these with :func:`scipy.interpolate.splev`.
             
         """
@@ -621,45 +624,48 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
     #----
     # Old
     # Making the 1d profile itself is the slowest part (~1 sec)
-    #signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
-    #tckP=signalDict['tckP']
-
-    ## Make cluster map (unit-normalised profile)
-    #rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-    #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-    #if amplitude is not None:
-        #profile1d=profile1d*amplitude
-    #r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    #signalMap=r2p(degreesMap)
-    
-    #if convolveWithBeam == True:
-        #signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
-
-    #---
-    # New - Sigurd style beam convolution (may be 2-3% amplitude difference)
     signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
-    if convolveWithBeam == True:
-        if type(beam) == str:
-            beam=BeamProfile(beamFileName = beam)
-        rht=utils.RadialFourierTransform()
-        lbeam=np.interp(rht.l, beam.ell, beam.Bell)
-        rprof=interpolate.splev(np.degrees(rht.r), tckP, ext = 1)
-        if amplitude is not None:
-            rprof=rprof*amplitude
-        lprof=rht.real2harm(rprof)
-        lprof*=lbeam
-        rprof=rht.harm2real(lprof)
-        r, rprof=rht.unpad(rht.r, rprof)
-        tckP=interpolate.splrep(np.degrees(r), rprof)
-        rDeg=np.linspace(np.degrees(r).min(), maxSizeDeg, 5000)
-        profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-        degreesMap[degreesMap == 0]=np.degrees(r).min() # avoids going out-of-bounds for interpolation
-    else:
-        rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-        profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+
+    # Make cluster map (unit-normalised profile)
+    rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+    profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+    if amplitude is not None:
+        profile1d=profile1d*amplitude
     r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
     signalMap=r2p(degreesMap)
+    
+    if convolveWithBeam == True:
+        signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+
+    #---
+    # New - Sigurd style beam convolution
+    #signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
+    #tckP=signalDict['tckP']
+    #if convolveWithBeam == True:
+        #if type(beam) == str:
+            #beam=BeamProfile(beamFileName = beam)
+        #rht=utils.RadialFourierTransform()
+        #lbeam=np.interp(rht.l, beam.ell, beam.Bell)
+        #rprof=interpolate.splev(np.degrees(rht.r), tckP, ext = 1)
+        #if amplitude is not None:
+            #rprof=rprof*amplitude
+        #before=np.trapz(rht.r, rprof)
+        #lprof=rht.real2harm(rprof)
+        #lprof*=lbeam
+        #rprof=rht.harm2real(lprof)
+        #r, rprof=rht.unpad(rht.r, rprof)
+        #after=np.trapz(r, rprof)
+        #rprof=(before/after)*rprof
+        #tckP=interpolate.splrep(np.degrees(r), rprof)
+        #rDeg=np.linspace(np.degrees(r).min(), maxSizeDeg, 5000)
+        #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+        #degreesMap[degreesMap == 0]=np.degrees(r).min() # avoids going out-of-bounds for interpolation
+    #else:
+        #rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+        #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+    #r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+    #signalMap=r2p(degreesMap)
 
     return signalMap
 
@@ -898,6 +904,7 @@ def fitQ(config):
         clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         wcs=clipDict['wcs']
         shape=clipDict['data'].shape
+
         
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed

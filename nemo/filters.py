@@ -645,7 +645,6 @@ class MatchedFilter(MapFilter):
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
                 self.signalNorm=y0/filteredSignal.max()
-
                 # For relativistic corrections (see signals module)
                 totalSignal=filteredSignal.flatten()[np.argmax(filteredSignal)]
                 filteredSignalCube=np.real(enmap.ifft(fSignalMaps*self.filt, normalize = False))
@@ -655,7 +654,6 @@ class MatchedFilter(MapFilter):
                     fRelWeight=filteredSignalPlane.flatten()[np.argmax(filteredSignal)]/totalSignal
                     self.fRelWeights[freqGHz]=fRelWeight
                 del fSignalMaps
-                self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
                 #if len(self.unfilteredMapsDictList) > 1:
                     #raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
