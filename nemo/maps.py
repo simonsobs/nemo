@@ -1652,12 +1652,12 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
                 theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
-                degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            maxSizeDeg)
+                #degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
+                #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs,
+                                                                            #row['RADeg'], row['decDeg'],
+                                                                            #maxSizeDeg)
                 # Set convolveWithBeam = False if not using Sigurd-style beam convolution
-                signalMap=makeClusterSignalMap(z, M500, degreesMap, wcs, beam, 
+                signalMap=makeClusterSignalMap(z, M500, row['RADeg'], row['decDeg'], wcs, beam,
                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = True)
                 if obsFreqGHz is not None:

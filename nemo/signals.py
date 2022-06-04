@@ -590,7 +590,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     return signalMap
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'default', amplitude = None,
+def makeArnaudModelSignalMap(z, M500, RADeg, decDeg, wcs, beam, GNFWParams = 'default', amplitude = None,
                              maxSizeDeg = 15.0, convolveWithBeam = True):
     """Makes a 2d signal only map containing an Arnaud model cluster. 
     
@@ -644,8 +644,8 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
     # New - using Sigurd object painter
     # We workaround getting RA, dec here so that we don't have to immediately change the interface everywhere
     t2=time.time()
-    coords=np.where(degreesMap == 0)
-    RADeg, decDeg=wcs.pix2wcs(coords[1], coords[0])[0]
+    #coords=np.where(degreesMap == 0)
+    #RADeg, decDeg=wcs.pix2wcs(coords[1], coords[0])[0]
     dtype=np.float32 # only float32 supported by fast srcsim
     signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
@@ -671,7 +671,7 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
             amp=amplitude
     poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
     amps=np.array([amp], dtype = dtype)
-    signalMap=pointsrcs.sim_objects(degreesMap.shape, wcs.AWCS, poss, amps, (r, rprof))
+    signalMap=pointsrcs.sim_objects((wcs.header['NAXIS2'], wcs.header['NAXIS1']), wcs.AWCS, poss, amps, (r, rprof))
     t3=time.time()
 
     return signalMap

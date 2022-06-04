@@ -1210,9 +1210,10 @@ class ArnaudModelFilter(MapFilter):
     
     """
     
-    def makeSignalTemplateMap(self, beamFileName, amplitude = None):        
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
+        RADeg, decDeg=self.wcs.getCentreWCSCoords()
         signalMap=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
-                                                   np.degrees(self.radiansMap),
+                                                   RADeg, decDeg,
                                                    self.wcs, beamFileName, 
                                                    GNFWParams = self.params['GNFWParams'],
                                                    amplitude = amplitude)
