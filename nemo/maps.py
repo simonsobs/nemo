@@ -1607,6 +1607,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     if 'fixed_y_c' in catalog.keys() or 'true_fixed_y_c' in catalog.keys():
         # Clusters: for speed - assume all objects are the same shape
         if override is not None:
+            raise Exception("This needs updating due to API changes")
             fluxScaleMap=np.zeros(modelMap.shape)
             for row in catalog:
                 degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
@@ -1652,21 +1653,14 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
                 theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
-                #degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-                #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs,
-                                                                            #row['RADeg'], row['decDeg'],
-                                                                            #maxSizeDeg)
-                # Set convolveWithBeam = False if not using Sigurd-style beam convolution
-                signalMap=makeClusterSignalMap(z, M500, row['RADeg'], row['decDeg'], wcs, beam,
+                signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                                               decDeg = row['decDeg'], beam = beam,
                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = True)
                 if obsFreqGHz is not None:
                     signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
                                               TCMBAlpha = TCMBAlpha, z = z)
                 modelMap=modelMap+signalMap
-            # Enable below if not using new Sigurd-style beam convolution
-            #modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
-
     else:
         # Sources - slower but more accurate way
         for row in catalog:

@@ -588,18 +588,60 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     signalMap=r2p(degreesMap)
     
     return signalMap
-    
+
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelSignalMap(z, M500, RADeg, decDeg, wcs, beam, GNFWParams = 'default', amplitude = None,
-                             maxSizeDeg = 15.0, convolveWithBeam = True):
+def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
+                    maxSizeDeg = 15.0, convolveWithBeam = True):
+    """Use Sigurd's fast object painter to paint given signal into map.
+
+    """
+
+    if RADeg is None and decDeg is None:
+        RADeg, decDeg=wcs.getCentreWCSCoords()
+    dtype=np.float32 # only float32 supported by fast srcsim
+    amp=1.0
+    if convolveWithBeam == True:
+        if beam is None:
+            raise Exception("No beam supplied.")
+        if type(beam) == str:
+            beam=BeamProfile(beamFileName = beam)
+        rht=utils.RadialFourierTransform()
+        rprof=interpolate.splev(np.degrees(rht.r), tckP, ext = 1)
+        if amplitude is not None:
+            rprof=rprof*amplitude
+            amp=1.0
+        lbeam=np.interp(rht.l, beam.ell, beam.Bell)
+        lprof=rht.real2harm(rprof)
+        lprof*=lbeam
+        rprof=rht.harm2real(lprof)
+        r, rprof=rht.unpad(rht.r, rprof)
+    else:
+        rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+        rprof=interpolate.splev(rDeg, tckP, ext = 1)
+        r=np.radians(rDeg)
+        if amplitude is not None:
+            amp=amplitude
+    poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
+    amps=np.array([amp], dtype = dtype)
+    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, rprof), vmin = 1e-06,
+                                    rmax = np.radians(maxSizeDeg))
+
+    return np.array(signalMap)
+
+#------------------------------------------------------------------------------------------------------------
+def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,
+                             GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,
+                             convolveWithBeam = True):
     """Makes a 2d signal only map containing an Arnaud model cluster. 
     
     Args:
         z (float): Redshift; used for setting angular size.
         M500 (float): Mass within R500, defined with respect to critical density; units are solar masses.
-        degreesMap (:obj:`numpy.ndarray`): A 2d array containing radial distance measured in degrees from 
-            the centre of the model to be inserted. The output map will have the same dimensions and pixel
-            scale (see nemoCython.makeDegreesDistanceMap).
+        shape:
+        wcs:
+        beam:
+        RADeg: If None, the signal will be inserted at the center of the generated map.
+        decDeg: If None, the signal will be inserted at the center of the generated map.
         GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows 
             Arnaud et al. 2010). If GNFWParams = 'default', then the default parameters as listed in 
             gnfw.py are used, i.e., GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905, 
@@ -643,36 +685,11 @@ def makeArnaudModelSignalMap(z, M500, RADeg, decDeg, wcs, beam, GNFWParams = 'de
 
     # New - using Sigurd object painter
     # We workaround getting RA, dec here so that we don't have to immediately change the interface everywhere
-    t2=time.time()
-    #coords=np.where(degreesMap == 0)
-    #RADeg, decDeg=wcs.pix2wcs(coords[1], coords[0])[0]
-    dtype=np.float32 # only float32 supported by fast srcsim
     signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
     tckP=signalDict['tckP']
-    amp=1.0
-    if convolveWithBeam == True:
-        if type(beam) == str:
-            beam=BeamProfile(beamFileName = beam)
-        rht=utils.RadialFourierTransform()
-        rprof=interpolate.splev(np.degrees(rht.r), tckP, ext = 1)
-        if amplitude is not None:
-            rprof=rprof*amplitude
-            amp=1.0
-        lbeam=np.interp(rht.l, beam.ell, beam.Bell)
-        lprof=rht.real2harm(rprof)
-        lprof*=lbeam
-        rprof=rht.harm2real(lprof)
-        r, rprof=rht.unpad(rht.r, rprof)
-    else:
-        rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-        rprof=interpolate.splev(rDeg, tckP, ext = 1)
-        r=np.radians(rDeg)
-        if amplitude is not None:
-            amp=amplitude
-    poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
-    amps=np.array([amp], dtype = dtype)
-    signalMap=pointsrcs.sim_objects((wcs.header['NAXIS2'], wcs.header['NAXIS1']), wcs.AWCS, poss, amps, (r, rprof))
-    t3=time.time()
+    return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
+                           amplitude = amplitude, maxSizeDeg = maxSizeDeg,
+                           convolveWithBeam = convolveWithBeam)
 
     return signalMap
 
@@ -937,9 +954,10 @@ def fitQ(config):
                 # NOTE: CCL can blow up for some of the extreme masses we try to feed in here
                 # (so we just skip those if it happens)
                 try:
-                    signalMap=makeSignalModelMap(z, M500MSun, degreesMap, wcs, beamsDict[obsFreqGHz], 
-                                                 amplitude = amplitude, convolveWithBeam = True, 
+                    signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
+                                                 amplitude = amplitude, convolveWithBeam = True,
                                                  GNFWParams = config.parDict['GNFWParams'])
+
                 except:
                     continue
                 if realSpace == True:
