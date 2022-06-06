@@ -1604,7 +1604,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # Map of distance(s) from objects - this will get updated in place (fast)
     degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
     
-    if 'fixed_y_c' in catalog.keys() or 'true_fixed_y_c' in catalog.keys():
+    if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
         # Clusters: for speed - assume all objects are the same shape
         if override is not None:
             raise Exception("This needs updating due to API changes")
@@ -1640,8 +1640,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
                     M500=row['true_M500c']*1e14
                     z=row['redshift']
-                    y0ToInsert=row['true_fixed_y_c']*1e-4
-                    y0ToInsert=y0ToInsert/row['true_Q']
+                    #y0ToInsert=row['true_fixed_y_c']*1e-4
+                    #y0ToInsert=y0ToInsert/row['true_Q']
+                    y0ToInsert=row['true_y_c']*1e-4
                 else:
                     # NOTE: This case is for running from nemo output
                     # We need to adapt this for when the template names are not in this format

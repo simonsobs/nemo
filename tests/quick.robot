@@ -3,7 +3,7 @@
 Quickstart clusters tutorial runs
     Run quickstart clusters
     Cross match             testsCache/quickstart-clusters/quickstart-clusters_optimalCatalog.fits      testsCache/DR5_cluster-catalog_v1.1.fits
-    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=3.0    expectedRatio=1.03  errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=quickstart-clusters
+    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=3.0    expectedRatio=1.02  errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=quickstart-clusters
     Status should be        SUCCESS
 
 Quickstart sources tutorial runs

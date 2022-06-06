@@ -357,7 +357,7 @@ class MockSurvey(object):
         return PLog10M
 
 
-    def drawSample(self, y0Noise, scalingRelationDict, QFit, wcs = None, photFilterLabel = None, 
+    def drawSample(self, y0Noise, scalingRelationDict, QFit = None, wcs = None, photFilterLabel = None,
                    tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
                    areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
                    applyIntrinsicScatter = True, applyNoiseScatter = True,
@@ -374,9 +374,9 @@ class MockSurvey(object):
             scalingRelationDict (:obj:`dict`): A dictionary containing keys 'tenToA0', 'B0', 'Mpivot',
                 'sigma_int' that describes the scaling relation between y0~ and mass (this is the
                 format of `massOptions` in Nemo .yml config files).
-            tckQFitDict (:obj:`dict`): A dictionary of interpolation spline knots indexed by tileName,
-                that can be used to estimate Q, the filter mismatch function (see 
-                :func:`nemo.signals.loadQ`).
+            QFit (:obj:`nemo.signals.QFit`, optional): Object that handles the filter mismatch
+                function, *Q*. If not given, the output catalog will not contain `fixed_y_c` columns,
+                only `true_y_c` columns.
             wcs (:obj:`astWCS.WCS`, optional): WCS object corresponding to `y0Noise`, if `y0Noise` is
                 as noise map (2d image array). Needed if you want the output catalog to contain RA, dec
                 coordinates.
@@ -529,7 +529,10 @@ class MockSurvey(object):
                                                                 1/(1+zk), self._M500cDef))
 
             theta500s=interpolate.splev(log10M500cs[mask], self.theta500Splines[k], ext = 3)
-            Qs[mask]=QFit.getQ(theta500s, z = zk, tileName = tileName)
+            if QFit is not None:
+                Qs[mask]=QFit.getQ(theta500s, z = zk, tileName = tileName)
+            else:
+                Qs[mask]=1.0
             fRels[mask]=interpolate.splev(log10M500cs[mask], self.fRelSplines[k], ext = 3)
             Ez2s[mask]=self.Ez2[k]
             zs[mask]=zk
@@ -569,10 +572,14 @@ class MockSurvey(object):
         tab.add_column(atpy.Column(np.power(10, log10Ms)/1e14, massColLabel))
         if 'true_M500c' not in tab.keys():
             tab.add_column(atpy.Column(np.power(10, log10M500cs)/1e14, 'true_M500c'))
-        tab.add_column(atpy.Column(Qs, 'true_Q'))
-        tab.add_column(atpy.Column(true_y0s/1e-4, 'true_fixed_y_c'))
-        tab.add_column(atpy.Column(measured_y0s/1e-4, 'fixed_y_c'))
-        tab.add_column(atpy.Column(y0Noise/1e-4, 'fixed_err_y_c'))
+        if QFit is None:
+            tab.add_column(atpy.Column(true_y0s/1e-4, 'true_y_c'))
+        else:
+            tab.add_column(atpy.Column(Qs, 'true_Q'))
+            tab.add_column(atpy.Column(true_y0s/1e-4, 'true_fixed_y_c'))
+            tab.add_column(atpy.Column(measured_y0s/1e-4, 'fixed_y_c'))
+            tab.add_column(atpy.Column(y0Noise/1e-4, 'fixed_err_y_c'))
+
         tab.add_column(atpy.Column(measured_y0s/y0Noise, 'fixed_SNR'))
         tab.add_column(atpy.Column(zs, 'redshift'))
         tab.add_column(atpy.Column(zErrs, 'redshiftErr'))

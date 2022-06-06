@@ -249,7 +249,9 @@ class NemoConfig(object):
             self.size=1
 
         if self.rank != 0:
-            verbose=False
+            self.verbose=False
+        else:
+            self.verbose=verbose
 
         # Timekeeping for benchmarking
         if self.rank == 0:
@@ -291,7 +293,7 @@ class NemoConfig(object):
         if self.origWCS is not None:
             self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
         else:
-            if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
+            if self.verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
 
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
@@ -319,7 +321,7 @@ class NemoConfig(object):
             self.selFnDir=selFnDir
 
         if setUpMaps == True:
-            if verbose == True:
+            if self.verbose == True:
                 print(">>> Setting up maps")
             self._setUpMaps(writeTileInfo = writeTileInfo)
         else:
@@ -446,10 +448,12 @@ class NemoConfig(object):
                     assert(surveyMask.ndim == 2)
                     surveyMask[surveyMask != 0]=1
                 del img
+            self._tileDefinitionsMaskPath=surveyMaskPath
             self.parDict['tileDefinitions']=maps.autotiler(surveyMask, wcs,
                                                            self.parDict['tileDefinitions']['targetTileWidthDeg'],
                                                            self.parDict['tileDefinitions']['targetTileHeightDeg'])
-            print("... breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
+            if self.verbose:
+                print("... breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
 
             if DS9RegionFileName is not None:
                 maps.saveTilesDS9RegionsFile(self.parDict, DS9RegionFileName)
@@ -474,7 +478,10 @@ class NemoConfig(object):
 
         # We can take any map, because we earlier verified they have consistent WCS and size
         wcs=None
-        wcsPath=self.parDict['unfilteredMaps'][0]['mapFileName']
+        try:
+            wcsPath=self._tileDefinitionsMaskPath # For set-up of tiling with just a mask, nemo-sim-kit related
+        except:
+            wcsPath=self.parDict['unfilteredMaps'][0]['mapFileName'] # The old behavior
         with pyfits.open(wcsPath) as img:
             for ext in img:
                 if ext.data is not None:
@@ -490,7 +497,7 @@ class NemoConfig(object):
 
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
-            print(">>> Finding tile coords")
+            if self.verbose: print(">>> Finding tile coords")
             # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]
             coordsList=[]
@@ -555,7 +562,8 @@ class NemoConfig(object):
                 if name not in clipCoordsDict:
                     clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
                                           'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
-                    print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
+                    if self.verbose:
+                        print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
 
         return clipCoordsDict
 
