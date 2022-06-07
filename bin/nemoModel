@@ -104,6 +104,9 @@ if __name__ == '__main__':
     else:
         strictMPIExceptions=True
 
+    if args.addMap is not None:
+        assert(os.path.exists(args.addMap) == True)
+
     # Create a stub config (then we can use existing start-up stuff to dish out the tiles)
     print(">>> Setting up ...")
     parDict={}
