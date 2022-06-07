@@ -237,5 +237,5 @@ if __name__ == '__main__':
         # Optional add another component (e.g., large scale noise, to start with)
         if args.addMap is not None:
             with pyfits.open(args.addMap) as img:
-                d=d+args.addMapScaling*img[0].data
+                d=d+float(args.addMapScaling)*img[0].data
         astImages.saveFITS(args.outputFileName, d, wcs)
