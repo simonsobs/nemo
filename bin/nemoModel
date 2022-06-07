@@ -63,6 +63,13 @@ def makeParser():
                         white noise. If a number is given, uniform per-pixel white noise at the specified\
                         level is added. Otherwise, a path to an inverse variance map can be given (must\
                         have the same pixelization as the supplied mask).")
+    parser.add_argument("-A", "--add-map", dest = "addMap", default = None,
+                        help = "Path to a FITS map (same pixelization as the input mask) that will be\
+                        added to the output sim map. Useful if you want to add extra pre-computed signals\
+                        to the map (e.g., Galactic dust, large scale noise components etc.). Amplitudes\
+                        can be modified with the --add-map-scaling parameter.")
+    parser.add_argument("--add-map-scaling", dest = "addMapScaling", default = 1.0,
+                        help = "If given, multiply the map pointed to by --add-map by this factor.")
     parser.add_argument("--split-noise-test", dest = "splitNoiseTest", action = "store_true",
                         help = "If set, and -N and -C switches are used, split the map into two\
                         sections, with the white noise level doubled in one half of the map.")
@@ -224,4 +231,8 @@ if __name__ == '__main__':
                 weights[:int(d.shape[0]/2)]=weights[:int(d.shape[0]/2)]*2
                 weights=np.power(weights, -2)
                 astImages.saveFITS(args.outputFileName.replace(".fits", ".ivar.fits"), weights, wcs)
+        # Optional add another component (e.g., large scale noise, to start with)
+        if args.addMap is not None:
+            with pyfits.open(args.addMap) as img:
+                d=d+args.addMapScaling*img[0].data
         astImages.saveFITS(args.outputFileName, d, wcs)
