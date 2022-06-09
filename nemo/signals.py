@@ -924,11 +924,13 @@ def fitQ(config):
         # (but then have a higher low-z cut where Q will be valid)
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
-        RADeg, decDeg=wcs.getCentreWCSCoords()                
-        clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
-        wcs=clipDict['wcs']
-        shape=clipDict['data'].shape
-
+        RADeg, decDeg=wcs.getCentreWCSCoords()
+        shape=extMap.shape
+        #clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
+        #wcs=clipDict['wcs']
+        #shape=clipDict['data'].shape
+        #RADeg, decDeg=wcs.getCentreWCSCoords()
+        x, y=wcs.wcs2pix(RADeg, decDeg)
         
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
@@ -968,7 +970,11 @@ def fitQ(config):
             # Filter maps with ref kernel
             if len(signalMaps) == len(list(beamsDict.keys())):
                 filteredSignal=filterObj.applyFilter(signalMaps)
-                peakFilteredSignal=filteredSignal.max()
+                mapInterpolator=interpolate.RectBivariateSpline(np.arange(filteredSignal.shape[0]),
+                                                                np.arange(filteredSignal.shape[1]),
+                                                                filteredSignal, kx = 3, ky = 3)
+                peakFilteredSignal=mapInterpolator(y, x)[0][0]
+                #peakFilteredSignal=filteredSignal.max()
                 if peakFilteredSignal not in Q:
                     Q.append(peakFilteredSignal)
                     QTheta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
@@ -1009,7 +1015,7 @@ def fitQ(config):
         
         t1=time.time()
         print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
-        del Q, clipDict, filterObj
+        del Q, filterObj #, clipDict
 
     if config.MPIEnabled == True:
         config.comm.barrier()
