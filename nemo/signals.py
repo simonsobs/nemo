@@ -320,6 +320,10 @@ class QFit(object):
         else:
             # Univariate case handles own valid bounds checking
             Qs=self.fitDict[tileName](theta500Arcmin)
+
+        if (Qs < 0).sum() > 0:
+            #print("WARNING: negative Q value in tileName = %s" % (tileName))
+            Qs[Qs < 0]=0
         
         return Qs
 
