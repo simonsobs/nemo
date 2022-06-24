@@ -634,8 +634,10 @@ class NemoConfig(object):
                             refWCS=wcs
                         else:
                             try:
-                                assert(refWCS.getCentreWCSCoords() == wcs.getCentreWCSCoords())
-                                assert(refWCS.getImageMinMaxWCSCoords() == wcs.getImageMinMaxWCSCoords())
+                                #assert(refWCS.getCentreWCSCoords() == wcs.getCentreWCSCoords())
+                                #assert(refWCS.getImageMinMaxWCSCoords() == wcs.getImageMinMaxWCSCoords())
+                                assert(refWCS.header['CTYPE1'] == wcs.header['CTYPE1'])
+                                assert(refWCS.header['CTYPE2'] == wcs.header['CTYPE2'])
                                 assert(refWCS.header['NAXIS1'] == wcs.header['NAXIS1'])
                                 assert(refWCS.header['NAXIS2'] == wcs.header['NAXIS2'])
                                 assert(refWCS.getXPixelSizeDeg() == wcs.getXPixelSizeDeg())
