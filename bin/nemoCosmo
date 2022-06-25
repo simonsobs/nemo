@@ -177,6 +177,10 @@ if __name__ == '__main__':
     tab=atpy.Table().read(tabFileName)
     if 'redshift' not in tab.keys():
         raise Exception("no 'redshift' column in catalog")
+
+    # SPT-style SNR bias correction
+    debiasDOF=2
+    tab['fixed_SNR']=np.sqrt(np.power(tab['fixed_SNR'], 2) - debiasDOF)
         
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
     if cosmoOutDir == None:
