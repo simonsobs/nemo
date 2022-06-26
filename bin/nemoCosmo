@@ -127,6 +127,8 @@ if __name__ == '__main__':
     parser.add_argument("-f", "--footprint", dest = "footprint", help="""Footprint to use, e.g., DES,
                         HSC, KiDS (default: full). Note that the catalog will not be trimmed to match 
                         the footprint.""", default = None)
+    parser.add_argument("-z", "--z-min", dest = "zMinCut", default = 0.0, type = float, help = """Minimum redshift cut\
+                        applied to the catalog and the likelihood calculation.""")
     parser.add_argument("-R", "--relativistic-correction", dest = "relativisticCorrection", 
                         action = "store_true", default = False, help = """Apply relativistic correction
                         to the signal modelling and completeness calculation.""")
@@ -151,6 +153,7 @@ if __name__ == '__main__':
     maxSamples=args.maxSamples
     SNRCut=args.SNRCut
     footprintLabel=args.footprint
+    zMinCut=args.zMinCut
     cosmoOutDir=args.cosmoOutDir
     numToBurn=args.numToBurn
     massDef=args.massDef
@@ -248,8 +251,9 @@ if __name__ == '__main__':
    
     # Define binning on (log10(fixed_y_c), redshift) grid
     log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()*0.8), np.log10(1e-4*tab['fixed_y_c'].max()*1.1), 6)
+    zBinEdges=selFn.mockSurvey.zBinEdges[np.greater_equal(selFn.mockSurvey.zBinEdges, zMinCut)]
     obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(1e-4*tab['fixed_y_c']), tab['redshift'], 
-                                                               bins = [log10ycBinEdges, selFn.mockSurvey.zBinEdges])
+                                                               bins = [log10ycBinEdges, zBinEdges])
     obs_ycBinEdges=np.power(10, obs_log10ycBinEdges)
     
     # Testing
@@ -259,13 +263,13 @@ if __name__ == '__main__':
             plt.plot(pRange, probs)
             minP=min(probs)*1.1
             maxP=max(probs)*0.9
-            plt.plot([var]*10, np.linspace(minP, maxP, 10), 'k--')
+            plt.plot([var]*10, np.linspace(theoreticalMaxLogLike*2, theoreticalMaxLogLike, 10), 'k--')
             plt.xlabel(label)
             plt.ylabel("lnprob")
-            plt.ylim(minP, maxP)
-            plt.savefig("testLikelihood_%s_%s.png" % (label, args.likelihoodType))
+            plt.ylim(theoreticalMaxLogLike*2, theoreticalMaxLogLike*0.5)
+            plt.savefig("testLikelihood_%s.png" % (label))
             plt.close()
-        
+
         H0, Om0, Ob0, sigma8, ns = 68.0, 0.31, 0.049, 0.81, 0.965       # WebSky cosmology
         #tenToA0, B0, Mpivot, sigma_int = 2.65e-05, 0.0, 3.0e+14, 0.2    # WebSky scaling relation - assumed scatter
         if massDef == 'M500c':
@@ -281,14 +285,14 @@ if __name__ == '__main__':
         # If they do, we have bugs to fix...
         theoreticalMaxLogLike=lnprob(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int)
         print("Theoretical max log likelihood = %.3f" % (theoreticalMaxLogLike))
-        print("Num clusters expected = %1f" % ((selFn.compMz*selFn.mockSurvey.clusterCount).sum()))
-        print("Num clusters in catalog = %d" % (len(tab)))
-        mode=input("Drop into interactive mode [y] or run likelihood tests for each parameter [n] ? ")
-        if mode == "y":
-            import IPython
-            IPython.embed()
-            sys.exit()
-            testLogLike=lnprob(70.5, 0.304, 0.825, Ob0, ns, 2.78e-05, 0.306, Mpivot, 0.0) # Any test parameters
+        print("Num clusters expected = %1f [no z cut applied]" % ((selFn.compMz*selFn.mockSurvey.clusterCount).sum()))
+        print("Num clusters in catalog = %d [no z cut applied]" % (len(tab)))
+        #mode=input("Drop into interactive mode [y] or run likelihood tests for each parameter [n] ? ")
+        #if mode == "y":
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
+            #testLogLike=lnprob(70.5, 0.304, 0.825, Ob0, ns, 2.78e-05, 0.306, Mpivot, 0.0) # Any test parameters
         if 'H0' in testsToRun:
             label="H0"; var=H0
             pRange=np.linspace(60, 80, 21)
