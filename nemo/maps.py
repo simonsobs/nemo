@@ -27,7 +27,7 @@ import shutil
 import copy
 import yaml
 import pickle
-from pixell import enmap
+from pixell import enmap, curvedsky, utils, powspec
 import nemo
 from . import catalogs
 from . import signals
@@ -259,8 +259,8 @@ class MapDict(dict):
 
         # For source-free simulations (contamination tests)
         if 'CMBSimSeed' in list(self.keys()):
-            randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beamFileName = self['beamFileName'],
-                            seed = self['CMBSimSeed'])
+            randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beam = self['beamFileName'],
+                              seed = self['CMBSimSeed'])
             randMap[np.equal(weights, 0)]=0
             # Add white noise that varies according to inv var map...
             # Noise needed is the extra noise we need to add to match the real data, scaled by inv var map
@@ -1095,7 +1095,7 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fixNoiseSeed = False):
+def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSeed = False):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1105,8 +1105,9 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fi
             usually uK) for generating white noise that is added across the whole map. Alternatively, an array
             with the same dimensions as shape may be used, specifying sigma (in map units) per corresponding 
             pixel. Noise will only be added where non-zero values appear in noiseLevel.
-        beamFileName (:obj:`str`): The file name of the text file that describes the beam with which the map will be
-            convolved. If None, no beam convolution is applied.
+        beam (:obj:`str` or :obj:`signals.BeamProfile`): Either the file name of the text file that describes
+            the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
+            no beam convolution is applied.
         seed (:obj:`int`): The seed used for the random CMB realisation.
         fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
             
@@ -1114,17 +1115,24 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fi
         A map (:obj:`numpy.ndarray`)
     
     """
-    
-    from pixell import curvedsky, utils, powspec
-    
-    ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", 
-                             scale = True)
-    randMap=curvedsky.rand_map(shape, wcs.AWCS, ps=ps, spin=[0,2], seed = seed)
+
+    # Power spectrum array ps here is indexed by ell, starting from 0
+    # i.e., each element corresponds to the power at ell = 0, 1, 2 ... etc.
+    ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat",
+                             scale = True, expand = None)
+    ps=ps[0]
+    lps=np.arange(0, len(ps))
+
+    if beam is not None:
+        if type(beam) == str:
+            beam=signals.BeamProfile(beamFileName = beam)
+        assert(type(beam) == signals.BeamProfile)
+        lbeam=np.interp(lps, beam.ell, beam.Bell)
+        ps*=lbeam
+
+    randMap=curvedsky.rand_map(shape, wcs.AWCS, ps = ps, spin = [0,2], seed = seed)
     if fixNoiseSeed == False:
         np.random.seed()
-    
-    if beamFileName is not None:
-        randMap=convolveMapWithBeam(randMap, wcs, beamFileName)
 
     if type(noiseLevel) == np.ndarray:
         mask=np.nonzero(noiseLevel)
@@ -1731,7 +1739,7 @@ def sourceInjectionTest(config):
     # Change to previous behavior - if config doesn't specify models to use, assume it's point sources
     if 'clusterInjectionModels' in config.parDict.keys():
         clusterMode=True
-        sourceInjectionModelList=config.parDict['sourceInjectionModels']
+        sourceInjectionModelList=config.parDict['clusterInjectionModels']
         SNRCol='fixed_SNR'
         fluxCol='fixed_y_c'
         noiseLevelCol='fixed_err_y_c'
@@ -1811,14 +1819,14 @@ def sourceInjectionTest(config):
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
                     # Quick test catalog - takes < 1 sec to generate
                     mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
-                                                            amplitudeColumnName = 'fixed_y_c',
+                                                            amplitudeColumnName = 'true_y_c',
                                                             amplitudeRange = amplitudeRange,
                                                             amplitudeDistribution = 'linear',
                                                             selFn = selFn, maskDilationPix = 20)
                     # Or... proper mock, but this takes ~24 sec for E-D56
                     #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]
                     injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'],
-                                'override': sourceInjectionModel}
+                                   'override': sourceInjectionModel}
                 elif filtDict['class'].find("Beam") != -1:
                     if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
                         amplitudeRange=[1, 1000]

@@ -641,9 +641,11 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     Args:
         z (float): Redshift; used for setting angular size.
         M500 (float): Mass within R500, defined with respect to critical density; units are solar masses.
-        shape:
-        wcs:
-        beam:
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
+        wcs (:obj:`astWCS.WCS`): An astWCS object.
+        beam (:obj:`str` or :obj:`signals.BeamProfile`): Either the file name of the text file that describes
+            the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
+            no beam convolution is applied.
         RADeg: If None, the signal will be inserted at the center of the generated map.
         decDeg: If None, the signal will be inserted at the center of the generated map.
         GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows 

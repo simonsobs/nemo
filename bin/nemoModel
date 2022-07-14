@@ -224,7 +224,7 @@ if __name__ == '__main__':
             # Save e.g. tSZ-only map for debugging
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
             shape=(d.shape)
-            d=d+maps.simCMBMap(shape, wcs, noiseLevel = addWhiteNoise, beamFileName = args.beamFileName,
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = addWhiteNoise, beam = args.beamFileName,
                                seed = args.seed)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
