@@ -1615,6 +1615,10 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
         # Clusters: for speed - assume all objects are the same shape
         if override is not None:
+            #print("change API")
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
             raise Exception("This needs updating due to API changes")
             fluxScaleMap=np.zeros(modelMap.shape)
             for row in catalog:

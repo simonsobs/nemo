@@ -12,11 +12,10 @@ import numpy as np
 import astropy.table as atpy
 import astropy.io.fits as pyfits
 from astLib import *
-from nemo import startUp
-from nemo import maps
-from nemo import catalogs
+from nemo import startUp, maps, catalogs, signals
 import argparse
 import astropy.io.fits as pyfits
+import pyccl as ccl
 
 #------------------------------------------------------------------------------------------------------------
 def makeParser():
@@ -26,7 +25,10 @@ def makeParser():
                         or 'pointsources-N' (to generate a test catalog of N point sources that will be\
                         inserted into the map, e.g., pointsources-1000 will insert 1000 sources). If\
                         the latter, the catalog will be written to outputFileName_inputCatalog.fits\
-                        (with the .fits extension stripped from outputFileName).")
+                        (with the .fits extension stripped from outputFileName). If the former,\
+                        cosmological parameters may be specified in the FITS header using the\
+                        OM0, OB0, H0, SIGMA8, NS keywords (used only for cluster models at the\
+                        moment).")
     parser.add_argument("maskFileName", help = "A FITS image file, containing a mask of the desired sky\
                         area. Non-zero values in the mask are used to define tiles (typically 10 x 5 deg),\
                         which are processed in parallel if MPI is enabled (see -M switch). The output sky\
@@ -149,7 +151,22 @@ if __name__ == '__main__':
                 tab=atpy.Table(names = ('RADeg', 'decDeg'))
     else:
         tab=atpy.Table().read(args.catalog)
-    
+
+    # Optionally override the fiducial cosmology (only useful for cluster sims)
+    keywords=['OM0', 'OB0', 'H0', 'SIGMA8', 'NS']
+    keyCount=0
+    for key in keywords:
+        if key in tab.meta.keys():
+            keyCount=keyCount+1
+    if keyCount == len(keywords):
+        print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
+        cosmoModel=ccl.Cosmology(Omega_c = tab.meta['OM0']-tab.meta['OB0'], Omega_b = tab.meta['OB0'],
+                                 h = 0.01*tab.meta['H0'], sigma8 = tab.meta['SIGMA8'], n_s = tab.meta['NS'],
+                                 transfer_function = signals.transferFunction)
+    else:
+        print(">>> Using fiducial cosmology")
+        cosmoModel=signals.fiducialCosmoModel
+
     # Optional signal scaling (useful for diff alpha sims)
     if 'y_c' in tab.keys():
         tab['y_c']=tab['y_c']*args.scale
@@ -167,7 +184,7 @@ if __name__ == '__main__':
                                                      obsFreqGHz = args.obsFreqGHz,
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
                                                      TCMBAlpha = args.TCMBAlpha,
-                                                     profile = args.profile)
+                                                     profile = args.profile, cosmoModel = cosmoModel)
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
