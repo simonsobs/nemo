@@ -635,7 +635,7 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,
                              GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,
-                             convolveWithBeam = True):
+                             convolveWithBeam = True, cosmoModel = None):
     """Makes a 2d signal only map containing an Arnaud model cluster. 
     
     Args:
@@ -690,8 +690,7 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     #t1=time.time()
 
     # New - using Sigurd object painter
-    # We workaround getting RA, dec here so that we don't have to immediately change the interface everywhere
-    signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
+    signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams, cosmoModel = cosmoModel)
     tckP=signalDict['tckP']
     return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
                            amplitude = amplitude, maxSizeDeg = maxSizeDeg,

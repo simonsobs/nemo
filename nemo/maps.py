@@ -1630,11 +1630,12 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             maxSizeDeg=5*(theta500Arcmin/60)
             modelMap=makeClusterSignalMap(override['redshift'], override['M500'], degreesMap, 
                                           wcs, beam, GNFWParams = GNFWParams,
-                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
+                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                          cosmoModel = cosmoModel)
             modelMap=modelMap*fluxScaleMap
-            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
+            #modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
 
-        # Clusters - insert one at a time (with different scales etc.) - currently taking ~1.6 sec per object
+        # Clusters - insert one at a time (with different scales etc.)
         else:
             count=0
             for row in catalog:
@@ -1669,7 +1670,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
                                                decDeg = row['decDeg'], beam = beam,
                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True)
+                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                               cosmoModel = cosmoModel)
                 if obsFreqGHz is not None:
                     signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
                                               TCMBAlpha = TCMBAlpha, z = z)
