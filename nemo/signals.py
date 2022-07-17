@@ -962,7 +962,7 @@ def fitQ(config):
                 # (so we just skip those if it happens)
                 try:
                     signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
-                                                 amplitude = amplitude, convolveWithBeam = False,
+                                                 amplitude = amplitude, convolveWithBeam = True,
                                                  GNFWParams = config.parDict['GNFWParams'])
                 except:
                     continue
