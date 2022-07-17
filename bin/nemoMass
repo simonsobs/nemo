@@ -343,34 +343,12 @@ if __name__ == '__main__':
     zMin=0.0
     zMax=2.0
     # H0, Om0, Ol0 used for E(z), theta500 calcs in Q - these are updated when we call create mockSurvey
-    if 'H0' in list(massOptions.keys()):
-        H0=massOptions['H0']
-    else:
-        H0=70.
-    if 'Om0' in list(massOptions.keys()):
-        Om0=massOptions['Om0']
-    else:
-        Om0=0.3
-    # OmegaB0, sigma8 only used for mass function Eddington bias correction
-    if 'Ob0' in list(massOptions.keys()):
-        Ob0=massOptions['Ob0']
-    else:
-        Ob0=0.05
-    if 'sigma8' in list(massOptions.keys()):
-        sigma8=massOptions['sigma8']
-    else:
-        sigma8=0.8
-    if 'ns' in list(massOptions.keys()):
-        ns=massOptions['ns']
-    else:
-        ns=0.95
-    if 'delta' not in list(massOptions.keys()):
-        massOptions['delta']=500
-    if 'rhoType' not in list(massOptions.keys()):
-        massOptions['rhoType']='critical'
-    if 'concMassRelation' not in list(massOptions.keys()):
-        massOptions['concMassRelation']='Bhattacharya13'
-
+    # NOTE: startUp now sets defaults for these if not given in config
+    H0=massOptions['H0']
+    Om0=massOptions['Om0']
+    Ob0=massOptions['Ob0']
+    sigma8=massOptions['sigma8']
+    ns=massOptions['ns']
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                      rhoType = massOptions['rhoType'], delta = massOptions['delta'])
         

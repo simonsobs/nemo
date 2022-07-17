@@ -344,7 +344,8 @@ def makeSelFnCollection(config, mockSurvey):
         compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
                                            numDraws = config.parDict['selFnOptions']['numDraws'],
                                            numIterations = config.parDict['selFnOptions']['numIterations'],
-                                           method = config.parDict['selFnOptions']['method'])
+                                           method = config.parDict['selFnOptions']['method'],
+                                           verbose = True)
         selFnDict={'tileName': tileName,
                    'RMSTab': RMSTab,
                    'tileAreaDeg2': RMSTab['areaDeg2'].sum(),

@@ -1118,8 +1118,8 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
     return massLimit
     
 #------------------------------------------------------------------------------------------------------------
-def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, QFit,
-                     plotFileName = None, z = None, method = "fast", numDraws = 2000000, numIterations = 100):
+def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, plotFileName = None, z = None,
+                     method = "fast", numDraws = 2000000, numIterations = 100, verbose = False):
     """Calculate completeness as a function of (log\ :sub:`10` mass, z) on the mockSurvey grid at the given
     `SNRCut`. Intrinsic scatter in the scaling relation is taken into account.
     
@@ -1131,15 +1131,15 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
         tileName (:obj:`str`): Name of the map tile.
         mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
             function calculations and generating mock catalogs.
-        scalingRelationDict (:obj:`dict`): A dictionary of scaling relation parameters (see example Nemo
-            config files for the format).
+        massOptions (:obj:`dict`): A dictionary of scaling relation, cosmological, and mass definition
+            parameters (see example Nemo config files for the format).
         QFit (:class:`nemo.signals.QFit`): An object for calculating the filter mismatch function, referred
             to as `Q` in the ACT papers from `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_
             onwards.
         plotFileName (:obj:`str`, optional): If given, write a plot showing 90% completness limit to this
             path.
-        z (:obj:`np.ndarray`, optional): Redshifts at which the completeness calculation will be performed.
-            Alternatively, a single redshift can be specified as a :obj:`float` instead.
+        z (:obj:`float`, optional): Redshift at which the completeness calculation will be performed.
+            If None, the redshift range will be taken from the :class:`MockSurvey` object.
         method (:obj:`str`, optional): Two methods for doing the calculation are available: "fast" (applies
             the measurement errors and scatter to 'true' ỹ\ :sub:`0` values on a grid) and "montecarlo" (uses
             samples drawn from a mock catalog, generated on the fly, to estimate the completeness). Both
@@ -1161,8 +1161,13 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
         zRange=mockSurvey.z
 
     trueMassCol="true_M%d%s" % (mockSurvey.delta, mockSurvey.rhoType[0])
-    
+
+    if verbose == True:
+        print("... calcuating completeness in tile %s using '%s' method" % (tileName, method))
+
     if method == "montecarlo":
+
+        #t0=time.time()
         # Need area-weighted average noise in the tile - we could change this to use entire RMS map instead
         areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
         if areaWeights.sum() > 0:
@@ -1175,8 +1180,9 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
             allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
             detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
             for i in range(numIterations):
-                tab=mockSurvey.drawSample(y0Noise, scalingRelationDict, QFit, tileName = tileName, 
-                                        SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws)
+                tab=mockSurvey.drawSample(y0Noise, massOptions, QFit, tileName = tileName,
+                                          SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws,
+                                          applyRelativisticCorrection = massOptions['relativisticCorrection'])
                 allMz=allMz+np.histogram2d(np.log10(tab[trueMassCol]*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
                 detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
                 detMz=detMz+np.histogram2d(np.log10(tab[trueMassCol][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
@@ -1187,23 +1193,32 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
         else:
             compMz=np.zeros([mockSurvey.clusterCount.shape[0], mockSurvey.clusterCount.shape[1]])
         #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
+        #t1=time.time()
 
     elif method == "fast":
-        
+
         # Using full noise distribution, weighted by fraction of area
         # NOTE: removed recMassBias and div parameters
-        #t0=time.time()
-        tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
-                                        scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
+        tenToA0, B0, Mpivot, sigma_int=[massOptions['tenToA0'], massOptions['B0'],
+                                        massOptions['Mpivot'], massOptions['sigma_int']]
         y0Grid=np.zeros([zRange.shape[0], mockSurvey.clusterCount.shape[1]])
         for i in range(len(zRange)):
             zk=zRange[i]
             k=np.argmin(abs(mockSurvey.z-zk))
-            theta500s_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.theta500Splines[k])
+            # WARNING: the interpolates for theta500, fRel in MockSurvey work in terms of M500c
+            # mockSurvey.log10M is NOT necessarily M500c any more
+            if massOptions['delta'] == 500 and massOptions['rhoType'] == "critical":
+                log10M500cs=mockSurvey.log10M
+            else:
+                log10M500cs=np.log10(mockSurvey.mdef.translate_mass(mockSurvey.cosmoModel, np.power(10, mockSurvey.log10M),
+                                                                    1/(1+zk), mockSurvey._M500cDef))
+
+            theta500s_zk=interpolate.splev(log10M500cs, mockSurvey.theta500Splines[k])
             Qs_zk=QFit.getQ(theta500s_zk, z = zk, tileName = tileName)
-            fRels_zk=interpolate.splev(mockSurvey.log10M, mockSurvey.fRelSplines[k])
-            true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk*fRels_zk
-            #true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power((recMassBias*np.power(10, mockSurvey.log10M))/Mpivot, 1+B0)*Qs_zk*fRels_zk
+            true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk
+            if massOptions['relativisticCorrection'] == True:
+                fRels_zk=interpolate.splev(log10M500cs, mockSurvey.fRelSplines[k])
+                true_y0s_zk=true_y0s_zk*fRels_zk
             y0Grid[i]=true_y0s_zk
             
         # For some cosmological parameters, we can still get the odd -ve y0
@@ -1237,6 +1252,12 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, scalingRelationDict, 
         #IPython.embed()
         #sys.exit()
             
+    elif method == "injection":
+        print("calc completeness from injection sim")
+        import IPython
+        IPython.embed()
+        sys.exit()
+
     else:
         raise Exception("calcCompleteness only has 'fast', and 'Monte Carlo' methods available")
             

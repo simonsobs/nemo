@@ -109,17 +109,23 @@ if __name__ == '__main__':
 
     # Moved calculation of selection function parts here as it's very quick in parallel
     if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
+        if config.parDict['selFnOptions']['method'] == 'injection' and sourceInjTable is None:
+            raise Exception("Cannot use the 'injection' method for calculating completeness if 'sourceInjectionTest' is False.")
         # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
         minMass=8e13
         areaDeg2=400.0  # Don't care what value this has, as we'll sim up an arbitrary number of clusters anyway
         zMin=0.0
         zMax=2.0
-        H0=70.
-        Om0=0.30
-        Ob0=0.05
-        sigma8=0.8
-        ns=0.95
-        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, enableDrawSample = True)
+        # NOTE: startUp now sets defaults for these if not given in config
+        massOptions=config.parDict['massOptions']
+        H0=massOptions['H0']
+        Om0=massOptions['Om0']
+        Ob0=massOptions['Ob0']
+        sigma8=massOptions['sigma8']
+        ns=massOptions['ns']
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
+                                         rhoType = massOptions['rhoType'], delta = massOptions['delta'],
+                                         enableDrawSample = True)
         selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
     else:
         selFnCollection={}

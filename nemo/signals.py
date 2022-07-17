@@ -936,7 +936,7 @@ def fitQ(config):
         #shape=clipDict['data'].shape
         #RADeg, decDeg=wcs.getCentreWCSCoords()
         x, y=wcs.wcs2pix(RADeg, decDeg)
-        
+
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
@@ -962,9 +962,8 @@ def fitQ(config):
                 # (so we just skip those if it happens)
                 try:
                     signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
-                                                 amplitude = amplitude, convolveWithBeam = True,
+                                                 amplitude = amplitude, convolveWithBeam = False,
                                                  GNFWParams = config.parDict['GNFWParams'])
-
                 except:
                     continue
                 if realSpace == True:

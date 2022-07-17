@@ -1613,69 +1613,48 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
     
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
-        # Clusters: for speed - assume all objects are the same shape
-        if override is not None:
-            #print("change API")
-            #import IPython
-            #IPython.embed()
-            #sys.exit()
-            raise Exception("This needs updating due to API changes")
-            fluxScaleMap=np.zeros(modelMap.shape)
-            for row in catalog:
-                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            maxSizeDeg)
-                fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['fixed_y_c']*1e-4
-            theta500Arcmin=signals.calcTheta500Arcmin(override['redshift'], override['M500'], cosmoModel)
-            maxSizeDeg=5*(theta500Arcmin/60)
-            modelMap=makeClusterSignalMap(override['redshift'], override['M500'], degreesMap, 
-                                          wcs, beam, GNFWParams = GNFWParams,
-                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                          cosmoModel = cosmoModel)
-            modelMap=modelMap*fluxScaleMap
-            #modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
-
         # Clusters - insert one at a time (with different scales etc.)
-        else:
-            count=0
-            for row in catalog:
-                # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
-                # NOTE: Should move this out of this switch so applied to all catalog types
-                if validAreaSection is not None:
-                    x0, x1, y0, y1=validAreaSection
-                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                    if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
-                        continue
-                count=count+1
-                if 'true_M500c' in catalog.keys():
-                    # This case is for when we're running from nemoMock output
-                    # Since the idea of this is to create noise-free model images, we must use true values here
-                    # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
-                    M500=row['true_M500c']*1e14
-                    z=row['redshift']
-                    #y0ToInsert=row['true_fixed_y_c']*1e-4
-                    #y0ToInsert=y0ToInsert/row['true_Q']
-                    y0ToInsert=row['true_y_c']*1e-4
-                else:
-                    # NOTE: This case is for running from nemo output
-                    # We need to adapt this for when the template names are not in this format
-                    if 'template' not in catalog.keys():
-                        raise Exception("No M500, z, or template column found in catalog.")
-                    bits=row['template'].split("#")[0].split("_")
-                    M500=float(bits[1][1:].replace("p", "."))
-                    z=float(bits[2][1:].replace("p", "."))
-                    y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
-                theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
-                maxSizeDeg=5*(theta500Arcmin/60)
-                signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
-                                               decDeg = row['decDeg'], beam = beam,
-                                               GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                               cosmoModel = cosmoModel)
-                if obsFreqGHz is not None:
-                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
-                                              TCMBAlpha = TCMBAlpha, z = z)
-                modelMap=modelMap+signalMap
+        count=0
+        for row in catalog:
+            # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
+            # NOTE: Should move this out of this switch so applied to all catalog types
+            if validAreaSection is not None:
+                x0, x1, y0, y1=validAreaSection
+                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
+                    continue
+            count=count+1
+            if 'true_M500c' in catalog.keys():
+                # This case is for when we're running from nemoMock output
+                # Since the idea of this is to create noise-free model images, we must use true values here
+                # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
+                M500=row['true_M500c']*1e14
+                z=row['redshift']
+                y0ToInsert=row['true_y_c']*1e-4
+            elif override is not None:
+                z=override['redshift']
+                M500=override['M500']
+                y0ToInsert=row['y_c']*1e-4
+            else:
+                # NOTE: This case is for running from nemo output
+                # We need to adapt this for when the template names are not in this format
+                if 'template' not in catalog.keys():
+                    raise Exception("No M500, z, or template column found in catalog.")
+                bits=row['template'].split("#")[0].split("_")
+                M500=float(bits[1][1:].replace("p", "."))
+                z=float(bits[2][1:].replace("p", "."))
+                y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+            maxSizeDeg=5*(theta500Arcmin/60)
+            signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                                            decDeg = row['decDeg'], beam = beam,
+                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                            cosmoModel = cosmoModel)
+            if obsFreqGHz is not None:
+                signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
+                                            TCMBAlpha = TCMBAlpha, z = z)
+            modelMap=modelMap+signalMap
     else:
         # Sources - slower but more accurate way
         for row in catalog:
@@ -1723,6 +1702,12 @@ def sourceInjectionTest(config):
     Returns:
         An astropy Table containing recovered position offsets and fluxes versus fixed_SNR for inserted
         sources.
+
+    Note:
+        Injection tests for clusters use the reference filter only (set with the `photFilter` keyword
+        in the config). Input amplitudes for clusters are in `y_c`, while output is in `fixed_y_c`
+        (because the reference filter is used). Similarly, output SNR is `fixed_SNR`, although the
+        output column is labelled as `SNR`.
     
     """
 
@@ -1746,9 +1731,9 @@ def sourceInjectionTest(config):
     if 'clusterInjectionModels' in config.parDict.keys():
         clusterMode=True
         sourceInjectionModelList=config.parDict['clusterInjectionModels']
-        SNRCol='fixed_SNR'
-        fluxCol='fixed_y_c'
-        noiseLevelCol='fixed_err_y_c'
+        SNRCol='SNR'
+        fluxCol='y_c'
+        noiseLevelCol='err_y_c'
         for sourceInjectionModel in sourceInjectionModelList:
             label='%.2f' % (signals.calcTheta500Arcmin(sourceInjectionModel['redshift'], 
                                                        sourceInjectionModel['M500'], signals.fiducialCosmoModel))
@@ -1825,7 +1810,7 @@ def sourceInjectionTest(config):
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
                     # Quick test catalog - takes < 1 sec to generate
                     mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
-                                                            amplitudeColumnName = 'true_y_c',
+                                                            amplitudeColumnName = fluxCol,
                                                             amplitudeRange = amplitudeRange,
                                                             amplitudeDistribution = 'linear',
                                                             selFn = selFn, maskDilationPix = 20)
@@ -1879,14 +1864,17 @@ def sourceInjectionTest(config):
                         x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
                     except:
                         raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
-                    # If we're using clusters, we need to put in the Q correction
-                    # NOTE: This assumes the model name gives theta500c in arcmin!
-                    if clusterMode == True:
-                        for tileName in np.unique(x_recCatalog['tileName']):
-                            theta500Arcmin=float(sourceInjectionModel['label'])
-                            Q=QFit.getQ(theta500Arcmin, tileName = tileName)
-                            mask=(x_recCatalog['tileName'] == tileName)
-                            x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
+                    #---
+                    # Old - now we actually want input in y_c, output in fixed_y_c for clusters
+                    ## If we're using clusters, we need to put in the Q correction
+                    ## NOTE: This assumes the model name gives theta500c in arcmin!
+                    #if clusterMode == True:
+                        #for tileName in np.unique(x_recCatalog['tileName']):
+                            #theta500Arcmin=float(sourceInjectionModel['label'])
+                            #Q=QFit.getQ(theta500Arcmin, tileName = tileName)
+                            #mask=(x_recCatalog['tileName'] == tileName)
+                            #x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
+                    #---
                     # Catching any crazy mismatches, writing output for debugging
                     if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
                         mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)
@@ -1987,9 +1975,9 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         plotUnitsMultiplier=60
         plotUnitsLabel="$^{\prime\prime}$"
     else:
-        # Clusters
-        SNRCol='fixed_SNR'
-        plotSNRLabel="SNR$_{2.4}$"
+        # Clusters - SNR is really fixed_SNR here, because injection sims use only ref filter
+        SNRCol='SNR'
+        plotSNRLabel="fixed_SNR"
         rArcminThreshold=np.linspace(0, 10, 101)
         plotUnits="arcmin"
         plotUnitsMultiplier=1
