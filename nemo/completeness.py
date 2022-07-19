@@ -947,6 +947,7 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
         
     zBinEdges=np.arange(0.05, 2.1, 0.1)
     zBinCentres=(zBinEdges[:-1]+zBinEdges[1:])/2.
+    massLabel=mockSurvey.mdefLabel
         
     for footprintLabel in selFnCollection.keys():
         print(">>> Survey-averaged results inside footprint: %s ..." % (footprintLabel))
@@ -972,7 +973,7 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
         np.savez(outFileName, z = mockSurvey.z, log10M500c = mockSurvey.log10M, 
                  M500Completeness = compMz_surveyAverage)
         
-        makeMzCompletenessPlot(compMz_surveyAverage, mockSurvey.log10M, mockSurvey.z, footprintLabel, 
+        makeMzCompletenessPlot(compMz_surveyAverage, mockSurvey.log10M, mockSurvey.z, footprintLabel, massLabel,
                                diagnosticsDir+os.path.sep+"MzCompleteness_%s%s.pdf" % (footprintLabel, additionalLabel))
 
         # 90% mass completeness limit and plots
@@ -1028,7 +1029,7 @@ def calcCompletenessContour(compMz, log10M, z, level = 0.90):
     return cont_z, cont_log10M
     
 #------------------------------------------------------------------------------------------------------------
-def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
+def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
     """Makes a (log\ :sub:`10` mass, z) completeness plot.
     
     Args:
@@ -1037,6 +1038,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
             `compMz`.
         z (:obj:`np.ndarray`): One dimensional arra of redshifts corresponding to `compMz`.
         title (:obj:`str`): Title that will be written at the top of the plot.
+        massLabel (:obj:`str`): Label for mass quantity (e.g., "M200c").
         outFileName (:obj:`str`): Path where the plot will be written to a file, with the format being
             determined by the file extension.
     
@@ -1061,7 +1063,9 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, outFileName):
         labels_log10M.append("%.2f" % (lm))
     plt.yticks(interpolate.splev(plot_log10M, y_tck), labels_log10M)
     plt.ylim(coords_log10M.min(), coords_log10M.max())
-    plt.ylabel("log$_{10}$ ($M_{\\rm 500c} / M_{\odot}$)")
+    if massLabel[0] == "M":
+        massLabel=massLabel[1:]
+    plt.ylabel("log$_{10}$ ($M_{\\rm %s} / M_{\odot}$)" % (massLabel))
     
     x_tck=interpolate.splrep(z, np.arange(z.shape[0]))
     plot_z=np.linspace(0.0, 2.0, 11)
