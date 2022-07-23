@@ -332,16 +332,16 @@ class SelFn(object):
         y0GridCube=[]
         compMzCube=[]
         for tileName in self.RMSDict.keys():
-            tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'], 
+            tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
                                             self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
             y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
             for i in range(len(zRange)):
                 zk=zRange[i]
                 k=np.argmin(abs(self.mockSurvey.z-zk))
                 if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                    log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel, 
-                                                                            self.mockSurvey.M, 
-                                                                            self.mockSurvey.a[k], 
+                    log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
+                                                                            self.mockSurvey.M,
+                                                                            self.mockSurvey.a[k],
                                                                             self.mockSurvey._M500cDef))
                 else:
                     log10M500s=self.mockSurvey.log10M
@@ -352,7 +352,7 @@ class SelFn(object):
                 if self.applyRelativisticCorrection == True:
                     fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
                     true_y0s_zk=true_y0s_zk*fRels_zk
-                y0Grid[i]=true_y0s_zk
+                y0Grid[i]=true_y0s_zk #*0.95
                 
             # For some cosmological parameters, we can still get the odd -ve y0
             y0Grid[y0Grid <= 0] = 1e-9
@@ -361,16 +361,23 @@ class SelFn(object):
             # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
             RMSTab=self.RMSDict[tileName]
             areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+            y0Lim=self.SNRCut*RMSTab['y0RMS']
             log_y0Lim=np.log(self.SNRCut*RMSTab['y0RMS'])
             log_y0=np.log(y0Grid)
             compMz=np.zeros(log_y0.shape)
             for i in range(len(RMSTab)):
-                SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-                SNRGrid=SNRGrid
-                log_y0Err=1/SNRGrid
-                log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
-                log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-                compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
+                #---
+                # No intrinsic scatter, Gaussian noise
+                sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
+                compMz=compMz+sfi*areaWeights[i]
+                #---
+                # Old
+                #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+                #log_y0Err=1/SNRGrid
+                #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
+                #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+                #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
+                #compMz=compMz+sfi*areaWeights[i]
             compMzCube.append(compMz)
             y0GridCube.append(y0Grid)
         compMzCube=np.array(compMzCube)
@@ -378,12 +385,27 @@ class SelFn(object):
         self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
         self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
 
+        ##print("fix in selFn completeness")
+        ##import IPython
+        ##IPython.embed()
+        ##sys.exit()
+
         #---
         # Old
         #compMzCube=[]
+        #count=0
+        #method='montecarlo'
         #for tileName in self.RMSDict.keys():
-            #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName, 
-                                               #self.mockSurvey, self.scalingRelationDict, self.tckQFitDict))
+            #count=count+1
+            #if method == 'montecarlo':
+                #print("... %d/%d ..." % (count, len(self.tileNames)))
+                #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
+                                                   #self.mockSurvey, self.scalingRelationDict, self.Q,
+                                                   #method = 'montecarlo', numDraws = 100000, numIterations = 5))
+            #else:
+                #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
+                                                   #self.mockSurvey, self.scalingRelationDict, self.Q))
+
             #if np.any(np.isnan(compMzCube[-1])) == True:
                 #raise Exception("NaNs in compMz for tile '%s'" % (tileName))
         #compMzCube=np.array(compMzCube)
