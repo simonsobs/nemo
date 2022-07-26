@@ -595,7 +595,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
 
 #------------------------------------------------------------------------------------------------------------
 def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
-                    maxSizeDeg = 15.0, convolveWithBeam = True):
+                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-04):
     """Use Sigurd's fast object painter to paint given signal into map.
 
     """
@@ -627,8 +627,12 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
             amp=amplitude
     poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
     amps=np.array([amp], dtype = dtype)
-    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, rprof), vmin = 1e-06,
+
+    # Work around the fact that the profile gets truncated if we're trying to paste in something negative
+    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
                                     rmax = np.radians(maxSizeDeg))
+    if rprof[0] < 0:
+        signalMap=signalMap*-1
 
     return np.array(signalMap)
 
@@ -868,7 +872,7 @@ def fitQ(config):
             MRange_wanted.append(M500)         
         MRange=MRange+MRange_wanted
         zRange=zRange+zRange_wanted.tolist()
-        signalMapSizeDeg=10.0
+        signalMapSizeDeg=15.0
     elif zDepQ == 1:
         # On a z grid for evolving profile models (e.g., Battaglia et al. 2012)
         MRange=[ref['params']['M500MSun']]
@@ -888,7 +892,7 @@ def fitQ(config):
                 MRange_wanted.append(M500)
             MRange=MRange+MRange_wanted
             zRange=zRange+([z]*len(MRange_wanted))
-        signalMapSizeDeg=5.0
+        signalMapSizeDeg=15.0
     else:
         raise Exception("valid values for zDepQ are 0 or 1")
             
@@ -924,33 +928,41 @@ def fitQ(config):
             obsFreqGHz=mapDict['obsFreqGHz']
             beamsDict[obsFreqGHz]=mapDict['beamFileName']
         
-        # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
-        # signalMapSizeDeg set according to lowest z model (see above), using smaller for z dependent to save RAM
-        # (but then have a higher low-z cut where Q will be valid)
+        # Actually measuring Q...
+        # Pad signal maps
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
-        RADeg, decDeg=wcs.getCentreWCSCoords()
+        extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
+        yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
+        xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
+        yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
+        xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
+        extMap=enmap.pad(extMap, (yPad, xPad))
+        h=extMap.wcs.to_header()
+        h.insert(0, ('NAXIS2', extMap.shape[0]))
+        h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
+        wcs=astWCS.WCS(h, mode = 'pyfits')
         shape=extMap.shape
-        #clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
-        #wcs=clipDict['wcs']
-        #shape=clipDict['data'].shape
-        #RADeg, decDeg=wcs.getCentreWCSCoords()
+        RADeg, decDeg=wcs.getCentreWCSCoords()
         x, y=wcs.wcs2pix(RADeg, decDeg)
 
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
         signalMap=np.zeros(shape)
-        degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
-        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, signalMapSizeDeg)
+        #degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
+        #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         Q=[]
         QTheta500Arcmin=[]
         Qz=[]
+        #cubeStore={} # For debugging object painting
+        #for obsFreqGHz in list(beamsDict.keys()):
+            #cubeStore[obsFreqGHz]=[]
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
             fSignalMaps=[]
-            y0=2e-4
+            y0=2e-04
             for obsFreqGHz in list(beamsDict.keys()):
                 if mapDict['obsFreqGHz'] is not None:   # Normal case
                     amplitude=maps.convertToDeltaT(y0, obsFreqGHz)
@@ -962,10 +974,11 @@ def fitQ(config):
                 # (so we just skip those if it happens)
                 try:
                     signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
-                                                 amplitude = amplitude, convolveWithBeam = True,
-                                                 GNFWParams = config.parDict['GNFWParams'])
+                                                amplitude = amplitude, convolveWithBeam = True,
+                                                GNFWParams = config.parDict['GNFWParams'])
                 except:
                     continue
+                #cubeStore[obsFreqGHz].append(signalMap)
                 if realSpace == True:
                     signalMaps.append(signalMap)
                 else:
