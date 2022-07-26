@@ -849,9 +849,9 @@ def fitQ(config):
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
         minTheta500Arcmin=0.1
-        maxTheta500Arcmin=500.0
-        numPoints=50
-        theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
+        maxTheta500Arcmin=50.0
+        numPoints=100
+        theta500Arcmin_wanted=np.linspace(minTheta500Arcmin, maxTheta500Arcmin, numPoints)
         zRange_wanted=np.zeros(numPoints)
         zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
         zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
@@ -1002,7 +1002,7 @@ def fitQ(config):
         plotSettings.update_rcParams()
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.12, 0.11, 0.86, 0.88])
-        for z in [0.05, 0.1, 0.4, 1.0, 2.0]:
+        for z in np.unique(zRange):
             mask=(QTab['z'] == z)
             if mask.sum() > 0:
                 plt.plot(QTab['theta500Arcmin'][mask], QTab['Q'][mask], '.', label = "z = %.2f" % (z))

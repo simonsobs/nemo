@@ -368,16 +368,16 @@ class SelFn(object):
             for i in range(len(RMSTab)):
                 #---
                 # No intrinsic scatter, Gaussian noise
-                sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
-                compMz=compMz+sfi*areaWeights[i]
+                #sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
+                #compMz=compMz+sfi*areaWeights[i]
                 #---
                 # Old
-                #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-                #log_y0Err=1/SNRGrid
-                #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
-                #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-                #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
-                #compMz=compMz+sfi*areaWeights[i]
+                SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+                log_y0Err=1/SNRGrid
+                log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
+                log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+                sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
+                compMz=compMz+sfi*areaWeights[i]
             compMzCube.append(compMz)
             y0GridCube.append(y0Grid)
         compMzCube=np.array(compMzCube)
@@ -385,13 +385,13 @@ class SelFn(object):
         self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
         self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
 
-        ##print("fix in selFn completeness")
-        ##import IPython
-        ##IPython.embed()
-        ##sys.exit()
+        #print("fix in selFn completeness")
+        #import IPython
+        #IPython.embed()
+        #sys.exit()
 
-        #---
-        # Old
+        ##---
+        ## Old
         #compMzCube=[]
         #count=0
         #method='montecarlo'
