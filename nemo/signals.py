@@ -932,16 +932,16 @@ def fitQ(config):
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
         # Uncomment to pad signal maps
-        #extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
-        #yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
-        #xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
-        #yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
-        #xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
-        #extMap=enmap.pad(extMap, (yPad, xPad))
-        #h=extMap.wcs.to_header()
-        #h.insert(0, ('NAXIS2', extMap.shape[0]))
-        #h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
-        #wcs=astWCS.WCS(h, mode = 'pyfits')
+        extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
+        yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
+        xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
+        yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
+        xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
+        extMap=enmap.pad(extMap, (yPad, xPad))
+        h=extMap.wcs.to_header()
+        h.insert(0, ('NAXIS2', extMap.shape[0]))
+        h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
+        wcs=astWCS.WCS(h, mode = 'pyfits')
         # Set centre coords
         shape=extMap.shape
         RADeg, decDeg=wcs.getCentreWCSCoords()
