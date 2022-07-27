@@ -1735,9 +1735,12 @@ def sourceInjectionTest(config):
         fluxCol='y_c'
         noiseLevelCol='err_y_c'
         for sourceInjectionModel in sourceInjectionModelList:
-            label='%.2f' % (signals.calcTheta500Arcmin(sourceInjectionModel['redshift'], 
-                                                       sourceInjectionModel['M500'], signals.fiducialCosmoModel))
+            theta500Arcmin=signals.calcTheta500Arcmin(sourceInjectionModel['redshift'],
+                                                      sourceInjectionModel['M500'],
+                                                      signals.fiducialCosmoModel)
+            label='%.2f' % (theta500Arcmin)
             sourceInjectionModel['label']=label
+            sourceInjectionModel['theta500Arcmin']=theta500Arcmin
         QFit=signals.QFit(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
     else:
         # Sources
@@ -1910,6 +1913,7 @@ def sourceInjectionTest(config):
         
     # Collecting all results into one giant table
     models=[]
+    theta500s=[]
     SNRs=[]
     rArcmin=[]
     inFlux=[]
@@ -1918,6 +1922,8 @@ def sourceInjectionTest(config):
     tileNames=[]
     for sourceInjectionModel in sourceInjectionModelList:
         label=sourceInjectionModel['label']
+        if 'theta500Arcmin' in sourceInjectionModel.keys():
+            theta500s=theta500s+[sourceInjectionModel['theta500Arcmin']]*len(SNRDict[label])
         models=models+[label]*len(SNRDict[label])
         SNRs=SNRs+SNRDict[label].tolist()
         rArcmin=rArcmin+rArcminDict[label].tolist()
@@ -1927,6 +1933,8 @@ def sourceInjectionTest(config):
         tileNames=tileNames+tileNamesDict[label].tolist()
     resultsTable=atpy.Table()
     resultsTable.add_column(atpy.Column(models, 'sourceInjectionModel'))
+    if len(theta500s) == len(resultsTable):
+        resultsTable.add_column(atpy.Column(theta500s, 'theta500Arcmin'))
     resultsTable.add_column(atpy.Column(SNRs, SNRCol))
     resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
     resultsTable.add_column(atpy.Column(inFlux, 'inFlux'))
