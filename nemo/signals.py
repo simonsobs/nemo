@@ -929,19 +929,20 @@ def fitQ(config):
             beamsDict[obsFreqGHz]=mapDict['beamFileName']
         
         # Actually measuring Q...
-        # Pad signal maps
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
-        extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
-        yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
-        xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
-        yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
-        xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
-        extMap=enmap.pad(extMap, (yPad, xPad))
-        h=extMap.wcs.to_header()
-        h.insert(0, ('NAXIS2', extMap.shape[0]))
-        h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
-        wcs=astWCS.WCS(h, mode = 'pyfits')
+        # Uncomment to pad signal maps
+        #extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
+        #yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
+        #xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
+        #yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
+        #xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
+        #extMap=enmap.pad(extMap, (yPad, xPad))
+        #h=extMap.wcs.to_header()
+        #h.insert(0, ('NAXIS2', extMap.shape[0]))
+        #h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
+        #wcs=astWCS.WCS(h, mode = 'pyfits')
+        # Set centre coords
         shape=extMap.shape
         RADeg, decDeg=wcs.getCentreWCSCoords()
         x, y=wcs.wcs2pix(RADeg, decDeg)
@@ -950,8 +951,6 @@ def fitQ(config):
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
         signalMap=np.zeros(shape)
-        #degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
-        #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         Q=[]
         QTheta500Arcmin=[]
         Qz=[]

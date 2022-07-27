@@ -155,7 +155,7 @@ def parseConfigFile(parDictFileName, verbose = False):
             parDict['massOptions']={}
         defaults={'tenToA0': 4.95e-5, 'B0': 0.08, 'Mpivot': 3.0e+14, 'sigma_int': 0.2,
                   'relativisticCorrection': True, 'rhoType': 'critical', 'delta': 500,
-                  'H0': 70.0, 'Om0': 0.3, 'Ob0': 0.05, 'sigma_8': 0.80, 'ns': 0.95,
+                  'H0': 70.0, 'Om0': 0.3, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95,
                   'concMassRelation': 'Bhattacharya13'}
         for key in defaults:
             if key not in parDict['massOptions'].keys():

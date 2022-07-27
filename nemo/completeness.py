@@ -76,8 +76,10 @@ class SelFn(object):
             checks can be done (e.g., by :meth:`SelFn.checkCoordsAreInMask`).
         enableCompletenessCalc (:obj:`bool`, optional): If `True`, set up the machinery needed to do
             completeness calculations.
-        massFunction (:obj:`str`): Name of the mass function to use, currently either 'Tinker08' or
-            'Tinker10'. Mass function calculations are done by CCL.
+        massFunction (:obj:`str`, optional): Name of the mass function to use, currently either
+            'Tinker08' or 'Tinker10'. Mass function calculations are done by CCL.
+        maxTheta500Arcmin (:obj:`float`, optional): If given, exclude clusters with expected angular size
+            greater than this from the cluster counts (set their completeness to 0).
 
     Attributes:
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection cut
@@ -117,7 +119,7 @@ class SelFn(object):
                  zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
-                 massFunction = 'Tinker08'):
+                 massFunction = 'Tinker08', maxTheta500Arcmin = None):
         
         self.SNRCut=SNRCut
         self.footprintLabel=footprintLabel
@@ -126,6 +128,7 @@ class SelFn(object):
         self.applyRelativisticCorrection=applyRelativisticCorrection
         self.selFnDir=selFnDir
         self.zStep=zStep
+        self.maxTheta500Arcmin=maxTheta500Arcmin
 
         if configFileName is None:
             configFileName=self.selFnDir+os.path.sep+"config.yml"
@@ -331,10 +334,12 @@ class SelFn(object):
         zRange=self.mockSurvey.z
         y0GridCube=[]
         compMzCube=[]
+        theta500Cube=[]
         for tileName in self.RMSDict.keys():
             tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
                                             self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
             y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+            theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
             for i in range(len(zRange)):
                 zk=zRange[i]
                 k=np.argmin(abs(self.mockSurvey.z-zk))
@@ -353,6 +358,7 @@ class SelFn(object):
                     fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
                     true_y0s_zk=true_y0s_zk*fRels_zk
                 y0Grid[i]=true_y0s_zk #*0.95
+                theta500Grid[i]=theta500s_zk
                 
             # For some cosmological parameters, we can still get the odd -ve y0
             y0Grid[y0Grid <= 0] = 1e-9
@@ -368,16 +374,18 @@ class SelFn(object):
             for i in range(len(RMSTab)):
                 #---
                 # No intrinsic scatter, Gaussian noise
-                #sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
-                #compMz=compMz+sfi*areaWeights[i]
+                sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
+                compMz=compMz+sfi*areaWeights[i]
                 #---
                 # Old
-                SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-                log_y0Err=1/SNRGrid
-                log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
-                log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-                sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
-                compMz=compMz+sfi*areaWeights[i]
+                #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+                #log_y0Err=1/SNRGrid
+                #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
+                #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+                #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
+                #compMz=compMz+sfi*areaWeights[i]
+            if self.maxTheta500Arcmin is not None:
+                compMz=compMz*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
             compMzCube.append(compMz)
             y0GridCube.append(y0Grid)
         compMzCube=np.array(compMzCube)
