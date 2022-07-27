@@ -172,7 +172,7 @@ if __name__ == '__main__':
         # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do
         signals.getFRelWeights(config)
 
-        if selFnCollection != {}:
+        if selFnCollection != {} and config.parDict['selFnOptions']['method'] is not None:
             # Survey completeness stats now all lumped together in one routine
             # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
             completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 

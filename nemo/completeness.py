@@ -1292,6 +1292,9 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
         IPython.embed()
         sys.exit()
 
+    elif method is None:
+        return None
+
     else:
         raise Exception("calcCompleteness only has 'fast', and 'Monte Carlo' methods available")
             
