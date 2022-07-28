@@ -1771,7 +1771,10 @@ def sourceInjectionTest(config):
     outFluxDict={}
     noiseLevelDict={}
     tileNamesDict={}
+    modelCount=0
     for sourceInjectionModel in sourceInjectionModelList:
+        modelCount=modelCount+1
+        print(">>> Source injection model: %d/%d" % (modelCount, len(sourceInjectionModelList)))
         SNRDict[sourceInjectionModel['label']]=[]
         rArcminDict[sourceInjectionModel['label']]=[]
         inFluxDict[sourceInjectionModel['label']]=[]
@@ -1779,7 +1782,7 @@ def sourceInjectionTest(config):
         noiseLevelDict[sourceInjectionModel['label']]=[]
         tileNamesDict[sourceInjectionModel['label']]=[]
         for i in range(numIterations):        
-            print(">>> Source injection and recovery test %d/%d [rank = %d] ..." % (i+1, numIterations, config.rank))
+            print(">>> Source injection and recovery test %d/%d [rank = %d]" % (i+1, numIterations, config.rank))
 
             # NOTE: This block below should be handled when parsing the config file - fix/remove
             # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given

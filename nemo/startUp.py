@@ -270,7 +270,7 @@ class NemoConfig(object):
             self._timeStarted=time.time()
 
         if type(config) == str:
-            self.parDict=parseConfigFile(config, verbose = verbose)
+            self.parDict=parseConfigFile(config, verbose = self.verbose)
             self.configFileName=config
         elif type(config) == dict:
             self.parDict=config
