@@ -80,6 +80,9 @@ class SelFn(object):
             'Tinker08' or 'Tinker10'. Mass function calculations are done by CCL.
         maxTheta500Arcmin (:obj:`float`, optional): If given, exclude clusters with expected angular size
             greater than this from the cluster counts (set their completeness to 0).
+        method (:obj:`str, optional): The method for calculating completeness. Options are: 'fast'
+            (using a simple model based on the noise and the expected cluster signals), 'injection'
+            (directly using the results of end-to-end cluster injection and recovery sims).
 
     Attributes:
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection cut
@@ -119,7 +122,7 @@ class SelFn(object):
                  zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
-                 massFunction = 'Tinker08', maxTheta500Arcmin = None):
+                 massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast'):
         
         self.SNRCut=SNRCut
         self.footprintLabel=footprintLabel
@@ -143,6 +146,14 @@ class SelFn(object):
         else:
             self.tileNames=self._config.tileNames
         
+        self.method=method
+        if self.method == 'injection':
+            injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
+            if os.path.exists(injDataPath) == True:
+                self.injTab=atpy.Table().read(injDataPath)
+            else:
+                raise Exception("Cannot use the 'injection' method as %s does not exist." % (injDataPath))
+
         # Needed for generating mock samples directly
         self.photFilterLabel=self._config.parDict['photFilter']
             
@@ -329,95 +340,229 @@ class SelFn(object):
         
         self.mockSurvey.update(H0, Om0, Ob0, sigma8, ns)
         
-        #---
-        # New - as well as completeness, get y0 grid to map between cluster counts <-> y0
-        zRange=self.mockSurvey.z
-        y0GridCube=[]
-        compMzCube=[]
-        theta500Cube=[]
-        for tileName in self.RMSDict.keys():
-            tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
-                                            self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
-            y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-            theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-            for i in range(len(zRange)):
-                zk=zRange[i]
-                k=np.argmin(abs(self.mockSurvey.z-zk))
-                if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                    log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
-                                                                            self.mockSurvey.M,
-                                                                            self.mockSurvey.a[k],
-                                                                            self.mockSurvey._M500cDef))
-                else:
-                    log10M500s=self.mockSurvey.log10M
-                theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-                Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
-                true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
-                                                                                1+B0)*Qs_zk
-                if self.applyRelativisticCorrection == True:
-                    fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
-                    true_y0s_zk=true_y0s_zk*fRels_zk
-                y0Grid[i]=true_y0s_zk #*0.95
-                theta500Grid[i]=theta500s_zk
-                
-            # For some cosmological parameters, we can still get the odd -ve y0
-            y0Grid[y0Grid <= 0] = 1e-9
-        
-            # Calculate completeness using area-weighted average
-            # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
-            RMSTab=self.RMSDict[tileName]
-            areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-            y0Lim=self.SNRCut*RMSTab['y0RMS']
-            log_y0Lim=np.log(self.SNRCut*RMSTab['y0RMS'])
-            log_y0=np.log(y0Grid)
-            compMz=np.zeros(log_y0.shape)
-            for i in range(len(RMSTab)):
-                #---
-                # No intrinsic scatter, Gaussian noise
-                sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
-                compMz=compMz+sfi*areaWeights[i]
-                #---
-                # Old
-                #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-                #log_y0Err=1/SNRGrid
-                #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
-                #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-                #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
-                #compMz=compMz+sfi*areaWeights[i]
-            if self.maxTheta500Arcmin is not None:
-                compMz=compMz*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
-            compMzCube.append(compMz)
-            y0GridCube.append(y0Grid)
-        compMzCube=np.array(compMzCube)
-        y0GridCube=np.array(y0GridCube)
-        self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
-        self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
+        if self.method == 'injection':
+            print("completeness from injection sim")
+            import IPython
+            IPython.embed()
+            sys.exit()
+            theta500s=np.unique(self.injTab['theta500Arcmin'])
+            for i in range(len(theta500s)):
+                mask=self.injTab['theta500Arcmin'] == theta500s[i]
+                plt.hist(self.injTab['SNR'][mask], bins = 100, alpha = 0.5, label = theta500s[i])
+                print(np.median(self.injTab['SNR'][mask]), np.median(self.injTab['inFlux'][mask]), np.median(self.injTab['outFlux'][mask]))
+            plt.legend()
 
-        #print("fix in selFn completeness")
-        #import IPython
-        #IPython.embed()
-        #sys.exit()
+            # This is what the input distribution was
+            amplitudeRange=[0.001, 1]
+            amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], len(self.injTab))
+            binEdges=np.linspace(amplitudeRange[0], amplitudeRange[1], 101)
+            plt.hist(amp, bins = binEdges, density = True, alpha = 0.5)
+            theta500s=np.unique(self.injTab['theta500Arcmin'])
 
-        ##---
-        ## Old
-        #compMzCube=[]
-        #count=0
-        #method='montecarlo'
-        #for tileName in self.RMSDict.keys():
-            #count=count+1
-            #if method == 'montecarlo':
-                #print("... %d/%d ..." % (count, len(self.tileNames)))
-                #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
-                                                   #self.mockSurvey, self.scalingRelationDict, self.Q,
-                                                   #method = 'montecarlo', numDraws = 100000, numIterations = 5))
-            #else:
-                #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
-                                                   #self.mockSurvey, self.scalingRelationDict, self.Q))
+            # Using KS test to find where distribution is consistent with uniform
+            #for i in range(len(theta500s)):
+            i=5
+            print(theta500s[i])
+            mask=self.injTab['theta500Arcmin'] == theta500s[i]
+            #plt.hist(self.injTab['inFlux'][mask], bins = binEdges, density = True, alpha = 0.5, label = theta500s[i])
+            #plt.legend()
+            N, binEdges=np.histogram(self.injTab['inFlux'][mask], bins = binEdges, density = True)
+            binCentres=(binEdges[1:]+binEdges[:-1])/2
+            for b in binEdges:
+                injInFlux=self.injTab['inFlux'][mask]
+                a=stats.ks_2samp(injInFlux[injInFlux > b], amp[amp > b])
+                if a.pvalue > 0.1:
+                    break
+            plt.hist(self.injTab['inFlux'][mask], bins = binEdges, density = True, alpha = 0.5, label = theta500s[i])
+            plt.plot([b]*3, np.linspace(0, 1.5, 3), 'k--')
+            plt.legend()
 
-            #if np.any(np.isnan(compMzCube[-1])) == True:
-                #raise Exception("NaNs in compMz for tile '%s'" % (tileName))
-        #compMzCube=np.array(compMzCube)
-        #self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+
+            #---
+            # WARNING: Here there is no Q, y0 is true y0, not y0~
+            zRange=self.mockSurvey.z
+            y0GridCube=[]
+            compMzCube=[]
+            SNRCube=[]
+            #theta500Cube=[]
+            for tileName in self.RMSDict.keys():
+                tileName='1_10_8'
+                tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
+                                                self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+                y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+                SNRGrid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+                #theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+                self.RMSDict[tileName]
+                RMSTab=self.RMSDict[tileName]
+                areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+                tileRMSValue=np.average(RMSTab['y0RMS'], weights = areaWeights)
+                for i in range(len(zRange)):
+                    zk=zRange[i]
+                    k=np.argmin(abs(self.mockSurvey.z-zk))
+                    if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
+                        log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
+                                                                                self.mockSurvey.M,
+                                                                                self.mockSurvey.a[k],
+                                                                                self.mockSurvey._M500cDef))
+                    else:
+                        log10M500s=self.mockSurvey.log10M
+                    #theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
+                    #Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
+                    true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
+                                                                                    1+B0)#*Qs_zk
+                    if self.applyRelativisticCorrection == True:
+                        fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
+                        true_y0s_zk=true_y0s_zk*fRels_zk
+                    y0Grid[i]=true_y0s_zk #*0.95
+                SNRGrid=y0Grid/tileRMSValue
+                # WARNING: true y0 SNR (NOT y0~ SNR)
+                self.injTab['in_SNR']=self.injTab['inFlux']/self.injTab['noiseLevel']
+
+
+                #areaWeightedRMS=
+                for i in range(len(RMSTab)):
+                    RMSTab['y0RMS'][i]
+
+                    #---
+                    # No intrinsic scatter, Gaussian noise
+                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
+                    compMz=compMz+sfi*areaWeights[i]
+                    #---
+                    # Old
+                    #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+                    #log_y0Err=1/SNRGrid
+                    #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
+                    #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+                    #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
+                    #compMz=compMz+sfi*areaWeights[i]
+                if self.maxTheta500Arcmin is not None:
+                    compMz=compMz*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
+
+                    SNRGrid[i]=y0Grid[i]/RMSTab['y0RMS'][i]
+                    #theta500Grid[i]=theta500s_zk
+
+            #---
+            theta500s=np.unique(self.injTab['theta500Arcmin'])
+            for i in range(len(theta500s)):
+                mask=self.injTab['theta500Arcmin'] == theta500s[i]
+                plt.plot(self.injTab['SNR'][mask], self.injTab['outFlux'][mask], '.', label = theta500s[i])
+
+
+            #---
+            # Playing around to start
+            # Q from the source injection sims
+            theta500s=np.unique(self.injTab['theta500Arcmin'])
+            Q=np.zeros(len(theta500s))
+            QHigh=np.zeros(len(theta500s))
+            QLow=np.zeros(len(theta500s))
+            for i in range(len(theta500s)):
+                mask=self.injTab['theta500Arcmin'] == theta500s[i]
+                Q[i]=np.percentile(self.injTab['outFlux'][mask]/self.injTab['inFlux'][mask], 50)
+                QHigh[i]=np.percentile(self.injTab['outFlux'][mask]/self.injTab['inFlux'][mask], 90)
+                QLow[i]=np.percentile(self.injTab['outFlux'][mask]/self.injTab['inFlux'][mask], 10)
+
+            # Q comparison
+            #plotSettings.update_rcParams()
+            #plt.figure(figsize = (10, 8))
+            #plt.errorbar(theta500s, Q, yerr = [Q-QLow, QHigh-Q], fmt = 'ko', label = 'all tiles source inj')
+            #plt.plot(theta500s, self.Q.getQ(theta500s, tileName = '1_10_8'), label = 'QFit: 1_10_8')
+            #plt.legend()
+            #plt.xlabel('$\\theta_{\\rm 500c}$ (arcmin)')
+            #plt.ylabel("$Q$")
+
+            # Interpolator
+            injQtck=interpolate.splrep(theta500s, Q)
+
+            #---
+
+        elif self.method == 'fast':
+            zRange=self.mockSurvey.z
+            y0GridCube=[]
+            compMzCube=[]
+            theta500Cube=[]
+            for tileName in self.RMSDict.keys():
+                tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
+                                                self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+                y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+                theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+                for i in range(len(zRange)):
+                    zk=zRange[i]
+                    k=np.argmin(abs(self.mockSurvey.z-zk))
+                    if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
+                        log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
+                                                                                self.mockSurvey.M,
+                                                                                self.mockSurvey.a[k],
+                                                                                self.mockSurvey._M500cDef))
+                    else:
+                        log10M500s=self.mockSurvey.log10M
+                    theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
+                    Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
+                    true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
+                                                                                    1+B0)*Qs_zk
+                    if self.applyRelativisticCorrection == True:
+                        fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
+                        true_y0s_zk=true_y0s_zk*fRels_zk
+                    y0Grid[i]=true_y0s_zk #*0.95
+                    theta500Grid[i]=theta500s_zk
+
+                # For some cosmological parameters, we can still get the odd -ve y0
+                y0Grid[y0Grid <= 0] = 1e-9
+
+                # Calculate completeness using area-weighted average
+                # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
+                RMSTab=self.RMSDict[tileName]
+                areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+                y0Lim=self.SNRCut*RMSTab['y0RMS']
+                log_y0Lim=np.log(self.SNRCut*RMSTab['y0RMS'])
+                log_y0=np.log(y0Grid)
+                compMz=np.zeros(log_y0.shape)
+                for i in range(len(RMSTab)):
+                    #---
+                    # No intrinsic scatter, Gaussian noise
+                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
+                    compMz=compMz+sfi*areaWeights[i]
+                    #---
+                    # Old
+                    #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
+                    #log_y0Err=1/SNRGrid
+                    #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
+                    #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
+                    #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
+                    #compMz=compMz+sfi*areaWeights[i]
+                if self.maxTheta500Arcmin is not None:
+                    compMz=compMz*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
+                compMzCube.append(compMz)
+                y0GridCube.append(y0Grid)
+            compMzCube=np.array(compMzCube)
+            y0GridCube=np.array(y0GridCube)
+            self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+            self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
+
+            #print("fix in selFn completeness")
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
+
+            ##---
+            ## Old
+            #compMzCube=[]
+            #count=0
+            #method='montecarlo'
+            #for tileName in self.RMSDict.keys():
+                #count=count+1
+                #if method == 'montecarlo':
+                    #print("... %d/%d ..." % (count, len(self.tileNames)))
+                    #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
+                                                    #self.mockSurvey, self.scalingRelationDict, self.Q,
+                                                    #method = 'montecarlo', numDraws = 100000, numIterations = 5))
+                #else:
+                    #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
+                                                    #self.mockSurvey, self.scalingRelationDict, self.Q))
+
+                #if np.any(np.isnan(compMzCube[-1])) == True:
+                    #raise Exception("NaNs in compMz for tile '%s'" % (tileName))
+            #compMzCube=np.array(compMzCube)
+            #self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
         
 
     def projectCatalogToMz(self, tab):

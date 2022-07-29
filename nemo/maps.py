@@ -1764,13 +1764,15 @@ def sourceInjectionTest(config):
     realCatalog=atpy.Table().read(catFileName)
     
     # Run each scale / model and then collect everything into one table afterwards
-    # NOTE: raw flux error in catalogs is from RMS map, but e.g. outFlux will have Q applied here if cluster
+    # NOTE: These dictionaries contain recovered measurements from running the finder
     SNRDict={}
     rArcminDict={}
     inFluxDict={}
     outFluxDict={}
     noiseLevelDict={}
     tileNamesDict={}
+    # NOTE: This list collects all the input catalogs
+    allInputCatalogs=[]
     modelCount=0
     for sourceInjectionModel in sourceInjectionModelList:
         modelCount=modelCount+1
@@ -1811,7 +1813,7 @@ def sourceInjectionTest(config):
             if config.rank == 0:
                 if filtDict['class'].find("ArnaudModel") != -1:
                     if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                        amplitudeRange=[0.001, 1]
+                        amplitudeRange=[0.001, 10]
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
                     # Quick test catalog - takes < 1 sec to generate
@@ -1837,6 +1839,9 @@ def sourceInjectionTest(config):
                     injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
                 else:
                     raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
+                if 'theta500Arcmin' in sourceInjectionModel.keys():
+                    mockCatalog['theta500Arcmin']=sourceInjectionModel['theta500Arcmin']
+                allInputCatalogs.append(mockCatalog)
             else:
                 injectSources=None
                 mockCatalog=None
@@ -1944,6 +1949,11 @@ def sourceInjectionTest(config):
     resultsTable.add_column(atpy.Column(outFlux, 'outFlux'))
     resultsTable.add_column(atpy.Column(noiseLevel, 'noiseLevel'))
     resultsTable.add_column(atpy.Column(tileNames, 'tileName'))
+
+    # Store the giant combined input catalog as well, for completeness calculations
+    if config.rank == 0:
+        allInputTab=atpy.vstack(allInputCatalogs)
+        allInputTab.write(config.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits", overwrite = True)
 
     # Restore the original config parameters (which we overrode here)
     config.restoreConfig()

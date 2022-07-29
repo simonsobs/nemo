@@ -704,6 +704,7 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
     RAs=[]
     decs=[]
     amps=[]
+    catTileNames=[]
     for tileName in tileNames:
         mapData=selFn.areaMaskDict[tileName]
         if mapData.sum() == 0:  # Skip any empty/blank tile
@@ -749,12 +750,14 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
         else:
             raise Exception("Must be either 'linear' or 'log'.")
         amps=amps+amp.tolist()
+        catTileNames=catTileNames+[tileName]*len(amp.tolist())
     
     tab=atpy.Table()
     tab.add_column(atpy.Column(np.arange(0, len(amps))+1, "name"))
     tab.add_column(atpy.Column(RAs, "RADeg"))
     tab.add_column(atpy.Column(decs, "decDeg"))
     tab.add_column(atpy.Column(amps, amplitudeColumnName))
+    tab.add_column(atpy.Column(catTileNames, 'tileName'))
 
     return tab
 
