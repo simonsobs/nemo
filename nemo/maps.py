@@ -1951,8 +1951,10 @@ def sourceInjectionTest(config):
     resultsTable.add_column(atpy.Column(tileNames, 'tileName'))
 
     # Store the giant combined input catalog as well, for completeness calculations
+    # NOTE: Not all objects in this may have been injected (masking, avoiding overlap etc.)
     if config.rank == 0:
         allInputTab=atpy.vstack(allInputCatalogs)
+        allInputTab.rename_column(fluxCol, "inFlux")
         allInputTab.write(config.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits", overwrite = True)
 
     # Restore the original config parameters (which we overrode here)

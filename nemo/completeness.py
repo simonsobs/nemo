@@ -149,10 +149,11 @@ class SelFn(object):
         self.method=method
         if self.method == 'injection':
             injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
-            if os.path.exists(injDataPath) == True:
-                self.injTab=atpy.Table().read(injDataPath)
-            else:
+            inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+            if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
                 raise Exception("Cannot use the 'injection' method as %s does not exist." % (injDataPath))
+            self.injTab=atpy.Table().read(injDataPath)
+            self.inputTab=atpy.Table().read(inputDataPath)
 
         # Needed for generating mock samples directly
         self.photFilterLabel=self._config.parDict['photFilter']
@@ -341,139 +342,65 @@ class SelFn(object):
         self.mockSurvey.update(H0, Om0, Ob0, sigma8, ns)
         
         if self.method == 'injection':
-            print("completeness from injection sim")
-            import IPython
-            IPython.embed()
-            sys.exit()
-            theta500s=np.unique(self.injTab['theta500Arcmin'])
-            for i in range(len(theta500s)):
-                mask=self.injTab['theta500Arcmin'] == theta500s[i]
-                plt.hist(self.injTab['SNR'][mask], bins = 100, alpha = 0.5, label = theta500s[i])
-                print(np.median(self.injTab['SNR'][mask]), np.median(self.injTab['inFlux'][mask]), np.median(self.injTab['outFlux'][mask]))
-            plt.legend()
 
-            # This is what the input distribution was
-            amplitudeRange=[0.001, 1]
-            amp=np.random.uniform(amplitudeRange[0], amplitudeRange[1], len(self.injTab))
-            binEdges=np.linspace(amplitudeRange[0], amplitudeRange[1], 101)
-            plt.hist(amp, bins = binEdges, density = True, alpha = 0.5)
-            theta500s=np.unique(self.injTab['theta500Arcmin'])
-
-            # Using KS test to find where distribution is consistent with uniform
-            #for i in range(len(theta500s)):
-            i=5
-            print(theta500s[i])
-            mask=self.injTab['theta500Arcmin'] == theta500s[i]
-            #plt.hist(self.injTab['inFlux'][mask], bins = binEdges, density = True, alpha = 0.5, label = theta500s[i])
-            #plt.legend()
-            N, binEdges=np.histogram(self.injTab['inFlux'][mask], bins = binEdges, density = True)
-            binCentres=(binEdges[1:]+binEdges[:-1])/2
-            for b in binEdges:
-                injInFlux=self.injTab['inFlux'][mask]
-                a=stats.ks_2samp(injInFlux[injInFlux > b], amp[amp > b])
-                if a.pvalue > 0.1:
-                    break
-            plt.hist(self.injTab['inFlux'][mask], bins = binEdges, density = True, alpha = 0.5, label = theta500s[i])
-            plt.plot([b]*3, np.linspace(0, 1.5, 3), 'k--')
-            plt.legend()
-
-
-            #---
-            # WARNING: Here there is no Q, y0 is true y0, not y0~
+            # WARNING: Here there is no Q, and y0 is true y0, NOT y0~
+            # These grids are purely mapping 'input' signals to M, z via the scaling relation
             zRange=self.mockSurvey.z
-            y0GridCube=[]
-            compMzCube=[]
-            SNRCube=[]
-            #theta500Cube=[]
-            for tileName in self.RMSDict.keys():
-                tileName='1_10_8'
-                tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
-                                                self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
-                y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-                SNRGrid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-                #theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-                self.RMSDict[tileName]
-                RMSTab=self.RMSDict[tileName]
-                areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-                tileRMSValue=np.average(RMSTab['y0RMS'], weights = areaWeights)
-                for i in range(len(zRange)):
-                    zk=zRange[i]
-                    k=np.argmin(abs(self.mockSurvey.z-zk))
-                    if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                        log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
-                                                                                self.mockSurvey.M,
-                                                                                self.mockSurvey.a[k],
-                                                                                self.mockSurvey._M500cDef))
-                    else:
-                        log10M500s=self.mockSurvey.log10M
-                    #theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-                    #Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
-                    true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
-                                                                                    1+B0)#*Qs_zk
-                    if self.applyRelativisticCorrection == True:
-                        fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
-                        true_y0s_zk=true_y0s_zk*fRels_zk
-                    y0Grid[i]=true_y0s_zk #*0.95
-                SNRGrid=y0Grid/tileRMSValue
-                # WARNING: true y0 SNR (NOT y0~ SNR)
-                self.injTab['in_SNR']=self.injTab['inFlux']/self.injTab['noiseLevel']
+            tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
+                                            self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+            y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+            theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+            for i in range(len(zRange)):
+                zk=zRange[i]
+                k=np.argmin(abs(self.mockSurvey.z-zk))
+                if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
+                    log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
+                                                                            self.mockSurvey.M,
+                                                                            self.mockSurvey.a[k],
+                                                                            self.mockSurvey._M500cDef))
+                else:
+                    log10M500s=self.mockSurvey.log10M
+                theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
+                theta500Grid[i]=theta500s_zk
+                #Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
+                true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
+                                                                                1+B0)#*Qs_zk
+                if self.applyRelativisticCorrection == True:
+                    fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
+                    true_y0s_zk=true_y0s_zk*fRels_zk
+                y0Grid[i]=true_y0s_zk #*0.95
 
-
-                #areaWeightedRMS=
-                for i in range(len(RMSTab)):
-                    RMSTab['y0RMS'][i]
-
-                    #---
-                    # No intrinsic scatter, Gaussian noise
-                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
-                    compMz=compMz+sfi*areaWeights[i]
-                    #---
-                    # Old
-                    #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-                    #log_y0Err=1/SNRGrid
-                    #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
-                    #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-                    #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
-                    #compMz=compMz+sfi*areaWeights[i]
-                if self.maxTheta500Arcmin is not None:
-                    compMz=compMz*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
-
-                    SNRGrid[i]=y0Grid[i]/RMSTab['y0RMS'][i]
-                    #theta500Grid[i]=theta500s_zk
-
-            #---
-            theta500s=np.unique(self.injTab['theta500Arcmin'])
-            for i in range(len(theta500s)):
-                mask=self.injTab['theta500Arcmin'] == theta500s[i]
-                plt.plot(self.injTab['SNR'][mask], self.injTab['outFlux'][mask], '.', label = theta500s[i])
-
-
-            #---
-            # Playing around to start
-            # Q from the source injection sims
-            theta500s=np.unique(self.injTab['theta500Arcmin'])
-            Q=np.zeros(len(theta500s))
-            QHigh=np.zeros(len(theta500s))
-            QLow=np.zeros(len(theta500s))
-            for i in range(len(theta500s)):
-                mask=self.injTab['theta500Arcmin'] == theta500s[i]
-                Q[i]=np.percentile(self.injTab['outFlux'][mask]/self.injTab['inFlux'][mask], 50)
-                QHigh[i]=np.percentile(self.injTab['outFlux'][mask]/self.injTab['inFlux'][mask], 90)
-                QLow[i]=np.percentile(self.injTab['outFlux'][mask]/self.injTab['inFlux'][mask], 10)
-
-            # Q comparison
-            #plotSettings.update_rcParams()
-            #plt.figure(figsize = (10, 8))
-            #plt.errorbar(theta500s, Q, yerr = [Q-QLow, QHigh-Q], fmt = 'ko', label = 'all tiles source inj')
-            #plt.plot(theta500s, self.Q.getQ(theta500s, tileName = '1_10_8'), label = 'QFit: 1_10_8')
-            #plt.legend()
-            #plt.xlabel('$\\theta_{\\rm 500c}$ (arcmin)')
-            #plt.ylabel("$Q$")
-
-            # Interpolator
-            injQtck=interpolate.splrep(theta500s, Q)
-
-            #---
+            # Completeness given y0 and theta500 and the S/N cut
+            theta500s=np.unique(self.inputTab['theta500Arcmin'])
+            binEdges=np.linspace(self.inputTab['inFlux'].min(), self.inputTab['inFlux'].max(), 101)
+            binCentres=(binEdges[1:]+binEdges[:-1])/2
+            compSplines=[]
+            for t in theta500s:
+                injMask=np.logical_and(self.injTab['theta500Arcmin'] == t, self.injTab['SNR'] > self.SNRCut)
+                inputMask=self.inputTab['theta500Arcmin'] == t
+                injFlux=self.injTab['inFlux'][injMask]
+                inputFlux=self.inputTab['inFlux'][inputMask]
+                recN, binEdges=np.histogram(injFlux, bins = binEdges)
+                inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
+                comp=recN/inpN  # Need to worry about +/- 2 % or something?
+                if (comp < 0).sum() > 0:
+                    print("-ve")
+                    break
+                compSplines.append(interpolate.splrep(binCentres*1e-04, comp))
+            theta500BinEdges=np.zeros(len(theta500s)+1)
+            theta500BinEdges[1:]=theta500s+np.gradient(theta500s)/2
+            #theta500IndexGrid=np.zeros(theta500Grid.shape)
+            compMz=np.zeros(y0Grid.shape)
+            for i in range(len(theta500BinEdges)-1):
+                binMin=theta500BinEdges[i]
+                binMax=theta500BinEdges[i+1]
+                mask=np.logical_and(theta500Grid > binMin, theta500Grid <= binMax)
+                #theta500IndexGrid[mask]=i
+                #compMz[mask]=compSplines[i](y0Grid[mask])
+                compMz[mask]=interpolate.splev(y0Grid[mask], compSplines[i], ext = 3)
+            compMz[compMz < 0]=0
+            compMz[compMz > 1]=1
+            self.compMz=compMz
 
         elif self.method == 'fast':
             zRange=self.mockSurvey.z
