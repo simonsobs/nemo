@@ -1715,6 +1715,9 @@ def sourceInjectionTest(config):
     # (i.e., the config is already set to the last filterSet)
     # But, can we guarantee that? Probably not. But we could put a warning in the docs for now?
 
+    # This should perhaps be a config parameter
+    realExclusionRadiusArcmin=5.0
+
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
                              enableCompletenessCalc = False, setUpAreaMask = True,
@@ -1869,30 +1872,22 @@ def sourceInjectionTest(config):
                 # Effectively this is the same as using 5' circular holes in the survey mask on real objects
                 # (but actually adding the avoidance radius parameter to the test catalogs really solved this)
                 if len(recCatalog) > 0:
-                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 5.0)
+                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog,
+                                                           radiusArcmin = realExclusionRadiusArcmin)
                 if len(recCatalog) > 0:
                     try:
-                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
+                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog,
+                                                                              radiusArcmin = realExclusionRadiusArcmin)
                     except:
-                        raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
-                    #---
-                    # Old - now we actually want input in y_c, output in fixed_y_c for clusters
-                    ## If we're using clusters, we need to put in the Q correction
-                    ## NOTE: This assumes the model name gives theta500c in arcmin!
-                    #if clusterMode == True:
-                        #for tileName in np.unique(x_recCatalog['tileName']):
-                            #theta500Arcmin=float(sourceInjectionModel['label'])
-                            #Q=QFit.getQ(theta500Arcmin, tileName = tileName)
-                            #mask=(x_recCatalog['tileName'] == tileName)
-                            #x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
-                    #---
+                        raise Exception("Source injection test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
                     # Catching any crazy mismatches, writing output for debugging
                     if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
                         mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)
                         config.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
                         recCatalog2=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
                                                                         writeAreaMask = False, writeFlagMask = False)
-                        recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog, radiusArcmin = 5.0)
+                        recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog,
+                                                                radiusArcmin = realExclusionRadiusArcmin)
                         catalogs.catalog2DS9(x_recCatalog[mask],
                                              simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-rec.reg")
                         catalogs.catalog2DS9(x_mockCatalog[mask],
@@ -1955,6 +1950,7 @@ def sourceInjectionTest(config):
     if config.rank == 0:
         allInputTab=atpy.vstack(allInputCatalogs)
         allInputTab.rename_column(fluxCol, "inFlux")
+        allInputTab=catalogs.removeCrossMatched(allInputTab, realCatalog, radiusArcmin = realExclusionRadiusArcmin)
         allInputTab.write(config.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits", overwrite = True)
 
     # Restore the original config parameters (which we overrode here)
