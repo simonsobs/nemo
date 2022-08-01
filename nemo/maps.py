@@ -1819,11 +1819,15 @@ def sourceInjectionTest(config):
                         amplitudeRange=[0.001, 10]
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                    if 'sourceInjectionDistribution' not in config.parDict.keys():
+                        distribution='linear'
+                    else:
+                        distribution=config.parDict['sourceInjectionDistribution']
                     # Quick test catalog - takes < 1 sec to generate
                     mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
                                                             amplitudeColumnName = fluxCol,
                                                             amplitudeRange = amplitudeRange,
-                                                            amplitudeDistribution = 'linear',
+                                                            amplitudeDistribution = distribution,
                                                             selFn = selFn, maskDilationPix = 20)
                     # Or... proper mock, but this takes ~24 sec for E-D56
                     #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]
@@ -1834,10 +1838,14 @@ def sourceInjectionTest(config):
                         amplitudeRange=[1, 1000]
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                    if 'sourceInjectionDistribution' not in config.parDict.keys():
+                        distribution='log'
+                    else:
+                        distribution=config.parDict['sourceInjectionDistribution']
                     mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
                                                             amplitudeColumnName = fluxCol,
                                                             amplitudeRange = amplitudeRange,
-                                                            amplitudeDistribution = 'log',
+                                                            amplitudeDistribution = distribution,
                                                             selFn = selFn, maskDilationPix = 20)
                     injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
                 else:
@@ -1863,7 +1871,8 @@ def sourceInjectionTest(config):
             if len(mockCatalog) > 0:
 
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
-                                                               writeAreaMask = False, writeFlagMask = False)
+                                                               useCachedRMSMap = True, writeAreaMask = False,
+                                                               writeFlagMask = False)
 
                 # NOTE: Below here only rank 0 really needed (could then broadcast result)
 

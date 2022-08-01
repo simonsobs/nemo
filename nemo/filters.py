@@ -676,6 +676,9 @@ class MatchedFilter(MapFilter):
         else:
             print("... loading cached filter")
             self.loadFilter()
+            self.params['saveRMSMap']=False
+            self.params['saveFilter']=False
+            self.params['savePlots']=False
         
         # Apply filter
         filteredMap=self.applyFilter(fMapsToFilter)

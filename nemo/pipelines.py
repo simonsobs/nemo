@@ -30,8 +30,9 @@ from . import MockSurvey
 import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
-def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, measureFluxes = True,
-                              invertMap = False, verbose = True, writeAreaMask = False, writeFlagMask = False):
+def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
+                              measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+                              writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -40,6 +41,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
             output filtered maps and catalogs are written.
         useCachedFilters (:obj:`bool`, optional): If True, and previously made filters are found, they will be
             read from disk, rather than re-calculated (used by source injection simulations).
+        useCachedRMSMap (:obj:`bool`, optional): If True, use the previously estimated noise map, which has
+            been saved to disk. This is only useful for source injection simulations.
         measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
             detected objects.
         invertMap (bool, optional): If True, multiply all maps by -1; needed by 
@@ -91,8 +94,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     else:
         # Default single pass behaviour (also used by source injection tests)
         catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, useCachedFilters = useCachedFilters,
-                                           measureFluxes = measureFluxes, invertMap = invertMap,
-                                           verbose = verbose,
+                                           useCachedRMSMap = useCachedRMSMap, measureFluxes = measureFluxes,
+                                           invertMap = invertMap, verbose = verbose,
                                            writeAreaMask = writeAreaMask, writeFlagMask = writeFlagMask)
 
     if verbose == True and config.rank == 0:
@@ -101,9 +104,9 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, measureFluxes = True,
-                               invertMap = False, verbose = True,
-                               writeAreaMask = False, writeFlagMask = False):
+def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
+                               measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+                               writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -178,6 +181,13 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                                                diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
                                                verbose = True, undoPixelWindow = True,
                                                useCachedFilter = useCachedFilters)
+
+            if useCachedRMSMap == True:
+                RMSMap, wcs=completeness.loadRMSMap(tileName, config.selFnDir, photFilter)
+                validMask=np.greater(RMSMap, 0)
+                SNMap=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']
+                SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
+                filteredMapDict['SNMap']=SNMap
 
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
                 filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
