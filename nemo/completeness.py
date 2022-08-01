@@ -115,6 +115,10 @@ class SelFn(object):
 
     Note: 
         Some of the methods of this class are experimental and not necessarily well tested.
+
+    Note:
+        Once SNRCut is set for this object, it cannot be changed later (well, it can... but changing
+        self.SNRCut will not update anything, for the moment).
             
     """
         
@@ -152,8 +156,25 @@ class SelFn(object):
             inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
             if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
                 raise Exception("Cannot use the 'injection' method as %s does not exist." % (injDataPath))
-            self.injTab=atpy.Table().read(injDataPath)
-            self.inputTab=atpy.Table().read(inputDataPath)
+            injTab=atpy.Table().read(injDataPath)
+            inputTab=atpy.Table().read(inputDataPath)
+
+            # Completeness given y0 and theta500 and the S/N cut as 2D spline
+            theta500s=np.unique(inputTab['theta500Arcmin'])
+            binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)
+            binCentres=(binEdges[1:]+binEdges[:-1])/2
+            compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
+            for i in range(len(theta500s)):
+                t=theta500s[i]
+                injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > self.SNRCut)
+                inputMask=inputTab['theta500Arcmin'] == t
+                injFlux=injTab['inFlux'][injMask]
+                inputFlux=inputTab['inFlux'][inputMask]
+                recN, binEdges=np.histogram(injFlux, bins = binEdges)
+                inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
+                compThetaGrid[i]=recN/inpN
+            self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
+                                                                       compThetaGrid, kx = 3, ky = 3)
 
         # Needed for generating mock samples directly
         self.photFilterLabel=self._config.parDict['photFilter']
@@ -370,37 +391,14 @@ class SelFn(object):
                     true_y0s_zk=true_y0s_zk*fRels_zk
                 y0Grid[i]=true_y0s_zk #*0.95
 
-            # Completeness given y0 and theta500 and the S/N cut
-            theta500s=np.unique(self.inputTab['theta500Arcmin'])
-            binEdges=np.linspace(self.inputTab['inFlux'].min(), self.inputTab['inFlux'].max(), 101)
-            binCentres=(binEdges[1:]+binEdges[:-1])/2
-            compSplines=[]
-            for t in theta500s:
-                injMask=np.logical_and(self.injTab['theta500Arcmin'] == t, self.injTab['SNR'] > self.SNRCut)
-                inputMask=self.inputTab['theta500Arcmin'] == t
-                injFlux=self.injTab['inFlux'][injMask]
-                inputFlux=self.inputTab['inFlux'][inputMask]
-                recN, binEdges=np.histogram(injFlux, bins = binEdges)
-                inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
-                comp=recN/inpN  # Need to worry about +/- 2 % or something?
-                if (comp < 0).sum() > 0:
-                    print("-ve")
-                    break
-                compSplines.append(interpolate.splrep(binCentres*1e-04, comp))
-            theta500BinEdges=np.zeros(len(theta500s)+1)
-            theta500BinEdges[1:]=theta500s+np.gradient(theta500s)/2
-            #theta500IndexGrid=np.zeros(theta500Grid.shape)
             compMz=np.zeros(y0Grid.shape)
-            for i in range(len(theta500BinEdges)-1):
-                binMin=theta500BinEdges[i]
-                binMax=theta500BinEdges[i+1]
-                mask=np.logical_and(theta500Grid > binMin, theta500Grid <= binMax)
-                #theta500IndexGrid[mask]=i
-                #compMz[mask]=compSplines[i](y0Grid[mask])
-                compMz[mask]=interpolate.splev(y0Grid[mask], compSplines[i], ext = 3)
+            for i in range(len(zRange)):
+                compMz[i]=np.diag(self.compThetaInterpolator(theta500Grid[i], y0Grid[i]/1e-04))
             compMz[compMz < 0]=0
             compMz[compMz > 1]=1
             self.compMz=compMz
+            #astImages.saveFITS("compMz_fromInj_interp.fits", compMz.transpose())
+
 
         elif self.method == 'fast':
             zRange=self.mockSurvey.z
