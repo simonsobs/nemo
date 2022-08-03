@@ -159,7 +159,7 @@ class SelFn(object):
             injTab=atpy.Table().read(injDataPath)
             inputTab=atpy.Table().read(inputDataPath)
 
-            # Completeness given y0 and theta500 and the S/N cut as 2D spline
+            # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
             # NOTE: This is a survey-wide average, doesn't respect footprints at the moment
             theta500s=np.unique(inputTab['theta500Arcmin'])
             binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)

@@ -89,6 +89,49 @@ def lnprob_yc(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
     
     return lnlike
 
+#-------------------------------------------------------------------------------------------------------------
+def lnprob_Nz(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
+    """Log likelihood function for use with Cobaya.
+
+    """
+
+    # This can fail if wander outside parameter space where mass function is defined
+    try:
+        selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict = {'tenToA0': tenToA0, 'B0': B0,
+                                                                      'Mpivot': Mpivot, 'sigma_int': sigma_int})
+    except:
+        return -np.inf
+
+    predMz=selFn.compMz*selFn.mockSurvey.clusterCount
+    predNz_fineBins=predMz[:, np.greater(selFn.mockSurvey.log10M, np.log10(5e13))].sum(axis = 1)
+    predNz=np.zeros(zBinEdges.shape[0]-1)
+    for i in range(len(zBinEdges)-1):
+        zMin=zBinEdges[i]
+        zMax=zBinEdges[i+1]
+        mask=np.logical_and(selFn.mockSurvey.z > zMin, selFn.mockSurvey.z <= zMax)
+        predNz[i]=predNz_fineBins[mask].sum()
+
+    # Poisson probability for N(z)
+    mask=np.greater(obsNz, 0)
+    if mask.sum() > 0:
+        lnlike=np.sum(obsNz[mask]*np.log(predNz[mask])-predNz[mask]-gammaln(obsNz[mask]+1))
+    else:
+        lnlike=-np.inf
+
+    ## Test plot
+    #label='(H0, Om0, sigma8, tenToA0, B0, sigma_int) = (%.1f, %.2f, %.2f, %.3e, %.2f, %.2f); ln L = %.2f' % (H0, Om0, sigma8, tenToA0, B0, sigma_int, lnlike)
+    #plt.figure(figsize = (10, 8))
+    #plt.errorbar((zBinEdges[:1]+zBinEdges[:-1])/2, obsNz, yerr = np.sqrt(predNz), fmt = 'o', label = 'obs')
+    #plt.plot((zBinEdges[:1]+zBinEdges[:-1])/2, predNz, '-',
+             #label = label)
+    #plt.xlabel('z')
+    #plt.ylabel('N')
+    #plt.legend()
+    #plt.savefig('testplot_%s.png' % (label).replace(" ", "_"))
+    #plt.close()
+
+    return lnlike
+
 #------------------------------------------------------------------------------------------------------------
 def makeGetDistPlot(cosmoOutDir):
     """Makes a corner plot using GetDist.
@@ -141,8 +184,8 @@ if __name__ == '__main__':
     parser.add_argument("-b", "--burn", dest = "numToBurn", help = """Number of samples to burn. If given,
                         overrides the value given in the Cobaya configuration file.""", 
                         default = defaultNumToBurn, type = int)
-    parser.add_argument("-N", "--num-signal-bins", dest = "numSignalBins", type = int, default = 40,
-                        help = """Number of bins for the SZ signal.""")
+    #parser.add_argument("-N", "--num-signal-bins", dest = "numSignalBins", type = int, default = 40,
+                        #help = """Number of bins for the SZ signal.""")
     parser.add_argument("-t", "--test-likelihood", dest = "testLikelihood", help = """Run a test of the
                         likelihood, varying one parameter at a time, instead of running Cobaya,
                         producing diagnostic plots called 'testLikelihood_paramName.png' in the current
@@ -172,7 +215,8 @@ if __name__ == '__main__':
     else:
         raise Exception("massDef should be one of M500c, M200c, or M200m (use -D M500c, -D M200c, or -D M200m)")
     
-    lnprob=lnprob_yc
+    #lnprob=lnprob_yc
+    lnprob=lnprob_Nz
     #if args.likelihoodType == "mass":
         #lnprob=lnprob_M500
     #elif args.likelihoodType == "yc":
@@ -184,10 +228,6 @@ if __name__ == '__main__':
     if 'redshift' not in tab.keys():
         raise Exception("no 'redshift' column in catalog")
 
-    # SPT-style SNR bias correction
-    debiasDOF=2
-    tab['fixed_SNR']=np.sqrt(np.power(tab['fixed_SNR'], 2) - debiasDOF)
-        
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
     if cosmoOutDir == None:
         cosmoOutDir="cosmo_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
@@ -240,7 +280,7 @@ if __name__ == '__main__':
     selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1,
                              enableDrawSample = False, mockOversampleFactor = 1, downsampleRMS = True,
                              applyRelativisticCorrection = args.relativisticCorrection,
-                             delta = delta, rhoType = rhoType)
+                             delta = delta, rhoType = rhoType, method = 'injection')
 
     # This, seemingly, has no effect
     #predAreaScale=0.895
@@ -255,14 +295,25 @@ if __name__ == '__main__':
     # NOTE: Since we use such coarse z binning, we completely ignore photo-z errors here
     # Otherwise, signals.calcPMass throws exception when z grid is not fine enough
     tab['redshiftErr'][:]=0.0
-   
-    # Define binning on (log10(fixed_y_c), redshift) grid
-    # NOTE: A large number of log10 y0 bins is needed, or B0 wanders way away from true value
-    log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()*0.8), np.log10(1e-4*tab['fixed_y_c'].max()*1.1), args.numSignalBins+1)
-    zBinEdges=selFn.mockSurvey.zBinEdges[np.greater_equal(selFn.mockSurvey.zBinEdges, zMinCut)]
-    obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(1e-4*tab['fixed_y_c']), tab['redshift'], 
-                                                               bins = [log10ycBinEdges, zBinEdges])
-    obs_ycBinEdges=np.power(10, obs_log10ycBinEdges)
+
+    if lnprob == lnprob_yc:
+        # Define binning on (log10(fixed_y_c), redshift) grid
+        # NOTE: A large number of log10 y0 bins is needed, or B0 wanders way away from true value
+        log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()*0.8), np.log10(1e-4*tab['fixed_y_c'].max()*1.1), args.numSignalBins+1)
+        zBinEdges=selFn.mockSurvey.zBinEdges[np.greater_equal(selFn.mockSurvey.zBinEdges, zMinCut)]
+        obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(1e-4*tab['fixed_y_c']), tab['redshift'],
+                                                                   bins = [log10ycBinEdges, zBinEdges])
+        obs_ycBinEdges=np.power(10, obs_log10ycBinEdges)
+
+    elif lnprob == lnprob_Nz:
+        # We already applied S/N cut
+        zBinEdges=selFn.mockSurvey.zBinEdges[np.greater_equal(selFn.mockSurvey.zBinEdges, zMinCut)]
+        obsNz=np.zeros(zBinEdges.shape[0]-1)
+        for i in range(len(zBinEdges)-1):
+            zMin=zBinEdges[i]
+            zMax=zBinEdges[i+1]
+            mask=np.logical_and(tab['redshift'] > zMin, tab['redshift'] <= zMax)
+            obsNz[i]=mask.sum()
     
     # Testing
     if args.testLikelihood == True:
@@ -287,8 +338,8 @@ if __name__ == '__main__':
         elif massDef == 'M200c':
             tenToA0, B0, Mpivot, sigma_int = 4.0e-05, 0.08, 4.25e+14, 0.0    # Current sim du jour
         #lnprob(H0, Om0, sigma8, Ob0, ns, p, B0, Mpivot, sigma_int)
-        #testsToRun=['H0', 'Om0', 'sigma8', 'tenToA0', 'B0', 'sigma_int']
-        testsToRun=['B0']
+        testsToRun=['H0', 'Om0', 'sigma8', 'tenToA0', 'B0', 'sigma_int']
+        #testsToRun=['B0']
         #testsToRun=['tenToA0', 'B0', 'sigma_int']
         # For checking if recovered parameters beat the theoretical max likelihood ones
         # If they do, we have bugs to fix...
