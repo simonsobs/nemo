@@ -81,7 +81,7 @@ class SelFn(object):
         maxTheta500Arcmin (:obj:`float`, optional): If given, exclude clusters with expected angular size
             greater than this from the cluster counts (set their completeness to 0).
         method (:obj:`str, optional): The method for calculating completeness. Options are: 'fast'
-            (using a simple model based on the noise and the expected cluster signals), 'injection'
+            (using a simple model based on the noise and the expected cluster signals), or 'injection'
             (directly using the results of end-to-end cluster injection and recovery sims).
 
     Attributes:
@@ -400,6 +400,12 @@ class SelFn(object):
             self.compMz=compMz
             #astImages.saveFITS("compMz_fromInj_interp.fits", compMz.transpose())
 
+            # Intrinsic scatter
+            if sigma_int > 0:
+                logy0Grid=np.log(y0Grid)
+                for i in range(logy0Grid.shape[0]):
+                    npix=sigma_int/np.mean(np.gradient(logy0Grid[i]))
+                    self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix)
 
         elif self.method == 'fast':
             zRange=self.mockSurvey.z
