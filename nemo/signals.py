@@ -849,30 +849,38 @@ def fitQ(config):
     # M, z -> theta ranges for Q calc - what's most efficient depends on whether there is z-dependence, or not
     # NOTE: ref filter that sets scale we compare to must ALWAYS come first
     if zDepQ == 0:
-        # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
+        signalMapSizeDeg=15.0
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
-        minTheta500Arcmin=0.1
-        maxTheta500Arcmin=500.0
-        numPoints=50
-        theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
-        zRange_wanted=np.zeros(numPoints)
-        zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
-        zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
-        MRange_wanted=[]
-        for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
-            Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
-            criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
-            R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
-            M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
-            MRange_wanted.append(M500)         
+        # Old ---
+        # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
+        #minTheta500Arcmin=0.1
+        #maxTheta500Arcmin=500.0
+        #numPoints=50
+        #theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
+        #zRange_wanted=np.zeros(numPoints)
+        #zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
+        #zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
+        #MRange_wanted=[]
+        #for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
+            #Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
+            #criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
+            #R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
+            #M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
+            #MRange_wanted.append(M500)
+        #MRange=MRange+MRange_wanted
+        #zRange=zRange+zRange_wanted.tolist()
+        # New ---
+        # Forget going to super-large scales, just sample smaller scales densely enough
+        MRange_wanted=[8.577e+12, 1.926e+13, 4.327e+13, 2.998e+13, 6.733e+13, 1.512e+14, 1.229e+14, 2.762e+14,
+                       6.203e+14, 2.903e+14, 6.521e+14, 1.465e+15, 1.889e+14, 4.243e+14]
+        zRange_wanted=[2.00, 2.00, 2.00, 1.00, 1.00, 1.00, 0.60, 0.60, 0.60, 0.30, 0.30, 0.30, 0.10, 0.10]
         MRange=MRange+MRange_wanted
-        zRange=zRange+zRange_wanted.tolist()
-        signalMapSizeDeg=15.0
+        zRange=zRange+zRange_wanted
     elif zDepQ == 1:
         # On a z grid for evolving profile models (e.g., Battaglia et al. 2012)
         MRange=[ref['params']['M500MSun']]
@@ -1019,7 +1027,7 @@ def fitQ(config):
             if mask.sum() > 0:
                 plt.plot(QTab['theta500Arcmin'][mask], QTab['Q'][mask], '.', label = "z = %.2f" % (z))
                 thetaArr=np.logspace(np.log10(QTab['theta500Arcmin'][mask].min()), 
-                                 np.log10(QTab['theta500Arcmin'][mask].max()), numPoints)
+                                 np.log10(QTab['theta500Arcmin'][mask].max()), mask.sum())
                 plt.plot(thetaArr, Q.getQ(thetaArr, z, tileName = tileName), 'k-')
         plt.legend()
         plt.semilogx()

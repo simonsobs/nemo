@@ -397,7 +397,10 @@ class SelFn(object):
             compMz[compMz < 0]=0
             compMz[compMz > 1]=1
             self.compMz=compMz
+            ## Testing
+            #print("wrote compMz FITSfile")
             #astImages.saveFITS("compMz_fromInj_interp.fits", compMz.transpose())
+            #sys.exit()
 
             # Intrinsic scatter
             if sigma_int > 0:
@@ -473,6 +476,26 @@ class SelFn(object):
             y0GridCube=np.array(y0GridCube)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
             self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
+
+            # Testing
+            #print("wrote compMz FITSfile")
+            #astImages.saveFITS("compMz_fast.fits", self.compMz.transpose())
+
+            #print("fiddle with fast completeness")
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
+            ##i=100
+            #i=50
+            #z=self.mockSurvey.z[i]
+            #img=pyfits.open("compMz_fromInj_interp.fits")
+            #inj=img[0].data
+            #plt.ion()
+            #plt.plot(self.compMz[i], label = 'fast')
+            #plt.plot(inj[:, i], label = 'injection')
+            #plt.legend()
+            #plt.title("z = %.2f" % (z))
+
 
             #print("fix in selFn completeness")
             #import IPython
