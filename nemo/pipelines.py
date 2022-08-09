@@ -182,7 +182,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                                                verbose = True, undoPixelWindow = True,
                                                useCachedFilter = useCachedFilters)
 
-            if useCachedRMSMap == True:
+            if useCachedRMSMap == True and photFilter is not None: # i.e., only an option for cluster insertion sims
                 RMSMap, wcs=completeness.loadRMSMap(tileName, config.selFnDir, photFilter)
                 validMask=np.greater(RMSMap, 0)
                 SNMap=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']

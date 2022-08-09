@@ -384,9 +384,8 @@ class SelFn(object):
                     log10M500s=self.mockSurvey.log10M
                 theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
                 theta500Grid[i]=theta500s_zk
-                #Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
                 true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
-                                                                                1+B0)#*Qs_zk
+                                                                                1+B0)
                 if self.applyRelativisticCorrection == True:
                     fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
                     true_y0s_zk=true_y0s_zk*fRels_zk
@@ -402,10 +401,15 @@ class SelFn(object):
 
             # Intrinsic scatter
             if sigma_int > 0:
+                # Fiddling with Gaussian filter params has no effect
+                mode='constant'
+                truncate=4.0
                 logy0Grid=np.log(y0Grid)
                 for i in range(logy0Grid.shape[0]):
                     npix=sigma_int/np.mean(np.gradient(logy0Grid[i]))
-                    self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix)
+                    npix=npix*0.8   # Making this correction seems to work but not sure why yet
+                    self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
+                                                                              mode = mode, truncate = truncate)
 
         elif self.method == 'fast':
             zRange=self.mockSurvey.z
