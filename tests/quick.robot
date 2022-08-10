@@ -9,6 +9,17 @@ Quickstart clusters tutorial runs
 Quickstart sources tutorial runs
     Run quickstart sources
 
+Source injection test runs
+    Generate simulated source maps
+    Set config      configs/sim_ptsrc_f090.yml
+    Run nemo injection test
+
+Quickstart multipass config runs
+    Run quickstart multipass
+    Cross match             testsCache/quickstart-multipass/quickstart-multipass_optimalCatalog.fits      testsCache/DR5_cluster-catalog_v1.1.fits
+    Check recovered ratio   fixed_y_c    fixed_y_c    toleranceSigma=3.0    expectedRatio=0.98  errInKey=fixed_err_y_c  errOutKey=fixed_err_y_c  SNRKey=fixed_SNR  SNRCut=5.0  plotLabel=quickstart-multipass
+    Status should be        SUCCESS
+
 Cluster sim with nemoModel runs
     Generate simulated cluster maps
 
@@ -48,6 +59,10 @@ Run quickstart clusters
 
 Run quickstart sources
     Set config              ../examples/quickstart/quickstart-sources.yml
+    Run nemo
+
+Run quickstart multipass
+    Set config              configs/quickstart-multipass.yml
     Run nemo
 
 Generate simulated cluster maps
@@ -97,14 +112,14 @@ Clean up cluster sim
     Remove directory        testsCache/tileDir_auto_1.0_sim_f150.fits   True
 
 Clean up
-    Remove directory        testsCache/sim_cl_MFMF  True
-    Remove directory        testsCache/tileDir_auto_1.0_surveyMask  True
+    Remove directory        testsCache/sim_cl_MFMF                      True
+    Remove directory        testsCache/tileDir_auto_1.0_surveyMask      True
     Remove directory        testsCache/tileDir_auto_1.0_sim_f090.fits   True
     Remove directory        testsCache/tileDir_auto_1.0_sim_f150.fits   True
-    #Remove directory        testsCache/sim_cl_MFMF_pass2  True
-    Remove directory        testsCache/sim_ptsrc_f090  True
-    Remove directory        testsCache/quickstart-clusters  True
-    Remove directory        testsCache/quickstart-sources   True
+    Remove directory        testsCache/sim_ptsrc_f090                   True
+    Remove directory        testsCache/quickstart-clusters              True
+    Remove directory        testsCache/quickstart-sources               True
+    Remove directory        testsCache/quickstart-multipass             True
 
 
 *** Settings ***

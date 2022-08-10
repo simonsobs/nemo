@@ -70,8 +70,8 @@ if __name__ == '__main__':
     parDictFileName=args.configFileName
     config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
-                              strictMPIExceptions = strictMPIExceptions)
-    
+                              strictMPIExceptions = strictMPIExceptions, writeTileInfo = True)
+
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
     if config.parDict['forcedPhotometryCatalog'] is not None:
         label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]
@@ -81,21 +81,7 @@ if __name__ == '__main__':
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
 
     if os.path.exists(optimalCatalogFileName) == False:
-        optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config)
-        #print("... rank = %d; catalog length = %d" % (config.rank, len(optimalCatalog)))
-        if config.MPIEnabled == True:
-            config.comm.barrier()
-            optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
-            if config.rank == 0:
-                print("... gathered catalogs ...")
-                toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
-                for collectedTab in optimalCatalogList:
-                    if type(collectedTab) == astropy.table.table.Table:
-                        toStack.append(collectedTab)
-                optimalCatalog=atpy.vstack(toStack)
-                # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
-                if len(optimalCatalog) > 0:
-                    optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+        optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config, writeAreaMask = True, writeFlagMask = True)
         if config.rank == 0:
             optimalCatalog=catalogs.flagTileBoundarySplits(optimalCatalog)
             optimalCatalog.sort('name')
@@ -105,7 +91,7 @@ if __name__ == '__main__':
             catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                                  addInfo = addInfo, color = "cyan")
     else:
-        if config.rank == 0: print("... already made catalog %s ..." % (optimalCatalogFileName))
+        if config.rank == 0: print("... already made catalog %s" % (optimalCatalogFileName))
                 
     # Q function (filter mismatch) - if needed options have been given
     # We may as well do this here to save having to run nemoMass separately (though we still can...)
@@ -113,51 +99,14 @@ if __name__ == '__main__':
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
-            if config.MPIEnabled == True:
-                config.comm.barrier()
-            if config.rank == 0:
-                signals.makeCombinedQTable(config)
-                print("... made combined Q fit file ...")
 
     # Source injection tests for quantifying position recovery accuracy and noise bias
+    sourceInjTable=None
     if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
         if config.MPIEnabled == True:
             config.comm.barrier()   # Otherwise, some processes can begin before catalog written to disk and then crash
         sourceInjTable=maps.sourceInjectionTest(config)
-        if config.MPIEnabled == True:
-            config.comm.barrier()
-            sourceInjTableList=config.comm.gather(sourceInjTable, root = 0)
-            if config.rank == 0:
-                print("... gathered source injection test results ...")
-                toStack=[]
-                for sourceInjTable in sourceInjTableList:
-                    if type(sourceInjTable) == astropy.table.table.Table and len(sourceInjTable) > 0:
-                        toStack.append(sourceInjTable)
-                if len(toStack) > 0:
-                    sourceInjTable=atpy.vstack(toStack)
-                else:
-                    sourceInjTable=None
-    else:
-        sourceInjTable=None
-            
-    ## Estimate of contamination from running cluster finding over inverted map
-    #if 'estimateContaminationFromInvertedMaps' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromInvertedMaps'] == True:
-        #conTabDict=maps.estimateContaminationFromInvertedMaps(config, imageDict)
-    #else:
-        #conTabDict={}
-        
-    ## Estimate of contamination by generating a fake sky with noise, and running detection algorithm over it
-    ## Ultimately we want this and the above ^^^ to appear on the same plot for comparison
-    #if 'estimateContaminationFromSkySim' in list(config.parDict.keys()) and config.parDict['estimateContaminationFromSkySim'] == True:
-        #skySimConTabDict=maps.estimateContaminationFromSkySim(config, imageDict) 
-    #else:
-        #skySimConTabDict={}
-    
-    ## This just combines inverted maps contamination results and skySim (under different keys)
-    ## So we only feed one dictionary into the plotting routine (see below)
-    #for k in list(skySimConTabDict.keys()):
-        #conTabDict[k]=skySimConTabDict[k]
-        
+
     # Moved calculation of selection function parts here as it's very quick in parallel
     if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
         # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
@@ -172,26 +121,13 @@ if __name__ == '__main__':
         ns=0.95
         mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, enableDrawSample = True)
         selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
-        if config.MPIEnabled == True:
-            config.comm.barrier()
-            gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
-            if config.rank == 0:
-                print("... gathered selection function results ...")
-                all_selFnCollection={'full': []}
-                for key in selFnCollection.keys():
-                    if key not in all_selFnCollection.keys():
-                        all_selFnCollection[key]=[]
-                for selFnCollection in gathered_selFnCollections:
-                    for key in all_selFnCollection.keys():
-                        all_selFnCollection[key]=all_selFnCollection[key]+selFnCollection[key]
-                selFnCollection=all_selFnCollection
     else:
         selFnCollection={}
         
     # Tidying up etc.
     if config.rank == 0:
 
-        # Stitch together map tiles - full fat versions (this will only work 'saveFilteredMaps: True')
+        # Stitch together map tiles - full fat versions (this will only work if 'saveFilteredMaps: True')
         if 'stitchTiles' in config.parDict.keys() and config.parDict['stitchTiles'] == True:
             maps.stitchTiles(config)
 
@@ -234,7 +170,7 @@ if __name__ == '__main__':
             # Survey completeness stats now all lumped together in one routine
             # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
             completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
-                                                additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
+                                                 additionalLabel = "_"+config.parDict['selFnOptions']['method'].replace(" ", "_"))
             # If we made mass limit maps...
             # ... make cumulative area versus mass limit plot(s)
             # ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit
@@ -245,7 +181,9 @@ if __name__ == '__main__':
                     completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
             
         # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
-        # This also puts Q fits into one file - so we need to run this regardless
         completeness.tidyUp(config)
+
+    else:
+        del selFnCollection
         
     

@@ -15,7 +15,6 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 import pylab as plt
-import IPython
 
 plotSettings.update_rcParams()
 plotTitleSize=14
@@ -140,8 +139,7 @@ class NemoTests(object):
             header=pyfits.Header().fromtextfile(headerFileName)
             wcs=astWCS.WCS(header, mode = 'pyfits')
             d=np.ones([wcs.header['NAXIS2'], wcs.header['NAXIS1']], dtype = int)
-            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs,
-                          compressed = True, compressionType = 'PLIO_1')
+            maps.saveFITS(self.cacheDir+os.path.sep+maskFileName, d, wcs, compressionType = 'PLIO_1')
         
         # Map/frequency-related defaults
         self.bandsDict={'f150': {'beam': "maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt",
@@ -169,8 +167,12 @@ class NemoTests(object):
         self._run_command(["nemo", self.configFileName])
 
 
+    def run_nemo_injection_test(self):
+        self._run_command(["nemo", self.configFileName, "-I"])
+
+
     def run_parallel_nemo(self):
-        self._run_command(["mpiexec", "nemo", self.configFileName, "-M"])
+        self._run_command(["mpiexec", "-np", "4", "nemo", self.configFileName, "-M"])
 
 
     def run_nemo_mass(self, catalogFileName = None):
@@ -188,7 +190,7 @@ class NemoTests(object):
 
 
     def make_parallel_sim(self, catalogFileName = None, noiseLevel = None, seed = None, band = None, size = None, profile = None):
-        args=['mpiexec', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+        args=['mpiexec', '-np', '4', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'],
               "sim_%s.fits" % (band), '-f', self.bandsDict[band]['freq'],
               '-C', '-N', noiseLevel, '-S', seed, '-M']
         if profile is not None:
@@ -210,7 +212,7 @@ class NemoTests(object):
         
         
     def make_parallel_signal_only_sim(self, catalogFileName = None, band = None, size = None, profile = None):
-        args=['mpiexec', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'], 
+        args=['mpiexec', '-np', '4', 'nemoModel', catalogFileName, self.sizesDict[size]['mask'], self.bandsDict[band]['beam'],
               "signal_model_only_%s.fits" % (band), '-f', self.bandsDict[band]['freq'], '-M']
         if profile is not None:
             args=args+['-p', profile]
@@ -276,7 +278,7 @@ class NemoTests(object):
         return RAKey, decKey
         
         
-    def check_recovered_ratio(self, inKey, outKey, toleranceSigma = 1.0, SNRCut = 4,
+    def check_recovered_ratio(self, inKey, outKey, toleranceSigma = 1.0, expectedRatio = 1.0, SNRCut = 4,
                               SNRKey = 'fixed_SNR', errInKey = None, errOutKey = None,
                               plotLabel = None, plotsDir = "plots"):
         """Catalogs must have been cross matched before this can be run.
@@ -322,7 +324,7 @@ class NemoTests(object):
             plt.title(label, fontdict = {'size': plotTitleSize})
             plt.savefig(plotsDir+os.path.sep+plotLabel+"_XvY.png")
             plt.close()
-        if abs((1.0-meanRatio)/meanRatioErr) > toleranceSigma:
+        if abs((expectedRatio-meanRatio)/meanRatioErr) > toleranceSigma:
             self._status="FAILED"
         else:
             self._status="SUCCESS"

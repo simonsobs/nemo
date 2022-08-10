@@ -23,13 +23,18 @@ longNames: False
 
 # mapFilters is a list of all the different filters to apply
 # (keys in mapFilters with the same name as those in allFilters take priority)
-twoPass: False
 mapFilters:
-        - {label: "Beam090",
-           class: "BeamMatchedFilter",
-           params: {noiseParams: {method: "dataMap",
-                                  noiseGridArcmin: 40.0,
-                                  numNoiseBins: 8},
-                    saveFilteredMaps: True,
-                    outputUnits: 'uK',
-                    edgeTrimArcmin: 0.0}}
+    - {label: "Beam090",
+        class: "BeamMatchedFilter",
+        params: {noiseParams: {method: "dataMap",
+                                noiseGridArcmin: 40.0,
+                                numNoiseBins: 8},
+                saveFilteredMaps: True,
+                saveFilter: True,
+                outputUnits: 'uK',
+                edgeTrimArcmin: 0.0}}
+
+# Source injection test settings
+haltOnPositionRecoveryProblem: True
+sourceInjectionIterations: 3
+sourcesPerTile: 300

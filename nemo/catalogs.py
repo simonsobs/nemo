@@ -32,6 +32,7 @@ COLUMN_NAMES    = ['name',
                    'numSigPix', 
                    'template', 
                    'tileName',
+                   'flags',
                    'galacticLatDeg',
                    'deltaT_c',
                    'err_deltaT_c',
@@ -57,6 +58,7 @@ COLUMN_FORMATS  = ['%s',
                    '%d',
                    '%s',
                    '%s',
+                   '%d',
                    '%.6f',
                    '%.3f',
                    '%.3f',
@@ -294,17 +296,19 @@ def _makeRA(myRADeg):
     
     """
     hours=(myRADeg/360)*24
+    strHours=("%.10f" % (hours))
     if hours<10:
-        sHours="0"+str(hours)[0]
+        sHours="0"+strHours[0]
     else:
-        sHours=str(hours)[:2]
+        sHours=strHours[:2]
     
-    mins=float(str(hours)[str(hours).index("."):])*60
-    if mins<10:
-        sMins="0"+str(mins)[:3]
+    mins=float(strHours[strHours.index("."):])*60
+    strMins=("%.10f" % (mins))
+    if mins < 10:
+        sMins="0"+strMins[:3]
     else:
-        sMins=str(mins)[:4]
-        
+        sMins=strMins[:4]
+
     return (sHours+sMins)#[:-2] # Trims off .x as not used in ACT names
         
 #------------------------------------------------------------------------------------------------------------
@@ -659,7 +663,8 @@ def generateRandomSourcesCatalog(mapData, wcs, numSources, seed = None):
 #------------------------------------------------------------------------------------------------------------
 def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_y_c', 
                         amplitudeRange = [0.001, 1], amplitudeDistribution = 'linear', selFn = None,
-                        avoidanceRadiusArcmin = 20.0, maskDilationPix = 0):
+                        avoidanceRadiusArcmin = 20.0, maskDilationPix = 0,
+                        tileNames = None):
     """Generate a catalog of objects with random positions and amplitudes. This is for testing purposes - 
     see, e.g., :meth:`nemo.maps.sourceInjectionTest`.
     
@@ -691,12 +696,15 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
     
     if selFn is None:
         selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName, 
-                                 enableCompletenessCalc = False, setUpAreaMask = True)
+                                 enableCompletenessCalc = False, setUpAreaMask = True,
+                                 tileNames = tileNames)
+    if tileNames is None:
+        tileNames=selFn.tileNames
 
     RAs=[]
     decs=[]
     amps=[]
-    for tileName in config.tileNames:
+    for tileName in tileNames:
         mapData=selFn.areaMaskDict[tileName]
         if mapData.sum() == 0:  # Skip any empty/blank tile
             continue
@@ -729,6 +737,9 @@ def generateTestCatalog(config, numSourcesPerTile, amplitudeColumnName = 'fixed_
                 keepIndices.append(i)
             if len(keepIndices) == numSourcesPerTile:
                 break
+        # Edge case where we have tiny but non-zero area and didn't manage to insert anything
+        if len(coords) == 0:
+            continue
         RAs=RAs+coords[keepIndices, 0].tolist()
         decs=decs+coords[keepIndices, 1].tolist()
         if amplitudeDistribution == 'linear':

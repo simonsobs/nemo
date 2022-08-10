@@ -6,22 +6,24 @@
 # This should be a list of maps at different frequencies
 # Valid units are only uK (delta T with respect to CMB) - Jy/sr has yet to be added
 unfilteredMaps:
-    - {mapFileName: "maps/act_dr5.01_s08s18_AA_f150_daynight_map.fits",
-       weightsFileName: "maps/act_dr5.01_s08s18_AA_f150_daynight_ivar.fits",
+    - {mapFileName: "maps/f150_1_10_8_map.fits",
+       weightsFileName: "maps/f150_1_10_8_ivar.fits",
        obsFreqGHz: 149.6, units: 'uK',
-       beamFileName: "beam_profiles/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt"}
-    - {mapFileName: "maps/act_dr5.01_s08s18_AA_f090_daynight_map.fits",
-       weightsFileName: "maps/act_dr5.01_s08s18_AA_f090_daynight_ivar.fits",
+       beamFileName: "maps/s16_pa2_f150_nohwp_night_beam_profile_jitter.txt",
+       label: 'f150'}
+    - {mapFileName: "maps/f090_1_10_8_map.fits",
+       weightsFileName: "maps/f090_1_10_8_ivar.fits",
        obsFreqGHz: 97.8, units: 'uK',
-       beamFileName: "beam_profiles/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt"}
+       beamFileName: "maps/s16_pa3_f090_nohwp_night_beam_profile_jitter.txt",
+       label: 'f090'}
 
 # Masks
-surveyMask: "dr5_masking/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
+#surveyMask: "maps/Jun2020/AdvACTSurveyMask_v7_galLatCut_S18-dust-artifacts-extended-post10mJy.fits"
 
 # Instead of giving point source mask, can give catalogs instead
-maskPointSourcesFromCatalog:
-    - "dr5_masking/PS_S18_f150_auto_rArcmin.fits"
-    - "dr5_masking/customPSCatalog_S18.fits"
+#maskPointSourcesFromCatalog:
+    #- "PSCatalog_rArcmin/PS_S18_f150_auto_rArcmin.fits"
+    #- "customPSMask_S18/customPSCatalog_S18.fits"
 
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
@@ -49,78 +51,89 @@ massOptions: {tenToA0: 4.95e-5,
               Mpivot: 3.0e+14, 
               sigma_int: 0.2,
               relativisticCorrection: True,
-              rescaleFactor: 0.71,
+              rescaleFactor: 0.70,
               rescaleFactorErr: 0.07,
-              redshiftCatalog: "redshifts_confirmed_v1.1.fits"}
+              redshiftCatalog: "S18Clusters/AdvACT_confirmed.fits"}
 
 # Selection function options - this calculation can also be enabled with the nemo -S switch
 # NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
-calcSelFn: True
+calcSelFn: False
 selFnOptions: {fixedSNRCut: 5.0,
                method: 'montecarlo',
                numIterations: 1000, 
                massLimitMaps: [{z: 0.5}]}
-               
-#selFnFootprints: 
-#    - {label: "HSC",
-#       maskList: ["HSCCheckAndSelFn/s19a_fdfc_CAR_contarea_ziy-gt-5.fits"]}
-#    - {label: "KiDS",
-#       maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
-#    - {label: "DES",
-#       maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+
+# MULTIPASS:
+# Filters can now have keys that specify what pass they are used on
+# If not given, then used on all passes
+# Filters can also specify what map(s) they run on by using a list of labels that match entries in unfilteredMaps
+#
+# noiseMaskCatalog should be a list that goes into filter definitions, if not given globally
+#noiseMaskCatalog: "sim_cl_MFMF/sim_cl_MFMF_optimalCatalog.fits"
+
 
 # Filter definitions:
+
+# If using filterSets, specify some options here,
+# e.g., maps to use - if not given, default is to use all maps in unfilteredMaps
+# If we wanted to override S/N thresholds for detection etc., we'd implement it in this thing
+filterSetOptions: {1: {mapToUse: 'f090', thresholdSigma: 5.0, objIdent: 'ACT-S', saveCatalog: True, label: 'ptsrc_f090'},
+                   2: {mapToUse: 'f150', thresholdSigma: 5.0, objIdent: 'ACT-S', saveCatalog: True, label: 'ptsrc_f150'},
+                   3: {subtractModelFromSets: [1, 2]},
+                   4: {subtractModelFromSets: [1, 2], noiseModelCatalogFromSets: [3]}
+                  }
+
 # allFilters is a dictionary of parameters that will be copied into all mapFilters
 # (these can be overridden by keys with the same name in mapFilters)
 allFilters: {class: "ArnaudModelMatchedFilter",
              params: {noiseParams: {method: "dataMap",
-                                    noiseGridArcmin: 40.},
+                                    noiseGridArcmin: 40.,
+                                    numNoiseBins: 8},
                       saveFilteredMaps: False,
                       saveRMSMap: False,
                       savePlots: False,
                       saveDS9Regions: False,
                       outputUnits: 'yc',
-                      edgeTrimArcmin: 0.0}
+                      edgeTrimArcmin: 0.0},
+             filterSets: [3, 4]
             }
-                
+
 # mapFilters is a list of all the different filters to apply
 # (keys in mapFilters with the same name as those in allFilters take priority)
 mapFilters:
-    - {label: "Arnaud_M1e14_z0p2",
-       params: {M500MSun: 1.0e+14, z: 0.2}}
-    - {label: "Arnaud_M2e14_z0p2",
-       params: {M500MSun: 2.0e+14, z: 0.2}}
-    - {label: "Arnaud_M4e14_z0p2",
-       params: {M500MSun: 4.0e+14, z: 0.2}}
-    - {label: "Arnaud_M8e14_z0p2",
-       params: {M500MSun: 8.0e+14, z: 0.2}}
-    - {label: "Arnaud_M1e14_z0p4",
-       params: {M500MSun: 1.0e+14, z: 0.4}}
+    - {label: "Beam090",
+       class: "BeamMatchedFilter",
+       params: {outputUnits: 'uK'},
+       filterSets: [1]}
+    - {label: "Beam150",
+       class: "BeamMatchedFilter",
+       params: {outputUnits: 'uK'},
+       filterSets: [2]}
     - {label: "Arnaud_M2e14_z0p4",
        params: {M500MSun: 2.0e+14, z: 0.4,
                 saveFilteredMaps: True,
                 savePlots: True}}
     - {label: "Arnaud_M4e14_z0p4",
        params: {M500MSun: 4.0e+14, z: 0.4}}
-    - {label: "Arnaud_M8e14_z0p4",
-       params: {M500MSun: 8.0e+14, z: 0.4}}              
-    - {label: "Arnaud_M1e14_z0p8",
-       params: {M500MSun: 1.0e+14, z: 0.8}}
-    - {label: "Arnaud_M2e14_z0p8",
-       params: {M500MSun: 2.0e+14, z: 0.8}}
-    - {label: "Arnaud_M4e14_z0p8",
-       params: {M500MSun: 4.0e+14, z: 0.8}}
-    - {label: "Arnaud_M8e14_z0p8",
-       params: {M500MSun: 8.0e+14, z: 0.8}}
-    - {label: "Arnaud_M1e14_z1p2",
-       params: {M500MSun: 1.0e+14, z: 1.2}}
-    - {label: "Arnaud_M2e14_z1p2",
-       params: {M500MSun: 2.0e+14, z: 1.2}}
-    - {label: "Arnaud_M4e14_z1p2",
-       params: {M500MSun: 4.0e+14, z: 1.2}}
-    - {label: "Arnaud_M8e14_z1p2",
-       params: {M500MSun: 8.0e+14, z: 1.2}}
+    #- {label: "Arnaud_M8e14_z0p4",
+       #params: {M500MSun: 8.0e+14, z: 0.4}}              
+    #- {label: "Arnaud_M1e14_z0p8",
+       #params: {M500MSun: 1.0e+14, z: 0.8}}
+    #- {label: "Arnaud_M2e14_z0p8",
+       #params: {M500MSun: 2.0e+14, z: 0.8}}
+    #- {label: "Arnaud_M4e14_z0p8",
+       #params: {M500MSun: 4.0e+14, z: 0.8}}
+    #- {label: "Arnaud_M8e14_z0p8",
+       #params: {M500MSun: 8.0e+14, z: 0.8}}
+    #- {label: "Arnaud_M1e14_z1p2",
+       #params: {M500MSun: 1.0e+14, z: 1.2}}
+    #- {label: "Arnaud_M2e14_z1p2",
+       #params: {M500MSun: 2.0e+14, z: 1.2}}
+    #- {label: "Arnaud_M4e14_z1p2",
+       #params: {M500MSun: 4.0e+14, z: 1.2}}
+    #- {label: "Arnaud_M8e14_z1p2",
+       #params: {M500MSun: 8.0e+14, z: 1.2}}
 
 # Source injection test - this can also be enabled with the nemo -I switch
 #sourceInjectionTest: False
@@ -132,13 +145,12 @@ sourceInjectionModels:
     - {redshift: 0.2, M500: 2.0e+14}
     - {redshift: 0.1, M500: 2.0e+14}
 
-# Tiling options - cut-up each map into smaller sections
-useTiling: True
-makeQuickLookMaps: False
-stitchTiles: True
+# tileDir options - cut-up each map into smaller sections
+makeTileDir: False
+stitchTiles: False
 tileOverlapDeg: 1.0
-tileDefinitions: {mask: 'dr5_masking/AdvACTSurveyMask_v7_S18.fits',
-                  targetTileWidthDeg: 10.0, 
+tileDefLabel: 'auto'
+tileDefinitions: {targetTileWidthDeg: 10.0, 
                   targetTileHeightDeg: 5.0}
 
 # If this is given, only the named tiles will be processed (useful for testing)
