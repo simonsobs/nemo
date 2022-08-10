@@ -151,31 +151,37 @@ class SelFn(object):
             self.tileNames=self._config.tileNames
         
         self.method=method
-        if self.method == 'injection':
-            injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
-            inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
-            if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
-                raise Exception("Cannot use the 'injection' method as %s does not exist." % (injDataPath))
-            injTab=atpy.Table().read(injDataPath)
-            inputTab=atpy.Table().read(inputDataPath)
+        #if self.method == 'injection'
+        injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
+        inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+        if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
+            raise Exception("%s not found - run a source injection test to generate (now required to use SelFn objects)." % (injDataPath))
+        injTab=atpy.Table().read(injDataPath)
+        inputTab=atpy.Table().read(inputDataPath)
 
-            # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
-            # NOTE: This is a survey-wide average, doesn't respect footprints at the moment
-            theta500s=np.unique(inputTab['theta500Arcmin'])
-            binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)
-            binCentres=(binEdges[1:]+binEdges[:-1])/2
-            compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
-            for i in range(len(theta500s)):
-                t=theta500s[i]
-                injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > self.SNRCut)
-                inputMask=inputTab['theta500Arcmin'] == t
-                injFlux=injTab['inFlux'][injMask]
-                inputFlux=inputTab['inFlux'][inputMask]
-                recN, binEdges=np.histogram(injFlux, bins = binEdges)
-                inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
-                compThetaGrid[i]=recN/inpN
-            self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
-                                                                       compThetaGrid, kx = 3, ky = 3)
+        # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
+        # We also derive survey-averaged Q here from the injection sim results [for y0 -> y0~ mapping]
+        # NOTE: This is a survey-wide average, doesn't respect footprints at the moment
+        # NOTE: This will need re-thinking for evolving, non-self-similar models?
+        theta500s=np.unique(inputTab['theta500Arcmin'])
+        binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)
+        binCentres=(binEdges[1:]+binEdges[:-1])/2
+        compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
+        thetaQ=np.zeros(len(theta500s))
+        for i in range(len(theta500s)):
+            t=theta500s[i]
+            injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > self.SNRCut)
+            inputMask=inputTab['theta500Arcmin'] == t
+            injFlux=injTab['inFlux'][injMask]
+            outFlux=injTab['outFlux'][injMask]
+            inputFlux=inputTab['inFlux'][inputMask]
+            recN, binEdges=np.histogram(injFlux, bins = binEdges)
+            inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
+            compThetaGrid[i]=recN/inpN
+            thetaQ[i]=np.median(outFlux/injFlux)
+        self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
+                                                                    compThetaGrid, kx = 3, ky = 3)
+        self.compQInterpolator=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
 
         # Needed for generating mock samples directly
         self.photFilterLabel=self._config.parDict['photFilter']
@@ -432,7 +438,8 @@ class SelFn(object):
                     else:
                         log10M500s=self.mockSurvey.log10M
                     theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-                    Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
+                    #Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
+                    Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
                     true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
                                                                                     1+B0)*Qs_zk
                     if self.applyRelativisticCorrection == True:
@@ -473,32 +480,6 @@ class SelFn(object):
             y0GridCube=np.array(y0GridCube)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
             self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
-
-            #print("fix in selFn completeness")
-            #import IPython
-            #IPython.embed()
-            #sys.exit()
-
-            ##---
-            ## Old
-            #compMzCube=[]
-            #count=0
-            #method='montecarlo'
-            #for tileName in self.RMSDict.keys():
-                #count=count+1
-                #if method == 'montecarlo':
-                    #print("... %d/%d ..." % (count, len(self.tileNames)))
-                    #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
-                                                    #self.mockSurvey, self.scalingRelationDict, self.Q,
-                                                    #method = 'montecarlo', numDraws = 100000, numIterations = 5))
-                #else:
-                    #compMzCube.append(calcCompleteness(self.RMSDict[tileName], self.SNRCut, tileName,
-                                                    #self.mockSurvey, self.scalingRelationDict, self.Q))
-
-                #if np.any(np.isnan(compMzCube[-1])) == True:
-                    #raise Exception("NaNs in compMz for tile '%s'" % (tileName))
-            #compMzCube=np.array(compMzCube)
-            #self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
         
 
     def projectCatalogToMz(self, tab):
