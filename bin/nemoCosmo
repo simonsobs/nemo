@@ -154,38 +154,45 @@ if __name__ == '__main__':
     defaultMaxSamples=3000
     defaultNumToBurn=50
     parser=argparse.ArgumentParser("nemoCosmo")
-    parser.add_argument("catalogFileName", help = """Catalog file name, in .fits format, as produced by nemo
-                        or nemoMock.""")
-    parser.add_argument("selFnDir", help = """Directory containing files needed for computing the selection 
-                        function.""")
-    parser.add_argument("-c", "--cobaya-config", dest = "cobayaConfig", help = """A Cobaya .yml configuration 
-                        file. Use the -d switch to dump the default settings to a file.""", default = None)
-    parser.add_argument("-d", "--dump-default-config", dest = "dumpConfig", help = """Dumps the default Cobaya
-                        configuration to a file called default.yml in the current working directory.""",
+    parser.add_argument("catalogFileName", help = "Catalog file name, in .fits format, as produced by nemo\
+                        or nemoMock.")
+    parser.add_argument("selFnDir", help = "Directory containing files needed for computing the selection\
+                        function.")
+    parser.add_argument("-c", "--cobaya-config", dest = "cobayaConfig", help = "A Cobaya .yml configuration\
+                        file. Use the -d switch to dump the default settings to a file.", default = None)
+    parser.add_argument("-d", "--dump-default-config", dest = "dumpConfig", help = "Dumps the default Cobaya\
+                        configuration to a file called default.yml in the current working directory.",
                         action = "store_true", default = False)
-    parser.add_argument("-o", "--output-dir", dest = "cosmoOutDir", help = """Name of directory in which
-                        to store output chains (default: cosmo_catalogFileName_SNRCut, where
-                        catalogFileName is stripped of the .fits extension).""", default = None)
-    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help = """Use only clusters with fixed_SNR > 
+    parser.add_argument("-o", "--output-dir", dest = "cosmoOutDir", help = "Name of directory in which\
+                        to store output chains (default: cosmo_catalogFileName_SNRCut, where\
+                        catalogFileName is stripped of the .fits extension).", default = None)
+    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help = "Use only clusters with fixed_SNR > \
                         this value.""", default = 5.0, type = float)
-    parser.add_argument("-f", "--footprint", dest = "footprint", help="""Footprint to use, e.g., DES,
-                        HSC, KiDS (default: full). Note that the catalog will not be trimmed to match 
-                        the footprint.""", default = None)
-    parser.add_argument("-z", "--z-min", dest = "zMinCut", default = 0.0, type = float, help = """Minimum redshift cut\
-                        applied to the catalog and the likelihood calculation.""")
+    parser.add_argument("-f", "--footprint", dest = "footprint", help="Footprint to use, e.g., DES,\
+                        HSC, KiDS (default: full).", default = None)
+    parser.add_argument("-z", "--z-min", dest = "zMinCut", default = 0.0, type = float,
+                        help = "Minimum redshift cut applied to the catalog and the likelihood calculation.")
     parser.add_argument("-R", "--relativistic-correction", dest = "relativisticCorrection", 
-                        action = "store_true", default = False, help = """Apply relativistic correction
-                        to the signal modelling and completeness calculation.""")
-    parser.add_argument("-D", "--mass-def", dest = "massDef", default = "M500c", help = """Mass 
-                        definition to use (e.g., M500c, M200m, M200c).""")
-    parser.add_argument("-m", "--max-samples", dest="maxSamples", help="""Maximum number of samples. If 
-                        given, overrides the value given in the Cobaya configuration file.""", type = int,
-                        default = defaultMaxSamples)
-    parser.add_argument("-b", "--burn", dest = "numToBurn", help = """Number of samples to burn. If given,
-                        overrides the value given in the Cobaya configuration file.""", 
+                        action = "store_true", default = False, help = "Apply relativistic correction\
+                        to the signal modeling and completeness calculation.")
+    parser.add_argument("-D", "--mass-def", dest = "massDef", default = "M200c",
+                        help = "Mass definition to use (e.g., M500c, M200m, M200c).")
+    parser.add_argument("-m", "--max-samples", dest="maxSamples", help="Maximum number of samples. If\
+                        given, overrides the value given in the Cobaya configuration file.",
+                        type = int, default = defaultMaxSamples)
+    parser.add_argument("-b", "--burn", dest = "numToBurn", help = "Number of samples to burn. If given,\
+                        overrides the value given in the Cobaya configuration file.",
                         default = defaultNumToBurn, type = int)
-    #parser.add_argument("-N", "--num-signal-bins", dest = "numSignalBins", type = int, default = 40,
-                        #help = """Number of bins for the SZ signal.""")
+    parser.add_argument("-N", "--num-signal-bins", dest = "numSignalBins", type = int, default = 10,
+                        help = "Number of bins for the SZ signal.")
+    parser.add_argument("-L", "--likelihood-type", dest = "likelihoodType", default = "Nz",
+                        help = "Likelihood function to use - either 'Nz' (simple N(z) based likelihood)\
+                        or 'yc' (likelihood using cluster counts binned by both SZ signal signal and\
+                        redshift).")
+    parser.add_argument("-C", "--completeness-method", dest = "completenessMethod", default = "fast",
+                        help = "Method to use for completeness calculation - either 'fast' (uses the\
+                        noise maps and a simple model) or 'injection' (directly uses the results of\
+                        source injection simulations)")
     parser.add_argument("-t", "--test-likelihood", dest = "testLikelihood", help = """Run a test of the
                         likelihood, varying one parameter at a time, instead of running Cobaya,
                         producing diagnostic plots called 'testLikelihood_paramName.png' in the current
@@ -215,14 +222,12 @@ if __name__ == '__main__':
     else:
         raise Exception("massDef should be one of M500c, M200c, or M200m (use -D M500c, -D M200c, or -D M200m)")
     
-    #lnprob=lnprob_yc
-    lnprob=lnprob_Nz
-    #if args.likelihoodType == "mass":
-        #lnprob=lnprob_M500
-    #elif args.likelihoodType == "yc":
-        #lnprob=lnprob_yc
-    #else:
-        #raise Exception("Didn't understand likelihoodType - use either 'mass' or 'yc'")
+    if args.likelihoodType == "Nz":
+        lnprob=lnprob_Nz
+    elif args.likelihoodType == "yc":
+        lnprob=lnprob_yc
+    else:
+        raise Exception("Didn't understand likelihoodType - use either 'Nz' or 'yc'")
         
     tab=atpy.Table().read(tabFileName)
     if 'redshift' not in tab.keys():
@@ -230,7 +235,7 @@ if __name__ == '__main__':
 
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
     if cosmoOutDir == None:
-        cosmoOutDir="cosmo_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
+        cosmoOutDir="chains_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
         
     # Cobaya set-up
     if args.cobayaConfig is None:
@@ -277,14 +282,11 @@ if __name__ == '__main__':
         print("Relativistic correction will be applied")
     else:
         print("Relativistic correction neglected")
+    print("Using '%s' completeness estimation method" % (args.completenessMethod))
     selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1,
                              enableDrawSample = False, mockOversampleFactor = 1, downsampleRMS = True,
                              applyRelativisticCorrection = args.relativisticCorrection,
-                             delta = delta, rhoType = rhoType, method = 'injection')
-
-    # This, seemingly, has no effect
-    #predAreaScale=0.895
-    #selFn.mockSurvey.setSurveyArea(selFn.mockSurvey.areaDeg2*predAreaScale) # Affects predicted counts but not mock
+                             delta = delta, rhoType = rhoType, method = args.completenessMethod)
 
     # Cut catalog according to given SNR cut and survey footprint
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
@@ -336,7 +338,7 @@ if __name__ == '__main__':
         elif massDef == 'M200m':
             tenToA0, B0, Mpivot, sigma_int = 1.7e-05, 0.0, 3.0e+14, 0.0    # WebSky scaling relation - no scatter, M200m
         elif massDef == 'M200c':
-            tenToA0, B0, Mpivot, sigma_int = 4.0e-05, 0.08, 4.25e+14, 0.2    # Current sim du jour
+            tenToA0, B0, Mpivot, sigma_int = 4.0e-05, 0.08, 4.25e+14, 0.0    # Current sim du jour
         #lnprob(H0, Om0, sigma8, Ob0, ns, p, B0, Mpivot, sigma_int)
         testsToRun=['H0', 'Om0', 'sigma8', 'tenToA0', 'B0', 'sigma_int']
         #testsToRun=['B0']
