@@ -126,7 +126,7 @@ class SelFn(object):
                  zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
-                 massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast'):
+                 massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'injection'):
         
         self.SNRCut=SNRCut
         self.footprintLabel=footprintLabel
@@ -150,38 +150,10 @@ class SelFn(object):
         else:
             self.tileNames=self._config.tileNames
         
+        deprecatedMethods=['montecarlo']
+        if method in deprecatedMethods:
+            raise Exception("Selection function completeness calculation method '%s' is deprecated - use a valid method (e.g., 'injection')" % (method))
         self.method=method
-        #if self.method == 'injection'
-        injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
-        inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
-        if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
-            raise Exception("%s not found - run a source injection test to generate (now required to use SelFn objects)." % (injDataPath))
-        injTab=atpy.Table().read(injDataPath)
-        inputTab=atpy.Table().read(inputDataPath)
-
-        # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
-        # We also derive survey-averaged Q here from the injection sim results [for y0 -> y0~ mapping]
-        # NOTE: This is a survey-wide average, doesn't respect footprints at the moment
-        # NOTE: This will need re-thinking for evolving, non-self-similar models?
-        theta500s=np.unique(inputTab['theta500Arcmin'])
-        binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)
-        binCentres=(binEdges[1:]+binEdges[:-1])/2
-        compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
-        thetaQ=np.zeros(len(theta500s))
-        for i in range(len(theta500s)):
-            t=theta500s[i]
-            injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > self.SNRCut)
-            inputMask=inputTab['theta500Arcmin'] == t
-            injFlux=injTab['inFlux'][injMask]
-            outFlux=injTab['outFlux'][injMask]
-            inputFlux=inputTab['inFlux'][inputMask]
-            recN, binEdges=np.histogram(injFlux, bins = binEdges)
-            inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
-            compThetaGrid[i]=recN/inpN
-            thetaQ[i]=np.median(outFlux/injFlux)
-        self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
-                                                                    compThetaGrid, kx = 3, ky = 3)
-        self.compQInterpolator=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
 
         # Needed for generating mock samples directly
         self.photFilterLabel=self._config.parDict['photFilter']
@@ -215,8 +187,46 @@ class SelFn(object):
                 if key not in self.scalingRelationDict.keys():
                     self.scalingRelationDict[key]=defaults[key]
 
-            self.Q=signals.QFit(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
-            
+            # Q from the 'classic' Q fitting procedure now optional
+            # (can use compQInterpolator instead, for a survey-wide average from injection sims)
+            if os.path.exists(self.selFnDir+os.path.sep+"QFit.fits") == True:
+                self.Q=signals.QFit(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
+            else:
+                self.Q=None
+
+            # Stuff from the source injection sims (now required for completeness calculation)
+            injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
+            inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+            if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
+                raise Exception("%s not found - run a source injection test to generate (now required for completeness calculations)." % (injDataPath))
+            injTab=atpy.Table().read(injDataPath)
+            inputTab=atpy.Table().read(inputDataPath)
+
+            # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
+            # We also derive survey-averaged Q here from the injection sim results [for y0 -> y0~ mapping]
+            # NOTE: This is a survey-wide average, doesn't respect footprints at the moment
+            # NOTE: This will need re-thinking for evolving, non-self-similar models?
+            theta500s=np.unique(inputTab['theta500Arcmin'])
+            binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)
+            binCentres=(binEdges[1:]+binEdges[:-1])/2
+            compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
+            thetaQ=np.zeros(len(theta500s))
+            for i in range(len(theta500s)):
+                t=theta500s[i]
+                injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > self.SNRCut)
+                inputMask=inputTab['theta500Arcmin'] == t
+                injFlux=injTab['inFlux'][injMask]
+                outFlux=injTab['outFlux'][injMask]
+                inputFlux=inputTab['inFlux'][inputMask]
+                recN, binEdges=np.histogram(injFlux, bins = binEdges)
+                inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
+                valid=inpN > 0
+                compThetaGrid[i][valid]=recN[valid]/inpN[valid]
+                thetaQ[i]=np.median(outFlux/injFlux)
+            self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
+                                                                        compThetaGrid, kx = 3, ky = 3)
+            self.compQInterpolator=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
+
             # We should be able to do everything (except clustering) with this
             # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
             RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
@@ -405,6 +415,11 @@ class SelFn(object):
             self.compMz=compMz
             #astImages.saveFITS("compMz_fromInj_interp.fits", compMz.transpose())
 
+            print("add y0TildeGrid")
+            import IPython
+            IPython.embed()
+            sys.exit()
+
             # Intrinsic scatter
             if sigma_int > 0:
                 # Fiddling with Gaussian filter params has no effect
@@ -479,7 +494,7 @@ class SelFn(object):
             compMzCube=np.array(compMzCube)
             y0GridCube=np.array(y0GridCube)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
-            self.y0Grid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
+            self.y0TildeGrid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
         
 
     def projectCatalogToMz(self, tab):
@@ -836,7 +851,7 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         return intersectMask
     
     # Otherwise, we may have a per-tile intersection mask
-    intersectFileName=selFnDir+os.path.sep+"intersect_%s#%s.fits" % (label, tileName)
+    intersectFileName=selFnDir+os.path.sep+tileName+os.path.sep+"intersect_%s#%s.fits" % (label, tileName)
     if os.path.exists(intersectFileName):
         intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
         return intersectMask

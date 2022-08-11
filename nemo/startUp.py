@@ -117,7 +117,7 @@ def parseConfigFile(parDictFileName, verbose = False):
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True
         if 'fitQ' not in parDict.keys():
-            parDict['fitQ']=True
+            parDict['fitQ']=False
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
@@ -166,8 +166,7 @@ def parseConfigFile(parDictFileName, verbose = False):
     
     # To aid user friendliness - spot any out-of-date / removed / renamed parameters here
     # Use None for those that are totally removed
-    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None,
-               'sourceInjectionModels': 'clusterInjectionModels'}
+    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None}
     for k in oldKeyMap.keys():
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]
@@ -284,6 +283,10 @@ class NemoConfig(object):
         if sourceInjectionTest == True:
             self.parDict['sourceInjectionTest']=True
 
+        # Source injection test is now required for calculation of the selection function
+        if self.parDict['calcSelFn'] == True:
+            self.parDict['sourceInjectionTest']=True
+
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
@@ -301,11 +304,11 @@ class NemoConfig(object):
                 
         # Downsampled WCS and shape for 'quicklook' stitched images
         # NOTE: This gets used by default for mass limit maps, so left in even when not used otherwise
-        self.quicklookScale=0.25
-        if self.origWCS is not None:
-            self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
-        else:
-            if self.verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
+        #self.quicklookScale=0.25
+        #if self.origWCS is not None:
+            #self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+        #else:
+            #if self.verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
 
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).

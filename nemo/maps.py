@@ -1731,9 +1731,9 @@ def sourceInjectionTest(config):
         numIterations=config.parDict['sourceInjectionIterations']
 
     # Change to previous behavior - if config doesn't specify models to use, assume it's point sources
-    if 'clusterInjectionModels' in config.parDict.keys():
+    if 'sourceInjectionModels' in config.parDict.keys():
         clusterMode=True
-        sourceInjectionModelList=config.parDict['clusterInjectionModels']
+        sourceInjectionModelList=config.parDict['sourceInjectionModels']
         SNRCol='SNR'
         fluxCol='y_c'
         noiseLevelCol='err_y_c'
@@ -1744,7 +1744,6 @@ def sourceInjectionTest(config):
             label='%.2f' % (theta500Arcmin)
             sourceInjectionModel['label']=label
             sourceInjectionModel['theta500Arcmin']=theta500Arcmin
-        QFit=signals.QFit(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
     else:
         # Sources
         clusterMode=False

@@ -311,17 +311,15 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------
-def makeSelFnCollection(config, mockSurvey):
+def makeRMSTables(config):
     """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
-    in the config file, plus the full survey mask), that contain information on noise levels, area covered, 
+    in the config file, plus the full survey mask), that contain information on noise levels and area covered,
     and completeness. 
-    
-    Returns a dictionary (keys: 'full' - corresponding to whole survey, plus other keys named by footprint).
-    
+
     """
     
     # Q varies across tiles
-    Q=signals.QFit(config)
+    #Q=signals.QFit(config)
         
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -330,13 +328,13 @@ def makeSelFnCollection(config, mockSurvey):
             break
 
     # We'll only calculate completeness for this given selection
-    SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
+    #SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
 
     # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
-    if 'numDraws' not in config.parDict['selFnOptions'].keys():
-        config.parDict['selFnOptions']['numDraws']=2000000
-    if 'numIterations' not in config.parDict['selFnOptions'].keys():
-        config.parDict['selFnOptions']['numIterations']=100
+    #if 'numDraws' not in config.parDict['selFnOptions'].keys():
+        #config.parDict['selFnOptions']['numDraws']=2000000
+    #if 'numIterations' not in config.parDict['selFnOptions'].keys():
+        #config.parDict['selFnOptions']['numIterations']=100
     
     # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
     footprintsList=[]
@@ -351,24 +349,23 @@ def makeSelFnCollection(config, mockSurvey):
 
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
-        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
-                                           numDraws = config.parDict['selFnOptions']['numDraws'],
-                                           numIterations = config.parDict['selFnOptions']['numIterations'],
-                                           method = config.parDict['selFnOptions']['method'],
-                                           verbose = True)
+        #compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
+                                           #numDraws = config.parDict['selFnOptions']['numDraws'],
+                                           #numIterations = config.parDict['selFnOptions']['numIterations'],
+                                           #method = config.parDict['selFnOptions']['method'],
+                                           #verbose = True)
         selFnDict={'tileName': tileName,
                    'RMSTab': RMSTab,
-                   'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
-                   'compMz': compMz}
+                   'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
         selFnCollection['full'].append(selFnDict)
 
         # Optional mass-limit maps [no footprint option here as yet]
-        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
-            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                completeness.makeMassLimitMap(RMSTab, SNRCut, massLimitDict['z'],
-                                              tileName, photFilterLabel, mockSurvey,
-                                              config.parDict['massOptions'], Q, config.diagnosticsDir,
-                                              config.selFnDir)
+        #if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
+            #for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+                #completeness.makeMassLimitMap(RMSTab, SNRCut, massLimitDict['z'],
+                                              #tileName, photFilterLabel, mockSurvey,
+                                              #config.parDict['massOptions'], Q, config.diagnosticsDir,
+                                              #config.selFnDir)
 
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
@@ -378,21 +375,20 @@ def makeSelFnCollection(config, mockSurvey):
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
                                               footprintLabel = footprintDict['label'])
-                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
-                                                   numDraws = config.parDict['selFnOptions']['numDraws'],
-                                                   numIterations = config.parDict['selFnOptions']['numIterations'],
-                                                   method = config.parDict['selFnOptions']['method'])
+                #compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
+                                                   #numDraws = config.parDict['selFnOptions']['numDraws'],
+                                                   #numIterations = config.parDict['selFnOptions']['numIterations'],
+                                                   #method = config.parDict['selFnOptions']['method'])
                 selFnDict={'tileName': tileName,
                            'RMSTab': RMSTab,
-                           'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
-                           'compMz': compMz}
+                           'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
                 selFnCollection[footprintDict['label']].append(selFnDict)
 
     if config.MPIEnabled == True:
         config.comm.barrier()
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank == 0:
-            print("... gathered selection function results")
+            print("... gathered RMS tables")
             all_selFnCollection={'full': []}
             for key in selFnCollection.keys():
                 if key not in all_selFnCollection.keys():
@@ -427,8 +423,6 @@ def makeSelFnCollection(config, mockSurvey):
                 tab.sort('y0RMS')
                 tab.meta['NEMOVER']=nemo.__version__
                 tab.write(outFileName, overwrite = True)
-
-    return selFnCollection
                 
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True, 

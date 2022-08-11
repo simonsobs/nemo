@@ -94,42 +94,26 @@ if __name__ == '__main__':
         if config.rank == 0: print("... already made catalog %s" % (optimalCatalogFileName))
                 
     # Q function (filter mismatch) - if needed options have been given
-    # We may as well do this here to save having to run nemoMass separately (though we still can...)
-    # (it's the Q calc in nemoMass that takes time - but it's only a couple of min per field in parallel)
+    # NOTE: This may not be needed in future (if source injection sim Q is used instead)
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
 
-    # Source injection tests for quantifying position recovery accuracy and noise bias
-    sourceInjTable=None
-    if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
-        if config.MPIEnabled == True:
-            config.comm.barrier()   # Otherwise, some processes can begin before catalog written to disk and then crash
-        sourceInjTable=maps.sourceInjectionTest(config)
+    # This now just generates the noise versus area tables
+    pipelines.makeRMSTables(config)
 
-    # Moved calculation of selection function parts here as it's very quick in parallel
-    if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
-        if config.parDict['selFnOptions']['method'] == 'injection' and sourceInjTable is None:
-            raise Exception("Cannot use the 'injection' method for calculating completeness if 'sourceInjectionTest' is False.")
-        # Since a fiducial cosmology (OmegaM0 = 0.3, OmegaL0 = 0.7, H0 = 70 km/s/Mpc) was used in the object detection/filtering stage, we use the same one here      
-        minMass=8e13
-        areaDeg2=400.0  # Don't care what value this has, as we'll sim up an arbitrary number of clusters anyway
-        zMin=0.0
-        zMax=2.0
-        # NOTE: startUp now sets defaults for these if not given in config
-        massOptions=config.parDict['massOptions']
-        H0=massOptions['H0']
-        Om0=massOptions['Om0']
-        Ob0=massOptions['Ob0']
-        sigma8=massOptions['sigma8']
-        ns=massOptions['ns']
-        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
-                                         rhoType = massOptions['rhoType'], delta = massOptions['delta'],
-                                         enableDrawSample = True)
-        selFnCollection=pipelines.makeSelFnCollection(config, mockSurvey)
+    # Source injection test - this is now core for the selection function calculation
+    sourceInjTable=None
+    sourceInjPath=config.selFnDir+os.path.sep+"sourceInjectionData.fits"
+    if os.path.exists(sourceInjPath) == False:
+        if 'sourceInjectionTest' in config.parDict.keys() and config.parDict['sourceInjectionTest'] == True:
+            if config.MPIEnabled == True:
+                config.comm.barrier()   # Otherwise, some processes can begin before catalog written to disk and then crash
+            sourceInjTable=maps.sourceInjectionTest(config)
     else:
-        selFnCollection={}
-        
+        if config.rank == 0:
+            print("... already made source injection data %s" % (sourceInjPath))
+
     # Tidying up etc.
     if config.rank == 0:
 
@@ -139,20 +123,20 @@ if __name__ == '__main__':
 
         # Stitch together map tiles - 'quicklook' images (downsampled by factor 4 in resolution)
         # The stitchTilesQuickLook routine will only write output if there are multiple maps matching the file pattern
-        if 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
-            # RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure)
-            if os.path.exists(config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits") == False:
-                maps.stitchTilesQuickLook(config.selFnDir+os.path.sep+"RMSMap*.fits",
-                                          config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits",
-                                          config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
-            else:
-                print("... already made %s ..." % (config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits"))
-            # S/N maps at reference filter scale
-            quicklookSNMapPath=config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter'])
-            if config.parDict['photFilter'] is not None and os.path.exists(quicklookSNMapPath) == False:
-                maps.stitchTilesQuickLook(config.filteredMapsDir+os.path.sep+"*"+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']),
-                                        quicklookSNMapPath, config.quicklookWCS, config.quicklookShape,
-                                        fluxRescale = config.quicklookScale)
+        #if 'makeQuickLookMaps' in config.parDict.keys() and config.parDict['makeQuickLookMaps'] == True:
+            ## RMS (we don't save quicklook to selFnDir - users should use full-fat maps to be sure)
+            #if os.path.exists(config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits") == False:
+                #maps.stitchTilesQuickLook(config.selFnDir+os.path.sep+"RMSMap*.fits",
+                                          #config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits",
+                                          #config.quicklookWCS, config.quicklookShape, fluxRescale = config.quicklookScale)
+            #else:
+                #print("... already made %s ..." % (config.diagnosticsDir+os.path.sep+"quicklook_RMSMap.fits"))
+            ## S/N maps at reference filter scale
+            #quicklookSNMapPath=config.filteredMapsDir+os.path.sep+"quicklook_%s_SNMap.fits" % (config.parDict['photFilter'])
+            #if config.parDict['photFilter'] is not None and os.path.exists(quicklookSNMapPath) == False:
+                #maps.stitchTilesQuickLook(config.filteredMapsDir+os.path.sep+"*"+os.path.sep+"%s*SNMap.fits" % (config.parDict['photFilter']),
+                                        #quicklookSNMapPath, config.quicklookWCS, config.quicklookShape,
+                                        #fluxRescale = config.quicklookScale)
         
         # Plot tile-averaged position recovery test
         if sourceInjTable is not None:
@@ -172,7 +156,24 @@ if __name__ == '__main__':
         # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do
         signals.getFRelWeights(config)
 
-        if selFnCollection != {} and config.parDict['selFnOptions']['method'] is not None:
+        # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
+        completeness.tidyUp(config)
+
+        # Now do all completeness calculations, output etc. using a SelFn object
+        if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
+            print("make a SelFn object and do all the nice completeness output")
+            import IPython
+            IPython.embed()
+            sys.exit()
+            selFn=completeness.SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
+                                     footprintLabel = None, zStep = 0.1,
+                                     enableDrawSample = False, downsampleRMS = False,
+                                     applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
+                                     delta = config.parDict['massOptions']['delta'],
+                                     rhoType = config.parDict['massOptions']['rhoType'],
+                                     method = config.parDict['selFnOptions']['method'])
+
+
             # Survey completeness stats now all lumped together in one routine
             # This also make survey-averaged (M, z) grid(s) as used by e.g. HSC lensing analysis
             completeness.completenessByFootprint(selFnCollection, mockSurvey, config.diagnosticsDir, 
@@ -186,8 +187,7 @@ if __name__ == '__main__':
                     completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir, config.allTileNames) 
                     completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
             
-        # Tidy up by making MEF files and deleting the (potentially 100s) of per-tile files made
-        completeness.tidyUp(config)
+
 
     else:
         del selFnCollection
