@@ -1164,7 +1164,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
     plt.imshow((compMz*100).transpose(), cmap = colorcet.m_rainbow, origin = 'lower', aspect = 'auto')
     
     y_tck=interpolate.splrep(log10M, np.arange(log10M.shape[0]))
-    plot_log10M=np.linspace(13.5, 15.5, 9)
+    plot_log10M=np.linspace(13.8, 15.4, 9)
     coords_log10M=interpolate.splev(plot_log10M, y_tck)
     labels_log10M=[]
     for lm in plot_log10M:
