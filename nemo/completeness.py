@@ -38,6 +38,10 @@ from decimal import Decimal
 #warnings.filterwarnings('error')
 
 #------------------------------------------------------------------------------------------------------------
+class FootprintError(Exception):
+    pass
+
+#------------------------------------------------------------------------------------------------------------
 class SelFn(object):
     """An object that describes the survey selection function. It uses the output in the ``selFn/`` directory
     (produced by the :ref:`nemoCommand` command) to calculate the survey completeness for a given
@@ -232,6 +236,8 @@ class SelFn(object):
             RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
             if footprintLabel is not None:
                 RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+            if os.path.exists(RMSTabFileName) == False:
+                raise FootprintError
             self.RMSTab=atpy.Table().read(RMSTabFileName)
             self.RMSDict={}
             tileNames=[]
@@ -409,16 +415,16 @@ class SelFn(object):
 
             compMz=np.zeros(y0Grid.shape)
             for i in range(len(zRange)):
-                compMz[i]=np.diag(self.compThetaInterpolator(theta500Grid[i], y0Grid[i]/1e-04))
+                try:
+                    compMz[i]=np.diag(self.compThetaInterpolator(theta500Grid[i], y0Grid[i]/1e-04))
+                except:
+                    # If above fails, it's because relativistic correction is on, and y0 doesn't always increase
+                    for j in range(y0Grid[i].shape[0]):
+                        compMz[i][j]=self.compThetaInterpolator(theta500Grid[i][j], y0Grid[i][j]/1e-04)
             compMz[compMz < 0]=0
             compMz[compMz > 1]=1
             self.compMz=compMz
-            #astImages.saveFITS("compMz_fromInj_interp.fits", compMz.transpose())
-
-            print("add y0TildeGrid")
-            import IPython
-            IPython.embed()
-            sys.exit()
+            self.y0TildeGrid=self.compQInterpolator(theta500Grid)*y0Grid
 
             # Intrinsic scatter
             if sigma_int > 0:
@@ -1025,22 +1031,13 @@ def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintL
     return tileRMSValue
 
 #------------------------------------------------------------------------------------------------------------
-def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additionalLabel = ""):
-    """Write out the average (log\ :sub:`10` mass, z) grid over all survey footprints provided in 
-    `selFnCollection`, weighted by fraction of total survey area within the footprint. Also prints some
-    useful statistics and produces some plots that are written to the `diagnosticsDir` directory.
+def completenessByFootprint(config):
+    """Write out the average (log\ :sub:`10` mass, z) grid over all survey footprints defined in the config,
+    weighted by fraction of total survey area within the footprint. Also prints some useful statistics and
+    produces some plots that are written to the `diagnosticsDir` directory.
     
     Args:
-        selFnCollection (:obj:`dict`): A dictionary where each key points to a :class:`SelFn` object that
-            describes a given survey footprint. Here, "full" corresponds to the whole survey, while "DES"
-            may represent the DES footprint, if it has been defined in the :ref:`nemoCommand` config file
-            (see :ref:`selFnFootprints`).
-        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
-            function calculations and generating mock catalogs.
-        diagnosticsDir (:obj:`str`): The path to the diagnostics directory, where the output from this
-            routine will be written.
-        additionalLabel (:obj:`str`, optional): This will be added to the output filenames (use this for
-            e.g., tagging with the :meth:`calcCompleteness` method used).
+        config (:class:`nemo.startUp.NemoConfig`): A NemoConfig object.
     
     Returns:
         None
@@ -1051,46 +1048,50 @@ def completenessByFootprint(selFnCollection, mockSurvey, diagnosticsDir, additio
         average).
     
     """
-        
+
     zBinEdges=np.arange(0.05, 2.1, 0.1)
     zBinCentres=(zBinEdges[:-1]+zBinEdges[1:])/2.
-    massLabel=mockSurvey.mdefLabel
-        
-    for footprintLabel in selFnCollection.keys():
-        print(">>> Survey-averaged results inside footprint: %s ..." % (footprintLabel))
-        selFnDictList=selFnCollection[footprintLabel]
-        tileAreas=[]
-        compMzCube=[]
-        completeness=[]
-        for selFnDict in selFnDictList:
-            tileAreas.append(selFnDict['tileAreaDeg2'])
-            massLimit_90Complete=calcMassLimit(0.9, selFnDict['compMz'], mockSurvey, zBinEdges = zBinEdges)
-            completeness.append(massLimit_90Complete)
-            compMzCube.append(selFnDict['compMz'])
-        tileAreas=np.array(tileAreas)
-        completeness=np.array(completeness)
-        if np.sum(tileAreas) == 0:
-            print("... no overlapping area with %s ..." % (footprintLabel))
-            continue
-        fracArea=tileAreas/np.sum(tileAreas)
-        compMzCube=np.array(compMzCube)
-        compMz_surveyAverage=np.average(compMzCube, axis = 0, weights = fracArea)
 
-        outFileName=diagnosticsDir+os.path.sep+"MzCompleteness_%s%s.npz" % (footprintLabel, additionalLabel)
-        np.savez(outFileName, z = mockSurvey.z, log10M500c = mockSurvey.log10M, 
-                 M500Completeness = compMz_surveyAverage)
-        
-        makeMzCompletenessPlot(compMz_surveyAverage, mockSurvey.log10M, mockSurvey.z, footprintLabel, massLabel,
-                               diagnosticsDir+os.path.sep+"MzCompleteness_%s%s.pdf" % (footprintLabel, additionalLabel))
+    footprintLabels=[None]
+    if 'selFnFootprints' in config.parDict.keys():
+        for footprintDict in config.parDict['selFnFootprints']:
+            footprintLabels.append(footprintDict['label'])
+
+    for footprintLabel in footprintLabels:
+
+        try:
+            selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
+                        footprintLabel = footprintLabel, zStep = 0.1,
+                        enableDrawSample = False, downsampleRMS = False,
+                        applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
+                        delta = config.parDict['massOptions']['delta'],
+                        rhoType = config.parDict['massOptions']['rhoType'],
+                        method = config.parDict['selFnOptions']['method'])
+        except FootprintError:
+            pass
+            #print("... no overlapping area with footprint %s" % (footprintLabel))
+
+        massLabel=selFn.mockSurvey.mdefLabel
+
+        if footprintLabel is None:
+            footprintLabel="full"
+
+        massLimit_90Complete=calcMassLimit(0.9, selFn.compMz, selFn.mockSurvey, zBinEdges = zBinEdges)
+        outFileName=config.diagnosticsDir+os.path.sep+"MzCompleteness_%s_%s.npz" % (selFn.method, footprintLabel)
+        np.savez(outFileName, z = selFn.mockSurvey.z, log10M = selFn.mockSurvey.log10M, completeness = selFn.compMz)
+        makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, footprintLabel, massLabel,
+                               config.diagnosticsDir+os.path.sep+"MzCompleteness_%s_%s.pdf" % (selFn.method, footprintLabel))
 
         # 90% mass completeness limit and plots
-        massLimit_90Complete=np.average(completeness, axis = 0, weights = fracArea)  # agrees with full mass limit map
-        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, diagnosticsDir+os.path.sep+"completeness90Percent_%s%s.pdf" % (footprintLabel, additionalLabel), title = "footprint: %s" % (footprintLabel))
+        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres,
+                                   config.diagnosticsDir+os.path.sep+"completeness90Percent_%s_%s.pdf" % (selFn.method, footprintLabel),
+                                   title = "footprint: %s" % (footprintLabel))
         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-        print("... total survey area (after masking) = %.1f sq deg" % (np.sum(tileAreas)))
-        print("... survey-averaged 90%% mass completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
-        print("... survey-averaged 90%% mass completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (averageMassLimit_90Complete))
+        print(">>> Survey-averaged results inside footprint %s:" % (footprintLabel))
+        print("... total survey area (after masking) = %.1f sq deg" % (selFn.totalAreaDeg2))
+        print("... survey-averaged 90%% mass (%s) completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLabel, massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
+        print("... survey-averaged 90%% mass (%s) completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (massLabel, averageMassLimit_90Complete))
 
 #------------------------------------------------------------------------------------------------------------
 def calcCompletenessContour(compMz, log10M, z, level = 0.90):
