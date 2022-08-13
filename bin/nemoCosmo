@@ -68,7 +68,7 @@ def lnprob_yc(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
         for j in range(len(obs_ycBinEdges)-1):
             ycMin=obs_ycBinEdges[j]
             ycMax=obs_ycBinEdges[j+1]
-            ycMask=np.logical_and(selFn.y0Grid >= ycMin, selFn.y0Grid < ycMax)
+            ycMask=np.logical_and(selFn.y0TildeGrid >= ycMin, selFn.y0TildeGrid < ycMax)
             predGrid[j, i]=corrGrid[zMask*ycMask].sum()
 
     # Poisson probability in (log10(y0~), z) grid
@@ -328,7 +328,7 @@ if __name__ == '__main__':
             plt.xlabel(label)
             plt.ylabel("lnprob")
             plt.ylim(theoreticalMaxLogLike*2, theoreticalMaxLogLike*0.5)
-            plt.savefig("testLikelihood_zMinCut%.2f_%s.png" % (zMinCut, label))
+            plt.savefig("testLikelihood_%s_%s_zMinCut%.2f_%s.png" % (args.likelihoodType, args.completenessMethod, zMinCut, label))
             plt.close()
 
         H0, Om0, Ob0, sigma8, ns = 68.0, 0.31, 0.049, 0.81, 0.965       # WebSky cosmology

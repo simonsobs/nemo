@@ -1390,8 +1390,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
     return compMz
       
 #------------------------------------------------------------------------------------------------------------
-def makeMassLimitMap(RMSTab, SNRCut, z, tileName, photFilterLabel, mockSurvey, scalingRelationDict, QFit,
-                     diagnosticsDir, selFnDir):
+def makeMassLimitMap(config):
     """Makes a map of 90% mass completeness (for now, this fraction is fixed and not adjustable, and the full
     survey footprint is used). The map is written as a FITS file in the `diagnosticsDir` directory.
     
@@ -1418,7 +1417,21 @@ def makeMassLimitMap(RMSTab, SNRCut, z, tileName, photFilterLabel, mockSurvey, s
             modeling.
     
     """
-        
+
+    print("make mass limit maps")
+    import IPython
+    IPython.embed()
+    sys.exit()
+
+    selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
+                footprintLabel = None, zStep = 0.1, setUpAreaMask = True,
+                enableDrawSample = False, downsampleRMS = False,
+                applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
+                delta = config.parDict['massOptions']['delta'],
+                rhoType = config.parDict['massOptions']['rhoType'],
+                method = config.parDict['selFnOptions']['method'])
+
+
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
 
     # Fill in blocks in map for each RMS value
