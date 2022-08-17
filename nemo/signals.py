@@ -24,6 +24,7 @@ from . import catalogs
 from . import photometry
 from . import filters
 from . import gnfw
+from . import completeness
 from . import plotSettings
 import numpy as np
 import numpy.fft as fft
@@ -137,9 +138,16 @@ class QFit(object):
     `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_ onwards.
     
     Args:
-        QFitFileName (:obj:`str`): Path to a FITS-table format file as made by :meth:`fitQ`.
-        tileNames (:obj:`list`): If given, the Q-function will be defined only for these tiles (their names
-            must appear in the file specified by `QFitFileName`).
+        QSource (:obj:`str`, optional): The source to use for Q (the filter mismatch function) - either
+            'fit' (to use results from the original Q-fitting routine) or 'injection' (to use Q derived
+            from source injection simulations). For the latter, `selFnDir` must be supplied.
+        selFnDir (:obj:`str`, optional): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
+            command. This directory contains information such as the survey noise maps, area masks,
+            and information needed to construct the filter mismatch function, `Q`, used in mass
+            modeling.
+        QFitFileName (`str`, optional): Path to a FITStable containing Q fits for all tiles - this is
+            normally ``selFn/QFit.fits``). This is only used if QSource is set to ``fit``.
+        tileNames (:obj:`list`): If given, the Q-function will be defined only for these tiles.
     
     Attributes:
         fitDict (:obj:`dict`): Dictionary of interpolation objects, indexed by `tileName`. You should not
@@ -147,113 +155,73 @@ class QFit(object):
     
     """
         
-    def __init__(self, QFitFileName = None, tileNames = None):
+    def __init__(self, QSource = 'fit', selFnDir = None, QFitFileName = None, tileNames = None):
         self._zGrid=np.array([0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0])
         self._theta500ArcminGrid=np.logspace(np.log10(0.1), np.log10(55), 10)
         self.zMin=(self._zGrid).min()
         self.zMax=(self._zGrid).max()
         self.zDependent=None
         self.zDepThetaMax=None
+        self.selFnDir=selFnDir
 
-        self.fitDict={}                
-        if QFitFileName is not None:
-            self.loadQ(QFitFileName, tileNames = tileNames)
+        self.fitDict={}
+
+        self.QSource=QSource
+        if self.QSource not in ['fit', 'injection']:
+            raise Exception("QSource must be either 'fit' or 'injection'")
+
+        if self.QSource == 'fit':
+            if self.selFnDir is not None and QFitFileName is None:
+                self.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
+            if QFitFileName is not None:
+                self.loadQ(QFitFileName, tileNames = tileNames)
+
+        elif self.QSource == 'injection':
+            if self.selFnDir is None:
+                raise Exception("selFnDir must be supplied when using 'injection' QSource")
+            # Stuff from the source injection sims (now required for completeness calculation)
+            injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
+            inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+            SNRCut=5.0
+            theta500s, binCentres, compThetaGrid, thetaQ=completeness._parseSourceInjectionData(injDataPath, inputDataPath, SNRCut)
+            self.fitDict[None]=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
         
         
-    def loadQ(self, source, tileNames = None):
+    def loadQ(self, QFitFileName, tileNames = None):
         """Load the filter mismatch function Q (see `Hasselfield et al. 2013 
         <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_) as a dictionary of spline fits.
         
         Args:
-            source (:obj:`nemo.startUp.NemoConfig` or str): Either the path to a .fits table (containing Q fits
-                for all tiles - this is normally ``selFn/QFit.fits``), or a :obj:`nemo.startUp.NemoConfig` object 
-                (from which the path and tiles to use will be inferred).
+            QFitFileName(:obj:`str`): The path to a .fits table (containing Q fits for all tiles - this is
+                normally ``selFn/QFit.fits``).
             tileNames (optional, list): A list of tiles for which the Q function spline fit coefficients 
                 will be extracted. If source is a :obj:`nemo.startUp.NemoConfig` object, this should be set to 
                 ``None``.
-        
+
         Returns:
-            A dictionary (with tileNames as keys), containing spline knots for the Q function for each tile.
-            Q values can then be obtained by using these with :func:`scipy.interpolate.splev`.
-            
+            None
+
         """
 
-        # Bit messy, but two modes here: 
-        # - combined Q fit file for all tiles
-        # - single Q fit for a single tile (interim stage, when under nemo MPI run)
-        if type(source) == nemo.startUp.NemoConfig:
-            tileNames=source.tileNames
-            combinedQTabFileName=source.selFnDir+os.path.sep+"QFit.fits"
-            loadMode=None
-            if os.path.exists(combinedQTabFileName) == True:
-                tileNamesInFile=[]
-                with pyfits.open(combinedQTabFileName) as QTabFile:
-                    for ext in QTabFile:
-                        if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
-                            tileNamesInFile.append(ext.name)
-                tileNamesInFile.sort()
-                if tileNames is None:
-                    tileNames=tileNamesInFile
-                loadMode="combined"
-            else:
-                globStr=source.selFnDir+os.path.sep+"QFit#*.fits"
-                QTabFileNames=glob.glob(globStr)
-                loadMode="single"
-                if len(QTabFileNames) == 0:
-                    raise Exception("could not find either '%s' or '%s' - needed to make QFit object" % (combinedQTabFileName, globStr))
-            zMin=self._zGrid.max()
-            zMax=self._zGrid.min()
-            for tileName in tileNames:
-                if loadMode == "combined":
-                    QTab=atpy.Table().read(combinedQTabFileName, hdu = tileName)
-                elif loadMode == "single":
-                    QTab=atpy.Table().read(source.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
-                else:
-                    raise Exception("loadMode is not defined")
-                if QTab['z'].min() < zMin:
-                    self.zMin=QTab['z'].min()
-                if QTab['z'].max() > zMax:
-                    self.zMax=QTab['z'].max()
-                self.fitDict[tileName]=self._makeInterpolator(QTab)
-
-        elif type(source) == str and os.path.exists(source) == True:
-            # Inspect file and get tile names if MEF
-            if tileNames is None:
-                tileNames=[]
-                with pyfits.open(source) as QTab:
-                    for ext in QTab:
-                        if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
-                            tileNames.append(ext.name)
-            zMin=self._zGrid.max()
-            zMax=self._zGrid.min()
-            for tileName in tileNames:
-                if tileName == '': # Individual, interim file name
-                    assert(source.find("QFit#") > 0)
-                    tileName=os.path.split(source)[-1].split("QFit#")[-1].split(".fits")[0]
-                    QTab=atpy.Table().read(source)
-                else:
-                    QTab=atpy.Table().read(source, hdu = tileName)
-                if QTab['z'].min() < zMin:
-                    self.zMin=QTab['z'].min()
-                if QTab['z'].max() > zMax:
-                    self.zMax=QTab['z'].max()
-                self.fitDict[tileName]=self._makeInterpolator(QTab)
-
-        elif type(source) == astropy.table.table.Table:
-            # Single tile Q fit table
-            QTab=source
-            tileName=QTab.meta['TILENAME']
-            if QTab['z'].min() < self._zGrid.min():
+        # Inspect file and get tile names if MEF
+        if tileNames is None:
+            tileNames=[]
+            with pyfits.open(QFitFileName) as QTab:
+                for ext in QTab:
+                    if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
+                        tileNames.append(ext.name)
+        zMin=self._zGrid.max()
+        zMax=self._zGrid.min()
+        for tileName in tileNames:
+            QTab=atpy.Table().read(QFitFileName, hdu = tileName)
+            if QTab['z'].min() < zMin:
                 self.zMin=QTab['z'].min()
-            if QTab['z'].max() > self._zGrid.max():
+            if QTab['z'].max() > zMax:
                 self.zMax=QTab['z'].max()
-            self.fitDict[tileName]=self._makeInterpolator(QTab)
-
-        else:
-            raise Exception("Couldn't understand QFit source with type '%s'" % (type(source)))
+            self.fitDict[tileName]=self._makeInterpolatorFromQTab(QTab)
 
 
-    def _makeInterpolator(self, QTab):
+    def _makeInterpolatorFromQTab(self, QTab):
         """Inspects QTab, and makes an interpolator object - 2d if there is z-dependence, 1d if not.
         
         """
@@ -294,6 +262,8 @@ class QFit(object):
                 redshift, otherwise it is ignored. This must be a single value only, 
                 i.e., not an array.
             tileName (:obj:`str`, optional): The name of the tile to use for the *Q* function.
+                If None, or if the given tileName is not found, then an average over all tiles
+                is used.
             
         Returns:
             The value of *Q* (an array or a single float, depending on the input).
@@ -304,6 +274,9 @@ class QFit(object):
             redshift).
                     
         """
+
+        if tileName not in self.fitDict.keys():
+            tileName=None
         
         if z is not None:
             if type(z) == np.ndarray and z.shape == (1,):

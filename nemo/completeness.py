@@ -84,9 +84,12 @@ class SelFn(object):
             'Tinker08' or 'Tinker10'. Mass function calculations are done by CCL.
         maxTheta500Arcmin (:obj:`float`, optional): If given, exclude clusters with expected angular size
             greater than this from the cluster counts (set their completeness to 0).
-        method (:obj:`str, optional): The method for calculating completeness. Options are: 'fast'
+        method (:obj:`str`, optional): The method for calculating completeness. Options are: 'fast'
             (using a simple model based on the noise and the expected cluster signals), or 'injection'
             (directly using the results of end-to-end cluster injection and recovery sims).
+        QSource (:obj:`str`, optional): The source to use for Q (the filter mismatch function) - either
+            'fit' (to use results from the original Q-fitting routine) or 'injection' (to use Q derived
+            from source injection simulations).
 
     Attributes:
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection cut
@@ -130,7 +133,8 @@ class SelFn(object):
                  zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
-                 massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'injection'):
+                 massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'injection',
+                 QSource = 'fit'):
         
         self.SNRCut=SNRCut
         self.footprintLabel=footprintLabel
@@ -191,45 +195,17 @@ class SelFn(object):
                 if key not in self.scalingRelationDict.keys():
                     self.scalingRelationDict[key]=defaults[key]
 
-            # Q from the 'classic' Q fitting procedure now optional
-            # (can use compQInterpolator instead, for a survey-wide average from injection sims)
-            if os.path.exists(self.selFnDir+os.path.sep+"QFit.fits") == True:
-                self.Q=signals.QFit(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
-            else:
-                self.Q=None
-
             # Stuff from the source injection sims (now required for completeness calculation)
             injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
             inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
             if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
                 raise Exception("%s not found - run a source injection test to generate (now required for completeness calculations)." % (injDataPath))
-            injTab=atpy.Table().read(injDataPath)
-            inputTab=atpy.Table().read(inputDataPath)
-
-            # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
-            # We also derive survey-averaged Q here from the injection sim results [for y0 -> y0~ mapping]
-            # NOTE: This is a survey-wide average, doesn't respect footprints at the moment
-            # NOTE: This will need re-thinking for evolving, non-self-similar models?
-            theta500s=np.unique(inputTab['theta500Arcmin'])
-            binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)
-            binCentres=(binEdges[1:]+binEdges[:-1])/2
-            compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
-            thetaQ=np.zeros(len(theta500s))
-            for i in range(len(theta500s)):
-                t=theta500s[i]
-                injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > self.SNRCut)
-                inputMask=inputTab['theta500Arcmin'] == t
-                injFlux=injTab['inFlux'][injMask]
-                outFlux=injTab['outFlux'][injMask]
-                inputFlux=inputTab['inFlux'][inputMask]
-                recN, binEdges=np.histogram(injFlux, bins = binEdges)
-                inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
-                valid=inpN > 0
-                compThetaGrid[i][valid]=recN[valid]/inpN[valid]
-                thetaQ[i]=np.median(outFlux/injFlux)
+            theta500s, binCentres, compThetaGrid, thetaQ=_parseSourceInjectionData(injDataPath, inputDataPath, self.SNRCut)
             self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
-                                                                        compThetaGrid, kx = 3, ky = 3)
-            self.compQInterpolator=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
+                                                                       compThetaGrid, kx = 3, ky = 3)
+
+            # Q can now either be from the 'classic' fit or the source injection sims
+            self.Q=signals.QFit(QSource = QSource, selFnDir = self.selFnDir, tileNames = tileNames)
 
             # We should be able to do everything (except clustering) with this
             # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
@@ -389,29 +365,7 @@ class SelFn(object):
 
             # WARNING: Here there is no Q, and y0 is true y0, NOT y0~
             # These grids are purely mapping 'input' signals to M, z via the scaling relation
-            zRange=self.mockSurvey.z
-            tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
-                                            self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
-            y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-            theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-            for i in range(len(zRange)):
-                zk=zRange[i]
-                k=np.argmin(abs(self.mockSurvey.z-zk))
-                if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                    log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
-                                                                            self.mockSurvey.M,
-                                                                            self.mockSurvey.a[k],
-                                                                            self.mockSurvey._M500cDef))
-                else:
-                    log10M500s=self.mockSurvey.log10M
-                theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-                theta500Grid[i]=theta500s_zk
-                true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
-                                                                                1+B0)
-                if self.applyRelativisticCorrection == True:
-                    fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
-                    true_y0s_zk=true_y0s_zk*fRels_zk
-                y0Grid[i]=true_y0s_zk #*0.95
+            y0Grid, theta500Grid=self._makeSignalGrids(applyQ = False)
 
             compMz=np.zeros(y0Grid.shape)
             for i in range(len(zRange)):
@@ -424,19 +378,20 @@ class SelFn(object):
             compMz[compMz < 0]=0
             compMz[compMz > 1]=1
             self.compMz=compMz
-            self.y0TildeGrid=self.compQInterpolator(theta500Grid)*y0Grid
+            self.y0TildeGrid=self.Q.getQ(theta500Grid)*y0Grid
 
-            # Intrinsic scatter
             if sigma_int > 0:
                 # Fiddling with Gaussian filter params has no effect
                 mode='constant'
                 truncate=4.0
                 logy0Grid=np.log(y0Grid)
                 for i in range(logy0Grid.shape[0]):
-                    npix=sigma_int/np.mean(np.gradient(logy0Grid[i]))
-                    npix=npix*0.8   # Making this correction seems to work but not sure why yet
-                    self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
-                                                                              mode = mode, truncate = truncate)
+                    dy=np.mean(np.gradient(logy0Grid[i]))
+                    if dy > 0:
+                        npix=sigma_int/dy
+                        npix=npix*0.8   # Making this correction seems to work but not sure why yet
+                        self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
+                                                                                mode = mode, truncate = truncate)
 
         elif self.method == 'fast':
             zRange=self.mockSurvey.z
@@ -444,33 +399,7 @@ class SelFn(object):
             compMzCube=[]
             theta500Cube=[]
             for tileName in self.RMSDict.keys():
-                tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
-                                                self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
-                y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-                theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-                for i in range(len(zRange)):
-                    zk=zRange[i]
-                    k=np.argmin(abs(self.mockSurvey.z-zk))
-                    if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                        log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
-                                                                                self.mockSurvey.M,
-                                                                                self.mockSurvey.a[k],
-                                                                                self.mockSurvey._M500cDef))
-                    else:
-                        log10M500s=self.mockSurvey.log10M
-                    theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-                    #Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
-                    Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-                    true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
-                                                                                    1+B0)*Qs_zk
-                    if self.applyRelativisticCorrection == True:
-                        fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
-                        true_y0s_zk=true_y0s_zk*fRels_zk
-                    y0Grid[i]=true_y0s_zk #*0.95
-                    theta500Grid[i]=theta500s_zk
-
-                # For some cosmological parameters, we can still get the odd -ve y0
-                y0Grid[y0Grid <= 0] = 1e-9
+                y0Grid, theta500Grid=self._makeSignalGrids(tileName = tileName)
 
                 # Calculate completeness using area-weighted average
                 # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
@@ -486,7 +415,7 @@ class SelFn(object):
                     sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
                     compMz=compMz+sfi*areaWeights[i]
                     #---
-                    # Old
+                    # With intrinsic scatter (not right, but deceptively close in some cases)
                     #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
                     #log_y0Err=1/SNRGrid
                     #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
@@ -501,7 +430,45 @@ class SelFn(object):
             y0GridCube=np.array(y0GridCube)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
             self.y0TildeGrid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
-        
+
+
+    def _makeSignalGrids(self, applyQ = True, tileName = None):
+        """Returns y0~ and theta500 grid. tileName here is optional and only used for Q.
+
+        """
+        zRange=self.mockSurvey.z
+        tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
+                                        self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+        y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+        theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
+        for i in range(len(zRange)):
+            zk=zRange[i]
+            k=np.argmin(abs(self.mockSurvey.z-zk))
+            if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
+                log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
+                                                                        self.mockSurvey.M,
+                                                                        self.mockSurvey.a[k],
+                                                                        self.mockSurvey._M500cDef))
+            else:
+                log10M500s=self.mockSurvey.log10M
+            theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
+            Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
+            #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
+            true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
+                                                                            1+B0)
+            if applyQ == True:
+                true_y0s_zk=true_y0s_zk*Qs_zk
+            if self.applyRelativisticCorrection == True:
+                fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
+                true_y0s_zk=true_y0s_zk*fRels_zk
+            y0Grid[i]=true_y0s_zk #*0.95
+            theta500Grid[i]=theta500s_zk
+
+        # For some cosmological parameters, we can still get the odd -ve y0
+        y0Grid[y0Grid <= 0] = 1e-9
+
+        return y0Grid, theta500Grid
+
 
     def projectCatalogToMz(self, tab):
         """Project a Nemo cluster catalog (an astropy Table) into the (log\ :sub:`10` mass, z) grid, taking
@@ -658,6 +625,48 @@ class SelFn(object):
         return calcMassLimit(completenessFraction, self.compMz, self.mockSurvey, zBinEdges)
 
     
+#------------------------------------------------------------------------------------------------------------
+def _parseSourceInjectionData(injDataPath, inputDataPath, SNRCut):
+    """Produce arrays for constructing interpolator objects from source injection test data.
+
+    Args:
+        injDataPath (:obj:`str`): Path to the output catalog produced by the source injection test.
+        inputDataPath (:obj:`str`): Path to the input catalog produced by the source injectio test.
+        SNRCut (:obj:`float`): Selection threshold in S/N to apply.
+
+    Returns:
+        theta500s, ycBinCentres, compThetaGrid, thetaQ
+
+    """
+
+
+    injTab=atpy.Table().read(injDataPath)
+    inputTab=atpy.Table().read(inputDataPath)
+
+    # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
+    # We also derive survey-averaged Q here from the injection sim results [for y0 -> y0~ mapping]
+    # NOTE: This is a survey-wide average, doesn't respect footprints at the moment
+    # NOTE: This will need re-thinking for evolving, non-self-similar models?
+    theta500s=np.unique(inputTab['theta500Arcmin'])
+    binEdges=np.linspace(inputTab['inFlux'].min(), inputTab['inFlux'].max(), 101)
+    binCentres=(binEdges[1:]+binEdges[:-1])/2
+    compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
+    thetaQ=np.zeros(len(theta500s))
+    for i in range(len(theta500s)):
+        t=theta500s[i]
+        injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > SNRCut)
+        inputMask=inputTab['theta500Arcmin'] == t
+        injFlux=injTab['inFlux'][injMask]
+        outFlux=injTab['outFlux'][injMask]
+        inputFlux=inputTab['inFlux'][inputMask]
+        recN, binEdges=np.histogram(injFlux, bins = binEdges)
+        inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
+        valid=inpN > 0
+        compThetaGrid[i][valid]=recN[valid]/inpN[valid]
+        thetaQ[i]=np.median(outFlux/injFlux)
+
+    return theta500s, binCentres, compThetaGrid, thetaQ
+
 #------------------------------------------------------------------------------------------------------------
 def loadAreaMask(tileName, selFnDir):
     """Loads the survey area mask, i.e., the area searched for sources and clusters, for the given tile.
@@ -1066,7 +1075,8 @@ def completenessByFootprint(config):
                         applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
                         delta = config.parDict['massOptions']['delta'],
                         rhoType = config.parDict['massOptions']['rhoType'],
-                        method = config.parDict['selFnOptions']['method'])
+                        method = config.parDict['selFnOptions']['method'],
+                        QSource = config.parDict['selFnOptions']['QSource'])
         except FootprintError:
             pass
             #print("... no overlapping area with footprint %s" % (footprintLabel))
@@ -1363,12 +1373,6 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
         #print(merit)
         #IPython.embed()
         #sys.exit()
-            
-    elif method == "injection":
-        print("calc completeness from injection sim")
-        import IPython
-        IPython.embed()
-        sys.exit()
 
     elif method is None:
         return None
@@ -1390,38 +1394,18 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
     return compMz
       
 #------------------------------------------------------------------------------------------------------------
-def makeMassLimitMap(config):
-    """Makes a map of 90% mass completeness (for now, this fraction is fixed and not adjustable, and the full
-    survey footprint is used). The map is written as a FITS file in the `diagnosticsDir` directory.
+def makeMassLimitMapsAndPlots(config):
+    """Makes maps of mass completeness and associated plots. Output is written to the the `diagnosticsDir`
+    directory). The maps to make are controlled by the ``massLimitMaps`` parameter in the ``selFnOptions``
+    dictionary in the Nemo config file.
     
     Args:
-        RMSTab (:obj:`astropy.table.Table`): Table of RMS values for the tile, as produced by :meth:`getRMSTab`.
-        SNRCut (:obj:`float`): Completeness will be calculated for objects relative to this cut in
-            ``fixed_SNR``.
-        z (:obj:`float`): The redshift at which the mass limit map will be produced.
-        tileName (:obj:`str`): The name of the tile.
-        photFilterLabel (:obj:`str`): Name of the reference filter, as specified in, e.g., a 
-            :ref:`nemoCommand` config file (see :ref:`ConfigReference`).
-        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass function 
-            calculations and generating mock catalogs.
-        scalingRelationDict (:obj:`dict`): A dictionary of scaling relation parameters (see example Nemo
-            config files for the format).
-        QFit (:class:`nemo.signals.QFit`): An object for calculating the filter mismatch function, referred
-            to as `Q` in the ACT papers from `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_
-            onwards.
-        diagnosticsDir (:obj:`str`): Path to the ``diagnostics/`` directory, as produced by the 
-            :ref:`nemoCommand` command.
-        selFnDir (:obj:`str`): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
-            command. This directory contains information such as the survey noise maps, area masks,
-            and information needed to construct the filter mismatch function, `Q`, used in mass
-            modeling.
+        config (:class:`nemo.startUp.NemoConfig`): A NemoConfig object.
+
+    Returns:
+        None
     
     """
-
-    print("make mass limit maps")
-    import IPython
-    IPython.embed()
-    sys.exit()
 
     selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                 footprintLabel = None, zStep = 0.1, setUpAreaMask = True,
@@ -1429,27 +1413,139 @@ def makeMassLimitMap(config):
                 applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
                 delta = config.parDict['massOptions']['delta'],
                 rhoType = config.parDict['massOptions']['rhoType'],
-                method = config.parDict['selFnOptions']['method'])
+                method = config.parDict['selFnOptions']['method'],
+                QSource = config.parDict['selFnOptions']['QSource'])
 
+    if config.parDict['stitchTiles'] == True:
+        inFileName=config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (config.parDict['photFilter'])
+    else:
+        inFileName=config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (config.parDict['photFilter'])
 
-    RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
+    d, wcs=maps.chunkLoadMask(inFileName, dtype = np.float32)
+    noiseLevels=np.unique(d)
+    noiseLevels=noiseLevels[noiseLevels > 0]
+
+    y0Grid, theta500Grid=selFn._makeSignalGrids()
 
     # Fill in blocks in map for each RMS value
-    outFileName=diagnosticsDir+os.path.sep+tileName+os.path.sep+"massLimitMap_z%s#%s.fits" % (str(z).replace(".", "p"), tileName)
-    if os.path.exists(outFileName) == False:
-        massLimMap=np.zeros(RMSMap.shape)
-        count=0
+    for massLimDict in config.parDict['selFnOptions']['massLimitMaps']:
         t0=time.time()
-        for y0Noise in RMSTab['y0RMS']:
-            count=count+1
-            compMz=calcCompleteness(RMSTab[np.where(RMSTab['y0RMS'] == y0Noise)], SNRCut, tileName, mockSurvey, 
-                                    scalingRelationDict, QFit, z = z)
-            massLimMap[RMSMap == y0Noise]=mockSurvey.log10M[np.argmin(abs(compMz-0.9))]
-        t1=time.time()
-        mask=np.not_equal(massLimMap, 0)
-        massLimMap[mask]=np.power(10, massLimMap[mask])/1e14
-        maps.saveFITS(outFileName, massLimMap, wcs, compressionType = "RICE_1")
-        
+        # Need re-bin here to make this run in sensible amount of time
+        if 'numBins' not in massLimDict.keys():
+            numBins=50
+        else:
+            numBins=massLimDict['numBins']
+        if 'completenessFraction' not in massLimDict.keys():
+            completenessFraction=0.9
+        else:
+            completenessFraction=massLimDict['completenessFraction']
+        binEdges=np.linspace(noiseLevels.min(), noiseLevels.max(), numBins+1)
+        binCentres=(binEdges[1:]+binEdges[:-1])/2
+        zIndex=np.argmin(abs(selFn.mockSurvey.z-massLimDict['z']))
+        z=selFn.mockSurvey.z[zIndex]
+        outFileName=config.diagnosticsDir+os.path.sep+"massLimitMap_z%.2f_comp%.2f.fits" % (z, completenessFraction)
+        if os.path.exists(outFileName) == True:
+            print("... already made mass limit map %s" % (outFileName))
+            massLimMap, wcs=maps.chunkLoadMask(outFileName, dtype = np.float32)
+        else:
+            massLimMap=np.zeros(d.shape)
+            count=0
+            t0=time.time()
+            for i in range(len(binEdges)-1):
+                binMin=binEdges[i]
+                binMax=binEdges[i+1]
+                mask=np.logical_and(d > binMin, d <= binMax)
+                print("... %d/%d" % (i+1, len(binCentres)))
+                # WARNING: No intrinsic scatter at the moment, 'fast' method only
+                sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = binCentres[i])
+                massLimMap[mask]=selFn.mockSurvey.log10M[np.argmin(abs(sfi[zIndex]-0.9))]
+            t1=time.time()
+            mask=np.not_equal(massLimMap, 0)
+            massLimMap[mask]=np.power(10, massLimMap[mask])/1e14
+            maps.saveFITS(outFileName, massLimMap, wcs, compressionType = "RICE_1")
+            print("... made mass limit map '%s' (time taken = %.3f sec)" % (outFileName, t1-t0))
+        del d, y0Grid, theta500Grid, noiseLevels
+
+        # Plots
+        plotSettings.update_rcParams()
+
+        # Map plot [this is only set-up really for large area maps]
+        #massLimMap=np.nan_to_num(massLimMap)
+        #massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap)
+        fontSize=20.0
+        figSize=(16, 5.7)
+        axesLabels="sexagesimal"
+        axes=[0.08,0.15,0.91,0.88]
+        cutLevels=[2, int(np.median(massLimMap[np.nonzero(massLimMap)]))+2]
+        colorMapName=colorcet.m_rainbow
+        fig=plt.figure(figsize = figSize)
+        p=astPlots.ImagePlot(massLimMap, wcs, cutLevels = cutLevels, title = None, axes = axes,
+                             axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif',
+                             RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
+                             axesFontSize = fontSize)
+        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
+        cbShrink=0.7
+        cbAspect=40
+        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18,
+                        shrink = cbShrink, aspect = cbAspect)
+        plt.figtext(0.53, 0.04, cbLabel, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
+        plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
+        plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
+        plt.close()
+        del p
+
+        # Cumulative area info [note, compression drives up number of 'mass limits', so we rebin]
+        pixAreaMap=maps.getPixelAreaArcmin2Map(massLimMap.shape, wcs)
+        limits=np.unique(massLimMap)
+        limits=limits[limits > 0]
+        binEdges=np.linspace(limits.min(), limits.max(), 50)
+        binCentres=(binEdges[1:]+binEdges[:-1])/2
+        areas=[]
+        for i in range(len(binEdges)-1):
+            binMin=binEdges[i]
+            binMax=binEdges[i+1]
+            mask=np.logical_and(massLimMap > binMin, massLimMap <= binMax)
+            areas.append(pixAreaMap[mask].sum())
+        tab=atpy.Table()
+        tab['MLim']=binCentres
+        tab['areaDeg2']=areas
+        tab['areaDeg2']=tab['areaDeg2']/(60**2)
+        tab.sort('MLim')
+        del pixAreaMap, massLimMap, limits
+
+        # Full survey cumulative area plot
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.155, 0.12, 0.82, 0.86])
+        plt.minorticks_on()
+        plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
+        #plt.plot(plotMRange, plotCumArea, 'k-')
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction)))
+        labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
+        plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
+        plt.xlim(tab['MLim'].min(), tab['MLim'].max())
+        plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
+        plt.savefig(config.diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%.2f_comp%.2f.pdf" % (z, completenessFraction))
+        plt.savefig(config.diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%.2f_comp%.2f.png" % (z, completenessFraction))
+        plt.close()
+
+        # Deepest 20% cumulative area plot - we show a bit beyond this
+        totalAreaDeg2=tab['areaDeg2'].sum()
+        deepTab=tab[np.where(np.cumsum(tab['areaDeg2']) < 0.25 * totalAreaDeg2)]
+        plt.figure(figsize=(9,6.5))
+        ax=plt.axes([0.155, 0.12, 0.82, 0.86])
+        plt.minorticks_on()
+        plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction)))
+        labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
+        plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
+        plt.xlim(deepTab['MLim'].min(), deepTab['MLim'].max())
+        plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
+        plt.savefig(config.diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%.2f_comp%.2f_deepest20percent.pdf" % (z, completenessFraction))
+        plt.savefig(config.diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%.2f_comp%.2f_deepest20percent.png" % (z, completenessFraction))
+        plt.close()
+
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title = None):
     """Makes a plot of 90%-completeness mass limit versus redshift. Uses spline interpolation.
@@ -1487,95 +1583,6 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
         plt.savefig(outFileName.replace(".pdf", ".png"))
     plt.close()   
     
-#------------------------------------------------------------------------------------------------------------
-def cumulativeAreaMassLimitPlot(z, diagnosticsDir, selFnDir, tileNames):
-    """Makes cumulative plots of the 90%-completeness mass limit versus survey area, at the given redshift.
-    
-    Args:
-        z (:obj:`float`): The redshift at which the mass completeness is evaluated.
-        diagnosticsDir (:obj:`str`): Path to the ``diagnostics/`` directory, as produced by the 
-            :ref:`nemoCommand` command.
-        selFnDir (:obj:`str`): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
-            command. This directory contains information such as the survey noise maps, area masks,
-            and information needed to construct the filter mismatch function, `Q`, used in mass
-            modeling.
-        tileNames (:obj:`list`): List of tiles to use.
-    
-    Note:
-        This routine writes plots into the `diagnosticsDir` directory (one for the cumulative mass
-        completeness limit over the whole survey area, and one for the deepest 20% only).
-    
-    Returns:
-        None
-        
-    """
-        
-    # NOTE: We truncate mass limits to 0.1 level here - differences beyond that are due to compression
-    allLimits=[]
-    allAreas=[]
-    for tileName in tileNames:
-        massLimMap, wcs=loadMassLimitMap(tileName, diagnosticsDir+os.path.sep+tileName, z)
-        areaMap, wcs=loadAreaMask(tileName, selFnDir)
-        areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)
-        limits=np.unique(massLimMap).tolist()
-        if limits[0] == 0:
-            limits=limits[1:]
-        areas=[]
-        truncLim=[]
-        for l in limits:
-            truncLim.append(round(l, 1))
-            #truncLim.append(float(Decimal(l).quantize(Decimal('0.1'))))
-            areas.append(areaMapSqDeg[np.where(massLimMap == l)].sum())
-        allLimits=allLimits+truncLim
-        allAreas=allAreas+areas
-    
-    # Reduce redundant mass limits
-    allLimits=np.array(allLimits)
-    allAreas=np.array(allAreas)
-    uniqLimits=np.unique(allLimits)
-    uniqAreas=[]
-    for u in uniqLimits:
-        uniqAreas.append(allAreas[allLimits == u].sum())
-    uniqAreas=np.array(uniqAreas)
-    tab=atpy.Table()
-    tab.add_column(atpy.Column(uniqLimits, 'MLim'))
-    tab.add_column(atpy.Column(uniqAreas, 'areaDeg2'))
-    tab.sort('MLim')
-        
-    plotSettings.update_rcParams()
-        
-    # Full survey plot
-    plt.figure(figsize=(9,6.5))
-    ax=plt.axes([0.155, 0.12, 0.82, 0.86])
-    plt.minorticks_on()
-    plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
-    #plt.plot(plotMRange, plotCumArea, 'k-')
-    plt.ylabel("survey area < $M_{\\rm 500c}$ limit (deg$^2$)")
-    plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
-    labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
-    plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
-    plt.xlim(tab['MLim'].min(), tab['MLim'].max())
-    plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
-    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.pdf" % (str(z).replace(".", "p")))
-    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s.png" % (str(z).replace(".", "p")))
-    plt.close()
-    
-    # Deepest 20% - we show a bit beyond this
-    totalAreaDeg2=tab['areaDeg2'].sum()
-    deepTab=tab[np.where(np.cumsum(tab['areaDeg2']) < 0.25 * totalAreaDeg2)]
-    plt.figure(figsize=(9,6.5))
-    ax=plt.axes([0.155, 0.12, 0.82, 0.86])
-    plt.minorticks_on()
-    plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
-    plt.ylabel("survey area < $M_{\\rm 500c}$ limit (deg$^2$)")
-    plt.xlabel("$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]")
-    labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
-    plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
-    plt.xlim(deepTab['MLim'].min(), deepTab['MLim'].max())
-    plt.figtext(0.2, 0.9, labelStr, ha="left", va="center")
-    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.pdf" % (str(z).replace(".", "p")))
-    plt.savefig(diagnosticsDir+os.path.sep+"cumulativeArea_massLimit_z%s_deepest20Percent.png" % (str(z).replace(".", "p")))
-    plt.close()
         
 #------------------------------------------------------------------------------------------------------------
 def makeFullSurveyMassLimitMapPlot(z, config):

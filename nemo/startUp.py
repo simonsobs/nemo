@@ -118,9 +118,13 @@ def parseConfigFile(parDictFileName, verbose = False):
             parDict['undoPixelWindow']=True
         if 'fitQ' not in parDict.keys():
             parDict['fitQ']=False
+        if 'calcSelFn' not in parDict.keys():
+            parDict['calcSelFn']=False
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
+        if 'selFnOptions' in parDict.keys() and 'QSource' not in parDict['selFnOptions'].keys():
+            parDict['selFnOptions']['QSource']='fit'
         # Check of tile definitions
         if 'useTiling' not in list(parDict.keys()):
             parDict['useTiling']=False
@@ -131,7 +135,10 @@ def parseConfigFile(parDictFileName, verbose = False):
                     raise Exception("Duplicate tileName '%s' in tileDefinitions - fix in config file" % (entry['tileName']))
                 checkList.append(entry['tileName'])
         if 'stitchTiles' not in list(parDict.keys()):
-            parDict['stitchTiles']=False
+            if parDict['useTiling'] == True:
+                parDict['stitchTiles']=True
+            else:
+                parDict['stitchTiles']=False
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
         if 'GNFWParams' not in list(parDict.keys()):
             parDict['GNFWParams']='default'

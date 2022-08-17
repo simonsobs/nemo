@@ -193,6 +193,9 @@ if __name__ == '__main__':
                         help = "Method to use for completeness calculation - either 'fast' (uses the\
                         noise maps and a simple model) or 'injection' (directly uses the results of\
                         source injection simulations)")
+    parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
+                        'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
+                        results.", default = 'injection')
     parser.add_argument("-t", "--test-likelihood", dest = "testLikelihood", help = """Run a test of the
                         likelihood, varying one parameter at a time, instead of running Cobaya,
                         producing diagnostic plots called 'testLikelihood_paramName.png' in the current
@@ -221,7 +224,11 @@ if __name__ == '__main__':
         delta=200
     else:
         raise Exception("massDef should be one of M500c, M200c, or M200m (use -D M500c, -D M200c, or -D M200m)")
-    
+
+    QSource=args.QSource
+    if QSource not in ['fit', 'injection']:
+        raise Exception("QSource must be either 'fit' or 'injection'")
+
     if args.likelihoodType == "Nz":
         lnprob=lnprob_Nz
     elif args.likelihoodType == "yc":
@@ -283,12 +290,15 @@ if __name__ == '__main__':
     else:
         print("Relativistic correction neglected")
     print("Using '%s' completeness estimation method" % (args.completenessMethod))
+    print("Using '%s' Q source" % (QSource))
     selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1,
                              enableDrawSample = False, mockOversampleFactor = 1, downsampleRMS = True,
                              applyRelativisticCorrection = args.relativisticCorrection,
-                             delta = delta, rhoType = rhoType, method = args.completenessMethod)
+                             delta = delta, rhoType = rhoType, method = args.completenessMethod,
+                             QSource = QSource)
 
-    # Cut catalog according to given SNR cut and survey footprint
+    # Cut catalog according to given SNR cut and survey footprint (and throw out any with undefined Q)
+    tab=tab[tab['Q'] > 0]
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
     inMask=selFn.checkCoordsInAreaMask(tab['RADeg'], tab['decDeg'])
     tab=tab[inMask]

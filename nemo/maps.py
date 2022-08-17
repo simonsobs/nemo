@@ -770,9 +770,9 @@ def shrinkWCS(origShape, origWCS, scaleFactor):
     return scaledShape, scaledWCS
 
 #-------------------------------------------------------------------------------------------------------------
-def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
-    """Load a FITS-format mask file (with 8-bit integer values) in chunks, for memory efficiency, at the
-    expense of some speed. Masks in compressed format (see :meth:`saveFITS`) are supported.
+def chunkLoadMask(fileName, numChunks = 8, dtype = np.uint8, returnWCS = True):
+    """Load a FITS-format mask file (with default 8-bit integer values) in chunks, for memory efficiency,
+    at the expense of some speed. Masks in compressed format (see :meth:`saveFITS`) are supported.
 
     Args:
         fileName (:obj:`str`): Path to the FITS-format mask file.
@@ -782,6 +782,10 @@ def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
 
     Returns:
         Mask image (2d array of 8-bit unsigned integers), and optionally a WCS object.
+
+    Note:
+        This can also be used to load large compressed maps in a memory-efficient way by setting
+        ``dtype = np.float32``.
 
     """
 
@@ -797,7 +801,7 @@ def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
 
     height=shape[0]
     chunkSize=int(height/numChunks)
-    maskArr=np.zeros(shape, dtype = np.uint8)
+    maskArr=np.zeros(shape, dtype = dtype)
     for i in range(numChunks):
         with pyfits.open(fileName) as img:
             for hdu in img:
@@ -874,6 +878,9 @@ def stitchTiles(config):
             for stitchDict in stitchDictList:
                 pattern=stitchDict['pattern']
                 outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
+                if os.path.exists(outFileName) == True:
+                    print("... stitched map %s already exists - skipping" % (outFileName))
+                    continue
                 compressionType=stitchDict['compressionType']
                 d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
                 wcs=config.origWCS

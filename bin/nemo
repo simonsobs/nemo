@@ -145,22 +145,5 @@ if __name__ == '__main__':
         if 'calcSelFn' in list(config.parDict.keys()) and config.parDict['calcSelFn'] == True:
             completeness.completenessByFootprint(config)
             if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
-                completeness.makeMassLimitMap(config)
-                #print(">>> Making cumulative area plots and full survey mass limit plots")
-                #for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                    #completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir, config.allTileNames)
-                    #completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
+                completeness.makeMassLimitMapsAndPlots(config)
 
-            #IPython.embed()
-            #sys.exit()
-            ## If we made mass limit maps...
-            ## ... make cumulative area versus mass limit plot(s)
-            ## ... and downsampled full area (untiled) map(s) and plot(s) of the mass limit
-            #if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
-                #print(">>> Making cumulative area plots and full survey mass limit plots ...")
-                #for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                    #completeness.cumulativeAreaMassLimitPlot(massLimitDict['z'], config.diagnosticsDir, config.selFnDir, config.allTileNames)
-                    #completeness.makeFullSurveyMassLimitMapPlot(massLimitDict['z'], config)
-
-        
-    

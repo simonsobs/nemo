@@ -232,6 +232,9 @@ def makeParser():
     parser.add_argument("-o", "--output", dest="outFileName", help = "Output catalog file name \
                         (.fits format). If not given, the name of the output catalog file will be based on\
                         either configFileName or catFileName.", default = None)
+    parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
+                        'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
+                        results.", default = 'fit')
     parser.add_argument("-x", "--x-match-arcmin", dest="xMatchArcmin", default = 2.5,
                         help = "Specifies the cross-match radius (in arcmin) to use when matching the redshift\
                         catalog onto the cluster candidate catalog.")
@@ -267,6 +270,9 @@ if __name__ == '__main__':
     catFileName=args.catFileName
     outFileName=args.outFileName
     forcedPhotometry=args.forcedPhotometry
+    QSource=args.QSource
+    if QSource not in ['fit', 'injection']:
+        raise Exception("QSource must be either 'fit' or 'injection'")
     
     if args.noStrictMPIExceptions == True:
         strictMPIExceptions=False
@@ -317,7 +323,7 @@ if __name__ == '__main__':
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
-    Q=signals.QFit(config)    
+    Q=signals.QFit(QSource, selFnDir = config.selFnDir)
     fRelWeightsDict=signals.getFRelWeights(config)
     
     if 'otherMassEstimates' in config.parDict.keys() and config.parDict['massOptions'] is not None:
