@@ -306,6 +306,10 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
                                               config.origWCS, compressionType = 'PLIO_1')
 
+    # Ensure we leave together, otherwise files we need later may not be written yet by rank 0
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+
     del areaMaskDict, flagMaskDict, catalogDict
 
     return optimalCatalog
