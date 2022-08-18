@@ -1470,8 +1470,7 @@ def makeMassLimitMapsAndPlots(config):
         plotSettings.update_rcParams()
 
         # Map plot [this is only set-up really for large area maps]
-        #massLimMap=np.nan_to_num(massLimMap)
-        #massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap)
+        massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap)
         fontSize=20.0
         figSize=(16, 5.7)
         axesLabels="sexagesimal"
