@@ -380,23 +380,18 @@ class SelFn(object):
             self.compMz=compMz
             self.y0TildeGrid=self.Q.getQ(theta500Grid)*y0Grid
 
-            #if self.scalingRelationDict['sigma_int'] > 0:
-                #print("try again")
-                #import IPython
-                #IPython.embed()
-                #sys.exit()
-                ##---
-                ## Fiddling with Gaussian filter params has no effect
-                #mode='nearest'
-                #truncate=4.0
-                #logy0Grid=np.log(y0Grid)
-                #for i in range(logy0Grid.shape[0]):
-                    #dy=np.mean(np.gradient(logy0Grid[i]))
-                    #if dy > 0:
-                        #npix=self.scalingRelationDict['sigma_int']/dy
-                        ##npix=npix*0.8   # Making this correction seems to work but not sure why yet
-                        #self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
-                                                                                  #mode = mode, truncate = truncate)
+            if self.scalingRelationDict['sigma_int'] > 0:
+                # Fiddling with Gaussian filter params has no effect
+                mode='nearest'
+                truncate=4.0
+                logy0Grid=np.log(y0Grid)
+                for i in range(logy0Grid.shape[0]):
+                    dy=np.mean(np.gradient(logy0Grid[i]))
+                    if dy > 0:
+                        npix=self.scalingRelationDict['sigma_int']/dy
+                        npix=npix*0.8   # Making this correction seems to work but not sure why yet
+                        self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
+                                                                                  mode = mode, truncate = truncate)
 
         elif self.method == 'fast':
             y0GridCube=[]
