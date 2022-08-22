@@ -360,7 +360,7 @@ class SelFn(object):
             self.scalingRelationDict=scalingRelationDict
         
         self.mockSurvey.update(H0, Om0, Ob0, sigma8, ns)
-        
+        zRange=self.mockSurvey.z
         if self.method == 'injection':
 
             # WARNING: Here there is no Q, and y0 is true y0, NOT y0~
@@ -380,27 +380,30 @@ class SelFn(object):
             self.compMz=compMz
             self.y0TildeGrid=self.Q.getQ(theta500Grid)*y0Grid
 
-            if sigma_int > 0:
-                # Fiddling with Gaussian filter params has no effect
-                mode='constant'
-                truncate=4.0
-                logy0Grid=np.log(y0Grid)
-                for i in range(logy0Grid.shape[0]):
-                    dy=np.mean(np.gradient(logy0Grid[i]))
-                    if dy > 0:
-                        npix=sigma_int/dy
-                        npix=npix*0.8   # Making this correction seems to work but not sure why yet
-                        self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
-                                                                                mode = mode, truncate = truncate)
+            #if self.scalingRelationDict['sigma_int'] > 0:
+                #print("try again")
+                #import IPython
+                #IPython.embed()
+                #sys.exit()
+                ##---
+                ## Fiddling with Gaussian filter params has no effect
+                #mode='nearest'
+                #truncate=4.0
+                #logy0Grid=np.log(y0Grid)
+                #for i in range(logy0Grid.shape[0]):
+                    #dy=np.mean(np.gradient(logy0Grid[i]))
+                    #if dy > 0:
+                        #npix=self.scalingRelationDict['sigma_int']/dy
+                        ##npix=npix*0.8   # Making this correction seems to work but not sure why yet
+                        #self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
+                                                                                  #mode = mode, truncate = truncate)
 
         elif self.method == 'fast':
-            zRange=self.mockSurvey.z
             y0GridCube=[]
             compMzCube=[]
             theta500Cube=[]
             for tileName in self.RMSDict.keys():
                 y0Grid, theta500Grid=self._makeSignalGrids(tileName = tileName)
-
                 # Calculate completeness using area-weighted average
                 # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
                 RMSTab=self.RMSDict[tileName]
@@ -410,17 +413,12 @@ class SelFn(object):
                 log_y0=np.log(y0Grid)
                 compMz=np.zeros(log_y0.shape)
                 for i in range(len(RMSTab)):
-                    #---
-                    # No intrinsic scatter, Gaussian noise
-                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
+                    # With intrinsic scatter [may not be quite right, but a good approximation]
+                    totalLogErr=np.sqrt((RMSTab['y0RMS'][i]/y0Grid)**2 + self.scalingRelationDict['sigma_int']**2)
+                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = totalLogErr*y0Grid)
                     compMz=compMz+sfi*areaWeights[i]
-                    #---
-                    # With intrinsic scatter (not right, but deceptively close in some cases)
-                    #SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-                    #log_y0Err=1/SNRGrid
-                    #log_y0Err[SNRGrid < self.SNRCut]=1/self.SNRCut
-                    #log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-                    #sfi=stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)
+                    # No intrinsic scatter, Gaussian noise
+                    #sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
                     #compMz=compMz+sfi*areaWeights[i]
                 if self.maxTheta500Arcmin is not None:
                     compMz=compMz*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
@@ -1456,8 +1454,11 @@ def makeMassLimitMapsAndPlots(config):
                 binMax=binEdges[i+1]
                 mask=np.logical_and(d > binMin, d <= binMax)
                 print("... %d/%d" % (i+1, len(binCentres)))
-                # WARNING: No intrinsic scatter at the moment, 'fast' method only
-                sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = binCentres[i])
+                # No intrinsic scatter
+                #sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = binCentres[i])
+                # With intrinsic scatter [see fast method in selFn.update]
+                totalLogErr=np.sqrt((binCentres[i]/y0Grid)**2 + selFn.scalingRelationDict['sigma_int']**2)
+                sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = totalLogErr*y0Grid)
                 massLimMap[mask]=selFn.mockSurvey.log10M[np.argmin(abs(sfi[zIndex]-0.9))]
             t1=time.time()
             mask=np.not_equal(massLimMap, 0)
