@@ -326,6 +326,8 @@ def makeRMSTables(config):
     #Q=signals.QFit(config)
         
     # We only care about the filter used for fixed_ columns
+    if config.parDict['photFilter'] is None:
+        return None
     photFilterLabel=config.parDict['photFilter']
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
