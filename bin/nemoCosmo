@@ -312,7 +312,7 @@ if __name__ == '__main__':
     if lnprob == lnprob_yc:
         # Define binning on (log10(fixed_y_c), redshift) grid
         # NOTE: A large number of log10 y0 bins is needed, or B0 wanders way away from true value
-        log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()*0.8), np.log10(1e-4*tab['fixed_y_c'].max()*1.1), args.numSignalBins+1)
+        log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()), np.log10(1e-4*tab['fixed_y_c'].max()), args.numSignalBins+1)
         zBinEdges=selFn.mockSurvey.zBinEdges[np.greater_equal(selFn.mockSurvey.zBinEdges, zMinCut)]
         obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(1e-4*tab['fixed_y_c']), tab['redshift'],
                                                                    bins = [log10ycBinEdges, zBinEdges])
