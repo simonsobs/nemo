@@ -31,6 +31,7 @@ from nemo import photometry
 from nemo import startUp
 from nemo import completeness
 from nemo import pipelines
+import pyccl as ccl
 import argparse
 import astropy.io.fits as pyfits
 import time
@@ -97,10 +98,16 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey):
+def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstimates = []):
     """Calculates masses for cluster data in table.
     
     """
+
+    try:
+        refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'],
+                                     c_m_relation = massOptions['concMassRelation'])
+    except:
+        refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'])
 
     if 'relativisticCorrection' not in massOptions.keys():
         massOptions['relativisticCorrection']=True
@@ -114,17 +121,25 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey):
         massOptions['onePlusRedshift_power']=0.0
     
     print("massOptions", massOptions)
-        
-    label=mockSurvey.mdefLabel
-    colNames=['%s' % (label), '%sUncorr' % (label)]
-    if 'rescaleFactor' in massOptions.keys():
-        colNames.append('%sCal' % (label))
-    colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
-    for c in colNames:
-        tab['%s' % (c)]=np.zeros(len(tab))
-        tab['%s_errPlus' % (c)]=np.zeros(len(tab))
-        tab['%s_errMinus' % (c)]=np.zeros(len(tab))
-    
+
+    # Add all columns for all used mass definitions
+    labels=['M%d%s' % (massOptions['delta'], massOptions['rhoType'][0])]
+    for massDefDict in otherMassEstimates:
+        labels.append('M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0]))
+    for l in labels:
+        colNames=['%s' % (l), '%sUncorr' % (l)]
+        if 'rescaleFactor' in massOptions.keys():
+            colNames.append('%sCal' % (l))
+        colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
+        for c in colNames:
+            tab['%s' % (c)]=np.zeros(len(tab))
+            tab['%s_errPlus' % (c)]=np.zeros(len(tab))
+            tab['%s_errMinus' % (c)]=np.zeros(len(tab))
+            if l == labels[0]:
+                tab['Q']=np.zeros(len(tab))
+    label=labels[0]
+    assert(label == mockSurvey.mdefLabel)
+
     count=0
     for row in tab:
         count=count+1
@@ -152,6 +167,7 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey):
             row['%s' % (label)]=massDict['%s' % (label)]
             row['%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
             row['%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
+            row['Q']=massDict['Q']
             # Uncorrected for mass function steepness
             unCorrMassDict=signals.calcMass(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
                                                     row['redshift'], row['redshiftErr'],
@@ -169,23 +185,36 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey):
             row['%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
             row['%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
             row['%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
-            # Mass conversion -  remove later when fully generalized
-            row['M200m']=signals.convertM500cToM200m(massDict['M500c']*1e14, row['redshift'])/1e14
-            row['M200m_errPlus']=(row['M500c_errPlus']/row['M500c'])*row['M200m']
-            row['M200m_errMinus']=(row['M500c_errMinus']/row['M500c'])*row['M200m']
-            row['M200mUncorr']=signals.convertM500cToM200m(unCorrMassDict['M500c']*1e14, row['redshift'])/1e14
-            row['M200mUncorr_errPlus']=(row['M500cUncorr_errPlus']/row['M500cUncorr'])*row['M200mUncorr']
-            row['M200mUncorr_errMinus']=(row['M500cUncorr_errMinus']/row['M500cUncorr'])*row['M200mUncorr']
             # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
             if 'rescaleFactor' in massOptions.keys():
-                row['%sCal' % (label)]=massDict['%s' % (label)]/massOptions['rescaleFactor']        
+                row['%sCal' % (label)]=massDict['%s' % (label)]/massOptions['rescaleFactor']
                 row['%sCal_errPlus' % (label)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
                                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
                 row['%sCal_errMinus' % (label)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
                                                         np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
-            #row['M200mCal']=signals.convertM500cToM200m(row['M500Cal']*1e14, row['redshift'])/1e14
-            #row['M200mCal_errPlus']=(row['M500Cal_errPlus']/row['M500Cal'])*row['M200mCal']
-            #row['M200mCal_errMinus']=(row['M500Cal_errMinus']/row['M500Cal'])*row['M200mCal']
+                calMassDict={label: row['%sCal' % (label)],
+                             label+'_errPlus': row['%sCal_errPlus' % (label)],
+                             label+'_errMinus': row['%sCal_errMinus' % (label)]}
+
+            # CCL-based mass conversions
+            resultsList=[massDict, unCorrMassDict]
+            suffixList=['', 'Uncorr']
+            if 'rescaleFactor' in massOptions.keys():
+                resultsList.append(calMassDict)
+                suffixList.append('Cal')
+            for resultDict, suffix in zip(resultsList, suffixList):
+                for massDefDict in otherMassEstimates:
+                    if 'concMassRelation' not in massDefDict.keys():
+                        massDefDict['concMassRelation']=None
+                    thisLabel='M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0])
+                    try:
+                        thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'], c_m_relation = massDefDict['concMassRelation'])
+                    except:
+                        thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'])
+                    thisMass=signals.MDef1ToMDef2(resultDict[label]*1e14, row['redshift'], refMassDef, thisMassDef, mockSurvey.cosmoModel)/1e14
+                    row[thisLabel+suffix]=thisMass
+                    row[thisLabel+suffix+'_errPlus']=(row[label+suffix+'_errPlus']/row[label+suffix])*row[thisLabel+suffix]
+                    row[thisLabel+suffix+'_errMinus']=(row[label+suffix+'_errMinus']/row[label+suffix])*row[thisLabel+suffix]
 
     return tab
 
@@ -203,6 +232,12 @@ def makeParser():
     parser.add_argument("-o", "--output", dest="outFileName", help = "Output catalog file name \
                         (.fits format). If not given, the name of the output catalog file will be based on\
                         either configFileName or catFileName.", default = None)
+    parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
+                        'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
+                        results.", default = 'fit')
+    parser.add_argument("-x", "--x-match-arcmin", dest="xMatchArcmin", default = 2.5,
+                        help = "Specifies the cross-match radius (in arcmin) to use when matching the redshift\
+                        catalog onto the cluster candidate catalog.")
     parser.add_argument("-z", "--z-column", dest="zColumnName", help = "Specifies the name of the redshift\
                         column in the input catalog.", default = None)
     parser.add_argument("-e", "--z-error-column", dest="zErrColumnName", help = "Specifies the name of the \
@@ -235,6 +270,9 @@ if __name__ == '__main__':
     catFileName=args.catFileName
     outFileName=args.outFileName
     forcedPhotometry=args.forcedPhotometry
+    QSource=args.QSource
+    if QSource not in ['fit', 'injection']:
+        raise Exception("QSource must be either 'fit' or 'injection'")
     
     if args.noStrictMPIExceptions == True:
         strictMPIExceptions=False
@@ -245,11 +283,16 @@ if __name__ == '__main__':
     # NOTE: This is now done using coord matching (nearest within some maximum tolerance), rather than names
     if catFileName is None:
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = False,
-                                  setUpMaps = False, verbose = False, strictMPIExceptions = strictMPIExceptions)
+                                  makeOutputDirs = False, setUpMaps = False, verbose = False,
+                                  strictMPIExceptions = strictMPIExceptions)
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(config.parDict['massOptions']['redshiftCatalog'])
-        nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = 2.5)
+        if args.xMatchArcmin != 'act':
+            xMatchArcmin=float(args.xMatchArcmin)
+            nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = xMatchArcmin)
+        else:
+            raise Exception("Fancier cross-matching not implemented yet.")
         nemoTab['redshift']=zTab['redshift']
         if 'redshiftErr' in zTab.keys():
             nemoTab['redshiftErr']=zTab['redshiftErr']
@@ -280,9 +323,15 @@ if __name__ == '__main__':
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
-    Q=signals.QFit(config)    
+    Q=signals.QFit(QSource, selFnDir = config.selFnDir)
     fRelWeightsDict=signals.getFRelWeights(config)
     
+    if 'otherMassEstimates' in config.parDict.keys() and config.parDict['massOptions'] is not None:
+        otherMassEstimates=config.parDict['otherMassEstimates']
+    else:
+        # Default to match older versions of Nemo
+        otherMassEstimates=[{'delta': 200, 'rhoType': 'matter', 'concMassRelation': "Bhattacharya13"}]
+
     # Forced photometry (if enabled) - modifying table in place
     # NOTE: Move this up if/when we make it run under MPI
     if forcedPhotometry == True:
@@ -300,28 +349,14 @@ if __name__ == '__main__':
     zMin=0.0
     zMax=2.0
     # H0, Om0, Ol0 used for E(z), theta500 calcs in Q - these are updated when we call create mockSurvey
-    if 'H0' in list(massOptions.keys()):
-        H0=massOptions['H0']
-    else:
-        H0=70.
-    if 'Om0' in list(massOptions.keys()):
-        Om0=massOptions['Om0']
-    else:
-        Om0=0.3
-    # OmegaB0, sigma8 only used for mass function Eddington bias correction
-    if 'Ob0' in list(massOptions.keys()):
-        Ob0=massOptions['Ob0']
-    else:
-        Ob0=0.05
-    if 'sigma8' in list(massOptions.keys()):
-        sigma8=massOptions['sigma8']
-    else:
-        sigma8=0.8
-    if 'ns' in list(massOptions.keys()):
-        ns=massOptions['ns']
-    else:
-        ns=0.95
-    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns)
+    # NOTE: startUp now sets defaults for these if not given in config
+    H0=massOptions['H0']
+    Om0=massOptions['Om0']
+    Ob0=massOptions['Ob0']
+    sigma8=massOptions['sigma8']
+    ns=massOptions['ns']
+    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
+                                     rhoType = massOptions['rhoType'], delta = massOptions['delta'])
         
     # Seems like multiprocessing doesn't work under slurm...   
     # So use MPI instead: just divide up catalog among processes
@@ -334,7 +369,7 @@ if __name__ == '__main__':
             endIndex=len(tab)
         tab=tab[startIndex:endIndex]
         
-    tab=calcMass(tab, massOptions, Q, fRelWeightsDict, mockSurvey)
+    tab=calcMass(tab, massOptions, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates)
     
     if config.MPIEnabled == True:
         tabList=config.comm.gather(tab, root = 0)

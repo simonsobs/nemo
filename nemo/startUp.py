@@ -117,10 +117,14 @@ def parseConfigFile(parDictFileName, verbose = False):
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True
         if 'fitQ' not in parDict.keys():
-            parDict['fitQ']=True
+            parDict['fitQ']=False
+        if 'calcSelFn' not in parDict.keys():
+            parDict['calcSelFn']=False
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
+        if 'selFnOptions' in parDict.keys() and 'QSource' not in parDict['selFnOptions'].keys():
+            parDict['selFnOptions']['QSource']='fit'
         # Check of tile definitions
         if 'useTiling' not in list(parDict.keys()):
             parDict['useTiling']=False
@@ -131,7 +135,10 @@ def parseConfigFile(parDictFileName, verbose = False):
                     raise Exception("Duplicate tileName '%s' in tileDefinitions - fix in config file" % (entry['tileName']))
                 checkList.append(entry['tileName'])
         if 'stitchTiles' not in list(parDict.keys()):
-            parDict['stitchTiles']=False
+            if parDict['useTiling'] == True:
+                parDict['stitchTiles']=True
+            else:
+                parDict['stitchTiles']=False
         # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
         if 'GNFWParams' not in list(parDict.keys()):
             parDict['GNFWParams']='default'
@@ -148,14 +155,25 @@ def parseConfigFile(parDictFileName, verbose = False):
         # Applies to source injection recover sims only (whether print message or trigger exception)
         if 'haltOnPositionRecoveryProblem' not in parDict.keys():
             parDict['haltOnPositionRecoveryProblem']=False
+        # Mass/scaling relation/cosmology options - set fiducial values here if not chosen in config
+        # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
+        # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation
+        if 'massOptions' not in parDict.keys():
+            parDict['massOptions']={}
+        defaults={'tenToA0': 4.95e-5, 'B0': 0.08, 'Mpivot': 3.0e+14, 'sigma_int': 0.2,
+                  'relativisticCorrection': True, 'rhoType': 'critical', 'delta': 500,
+                  'H0': 70.0, 'Om0': 0.3, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95,
+                  'concMassRelation': 'Bhattacharya13'}
+        for key in defaults:
+            if key not in parDict['massOptions'].keys():
+                parDict['massOptions'][key]=defaults[key]
 
     # This isn't actually being used, but has been left in for now
     parDict['_file_last_modified_ctime']=os.path.getctime(parDictFileName)
     
     # To aid user friendliness - spot any out-of-date / removed / renamed parameters here
     # Use None for those that are totally removed
-    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None,
-               'sourceInjectionModels': 'clusterInjectionModels'}
+    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None}
     for k in oldKeyMap.keys():
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]
@@ -249,14 +267,16 @@ class NemoConfig(object):
             self.size=1
 
         if self.rank != 0:
-            verbose=False
+            self.verbose=False
+        else:
+            self.verbose=verbose
 
         # Timekeeping for benchmarking
         if self.rank == 0:
             self._timeStarted=time.time()
 
         if type(config) == str:
-            self.parDict=parseConfigFile(config, verbose = verbose)
+            self.parDict=parseConfigFile(config, verbose = self.verbose)
             self.configFileName=config
         elif type(config) == dict:
             self.parDict=config
@@ -268,6 +288,10 @@ class NemoConfig(object):
         if calcSelFn == True:
             self.parDict['calcSelFn']=True
         if sourceInjectionTest == True:
+            self.parDict['sourceInjectionTest']=True
+
+        # Source injection test is now required for calculation of the selection function
+        if 'calcSelFn' in self.parDict.keys() and self.parDict['calcSelFn'] == True:
             self.parDict['sourceInjectionTest']=True
 
         # We want the original map WCS and shape (for using stitchMaps later)
@@ -287,11 +311,11 @@ class NemoConfig(object):
                 
         # Downsampled WCS and shape for 'quicklook' stitched images
         # NOTE: This gets used by default for mass limit maps, so left in even when not used otherwise
-        self.quicklookScale=0.25
-        if self.origWCS is not None:
-            self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
-        else:
-            if verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
+        #self.quicklookScale=0.25
+        #if self.origWCS is not None:
+            #self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
+        #else:
+            #if self.verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
 
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
@@ -319,7 +343,7 @@ class NemoConfig(object):
             self.selFnDir=selFnDir
 
         if setUpMaps == True:
-            if verbose == True:
+            if self.verbose == True:
                 print(">>> Setting up maps")
             self._setUpMaps(writeTileInfo = writeTileInfo)
         else:
@@ -446,10 +470,12 @@ class NemoConfig(object):
                     assert(surveyMask.ndim == 2)
                     surveyMask[surveyMask != 0]=1
                 del img
+            self._tileDefinitionsMaskPath=surveyMaskPath
             self.parDict['tileDefinitions']=maps.autotiler(surveyMask, wcs,
                                                            self.parDict['tileDefinitions']['targetTileWidthDeg'],
                                                            self.parDict['tileDefinitions']['targetTileHeightDeg'])
-            print("... breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
+            if self.verbose:
+                print("... breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
 
             if DS9RegionFileName is not None:
                 maps.saveTilesDS9RegionsFile(self.parDict, DS9RegionFileName)
@@ -474,7 +500,10 @@ class NemoConfig(object):
 
         # We can take any map, because we earlier verified they have consistent WCS and size
         wcs=None
-        wcsPath=self.parDict['unfilteredMaps'][0]['mapFileName']
+        try:
+            wcsPath=self._tileDefinitionsMaskPath # For set-up of tiling with just a mask, nemo-sim-kit related
+        except:
+            wcsPath=self.parDict['unfilteredMaps'][0]['mapFileName'] # The old behavior
         with pyfits.open(wcsPath) as img:
             for ext in img:
                 if ext.data is not None:
@@ -490,7 +519,7 @@ class NemoConfig(object):
 
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
-            print(">>> Finding tile coords")
+            if self.verbose: print(">>> Finding tile coords")
             # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]
             coordsList=[]
@@ -555,7 +584,8 @@ class NemoConfig(object):
                 if name not in clipCoordsDict:
                     clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
                                           'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
-                    print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
+                    if self.verbose:
+                        print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
 
         return clipCoordsDict
 
@@ -626,8 +656,10 @@ class NemoConfig(object):
                             refWCS=wcs
                         else:
                             try:
-                                assert(refWCS.getCentreWCSCoords() == wcs.getCentreWCSCoords())
-                                assert(refWCS.getImageMinMaxWCSCoords() == wcs.getImageMinMaxWCSCoords())
+                                #assert(refWCS.getCentreWCSCoords() == wcs.getCentreWCSCoords())
+                                #assert(refWCS.getImageMinMaxWCSCoords() == wcs.getImageMinMaxWCSCoords())
+                                assert(refWCS.header['CTYPE1'] == wcs.header['CTYPE1'])
+                                assert(refWCS.header['CTYPE2'] == wcs.header['CTYPE2'])
                                 assert(refWCS.header['NAXIS1'] == wcs.header['NAXIS1'])
                                 assert(refWCS.header['NAXIS2'] == wcs.header['NAXIS2'])
                                 assert(refWCS.getXPixelSizeDeg() == wcs.getXPixelSizeDeg())

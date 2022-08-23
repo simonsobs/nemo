@@ -27,7 +27,7 @@ import shutil
 import copy
 import yaml
 import pickle
-from pixell import enmap
+from pixell import enmap, curvedsky, utils, powspec
 import nemo
 from . import catalogs
 from . import signals
@@ -259,8 +259,8 @@ class MapDict(dict):
 
         # For source-free simulations (contamination tests)
         if 'CMBSimSeed' in list(self.keys()):
-            randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beamFileName = self['beamFileName'],
-                            seed = self['CMBSimSeed'])
+            randMap=simCMBMap(data.shape, wcs, noiseLevel = 0, beam = self['beamFileName'],
+                              seed = self['CMBSimSeed'])
             randMap[np.equal(weights, 0)]=0
             # Add white noise that varies according to inv var map...
             # Noise needed is the extra noise we need to add to match the real data, scaled by inv var map
@@ -770,9 +770,9 @@ def shrinkWCS(origShape, origWCS, scaleFactor):
     return scaledShape, scaledWCS
 
 #-------------------------------------------------------------------------------------------------------------
-def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
-    """Load a FITS-format mask file (with 8-bit integer values) in chunks, for memory efficiency, at the
-    expense of some speed. Masks in compressed format (see :meth:`saveFITS`) are supported.
+def chunkLoadMask(fileName, numChunks = 8, dtype = np.uint8, returnWCS = True):
+    """Load a FITS-format mask file (with default 8-bit integer values) in chunks, for memory efficiency,
+    at the expense of some speed. Masks in compressed format (see :meth:`saveFITS`) are supported.
 
     Args:
         fileName (:obj:`str`): Path to the FITS-format mask file.
@@ -782,6 +782,10 @@ def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
 
     Returns:
         Mask image (2d array of 8-bit unsigned integers), and optionally a WCS object.
+
+    Note:
+        This can also be used to load large compressed maps in a memory-efficient way by setting
+        ``dtype = np.float32``.
 
     """
 
@@ -797,7 +801,7 @@ def chunkLoadMask(fileName, numChunks = 8, returnWCS = True):
 
     height=shape[0]
     chunkSize=int(height/numChunks)
-    maskArr=np.zeros(shape, dtype = np.uint8)
+    maskArr=np.zeros(shape, dtype = dtype)
     for i in range(numChunks):
         with pyfits.open(fileName) as img:
             for hdu in img:
@@ -874,6 +878,9 @@ def stitchTiles(config):
             for stitchDict in stitchDictList:
                 pattern=stitchDict['pattern']
                 outFileName=stitchDict['outFileName'].replace("$FILTLABEL", filterDict['label'])
+                if os.path.exists(outFileName) == True:
+                    print("... stitched map %s already exists - skipping" % (outFileName))
+                    continue
                 compressionType=stitchDict['compressionType']
                 d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
                 wcs=config.origWCS
@@ -1095,7 +1102,7 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fixNoiseSeed = False):
+def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSeed = False):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1105,8 +1112,9 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fi
             usually uK) for generating white noise that is added across the whole map. Alternatively, an array
             with the same dimensions as shape may be used, specifying sigma (in map units) per corresponding 
             pixel. Noise will only be added where non-zero values appear in noiseLevel.
-        beamFileName (:obj:`str`): The file name of the text file that describes the beam with which the map will be
-            convolved. If None, no beam convolution is applied.
+        beam (:obj:`str` or :obj:`signals.BeamProfile`): Either the file name of the text file that describes
+            the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
+            no beam convolution is applied.
         seed (:obj:`int`): The seed used for the random CMB realisation.
         fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
             
@@ -1114,17 +1122,24 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beamFileName = None, seed = None, fi
         A map (:obj:`numpy.ndarray`)
     
     """
-    
-    from pixell import curvedsky, utils, powspec
-    
-    ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat", 
-                             scale = True)
-    randMap=curvedsky.rand_map(shape, wcs.AWCS, ps=ps, spin=[0,2], seed = seed)
+
+    # Power spectrum array ps here is indexed by ell, starting from 0
+    # i.e., each element corresponds to the power at ell = 0, 1, 2 ... etc.
+    ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat",
+                             scale = True, expand = None)
+    ps=ps[0]
+    lps=np.arange(0, len(ps))
+
+    if beam is not None:
+        if type(beam) == str:
+            beam=signals.BeamProfile(beamFileName = beam)
+        assert(type(beam) == signals.BeamProfile)
+        lbeam=np.interp(lps, beam.ell, beam.Bell)
+        ps*=lbeam
+
+    randMap=curvedsky.rand_map(shape, wcs.AWCS, ps = ps, spin = [0,2], seed = seed)
     if fixNoiseSeed == False:
         np.random.seed()
-    
-    if beamFileName is not None:
-        randMap=convolveMapWithBeam(randMap, wcs, beamFileName)
 
     if type(noiseLevel) == np.ndarray:
         mask=np.nonzero(noiseLevel)
@@ -1522,7 +1537,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
                    profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,
-                   validAreaSection = None, minSNR = 0.0, TCMBAlpha = 0):
+                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1604,67 +1619,49 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # Map of distance(s) from objects - this will get updated in place (fast)
     degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
     
-    if 'fixed_y_c' in catalog.keys() or 'true_fixed_y_c' in catalog.keys():
-        # Clusters: for speed - assume all objects are the same shape
-        if override is not None:
-            fluxScaleMap=np.zeros(modelMap.shape)
-            for row in catalog:
-                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            maxSizeDeg)
-                fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['fixed_y_c']*1e-4
-            theta500Arcmin=signals.calcTheta500Arcmin(override['redshift'], override['M500'], cosmoModel)
+    if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
+        # Clusters - insert one at a time (with different scales etc.)
+        count=0
+        for row in catalog:
+            # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
+            # NOTE: Should move this out of this switch so applied to all catalog types
+            if validAreaSection is not None:
+                x0, x1, y0, y1=validAreaSection
+                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
+                    continue
+            count=count+1
+            if 'true_M500c' in catalog.keys():
+                # This case is for when we're running from nemoMock output
+                # Since the idea of this is to create noise-free model images, we must use true values here
+                # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
+                M500=row['true_M500c']*1e14
+                z=row['redshift']
+                y0ToInsert=row['true_y_c']*1e-4
+            elif override is not None:
+                z=override['redshift']
+                M500=override['M500']
+                y0ToInsert=row['y_c']*1e-4
+            else:
+                # NOTE: This case is for running from nemo output
+                # We need to adapt this for when the template names are not in this format
+                if 'template' not in catalog.keys():
+                    raise Exception("No M500, z, or template column found in catalog.")
+                bits=row['template'].split("#")[0].split("_")
+                M500=float(bits[1][1:].replace("p", "."))
+                z=float(bits[2][1:].replace("p", "."))
+                y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
             maxSizeDeg=5*(theta500Arcmin/60)
-            modelMap=makeClusterSignalMap(override['redshift'], override['M500'], degreesMap, 
-                                          wcs, beam, GNFWParams = GNFWParams,
-                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
-            modelMap=modelMap*fluxScaleMap
-            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
-
-        # Clusters - insert one at a time (with different scales etc.) - currently taking ~1.6 sec per object
-        else:
-            count=0
-            for row in catalog:
-                # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
-                # NOTE: Should move this out of this switch so applied to all catalog types
-                if validAreaSection is not None:
-                    x0, x1, y0, y1=validAreaSection
-                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                    if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
-                        continue
-                count=count+1
-                if 'true_M500c' in catalog.keys():
-                    # This case is for when we're running from nemoMock output
-                    # Since the idea of this is to create noise-free model images, we must use true values here
-                    # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
-                    M500=row['true_M500c']*1e14
-                    z=row['redshift']
-                    y0ToInsert=row['true_fixed_y_c']*1e-4
-                    y0ToInsert=y0ToInsert/row['true_Q']
-                else:
-                    # NOTE: This case is for running from nemo output
-                    # We need to adapt this for when the template names are not in this format
-                    if 'template' not in catalog.keys():
-                        raise Exception("No M500, z, or template column found in catalog.")
-                    bits=row['template'].split("#")[0].split("_")
-                    M500=float(bits[1][1:].replace("p", "."))
-                    z=float(bits[2][1:].replace("p", "."))
-                    y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
-                theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
-                maxSizeDeg=5*(theta500Arcmin/60)
-                degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                            row['RADeg'], row['decDeg'], 
-                                                                            maxSizeDeg)
-                signalMap=makeClusterSignalMap(z, M500, degreesMap, wcs, beam, 
-                                               GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                               maxSizeDeg = maxSizeDeg, convolveWithBeam = False)
-                if obsFreqGHz is not None:
-                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
-                                              TCMBAlpha = TCMBAlpha, z = z)
-                modelMap=modelMap+signalMap
-            modelMap=convolveMapWithBeam(modelMap, wcs, beam, maxDistDegrees = 1.0)
-
+            signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                                            decDeg = row['decDeg'], beam = beam,
+                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                            cosmoModel = cosmoModel)
+            if obsFreqGHz is not None:
+                signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
+                                            TCMBAlpha = TCMBAlpha, z = z)
+            modelMap=modelMap+signalMap
     else:
         # Sources - slower but more accurate way
         for row in catalog:
@@ -1712,12 +1709,21 @@ def sourceInjectionTest(config):
     Returns:
         An astropy Table containing recovered position offsets and fluxes versus fixed_SNR for inserted
         sources.
+
+    Note:
+        Injection tests for clusters use the reference filter only (set with the `photFilter` keyword
+        in the config). Input amplitudes for clusters are in `y_c`, while output is in `fixed_y_c`
+        (because the reference filter is used). Similarly, output SNR is `fixed_SNR`, although the
+        output column is labelled as `SNR`.
     
     """
 
     # WARNING: For multi-pass mode, this has the desired behaviour IF this is called after a nemo run
     # (i.e., the config is already set to the last filterSet)
     # But, can we guarantee that? Probably not. But we could put a warning in the docs for now?
+
+    # This should perhaps be a config parameter
+    realExclusionRadiusArcmin=5.0
 
     # This should make it quicker to generate test catalogs (especially when using tiles)
     selFn=completeness.SelFn(config.selFnDir, 4.0, configFileName = config.configFileName,
@@ -1732,17 +1738,19 @@ def sourceInjectionTest(config):
         numIterations=config.parDict['sourceInjectionIterations']
 
     # Change to previous behavior - if config doesn't specify models to use, assume it's point sources
-    if 'clusterInjectionModels' in config.parDict.keys():
+    if 'sourceInjectionModels' in config.parDict.keys():
         clusterMode=True
         sourceInjectionModelList=config.parDict['sourceInjectionModels']
-        SNRCol='fixed_SNR'
-        fluxCol='fixed_y_c'
-        noiseLevelCol='fixed_err_y_c'
+        SNRCol='SNR'
+        fluxCol='y_c'
+        noiseLevelCol='err_y_c'
         for sourceInjectionModel in sourceInjectionModelList:
-            label='%.2f' % (signals.calcTheta500Arcmin(sourceInjectionModel['redshift'], 
-                                                       sourceInjectionModel['M500'], signals.fiducialCosmoModel))
+            theta500Arcmin=signals.calcTheta500Arcmin(sourceInjectionModel['redshift'],
+                                                      sourceInjectionModel['M500'],
+                                                      signals.fiducialCosmoModel)
+            label='%.2f' % (theta500Arcmin)
             sourceInjectionModel['label']=label
-        QFit=signals.QFit(config.selFnDir+os.path.sep+"QFit.fits", tileNames = config.tileNames)
+            sourceInjectionModel['theta500Arcmin']=theta500Arcmin
     else:
         # Sources
         clusterMode=False
@@ -1765,14 +1773,19 @@ def sourceInjectionTest(config):
     realCatalog=atpy.Table().read(catFileName)
     
     # Run each scale / model and then collect everything into one table afterwards
-    # NOTE: raw flux error in catalogs is from RMS map, but e.g. outFlux will have Q applied here if cluster
+    # NOTE: These dictionaries contain recovered measurements from running the finder
     SNRDict={}
     rArcminDict={}
     inFluxDict={}
     outFluxDict={}
     noiseLevelDict={}
     tileNamesDict={}
+    # NOTE: This list collects all the input catalogs
+    allInputCatalogs=[]
+    modelCount=0
     for sourceInjectionModel in sourceInjectionModelList:
+        modelCount=modelCount+1
+        print(">>> Source injection model: %d/%d" % (modelCount, len(sourceInjectionModelList)))
         SNRDict[sourceInjectionModel['label']]=[]
         rArcminDict[sourceInjectionModel['label']]=[]
         inFluxDict[sourceInjectionModel['label']]=[]
@@ -1780,7 +1793,7 @@ def sourceInjectionTest(config):
         noiseLevelDict[sourceInjectionModel['label']]=[]
         tileNamesDict[sourceInjectionModel['label']]=[]
         for i in range(numIterations):        
-            print(">>> Source injection and recovery test %d/%d [rank = %d] ..." % (i+1, numIterations, config.rank))
+            print(">>> Source injection and recovery test %d/%d [rank = %d]" % (i+1, numIterations, config.rank))
 
             # NOTE: This block below should be handled when parsing the config file - fix/remove
             # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
@@ -1809,32 +1822,43 @@ def sourceInjectionTest(config):
             if config.rank == 0:
                 if filtDict['class'].find("ArnaudModel") != -1:
                     if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
-                        amplitudeRange=[0.001, 1]
+                        amplitudeRange=[0.001, 10]
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                    if 'sourceInjectionDistribution' not in config.parDict.keys():
+                        distribution='linear'
+                    else:
+                        distribution=config.parDict['sourceInjectionDistribution']
                     # Quick test catalog - takes < 1 sec to generate
                     mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
-                                                            amplitudeColumnName = 'fixed_y_c',
+                                                            amplitudeColumnName = fluxCol,
                                                             amplitudeRange = amplitudeRange,
-                                                            amplitudeDistribution = 'linear',
+                                                            amplitudeDistribution = distribution,
                                                             selFn = selFn, maskDilationPix = 20)
                     # Or... proper mock, but this takes ~24 sec for E-D56
                     #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]
                     injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'],
-                                'override': sourceInjectionModel}
+                                   'override': sourceInjectionModel}
                 elif filtDict['class'].find("Beam") != -1:
                     if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
                         amplitudeRange=[1, 1000]
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                    if 'sourceInjectionDistribution' not in config.parDict.keys():
+                        distribution='log'
+                    else:
+                        distribution=config.parDict['sourceInjectionDistribution']
                     mockCatalog=catalogs.generateTestCatalog(config, numSourcesPerTile,
                                                             amplitudeColumnName = fluxCol,
                                                             amplitudeRange = amplitudeRange,
-                                                            amplitudeDistribution = 'log',
+                                                            amplitudeDistribution = distribution,
                                                             selFn = selFn, maskDilationPix = 20)
                     injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
                 else:
                     raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
+                if 'theta500Arcmin' in sourceInjectionModel.keys():
+                    mockCatalog['theta500Arcmin']=sourceInjectionModel['theta500Arcmin']
+                allInputCatalogs.append(mockCatalog)
             else:
                 injectSources=None
                 mockCatalog=None
@@ -1853,7 +1877,8 @@ def sourceInjectionTest(config):
             if len(mockCatalog) > 0:
 
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
-                                                               writeAreaMask = False, writeFlagMask = False)
+                                                               useCachedRMSMap = True, writeAreaMask = False,
+                                                               writeFlagMask = False)
 
                 # NOTE: Below here only rank 0 really needed (could then broadcast result)
 
@@ -1862,27 +1887,22 @@ def sourceInjectionTest(config):
                 # Effectively this is the same as using 5' circular holes in the survey mask on real objects
                 # (but actually adding the avoidance radius parameter to the test catalogs really solved this)
                 if len(recCatalog) > 0:
-                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog, radiusArcmin = 5.0)
+                    recCatalog=catalogs.removeCrossMatched(recCatalog, realCatalog,
+                                                           radiusArcmin = realExclusionRadiusArcmin)
                 if len(recCatalog) > 0:
                     try:
-                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog, radiusArcmin = 5.0)
+                        x_mockCatalog, x_recCatalog, rDeg=catalogs.crossMatch(mockCatalog, recCatalog,
+                                                                              radiusArcmin = realExclusionRadiusArcmin)
                     except:
-                        raise Exception("Position recovery test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
-                    # If we're using clusters, we need to put in the Q correction
-                    # NOTE: This assumes the model name gives theta500c in arcmin!
-                    if clusterMode == True:
-                        for tileName in np.unique(x_recCatalog['tileName']):
-                            theta500Arcmin=float(sourceInjectionModel['label'])
-                            Q=QFit.getQ(theta500Arcmin, tileName = tileName)
-                            mask=(x_recCatalog['tileName'] == tileName)
-                            x_recCatalog[fluxCol][mask]=x_recCatalog[fluxCol][mask]/Q
+                        raise Exception("Source injection test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
                     # Catching any crazy mismatches, writing output for debugging
                     if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
                         mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)
                         config.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
                         recCatalog2=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
                                                                         writeAreaMask = False, writeFlagMask = False)
-                        recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog, radiusArcmin = 5.0)
+                        recCatalog2=catalogs.removeCrossMatched(recCatalog2, realCatalog,
+                                                                radiusArcmin = realExclusionRadiusArcmin)
                         catalogs.catalog2DS9(x_recCatalog[mask],
                                              simRootOutDir+os.path.sep+"filteredMaps"+os.path.sep+tileName+os.path.sep+"mismatch-rec.reg")
                         catalogs.catalog2DS9(x_mockCatalog[mask],
@@ -1911,6 +1931,7 @@ def sourceInjectionTest(config):
         
     # Collecting all results into one giant table
     models=[]
+    theta500s=[]
     SNRs=[]
     rArcmin=[]
     inFlux=[]
@@ -1919,6 +1940,8 @@ def sourceInjectionTest(config):
     tileNames=[]
     for sourceInjectionModel in sourceInjectionModelList:
         label=sourceInjectionModel['label']
+        if 'theta500Arcmin' in sourceInjectionModel.keys():
+            theta500s=theta500s+[sourceInjectionModel['theta500Arcmin']]*len(SNRDict[label])
         models=models+[label]*len(SNRDict[label])
         SNRs=SNRs+SNRDict[label].tolist()
         rArcmin=rArcmin+rArcminDict[label].tolist()
@@ -1928,12 +1951,22 @@ def sourceInjectionTest(config):
         tileNames=tileNames+tileNamesDict[label].tolist()
     resultsTable=atpy.Table()
     resultsTable.add_column(atpy.Column(models, 'sourceInjectionModel'))
+    if len(theta500s) == len(resultsTable):
+        resultsTable.add_column(atpy.Column(theta500s, 'theta500Arcmin'))
     resultsTable.add_column(atpy.Column(SNRs, SNRCol))
     resultsTable.add_column(atpy.Column(rArcmin, 'rArcmin'))
     resultsTable.add_column(atpy.Column(inFlux, 'inFlux'))
     resultsTable.add_column(atpy.Column(outFlux, 'outFlux'))
     resultsTable.add_column(atpy.Column(noiseLevel, 'noiseLevel'))
     resultsTable.add_column(atpy.Column(tileNames, 'tileName'))
+
+    # Store the giant combined input catalog as well, for completeness calculations
+    # NOTE: Not all objects in this may have been injected (masking, avoiding overlap etc.)
+    if config.rank == 0:
+        allInputTab=atpy.vstack(allInputCatalogs)
+        allInputTab.rename_column(fluxCol, "inFlux")
+        allInputTab=catalogs.removeCrossMatched(allInputTab, realCatalog, radiusArcmin = realExclusionRadiusArcmin)
+        allInputTab.write(config.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits", overwrite = True)
 
     # Restore the original config parameters (which we overrode here)
     config.restoreConfig()
@@ -1976,9 +2009,9 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         plotUnitsMultiplier=60
         plotUnitsLabel="$^{\prime\prime}$"
     else:
-        # Clusters
-        SNRCol='fixed_SNR'
-        plotSNRLabel="SNR$_{2.4}$"
+        # Clusters - SNR is really fixed_SNR here, because injection sims use only ref filter
+        SNRCol='SNR'
+        plotSNRLabel="fixed_SNR"
         rArcminThreshold=np.linspace(0, 10, 101)
         plotUnits="arcmin"
         plotUnitsMultiplier=1

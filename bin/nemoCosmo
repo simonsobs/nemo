@@ -22,7 +22,7 @@ import astropy.table as atpy
 from astLib import *
 from scipy import stats
 from scipy import interpolate
-from scipy.special import factorial
+from scipy.special import factorial, gammaln
 from nemo import completeness
 from nemo import signals
 import argparse
@@ -33,6 +33,13 @@ import cobaya.yaml
 from getdist.mcsamples import MCSamplesFromCobaya
 import getdist.plots as gdplt
 
+import cobaya
+try:
+    if int(cobaya.__version__[0]) > 2:
+        raise Exception("At the moment, nemoCosmo only works with cobaya 2.x")
+except:
+    pass # Cobaya 2 doesn't have a version string?
+
 # Extreme debugging (better for multiprocessing stuff to crash where we can see it)
 import warnings
 #warnings.filterwarnings("error")
@@ -42,7 +49,7 @@ def lnprob_yc(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
     """Log likelihood function for use with Cobaya.
         
     """
-        
+
     # This can fail if wander outside parameter space where mass function is defined
     try:
         selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict = {'tenToA0': tenToA0, 'B0': B0, 
@@ -61,90 +68,69 @@ def lnprob_yc(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
         for j in range(len(obs_ycBinEdges)-1):
             ycMin=obs_ycBinEdges[j]
             ycMax=obs_ycBinEdges[j+1]
-            ycMask=np.logical_and(selFn.y0Grid >= ycMin, selFn.y0Grid < ycMax)
+            ycMask=np.logical_and(selFn.y0TildeGrid >= ycMin, selFn.y0TildeGrid < ycMax)
             predGrid[j, i]=corrGrid[zMask*ycMask].sum()
 
     # Poisson probability in (log10(y0~), z) grid
     mask=np.greater(obsGrid, 0)
     if mask.sum() > 0:
-        lnlike=np.sum(obsGrid[mask]*np.log(predGrid[mask])-predGrid[mask]-np.log(factorial(obsGrid[mask])))
+        #lnlike=np.sum(obsGrid[mask]*np.log(predGrid[mask])-predGrid[mask]-np.log(factorial(obsGrid[mask])))
+        lnlike=np.sum(obsGrid[mask]*np.log(predGrid[mask])-predGrid[mask]-gammaln(obsGrid[mask]+1))
     else:
         lnlike=-np.inf
+
+    # Chi-squared probability (ish)
+    #mask=np.greater(obsGrid, 0)
+    #if mask.sum() > 0:
+        #chiSq=np.sum(np.power(obsGrid[mask]-predGrid[mask], 2)/obsGrid[mask])
+        #lnlike=-chiSq/2
+    #else:
+        #lnlike=-np.inf
     
     return lnlike
 
 #-------------------------------------------------------------------------------------------------------------
-def lnprob_M500(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
+def lnprob_Nz(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int):
     """Log likelihood function for use with Cobaya.
-        
+
     """
-    
+
     # This can fail if wander outside parameter space where mass function is defined
     try:
-        selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict = {'tenToA0': tenToA0, 'B0': B0, 
+        selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict = {'tenToA0': tenToA0, 'B0': B0,
                                                                       'Mpivot': Mpivot, 'sigma_int': sigma_int})
     except:
         return -np.inf
-    
-    # Apply completeness only to predicted counts (selection is already applied to observed)
-    predMz=selFn.compMz*selFn.mockSurvey.clusterCount
-    
-    # Now 2d histogram with few cells - more stable?
-    masses=calcMass(tab, selFn.scalingRelationDict, selFn.tckQFitDict, selFn.fRelDict, selFn.mockSurvey, verbose = False)  
-    log10MBinEdges=np.linspace(np.log10(masses.min()), np.log10(masses.max()), 6)
-    obsGrid, obsGrid_log10MBinEdges, obsGrid_zBinEdges=np.histogram2d(np.log10(masses), tab['redshift'], 
-                                                                      bins = [log10MBinEdges, selFn.mockSurvey.zBinEdges])
-    predGrid=np.zeros(obsGrid.shape)
-    for i in range(len(obsGrid_log10MBinEdges)-1):
-        mBinMin=obsGrid_log10MBinEdges[i]
-        mBinMax=obsGrid_log10MBinEdges[i+1]
-        mMask=np.logical_and(selFn.mockSurvey.log10M >= mBinMin, selFn.mockSurvey.log10M < mBinMax)
-        for j in range(len(obsGrid_zBinEdges)-1):
-            zBinMin=obsGrid_zBinEdges[j]
-            zBinMax=obsGrid_zBinEdges[j+1]
-            zMask=np.logical_and(selFn.mockSurvey.z >= zBinMin, selFn.mockSurvey.z < zBinMax)
-            predGrid[i, j]=predMz[zMask][0][mMask].sum()
 
-    # Poisson probability in (log10M, z) grid
-    mask=np.logical_and(np.greater(obsGrid, 0), np.greater(predGrid, 0))
+    predMz=selFn.compMz*selFn.mockSurvey.clusterCount
+    predNz_fineBins=predMz[:, np.greater(selFn.mockSurvey.log10M, np.log10(5e13))].sum(axis = 1)
+    predNz=np.zeros(zBinEdges.shape[0]-1)
+    for i in range(len(zBinEdges)-1):
+        zMin=zBinEdges[i]
+        zMax=zBinEdges[i+1]
+        mask=np.logical_and(selFn.mockSurvey.z > zMin, selFn.mockSurvey.z <= zMax)
+        predNz[i]=predNz_fineBins[mask].sum()
+
+    # Poisson probability for N(z)
+    mask=np.greater(obsNz, 0)
     if mask.sum() > 0:
-        lnlike=np.sum(obsGrid[mask]*np.log(predGrid[mask])-predGrid[mask]-np.log(factorial(obsGrid[mask])))
+        lnlike=np.sum(obsNz[mask]*np.log(predNz[mask])-predNz[mask]-gammaln(obsNz[mask]+1))
     else:
         lnlike=-np.inf
 
+    ## Test plot
+    #label='(H0, Om0, sigma8, tenToA0, B0, sigma_int) = (%.1f, %.2f, %.2f, %.3e, %.2f, %.2f); ln L = %.2f' % (H0, Om0, sigma8, tenToA0, B0, sigma_int, lnlike)
+    #plt.figure(figsize = (10, 8))
+    #plt.errorbar((zBinEdges[:1]+zBinEdges[:-1])/2, obsNz, yerr = np.sqrt(predNz), fmt = 'o', label = 'obs')
+    #plt.plot((zBinEdges[:1]+zBinEdges[:-1])/2, predNz, '-',
+             #label = label)
+    #plt.xlabel('z')
+    #plt.ylabel('N')
+    #plt.legend()
+    #plt.savefig('testplot_%s.png' % (label).replace(" ", "_"))
+    #plt.close()
+
     return lnlike
-
-#------------------------------------------------------------------------------------------------------------
-def calcMass(tab, massOptions, tckQFitDict, fRelWeightsDict, mockSurvey, verbose = False):
-    """Calculates masses (M500 and M200m) using fixed_y_c, redshift columns in the given table.
-    
-    """
-
-    masses=np.zeros(len(tab))
-    for i in range(len(tab)):
-        row=tab[i]
-        if verbose: print("... %d/%d; %s (%.3f +/- %.3f) ..." % (count, len(tab), row['name'], 
-                                                              row['redshift'], row['redshiftErr']))
-
-        tileName=row['tileName']
-        
-        # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
-        if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
-            # Corrected for mass function steepness
-            massDict=signals.calcMass(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4, 
-                                            row['redshift'], row['redshiftErr'],
-                                            tenToA0 = massOptions['tenToA0'],
-                                            B0 = massOptions['B0'], 
-                                            Mpivot = massOptions['Mpivot'], 
-                                            sigma_int = massOptions['sigma_int'],
-                                            tckQFit = tckQFitDict[tileName], mockSurvey = mockSurvey, 
-                                            applyMFDebiasCorrection = True,
-                                            applyRelativisticCorrection = True,
-                                            fRelWeightsDict = fRelWeightsDict[tileName],
-                                            calcErrors = False)
-            masses[i]=massDict['M500']
-    
-    return masses*1e14
 
 #------------------------------------------------------------------------------------------------------------
 def makeGetDistPlot(cosmoOutDir):
@@ -168,43 +154,54 @@ if __name__ == '__main__':
     defaultMaxSamples=3000
     defaultNumToBurn=50
     parser=argparse.ArgumentParser("nemoCosmo")
-    parser.add_argument("catalogFileName", help = """Catalog file name, in .fits format, as produced by nemo
-                        or nemoMock.""")
-    parser.add_argument("selFnDir", help = """Directory containing files needed for computing the selection 
-                        function.""")
-    parser.add_argument("-c", "--cobaya-config", dest = "cobayaConfig", help = """A Cobaya .yml configuration 
-                        file. Use the -d switch to dump the default settings to a file.""", default = None)
-    parser.add_argument("-d", "--dump-default-config", dest = "dumpConfig", help = """Dumps the default Cobaya
-                        configuration to a file called default.yml in the current working directory.""",
+    parser.add_argument("catalogFileName", help = "Catalog file name, in .fits format, as produced by nemo\
+                        or nemoMock.")
+    parser.add_argument("selFnDir", help = "Directory containing files needed for computing the selection\
+                        function.")
+    parser.add_argument("-c", "--cobaya-config", dest = "cobayaConfig", help = "A Cobaya .yml configuration\
+                        file. Use the -d switch to dump the default settings to a file.", default = None)
+    parser.add_argument("-d", "--dump-default-config", dest = "dumpConfig", help = "Dumps the default Cobaya\
+                        configuration to a file called default.yml in the current working directory.",
                         action = "store_true", default = False)
-    parser.add_argument("-o", "--output-dir", dest = "cosmoOutDir", help = """Name of directory in which
-                        to store output chains (default: cosmo_catalogFileName_SNRCut, where
-                        catalogFileName is stripped of the .fits extension).""", default = None)
-    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help = """Use only clusters with fixed_SNR > 
+    parser.add_argument("-o", "--output-dir", dest = "cosmoOutDir", help = "Name of directory in which\
+                        to store output chains (default: cosmo_catalogFileName_SNRCut, where\
+                        catalogFileName is stripped of the .fits extension).", default = None)
+    parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help = "Use only clusters with fixed_SNR > \
                         this value.""", default = 5.0, type = float)
-    parser.add_argument("-f", "--footprint", dest = "footprint", help="""Footprint to use, e.g., DES,
-                        HSC, KiDS (default: full). Note that the catalog will not be trimmed to match 
-                        the footprint.""", default = None)
+    parser.add_argument("-f", "--footprint", dest = "footprint", help="Footprint to use, e.g., DES,\
+                        HSC, KiDS (default: full).", default = None)
+    parser.add_argument("-z", "--z-min", dest = "zMinCut", default = 0.0, type = float,
+                        help = "Minimum redshift cut applied to the catalog and the likelihood calculation.")
     parser.add_argument("-R", "--relativistic-correction", dest = "relativisticCorrection", 
-                        action = "store_true", default = False, help = """Apply relativistic correction
-                        to the signal modelling and completeness calculation.""")
-    parser.add_argument("-D", "--mass-def", dest = "massDef", default = "M500c", help = """Mass 
-                        definition to use (e.g., M500c or M200m).""")
-    parser.add_argument("-m", "--max-samples", dest="maxSamples", help="""Maximum number of samples. If 
-                        given, overrides the value given in the Cobaya configuration file.""", type = int,
-                        default = defaultMaxSamples)
-    parser.add_argument("-b", "--burn", dest = "numToBurn", help = """Number of samples to burn. If given,
-                        overrides the value given in the Cobaya configuration file.""", 
+                        action = "store_true", default = False, help = "Apply relativistic correction\
+                        to the signal modeling and completeness calculation.")
+    parser.add_argument("-D", "--mass-def", dest = "massDef", default = "M200c",
+                        help = "Mass definition to use (e.g., M500c, M200m, M200c).")
+    parser.add_argument("-m", "--max-samples", dest="maxSamples", help="Maximum number of samples. If\
+                        given, overrides the value given in the Cobaya configuration file.",
+                        type = int, default = defaultMaxSamples)
+    parser.add_argument("-b", "--burn", dest = "numToBurn", help = "Number of samples to burn. If given,\
+                        overrides the value given in the Cobaya configuration file.",
                         default = defaultNumToBurn, type = int)
+    parser.add_argument("-N", "--num-signal-bins", dest = "numSignalBins", type = int, default = 10,
+                        help = "Number of bins for the SZ signal.")
+    parser.add_argument("-L", "--likelihood-type", dest = "likelihoodType", default = "Nz",
+                        help = "Likelihood function to use - either 'Nz' (simple N(z) based likelihood)\
+                        or 'yc' (likelihood using cluster counts binned by both SZ signal signal and\
+                        redshift).")
+    parser.add_argument("-C", "--completeness-method", dest = "completenessMethod", default = "fast",
+                        help = "Method to use for completeness calculation - either 'fast' (uses the\
+                        noise maps and a simple model) or 'injection' (directly uses the results of\
+                        source injection simulations)")
+    parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
+                        'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
+                        results.", default = 'injection')
     parser.add_argument("-t", "--test-likelihood", dest = "testLikelihood", help = """Run a test of the
                         likelihood, varying one parameter at a time, instead of running Cobaya,
                         producing diagnostic plots called 'testLikelihood_paramName.png' in the current
                         working directory. This test assumes you are running on a mock catalog with 
                         cosmology and scaling relation parameters that match the WebSky simulations.""",
                         action = "store_true", default = False)
-    parser.add_argument("-L", "--likelihood", dest = "likelihoodType", help = """The likelihood function
-                        to use. Options are 'mass', or 'yc' (latter is even more experimental).""", 
-                        default = "mass")
     args = parser.parse_args()
     
     tabFileName=args.catalogFileName
@@ -212,6 +209,7 @@ if __name__ == '__main__':
     maxSamples=args.maxSamples
     SNRCut=args.SNRCut
     footprintLabel=args.footprint
+    zMinCut=args.zMinCut
     cosmoOutDir=args.cosmoOutDir
     numToBurn=args.numToBurn
     massDef=args.massDef
@@ -221,23 +219,30 @@ if __name__ == '__main__':
     elif massDef == "M200m":
         rhoType="matter"
         delta=200
+    elif massDef == "M200c":
+        rhoType="critical"
+        delta=200
     else:
-        raise Exception("massDef should be either M500c or M200m (use -D M500c or -D M200m)")
-    
-    if args.likelihoodType == "mass":
-        lnprob=lnprob_M500
+        raise Exception("massDef should be one of M500c, M200c, or M200m (use -D M500c, -D M200c, or -D M200m)")
+
+    QSource=args.QSource
+    if QSource not in ['fit', 'injection']:
+        raise Exception("QSource must be either 'fit' or 'injection'")
+
+    if args.likelihoodType == "Nz":
+        lnprob=lnprob_Nz
     elif args.likelihoodType == "yc":
         lnprob=lnprob_yc
     else:
-        raise Exception("Didn't understand likelihoodType - use either 'mass' or 'yc'")
+        raise Exception("Didn't understand likelihoodType - use either 'Nz' or 'yc'")
         
     tab=atpy.Table().read(tabFileName)
     if 'redshift' not in tab.keys():
         raise Exception("no 'redshift' column in catalog")
-        
+
     # We'll label output according to catalog file name (in case we want to run same settings on real and mocks)
     if cosmoOutDir == None:
-        cosmoOutDir="cosmo_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
+        cosmoOutDir="chains_"+os.path.split(tabFileName)[-1].replace(".fits", "")+"_%.2f" % (SNRCut)
         
     # Cobaya set-up
     if args.cobayaConfig is None:
@@ -284,12 +289,17 @@ if __name__ == '__main__':
         print("Relativistic correction will be applied")
     else:
         print("Relativistic correction neglected")
+    print("Using '%s' completeness estimation method" % (args.completenessMethod))
+    print("Using '%s' Q source" % (QSource))
+    print("Redshift limit is z > %.2f" % (args.zMinCut))
     selFn=completeness.SelFn(selFnDir, SNRCut, footprintLabel = footprintLabel, zStep = 0.1,
-                             enableDrawSample = True, mockOversampleFactor = 1, downsampleRMS = True, 
+                             enableDrawSample = False, mockOversampleFactor = 1, downsampleRMS = True,
                              applyRelativisticCorrection = args.relativisticCorrection,
-                             delta = delta, rhoType = rhoType)
-    
-    # Cut catalog according to given SNR cut and survey footprint
+                             delta = delta, rhoType = rhoType, method = args.completenessMethod,
+                             QSource = QSource)
+
+    # Cut catalog according to given SNR cut and survey footprint (and throw out any with undefined Q)
+    tab=tab[tab['Q'] > 0]
     tab=tab[np.where(tab['fixed_SNR'] > SNRCut)]
     inMask=selFn.checkCoordsInAreaMask(tab['RADeg'], tab['decDeg'])
     tab=tab[inMask]
@@ -298,12 +308,25 @@ if __name__ == '__main__':
     # NOTE: Since we use such coarse z binning, we completely ignore photo-z errors here
     # Otherwise, signals.calcPMass throws exception when z grid is not fine enough
     tab['redshiftErr'][:]=0.0
-   
-    # Define binning on (log10(fixed_y_c), redshift) grid
-    log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()*0.8), np.log10(1e-4*tab['fixed_y_c'].max()*1.1), 6)
-    obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(1e-4*tab['fixed_y_c']), tab['redshift'], 
-                                                               bins = [log10ycBinEdges, selFn.mockSurvey.zBinEdges])
-    obs_ycBinEdges=np.power(10, obs_log10ycBinEdges)
+
+    if lnprob == lnprob_yc:
+        # Define binning on (log10(fixed_y_c), redshift) grid
+        # NOTE: A large number of log10 y0 bins is needed, or B0 wanders way away from true value
+        log10ycBinEdges=np.linspace(np.log10(1e-4*tab['fixed_y_c'].min()), np.log10(1e-4*tab['fixed_y_c'].max()), args.numSignalBins+1)
+        zBinEdges=selFn.mockSurvey.zBinEdges[np.greater_equal(selFn.mockSurvey.zBinEdges, zMinCut)]
+        obsGrid, obs_log10ycBinEdges, obs_zBinEdges=np.histogram2d(np.log10(1e-4*tab['fixed_y_c']), tab['redshift'],
+                                                                   bins = [log10ycBinEdges, zBinEdges])
+        obs_ycBinEdges=np.power(10, obs_log10ycBinEdges)
+
+    elif lnprob == lnprob_Nz:
+        # We already applied S/N cut
+        zBinEdges=selFn.mockSurvey.zBinEdges[np.greater_equal(selFn.mockSurvey.zBinEdges, zMinCut)]
+        obsNz=np.zeros(zBinEdges.shape[0]-1)
+        for i in range(len(zBinEdges)-1):
+            zMin=zBinEdges[i]
+            zMax=zBinEdges[i+1]
+            mask=np.logical_and(tab['redshift'] > zMin, tab['redshift'] <= zMax)
+            obsNz[i]=mask.sum()
     
     # Testing
     if args.testLikelihood == True:
@@ -312,34 +335,37 @@ if __name__ == '__main__':
             plt.plot(pRange, probs)
             minP=min(probs)*1.1
             maxP=max(probs)*0.9
-            plt.plot([var]*10, np.linspace(minP, maxP, 10), 'k--')
+            plt.plot([var]*10, np.linspace(theoreticalMaxLogLike*2, theoreticalMaxLogLike, 10), 'k--')
             plt.xlabel(label)
             plt.ylabel("lnprob")
-            plt.ylim(minP, maxP)
-            plt.savefig("testLikelihood_%s_%s.png" % (label, args.likelihoodType))
+            plt.ylim(theoreticalMaxLogLike*2, theoreticalMaxLogLike*0.5)
+            plt.savefig("testLikelihood_%s_%s_zMinCut%.2f_%s.png" % (args.likelihoodType, args.completenessMethod, zMinCut, label))
             plt.close()
-        
+
         H0, Om0, Ob0, sigma8, ns = 68.0, 0.31, 0.049, 0.81, 0.965       # WebSky cosmology
         #tenToA0, B0, Mpivot, sigma_int = 2.65e-05, 0.0, 3.0e+14, 0.2    # WebSky scaling relation - assumed scatter
         if massDef == 'M500c':
             tenToA0, B0, Mpivot, sigma_int = 3.02e-05, 0.0, 3.0e+14, 0.0    # WebSky scaling relation - no scatter, M500c
         elif massDef == 'M200m':
             tenToA0, B0, Mpivot, sigma_int = 1.7e-05, 0.0, 3.0e+14, 0.0    # WebSky scaling relation - no scatter, M200m
+        elif massDef == 'M200c':
+            tenToA0, B0, Mpivot, sigma_int = 4.0e-05, 0.08, 4.25e+14, 0.2    # Current sim du jour
         #lnprob(H0, Om0, sigma8, Ob0, ns, p, B0, Mpivot, sigma_int)
         testsToRun=['H0', 'Om0', 'sigma8', 'tenToA0', 'B0', 'sigma_int']
+        #testsToRun=['B0']
         #testsToRun=['tenToA0', 'B0', 'sigma_int']
         # For checking if recovered parameters beat the theoretical max likelihood ones
         # If they do, we have bugs to fix...
         theoreticalMaxLogLike=lnprob(H0, Om0, sigma8, Ob0, ns, tenToA0, B0, Mpivot, sigma_int)
         print("Theoretical max log likelihood = %.3f" % (theoreticalMaxLogLike))
-        print("Num clusters expected = %1f" % ((selFn.compMz*selFn.mockSurvey.clusterCount).sum()))
-        print("Num clusters in catalog = %d" % (len(tab)))
-        mode=input("Drop into interactive mode [y] or run likelihood tests for each parameter [n] ? ")
-        if mode == "y":
-            import IPython
-            IPython.embed()
-            sys.exit()
-            testLogLike=lnprob(70.5, 0.304, 0.825, Ob0, ns, 2.78e-05, 0.306, Mpivot, 0.0) # Any test parameters
+        print("Num clusters expected = %1f [no z cut applied]" % ((selFn.compMz*selFn.mockSurvey.clusterCount).sum()))
+        print("Num clusters in catalog = %d [no z cut applied]" % (len(tab)))
+        #mode=input("Drop into interactive mode [y] or run likelihood tests for each parameter [n] ? ")
+        #if mode == "y":
+            #import IPython
+            #IPython.embed()
+            #sys.exit()
+            #testLogLike=lnprob(70.5, 0.304, 0.825, Ob0, ns, 2.78e-05, 0.306, Mpivot, 0.0) # Any test parameters
         if 'H0' in testsToRun:
             label="H0"; var=H0
             pRange=np.linspace(60, 80, 21)

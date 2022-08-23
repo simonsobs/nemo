@@ -6,7 +6,7 @@ This module contains routines for modeling cluster and source signals.
 
 import os
 import sys
-from pixell import enmap, curvedsky
+from pixell import enmap, curvedsky, utils, pointsrcs
 import astropy
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
@@ -24,6 +24,7 @@ from . import catalogs
 from . import photometry
 from . import filters
 from . import gnfw
+from . import completeness
 from . import plotSettings
 import numpy as np
 import numpy.fft as fft
@@ -112,9 +113,15 @@ class BeamProfile(object):
                 prof=prof/prof[0]
                 self.profile1d=prof
                 self.rDeg=rDeg
+                self.Bell=Bell
+                self.ell=ell
             else:
                 self.profile1d=beamData[1]
                 self.rDeg=beamData[0]
+                self.Bell=curvedsky.profile2harm(self.profile1d, np.radians(self.rDeg))
+                self.Bell=self.Bell/self.Bell[0]
+                self.ell=np.arange(len(self.Bell))
+                #prof=curvedsky.harm2profile(Bell, np.radians(self.rDeg))
         else:
             self.profile1d=profile1d
             self.rDeg=rDeg
@@ -131,9 +138,16 @@ class QFit(object):
     `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_ onwards.
     
     Args:
-        QFitFileName (:obj:`str`): Path to a FITS-table format file as made by :meth:`fitQ`.
-        tileNames (:obj:`list`): If given, the Q-function will be defined only for these tiles (their names
-            must appear in the file specified by `QFitFileName`).
+        QSource (:obj:`str`, optional): The source to use for Q (the filter mismatch function) - either
+            'fit' (to use results from the original Q-fitting routine) or 'injection' (to use Q derived
+            from source injection simulations). For the latter, `selFnDir` must be supplied.
+        selFnDir (:obj:`str`, optional): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
+            command. This directory contains information such as the survey noise maps, area masks,
+            and information needed to construct the filter mismatch function, `Q`, used in mass
+            modeling.
+        QFitFileName (`str`, optional): Path to a FITStable containing Q fits for all tiles - this is
+            normally ``selFn/QFit.fits``). This is only used if QSource is set to ``fit``.
+        tileNames (:obj:`list`): If given, the Q-function will be defined only for these tiles.
     
     Attributes:
         fitDict (:obj:`dict`): Dictionary of interpolation objects, indexed by `tileName`. You should not
@@ -141,113 +155,73 @@ class QFit(object):
     
     """
         
-    def __init__(self, QFitFileName = None, tileNames = None):
+    def __init__(self, QSource = 'fit', selFnDir = None, QFitFileName = None, tileNames = None):
         self._zGrid=np.array([0.05, 0.1, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2, 1.6, 2.0])
         self._theta500ArcminGrid=np.logspace(np.log10(0.1), np.log10(55), 10)
         self.zMin=(self._zGrid).min()
         self.zMax=(self._zGrid).max()
         self.zDependent=None
         self.zDepThetaMax=None
+        self.selFnDir=selFnDir
 
-        self.fitDict={}                
-        if QFitFileName is not None:
-            self.loadQ(QFitFileName, tileNames = tileNames)
+        self.fitDict={}
+
+        self.QSource=QSource
+        if self.QSource not in ['fit', 'injection']:
+            raise Exception("QSource must be either 'fit' or 'injection'")
+
+        if self.QSource == 'fit':
+            if self.selFnDir is not None and QFitFileName is None:
+                self.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
+            if QFitFileName is not None:
+                self.loadQ(QFitFileName, tileNames = tileNames)
+
+        elif self.QSource == 'injection':
+            if self.selFnDir is None:
+                raise Exception("selFnDir must be supplied when using 'injection' QSource")
+            # Stuff from the source injection sims (now required for completeness calculation)
+            injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
+            inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+            SNRCut=5.0
+            theta500s, binCentres, compThetaGrid, thetaQ=completeness._parseSourceInjectionData(injDataPath, inputDataPath, SNRCut)
+            self.fitDict[None]=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
         
         
-    def loadQ(self, source, tileNames = None):
+    def loadQ(self, QFitFileName, tileNames = None):
         """Load the filter mismatch function Q (see `Hasselfield et al. 2013 
         <https://ui.adsabs.harvard.edu/abs/2013JCAP...07..008H/abstract>`_) as a dictionary of spline fits.
         
         Args:
-            source (:obj:`nemo.startUp.NemoConfig` or str): Either the path to a .fits table (containing Q fits
-                for all tiles - this is normally ``selFn/QFit.fits``), or a :obj:`nemo.startUp.NemoConfig` object 
-                (from which the path and tiles to use will be inferred).
+            QFitFileName(:obj:`str`): The path to a .fits table (containing Q fits for all tiles - this is
+                normally ``selFn/QFit.fits``).
             tileNames (optional, list): A list of tiles for which the Q function spline fit coefficients 
                 will be extracted. If source is a :obj:`nemo.startUp.NemoConfig` object, this should be set to 
                 ``None``.
-        
+
         Returns:
-            A dictionary (with tilNames as keys), containing spline knots for the Q function for each tile.
-            Q values can then be obtained by using these with :func:`scipy.interpolate.splev`.
-            
+            None
+
         """
 
-        # Bit messy, but two modes here: 
-        # - combined Q fit file for all tiles
-        # - single Q fit for a single tile (interim stage, when under nemo MPI run)
-        if type(source) == nemo.startUp.NemoConfig:
-            tileNames=source.tileNames
-            combinedQTabFileName=source.selFnDir+os.path.sep+"QFit.fits"
-            loadMode=None
-            if os.path.exists(combinedQTabFileName) == True:
-                tileNamesInFile=[]
-                with pyfits.open(combinedQTabFileName) as QTabFile:
-                    for ext in QTabFile:
-                        if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
-                            tileNamesInFile.append(ext.name)
-                tileNamesInFile.sort()
-                if tileNames is None:
-                    tileNames=tileNamesInFile
-                loadMode="combined"
-            else:
-                globStr=source.selFnDir+os.path.sep+"QFit#*.fits"
-                QTabFileNames=glob.glob(globStr)
-                loadMode="single"
-                if len(QTabFileNames) == 0:
-                    raise Exception("could not find either '%s' or '%s' - needed to make QFit object" % (combinedQTabFileName, globStr))
-            zMin=self._zGrid.max()
-            zMax=self._zGrid.min()
-            for tileName in tileNames:
-                if loadMode == "combined":
-                    QTab=atpy.Table().read(combinedQTabFileName, hdu = tileName)
-                elif loadMode == "single":
-                    QTab=atpy.Table().read(source.selFnDir+os.path.sep+"QFit#%s.fits" % (tileName))
-                else:
-                    raise Exception("loadMode is not defined")
-                if QTab['z'].min() < zMin:
-                    self.zMin=QTab['z'].min()
-                if QTab['z'].max() > zMax:
-                    self.zMax=QTab['z'].max()
-                self.fitDict[tileName]=self._makeInterpolator(QTab)
-
-        elif type(source) == str and os.path.exists(source) == True:
-            # Inspect file and get tile names if MEF
-            if tileNames is None:
-                tileNames=[]
-                with pyfits.open(source) as QTab:
-                    for ext in QTab:
-                        if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
-                            tileNames.append(ext.name)
-            zMin=self._zGrid.max()
-            zMax=self._zGrid.min()
-            for tileName in tileNames:
-                if tileName == '': # Individual, interim file name
-                    assert(source.find("QFit#") > 0)
-                    tileName=os.path.split(source)[-1].split("QFit#")[-1].split(".fits")[0]
-                    QTab=atpy.Table().read(source)
-                else:
-                    QTab=atpy.Table().read(source, hdu = tileName)
-                if QTab['z'].min() < zMin:
-                    self.zMin=QTab['z'].min()
-                if QTab['z'].max() > zMax:
-                    self.zMax=QTab['z'].max()
-                self.fitDict[tileName]=self._makeInterpolator(QTab)
-
-        elif type(source) == astropy.table.table.Table:
-            # Single tile Q fit table
-            QTab=source
-            tileName=QTab.meta['TILENAME']
-            if QTab['z'].min() < self._zGrid.min():
+        # Inspect file and get tile names if MEF
+        if tileNames is None:
+            tileNames=[]
+            with pyfits.open(QFitFileName) as QTab:
+                for ext in QTab:
+                    if type(ext) == astropy.io.fits.hdu.table.BinTableHDU:
+                        tileNames.append(ext.name)
+        zMin=self._zGrid.max()
+        zMax=self._zGrid.min()
+        for tileName in tileNames:
+            QTab=atpy.Table().read(QFitFileName, hdu = tileName)
+            if QTab['z'].min() < zMin:
                 self.zMin=QTab['z'].min()
-            if QTab['z'].max() > self._zGrid.max():
+            if QTab['z'].max() > zMax:
                 self.zMax=QTab['z'].max()
-            self.fitDict[tileName]=self._makeInterpolator(QTab)
-
-        else:
-            raise Exception("Couldn't understand QFit source with type '%s'" % (type(source)))
+            self.fitDict[tileName]=self._makeInterpolatorFromQTab(QTab)
 
 
-    def _makeInterpolator(self, QTab):
+    def _makeInterpolatorFromQTab(self, QTab):
         """Inspects QTab, and makes an interpolator object - 2d if there is z-dependence, 1d if not.
         
         """
@@ -288,6 +262,8 @@ class QFit(object):
                 redshift, otherwise it is ignored. This must be a single value only, 
                 i.e., not an array.
             tileName (:obj:`str`, optional): The name of the tile to use for the *Q* function.
+                If None, or if the given tileName is not found, then an average over all tiles
+                is used.
             
         Returns:
             The value of *Q* (an array or a single float, depending on the input).
@@ -298,6 +274,9 @@ class QFit(object):
             redshift).
                     
         """
+
+        if tileName not in self.fitDict.keys():
+            tileName=None
         
         if z is not None:
             if type(z) == np.ndarray and z.shape == (1,):
@@ -314,6 +293,10 @@ class QFit(object):
         else:
             # Univariate case handles own valid bounds checking
             Qs=self.fitDict[tileName](theta500Arcmin)
+
+        if (Qs < 0).sum() > 0:
+            #print("WARNING: negative Q value in tileName = %s" % (tileName))
+            Qs[Qs < 0]=0
         
         return Qs
 
@@ -582,18 +565,66 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     signalMap=r2p(degreesMap)
     
     return signalMap
-    
+
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'default', amplitude = None, 
-                             maxSizeDeg = 15.0, convolveWithBeam = True):
+def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
+                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-04):
+    """Use Sigurd's fast object painter to paint given signal into map.
+
+    """
+
+    if RADeg is None and decDeg is None:
+        RADeg, decDeg=wcs.getCentreWCSCoords()
+    dtype=np.float32 # only float32 supported by fast srcsim
+    amp=1.0
+    if convolveWithBeam == True:
+        if beam is None:
+            raise Exception("No beam supplied.")
+        if type(beam) == str:
+            beam=BeamProfile(beamFileName = beam)
+        rht=utils.RadialFourierTransform()
+        rprof=interpolate.splev(np.degrees(rht.r), tckP, ext = 1)
+        if amplitude is not None:
+            rprof=rprof*amplitude
+            amp=1.0
+        lbeam=np.interp(rht.l, beam.ell, beam.Bell)
+        lprof=rht.real2harm(rprof)
+        lprof*=lbeam
+        rprof=rht.harm2real(lprof)
+        r, rprof=rht.unpad(rht.r, rprof)
+    else:
+        rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+        rprof=interpolate.splev(rDeg, tckP, ext = 1)
+        r=np.radians(rDeg)
+        if amplitude is not None:
+            amp=amplitude
+    poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
+    amps=np.array([amp], dtype = dtype)
+
+    # Work around the fact that the profile gets truncated if we're trying to paste in something negative
+    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
+                                    rmax = np.radians(maxSizeDeg))
+    if rprof[0] < 0:
+        signalMap=signalMap*-1
+
+    return np.array(signalMap)
+
+#------------------------------------------------------------------------------------------------------------
+def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,
+                             GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,
+                             convolveWithBeam = True, cosmoModel = None):
     """Makes a 2d signal only map containing an Arnaud model cluster. 
     
     Args:
         z (float): Redshift; used for setting angular size.
         M500 (float): Mass within R500, defined with respect to critical density; units are solar masses.
-        degreesMap (:obj:`numpy.ndarray`): A 2d array containing radial distance measured in degrees from 
-            the centre of the model to be inserted. The output map will have the same dimensions and pixel
-            scale (see nemoCython.makeDegreesDistanceMap).
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
+        wcs (:obj:`astWCS.WCS`): An astWCS object.
+        beam (:obj:`str` or :obj:`signals.BeamProfile`): Either the file name of the text file that describes
+            the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
+            no beam convolution is applied.
+        RADeg: If None, the signal will be inserted at the center of the generated map.
+        decDeg: If None, the signal will be inserted at the center of the generated map.
         GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows 
             Arnaud et al. 2010). If GNFWParams = 'default', then the default parameters as listed in 
             gnfw.py are used, i.e., GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905, 
@@ -605,8 +636,7 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
             Not needed for generating filter kernels.
         maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done, 
             for optimization purposes.
-        convolveWithBeam (bool, optional): If False, no beam convolution is done (it can be quicker to apply
-            beam convolution over a whole source-injected map rather than per object).
+        convolveWithBeam (bool, optional): If False, no beam convolution is done.
     
     Returns:
         signalMap (:obj:`np.ndarray`).
@@ -617,78 +647,100 @@ def makeArnaudModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'defau
         
     """
 
+    #----
+    # Old
     # Making the 1d profile itself is the slowest part (~1 sec)
-    signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
+    #t0=time.time()
+    #signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
+    #tckP=signalDict['tckP']
+
+    ## Make cluster map (unit-normalised profile)
+    #rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+    #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+    #if amplitude is not None:
+        #profile1d=profile1d*amplitude
+    #r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+    #signalMap=r2p(degreesMap)
+    
+    #if convolveWithBeam == True:
+        #signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+    #t1=time.time()
+
+    # New - using Sigurd object painter
+    signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams, cosmoModel = cosmoModel)
     tckP=signalDict['tckP']
-    
-    # Make cluster map (unit-normalised profile)
-    rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-    profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-    if amplitude is not None:
-        profile1d=profile1d*amplitude
-    r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    signalMap=r2p(degreesMap)
-    
-    if convolveWithBeam == True:        
-        signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
-    
+    return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
+                           amplitude = amplitude, maxSizeDeg = maxSizeDeg,
+                           convolveWithBeam = convolveWithBeam)
+
     return signalMap
 
 #------------------------------------------------------------------------------------------------------------
-def makeBattagliaModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'default', amplitude = None, 
-                                 maxSizeDeg = 15.0, convolveWithBeam = True):
+def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,
+                                GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,
+                                convolveWithBeam = True, cosmoModel = None):
     """Makes a 2d signal only map containing a Battaglia+2012 model cluster (taking into account the redshift
     evolution described in Table 1 and equation 11 there).
-    
+
     Args:
         z (float): Redshift; used for setting angular size.
         M500 (float): Mass within R500, defined with respect to critical density; units are solar masses.
-        degreesMap (:obj:`numpy.ndarray`): A 2d array containing radial distance measured in degrees from 
-            the centre of the model to be inserted. The output map will have the same dimensions and pixel
-            scale (see nemoCython.makeDegreesDistanceMap).
-        GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows 
-            Battaglia et al. 2012). If GNFWParams = 'default', then the default parameters as listed in 
-            Battaglia et al. 2012 are used, i.e., GNFWParams = {'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49,
-            'c500': 1.408, 'tol': 1e-7, 'npts': 100}. Note that the definitions/sign convention is slightly
-            different in Battaglia+2012 compared to Arnaud+2010 (we follow the latter). 
-            Otherwise, give a dictionary that specifies the wanted values. This 
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
+        wcs (:obj:`astWCS.WCS`): An astWCS object.
+        beam (:obj:`str` or :obj:`signals.BeamProfile`): Either the file name of the text file that describes
+            the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
+            no beam convolution is applied.
+        RADeg: If None, the signal will be inserted at the center of the generated map.
+        decDeg: If None, the signal will be inserted at the center of the generated map.
+        GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows
+            Arnaud et al. 2010). If GNFWParams = 'default', then the default parameters as listed in
+            gnfw.py are used, i.e., GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905,
+            'tol': 1e-7, 'npts': 100}. Otherwise, give a dictionary that specifies the wanted values. This
             would usually be specified using the GNFWParams key in the .yml config used when running nemo
             (see the examples/ directory).
-        amplitude (float, optional): Amplitude of the cluster, i.e., the central decrement (in map units, 
-            e.g., uK), or the central Comptonization parameter (dimensionless), before beam convolution. 
+        amplitude (float, optional): Amplitude of the cluster, i.e., the central decrement (in map units,
+            e.g., uK), or the central Comptonization parameter (dimensionless), before beam convolution.
             Not needed for generating filter kernels.
-        maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done, 
+        maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done,
             for optimization purposes.
-        convolveWithBeam (bool, optional): If False, no beam convolution is done (it can be quicker to apply
-            beam convolution over a whole source-injected map rather than per object).
-    
+        convolveWithBeam (bool, optional): If False, no beam convolution is done.
+
     Returns:
         signalMap (:obj:`np.ndarray`).
 
     Note:
-        The pixel window function is not applied here; use pixell.enmap.apply_window to do that (see 
-        nemo.filters.filterMaps).    
-        
+        The pixel window function is not applied here; use pixell.enmap.apply_window to do that (see
+        nemo.filters.filterMaps).
+
     """
-    
+
     if GNFWParams == 'default':
         # NOTE: These are Table 1 values from Battaglia+2012 for M500c
         GNFWParams={'P0': 7.49, 'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
 
-    # Making the 1d profile itself is the slowest part (~1 sec)
-    signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams)
+    #----
+    # Old
+    ## Making the 1d profile itself is the slowest part (~1 sec)
+    #signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams)
+    #tckP=signalDict['tckP']
+    
+    ## Make cluster map (unit-normalised profile)
+    #rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+    #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+    #if amplitude is not None:
+        #profile1d=profile1d*amplitude
+    #r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+    #signalMap=r2p(degreesMap)
+    
+    #if convolveWithBeam == True:
+        #signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+
+    # New - using Sigurd object painter
+    signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams, cosmoModel = cosmoModel)
     tckP=signalDict['tckP']
-    
-    # Make cluster map (unit-normalised profile)
-    rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-    profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-    if amplitude is not None:
-        profile1d=profile1d*amplitude
-    r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    signalMap=r2p(degreesMap)
-    
-    if convolveWithBeam == True:        
-        signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+    return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
+                           amplitude = amplitude, maxSizeDeg = maxSizeDeg,
+                           convolveWithBeam = convolveWithBeam)
     
     return signalMap
 
@@ -804,7 +856,7 @@ def fitQ(config):
             MRange_wanted.append(M500)         
         MRange=MRange+MRange_wanted
         zRange=zRange+zRange_wanted.tolist()
-        signalMapSizeDeg=10.0
+        signalMapSizeDeg=15.0
     elif zDepQ == 1:
         # On a z grid for evolving profile models (e.g., Battaglia et al. 2012)
         MRange=[ref['params']['M500MSun']]
@@ -824,7 +876,7 @@ def fitQ(config):
                 MRange_wanted.append(M500)
             MRange=MRange+MRange_wanted
             zRange=zRange+([z]*len(MRange_wanted))
-        signalMapSizeDeg=5.0
+        signalMapSizeDeg=15.0
     else:
         raise Exception("valid values for zDepQ are 0 or 1")
             
@@ -860,30 +912,40 @@ def fitQ(config):
             obsFreqGHz=mapDict['obsFreqGHz']
             beamsDict[obsFreqGHz]=mapDict['beamFileName']
         
-        # A bit clunky but gets map pixel scale and shrinks map size we'll use for inserting signals
-        # signalMapSizeDeg set according to lowest z model (see above), using smaller for z dependent to save RAM
-        # (but then have a higher low-z cut where Q will be valid)
+        # Actually measuring Q...
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
-        RADeg, decDeg=wcs.getCentreWCSCoords()                
-        clipDict=astImages.clipImageSectionWCS(extMap, wcs, RADeg, decDeg, signalMapSizeDeg)
-        wcs=clipDict['wcs']
-        shape=clipDict['data'].shape
-        
+        # Uncomment to pad signal maps
+        extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
+        yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
+        xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
+        yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
+        xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
+        extMap=enmap.pad(extMap, (yPad, xPad))
+        h=extMap.wcs.to_header()
+        h.insert(0, ('NAXIS2', extMap.shape[0]))
+        h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
+        wcs=astWCS.WCS(h, mode = 'pyfits')
+        # Set centre coords
+        shape=extMap.shape
+        RADeg, decDeg=wcs.getCentreWCSCoords()
+        x, y=wcs.wcs2pix(RADeg, decDeg)
+
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
         signalMap=np.zeros(shape)
-        degreesMap=np.ones(signalMap.shape, dtype = float)*1e6
-        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, signalMapSizeDeg)
         Q=[]
         QTheta500Arcmin=[]
         Qz=[]
+        #cubeStore={} # For debugging object painting
+        #for obsFreqGHz in list(beamsDict.keys()):
+            #cubeStore[obsFreqGHz]=[]
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
             fSignalMaps=[]
-            y0=2e-4
+            y0=2e-04
             for obsFreqGHz in list(beamsDict.keys()):
                 if mapDict['obsFreqGHz'] is not None:   # Normal case
                     amplitude=maps.convertToDeltaT(y0, obsFreqGHz)
@@ -894,11 +956,12 @@ def fitQ(config):
                 # NOTE: CCL can blow up for some of the extreme masses we try to feed in here
                 # (so we just skip those if it happens)
                 try:
-                    signalMap=makeSignalModelMap(z, M500MSun, degreesMap, wcs, beamsDict[obsFreqGHz], 
-                                                 amplitude = amplitude, convolveWithBeam = True, 
-                                                 GNFWParams = config.parDict['GNFWParams'])
+                    signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
+                                                amplitude = amplitude, convolveWithBeam = True,
+                                                GNFWParams = config.parDict['GNFWParams'])
                 except:
                     continue
+                #cubeStore[obsFreqGHz].append(signalMap)
                 if realSpace == True:
                     signalMaps.append(signalMap)
                 else:
@@ -907,7 +970,11 @@ def fitQ(config):
             # Filter maps with ref kernel
             if len(signalMaps) == len(list(beamsDict.keys())):
                 filteredSignal=filterObj.applyFilter(signalMaps)
-                peakFilteredSignal=filteredSignal.max()
+                mapInterpolator=interpolate.RectBivariateSpline(np.arange(filteredSignal.shape[0]),
+                                                                np.arange(filteredSignal.shape[1]),
+                                                                filteredSignal, kx = 3, ky = 3)
+                peakFilteredSignal=mapInterpolator(y, x)[0][0]
+                #peakFilteredSignal=filteredSignal.max()
                 if peakFilteredSignal not in Q:
                     Q.append(peakFilteredSignal)
                     QTheta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
@@ -931,7 +998,7 @@ def fitQ(config):
         plotSettings.update_rcParams()
         plt.figure(figsize=(9,6.5))
         ax=plt.axes([0.12, 0.11, 0.86, 0.88])
-        for z in [0.05, 0.1, 0.4, 1.0, 2.0]:
+        for z in np.unique(zRange):
             mask=(QTab['z'] == z)
             if mask.sum() > 0:
                 plt.plot(QTab['theta500Arcmin'][mask], QTab['Q'][mask], '.', label = "z = %.2f" % (z))
@@ -948,7 +1015,7 @@ def fitQ(config):
         
         t1=time.time()
         print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
-        del Q, clipDict, filterObj
+        del Q, filterObj #, clipDict
 
     if config.MPIEnabled == True:
         config.comm.barrier()
@@ -1174,23 +1241,24 @@ def calcMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08,
     if y0 > 1e-2:
         raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
             
-    P=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot, 
-                sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power, 
-                applyMFDebiasCorrection = applyMFDebiasCorrection,
-                applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
-                tileName = tileName)
+    P, bestQ=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot,
+                       sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power,
+                       applyMFDebiasCorrection = applyMFDebiasCorrection,
+                       applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
+                       tileName = tileName, returnQ = True)
     
     M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     
     label=mockSurvey.mdefLabel
     
-    return {'%s' % (label): M500, '%s_errPlus' % (label): errM500Plus, '%s_errMinus' % (label): errM500Minus}
+    return {'%s' % (label): M500, '%s_errPlus' % (label): errM500Plus, '%s_errMinus' % (label): errM500Minus,
+            'Q': bestQ}
 
 #------------------------------------------------------------------------------------------------------------
 def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
               sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, 
               applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False,
-              tileName = None):
+              returnQ = False, tileName = None):
     """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
     et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
@@ -1280,6 +1348,10 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
     P=np.sum(PArr, axis = 0)
     P=P/np.trapz(P, log10Ms)
     
+    # If we want Q corresponding to mass (need more work to add errors if we really want them)
+    PQ=P/np.trapz(P, Qs)
+    fittedQ=Qs[np.argmax(PQ)]
+
     # Reshape to (M, z) grid - use this if use different log10M range to mockSurvey
     #tck=interpolate.splrep(log10Ms, P)
     #P=interpolate.splev(mockSurvey.log10M, tck, ext = 1)
@@ -1292,8 +1364,11 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
             P2D[zMask]=PArr
         P=P2D/P2D.sum()
         #astImages.saveFITS("test.fits", P.transpose(), None)
-        
-    return P
+
+    if returnQ == True:
+        return P, fittedQ
+    else:
+        return P
 
 #------------------------------------------------------------------------------------------------------------
 # Mass conversion routines
@@ -1351,6 +1426,36 @@ def meanDensity(z):
     return rho_mean  
 
 #------------------------------------------------------------------------------------------------------------
+def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel):
+    """Convert some mass at some z defined using MDef1 into a mass defined according to MDef2.
+
+    Args:
+        mass (float): Halo mass in MSun.
+        z (float): Redshift of the halo.
+        MDef1 (`obj`:ccl.halos.MassDef): CCL halo mass definition you want to convert from.
+        MDef2 (`obj`:ccl.halos.MassDef): CCL halo mass definition you want to convert to.
+
+    """
+
+    tolerance=1e-5
+    scaleFactor=3.0
+    ratio=1e6
+    count=0
+    try:
+        massX=MDef1.translate_mass(cosmoModel, mass, 1/(1+z), MDef2)
+    except:
+        while abs(1.0-ratio) > tolerance:
+            testMass=MDef2.translate_mass(cosmoModel, scaleFactor*mass, 1/(1+z), MDef1)
+            ratio=mass/testMass
+            scaleFactor=scaleFactor*ratio
+            count=count+1
+            if count > 10:
+                raise Exception("MDef1 -> MDef2 mass conversion didn't converge quickly enough")
+        massX=scaleFactor*mass
+
+    return massX
+
+#------------------------------------------------------------------------------------------------------------
 def M500cToMdef(M500c, z, massDef, cosmoModel):
     """Convert M500c to some other mass definition.
     
@@ -1358,23 +1463,7 @@ def M500cToMdef(M500c, z, massDef, cosmoModel):
     
     """
 
-    M500cDef=ccl.halos.MassDef(500, "critical")
-
-    tolerance=1e-5
-    scaleFactor=3.0
-    ratio=1e6
-    count=0
-    while abs(1.0-ratio) > tolerance:
-        testM500c=massDef.translate_mass(cosmoModel, scaleFactor*M500c, 1/(1+z), M500cDef)
-        ratio=M500c/testM500c
-        scaleFactor=scaleFactor*ratio
-        count=count+1
-        if count > 10:
-            raise Exception("M500c -> massDef conversion didn't converge quickly enough")
-        
-    massX=scaleFactor*M500c
-    
-    return massX
+    return MDef1ToMDef2(M500c, z, ccl.halos.MassDef(500, "critical"), massDef, cosmoModel)
 
 #------------------------------------------------------------------------------------------------------------
 def convertM200mToM500c(M200m, z):
