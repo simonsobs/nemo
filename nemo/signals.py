@@ -676,60 +676,71 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     return signalMap
 
 #------------------------------------------------------------------------------------------------------------
-def makeBattagliaModelSignalMap(z, M500, degreesMap, wcs, beam, GNFWParams = 'default', amplitude = None, 
-                                 maxSizeDeg = 15.0, convolveWithBeam = True):
+def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,
+                                GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,
+                                convolveWithBeam = True, cosmoModel = None):
     """Makes a 2d signal only map containing a Battaglia+2012 model cluster (taking into account the redshift
     evolution described in Table 1 and equation 11 there).
-    
+
     Args:
         z (float): Redshift; used for setting angular size.
         M500 (float): Mass within R500, defined with respect to critical density; units are solar masses.
-        degreesMap (:obj:`numpy.ndarray`): A 2d array containing radial distance measured in degrees from 
-            the centre of the model to be inserted. The output map will have the same dimensions and pixel
-            scale (see nemoCython.makeDegreesDistanceMap).
-        GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows 
-            Battaglia et al. 2012). If GNFWParams = 'default', then the default parameters as listed in 
-            Battaglia et al. 2012 are used, i.e., GNFWParams = {'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49,
-            'c500': 1.408, 'tol': 1e-7, 'npts': 100}. Note that the definitions/sign convention is slightly
-            different in Battaglia+2012 compared to Arnaud+2010 (we follow the latter). 
-            Otherwise, give a dictionary that specifies the wanted values. This 
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
+        wcs (:obj:`astWCS.WCS`): An astWCS object.
+        beam (:obj:`str` or :obj:`signals.BeamProfile`): Either the file name of the text file that describes
+            the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
+            no beam convolution is applied.
+        RADeg: If None, the signal will be inserted at the center of the generated map.
+        decDeg: If None, the signal will be inserted at the center of the generated map.
+        GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows
+            Arnaud et al. 2010). If GNFWParams = 'default', then the default parameters as listed in
+            gnfw.py are used, i.e., GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905,
+            'tol': 1e-7, 'npts': 100}. Otherwise, give a dictionary that specifies the wanted values. This
             would usually be specified using the GNFWParams key in the .yml config used when running nemo
             (see the examples/ directory).
-        amplitude (float, optional): Amplitude of the cluster, i.e., the central decrement (in map units, 
-            e.g., uK), or the central Comptonization parameter (dimensionless), before beam convolution. 
+        amplitude (float, optional): Amplitude of the cluster, i.e., the central decrement (in map units,
+            e.g., uK), or the central Comptonization parameter (dimensionless), before beam convolution.
             Not needed for generating filter kernels.
-        maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done, 
+        maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done,
             for optimization purposes.
-        convolveWithBeam (bool, optional): If False, no beam convolution is done (it can be quicker to apply
-            beam convolution over a whole source-injected map rather than per object).
-    
+        convolveWithBeam (bool, optional): If False, no beam convolution is done.
+
     Returns:
         signalMap (:obj:`np.ndarray`).
 
     Note:
-        The pixel window function is not applied here; use pixell.enmap.apply_window to do that (see 
-        nemo.filters.filterMaps).    
-        
+        The pixel window function is not applied here; use pixell.enmap.apply_window to do that (see
+        nemo.filters.filterMaps).
+
     """
-    
+
     if GNFWParams == 'default':
         # NOTE: These are Table 1 values from Battaglia+2012 for M500c
         GNFWParams={'P0': 7.49, 'gamma': 0.3, 'alpha': 1.0, 'beta': 4.49, 'c500': 1.408, 'tol': 1e-7, 'npts': 100}
 
-    # Making the 1d profile itself is the slowest part (~1 sec)
-    signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams)
+    #----
+    # Old
+    ## Making the 1d profile itself is the slowest part (~1 sec)
+    #signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams)
+    #tckP=signalDict['tckP']
+    
+    ## Make cluster map (unit-normalised profile)
+    #rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+    #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+    #if amplitude is not None:
+        #profile1d=profile1d*amplitude
+    #r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+    #signalMap=r2p(degreesMap)
+    
+    #if convolveWithBeam == True:
+        #signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+
+    # New - using Sigurd object painter
+    signalDict=makeBattagliaModelProfile(z, M500, GNFWParams = GNFWParams, cosmoModel = cosmoModel)
     tckP=signalDict['tckP']
-    
-    # Make cluster map (unit-normalised profile)
-    rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-    profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-    if amplitude is not None:
-        profile1d=profile1d*amplitude
-    r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    signalMap=r2p(degreesMap)
-    
-    if convolveWithBeam == True:        
-        signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+    return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
+                           amplitude = amplitude, maxSizeDeg = maxSizeDeg,
+                           convolveWithBeam = convolveWithBeam)
     
     return signalMap
 

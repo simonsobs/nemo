@@ -1238,12 +1238,14 @@ class BattagliaModelFilter(MapFilter):
 
     """
     
-    def makeSignalTemplateMap(self, beamFileName, amplitude = None):        
-        signalMap=signals.makeBattagliaModelSignalMap(self.params['z'], self.params['M500MSun'], 
-                                                   np.degrees(self.radiansMap),
-                                                   self.wcs, beamFileName, 
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
+        RADeg, decDeg=self.wcs.getCentreWCSCoords()
+        signalMap=signals.makeBattagliaModelSignalMap(self.params['z'], self.params['M500MSun'],
+                                                   self.shape, self.wcs, beam = beamFileName,
+                                                   RADeg = RADeg, decDeg = decDeg,
                                                    GNFWParams = self.params['GNFWParams'],
-                                                   amplitude = amplitude)
+                                                   amplitude = amplitude,
+                                                   convolveWithBeam = True)
         
         return signalMap
     
