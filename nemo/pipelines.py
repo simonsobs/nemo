@@ -284,7 +284,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             print("... gathered catalogs")
             toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
             for collectedTab in optimalCatalogList:
-                if type(collectedTab) == astropy.table.table.Table:
+                if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
                     toStack.append(collectedTab)
             optimalCatalog=atpy.vstack(toStack)
             # Strip out duplicates (this is necessary when run in tileDir mode under MPI)

@@ -36,23 +36,6 @@ nemoMass
    YAML-format configuration file.
 
 
-.. _nemoSelFnCommand:
-   
-nemoSelFn
----------
-   
-.. argparse::
-   :filename: ../bin/nemoSelFn
-   :func: makeParser
-   :prog: nemoSelFn
-
-   :program:`nemoSelFn` calculates mass completeness summary statistics and generates
-   files needed to compute the selection function from the results of a :program:`nemo`
-   cluster detection run. Usually this command is not needed as :program:`nemo` can be
-   set to do this task by setting `calcSelFn: True` in the YAML-format
-   configuration file.
-
-
 .. _nemoMockCommand:
 
 nemoMock

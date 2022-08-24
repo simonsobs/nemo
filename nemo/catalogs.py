@@ -183,7 +183,7 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
         mergedCatalog.sort(['RADeg', 'decDeg'])
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
-        mergedCatalog=atpy.Table(names=('name', 'RADeg', 'decDeg', 'SNR'))
+        mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
     
     return mergedCatalog
 
