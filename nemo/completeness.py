@@ -23,6 +23,7 @@ from . import maps
 from . import MockSurvey
 from . import plotSettings
 from . import startUp
+from . import catalogs
 from collections import OrderedDict
 import colorcet
 import types
@@ -58,7 +59,7 @@ class SelFn(object):
         configFileName (:obj:`str`, optional): Path to a Nemo configuration file. If not given, this
             will be read from ``selFnDir/config.yml``, which is the config file for the 
             :ref:`nemoCommand` run that produced the ``selFn`` directory.
-        footprintLabel (:obj:`str`, optional): Use this to specify a footprint, if any are defined in the
+        footprint (:obj:`str`, optional): Use this to specify a footprint, if any are defined in the
             Nemo config used to produce the ``selFn`` dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default
             value of ``None`` uses the whole survey footprint.
         zStep (:obj:`float`, optional): Use this to set the binning in redshift for completeness
@@ -94,7 +95,7 @@ class SelFn(object):
     Attributes:
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection cut
             (labelled as `fixed_SNR` in the catalogs produced by :ref:`nemoCommand`).
-        footprintLabel (:obj:`str`): Use this to specify a footprint, if any are defined in the Nemo config
+        footprint (:obj:`str`): Use this to specify a footprint, if any are defined in the Nemo config
             used to produce the ``selFn`` dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default of ``None``
             uses the whole survey footprint.
         applyMFDebiasCorrection (:obj:`bool`): Set to `False` to disable the Eddington bias correction of
@@ -129,7 +130,7 @@ class SelFn(object):
             
     """
         
-    def __init__(self, selFnDir, SNRCut, configFileName = None, footprintLabel = None, zStep = 0.01,
+    def __init__(self, selFnDir, SNRCut, configFileName = None, footprint = None, zStep = 0.01,
                  zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
@@ -137,7 +138,9 @@ class SelFn(object):
                  QSource = 'fit'):
         
         self.SNRCut=SNRCut
-        self.footprintLabel=footprintLabel
+        if footprint == 'full':
+            footprint=None
+        self.footprint=footprint
         self.downsampleRMS=downsampleRMS
         self.applyMFDebiasCorrection=applyMFDebiasCorrection
         self.applyRelativisticCorrection=applyRelativisticCorrection
@@ -167,14 +170,14 @@ class SelFn(object):
         self.photFilterLabel=self._config.parDict['photFilter']
             
         # Check that any given footprint is defined - if not, give a useful error message
-        if footprintLabel is not None:
+        if footprint is not None:
             if 'selFnFootprints' not in parDict.keys():
                 raise Exception("No footprints defined in .yml config file")
             else:
                 labelsList=[]
                 for footprintDict in parDict['selFnFootprints']:
                     labelsList.append(footprintDict['label'])
-                if footprintLabel not in labelsList:
+                if footprint not in labelsList:
                     raise Exception("Footprint '%s' not found in selFnFootprints - check .yml config file" % (footprintLabel))
         
         # Load area masks
@@ -210,8 +213,8 @@ class SelFn(object):
             # We should be able to do everything (except clustering) with this
             # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
             RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
-            if footprintLabel is not None:
-                RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+            if footprint is not None:
+                RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprint))
             if os.path.exists(RMSTabFileName) == False:
                 raise FootprintError
             self.RMSTab=atpy.Table().read(RMSTabFileName)
@@ -293,7 +296,24 @@ class SelFn(object):
             row['decMin']=min([dec0, dec1])
             row['decMax']=max([dec0, dec1])
             
-            
+
+    def cutCatalogToSurveyArea(self, catalog):
+        """Checks that the coordinates of objects in the given catalog are within the survey area
+        (taking into account a footprint, if specified) and cuts the catalog accordingly.
+
+        Args:
+            catalog (:obj:`astropy.table.Table`): The input catalog, as an astropy Table.
+
+        Returns:
+            A catalog (:obj:`astropy.table.Table`), cut to the survey area.
+
+        """
+
+        RAKey, decKey=catalogs.getTableRADecKeys(catalog)
+        mask=self.checkCoordsInAreaMask(catalog[RAKey], catalog[decKey])
+        return catalog[mask]
+
+
     def checkCoordsInAreaMask(self, RADeg, decDeg):
         """Checks if the given RA, dec coords are in valid regions of the map.
         
@@ -1063,7 +1083,7 @@ def completenessByFootprint(config):
 
         try:
             selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
-                        footprintLabel = footprintLabel, zStep = 0.1,
+                        footprint = footprintLabel, zStep = 0.1,
                         enableDrawSample = False, downsampleRMS = False,
                         applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
                         delta = config.parDict['massOptions']['delta'],
@@ -1401,7 +1421,7 @@ def makeMassLimitMapsAndPlots(config):
     """
 
     selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
-                footprintLabel = None, zStep = 0.1, setUpAreaMask = True,
+                footprint = None, zStep = 0.1, setUpAreaMask = True,
                 enableDrawSample = False, downsampleRMS = False,
                 applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
                 delta = config.parDict['massOptions']['delta'],

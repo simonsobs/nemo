@@ -173,7 +173,8 @@ def parseConfigFile(parDictFileName, verbose = False):
     
     # To aid user friendliness - spot any out-of-date / removed / renamed parameters here
     # Use None for those that are totally removed
-    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None}
+    oldKeyMap={'makeTileDir': 'useTiling', 'tileDefLabel': None, 'twoPass': None,
+               'clusterInjectionModels': 'sourceInjectionModels'}
     for k in oldKeyMap.keys():
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]

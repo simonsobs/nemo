@@ -15,7 +15,9 @@ from astLib import *
 from nemo import startUp, maps, catalogs, signals
 import argparse
 import astropy.io.fits as pyfits
-import pyccl as ccl
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 
 #------------------------------------------------------------------------------------------------------------
 def makeParser():

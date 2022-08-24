@@ -31,7 +31,9 @@ from nemo import photometry
 from nemo import startUp
 from nemo import completeness
 from nemo import pipelines
-import pyccl as ccl
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 import argparse
 import astropy.io.fits as pyfits
 import time

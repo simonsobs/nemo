@@ -1774,6 +1774,8 @@ def sourceInjectionTest(config):
     
     # Run each scale / model and then collect everything into one table afterwards
     # NOTE: These dictionaries contain recovered measurements from running the finder
+    RADegDict={}
+    decDegDict={}
     SNRDict={}
     rArcminDict={}
     inFluxDict={}
@@ -1786,6 +1788,8 @@ def sourceInjectionTest(config):
     for sourceInjectionModel in sourceInjectionModelList:
         modelCount=modelCount+1
         print(">>> Source injection model: %d/%d" % (modelCount, len(sourceInjectionModelList)))
+        RADegDict[sourceInjectionModel['label']]=[]
+        decDegDict[sourceInjectionModel['label']]=[]
         SNRDict[sourceInjectionModel['label']]=[]
         rArcminDict[sourceInjectionModel['label']]=[]
         inFluxDict[sourceInjectionModel['label']]=[]
@@ -1915,6 +1919,8 @@ def sourceInjectionTest(config):
                             print("... Warning: %s ..." % (msg))
 
                     # Store everything - analyse later
+                    RADegDict[sourceInjectionModel['label']]=RADegDict[sourceInjectionModel['label']]+x_recCatalog['RADeg'].tolist()
+                    decDegDict[sourceInjectionModel['label']]=decDegDict[sourceInjectionModel['label']]+x_recCatalog['decDeg'].tolist()
                     SNRDict[sourceInjectionModel['label']]=SNRDict[sourceInjectionModel['label']]+x_recCatalog[SNRCol].tolist()
                     rArcminDict[sourceInjectionModel['label']]=rArcminDict[sourceInjectionModel['label']]+(rDeg*60).tolist()
                     inFluxDict[sourceInjectionModel['label']]=inFluxDict[sourceInjectionModel['label']]+x_mockCatalog[fluxCol].tolist()
@@ -1922,6 +1928,8 @@ def sourceInjectionTest(config):
                     noiseLevelDict[sourceInjectionModel['label']]=noiseLevelDict[sourceInjectionModel['label']]+x_recCatalog[noiseLevelCol].tolist()
                     tileNamesDict[sourceInjectionModel['label']]=tileNamesDict[sourceInjectionModel['label']]+x_recCatalog['tileName'].tolist()
 
+        RADegDict[sourceInjectionModel['label']]=np.array(RADegDict[sourceInjectionModel['label']])
+        decDegDict[sourceInjectionModel['label']]=np.array(decDegDict[sourceInjectionModel['label']])
         SNRDict[sourceInjectionModel['label']]=np.array(SNRDict[sourceInjectionModel['label']])
         rArcminDict[sourceInjectionModel['label']]=np.array(rArcminDict[sourceInjectionModel['label']])
         inFluxDict[sourceInjectionModel['label']]=np.array(inFluxDict[sourceInjectionModel['label']])
@@ -1932,6 +1940,8 @@ def sourceInjectionTest(config):
     # Collecting all results into one giant table
     models=[]
     theta500s=[]
+    RAs=[]
+    decs=[]
     SNRs=[]
     rArcmin=[]
     inFlux=[]
@@ -1943,6 +1953,8 @@ def sourceInjectionTest(config):
         if 'theta500Arcmin' in sourceInjectionModel.keys():
             theta500s=theta500s+[sourceInjectionModel['theta500Arcmin']]*len(SNRDict[label])
         models=models+[label]*len(SNRDict[label])
+        RAs=RAs+RADegDict[label].tolist()
+        decs=decs+decDegDict[label].tolist()
         SNRs=SNRs+SNRDict[label].tolist()
         rArcmin=rArcmin+rArcminDict[label].tolist()
         inFlux=inFlux+inFluxDict[label].tolist()
@@ -1950,6 +1962,8 @@ def sourceInjectionTest(config):
         noiseLevel=noiseLevel+noiseLevelDict[label].tolist()
         tileNames=tileNames+tileNamesDict[label].tolist()
     resultsTable=atpy.Table()
+    resultsTable.add_column(atpy.Column(RAs, 'RADeg'))
+    resultsTable.add_column(atpy.Column(decs, 'decDeg'))
     resultsTable.add_column(atpy.Column(models, 'sourceInjectionModel'))
     if len(theta500s) == len(resultsTable):
         resultsTable.add_column(atpy.Column(theta500s, 'theta500Arcmin'))
