@@ -58,13 +58,13 @@ selFnOptions: {fixedSNRCut: 5.0,
                numIterations: 1000, 
                massLimitMaps: [{z: 0.5}]}
                
-selFnFootprints: 
-    - {label: "HSC",
-       maskList: ["HSCCheckAndSelFn/s19a_fdfc_CAR_contarea_ziy-gt-5.fits"]}
-    - {label: "KiDS",
-       maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
-    - {label: "DES",
-       maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+#selFnFootprints:
+    #- {label: "HSC",
+       #maskList: ["HSCCheckAndSelFn/s19a_fdfc_CAR_contarea_ziy-gt-5.fits"]}
+    #- {label: "KiDS",
+       #maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
+    #- {label: "DES",
+       #maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
 
 # Filter definitions:
 # allFilters is a dictionary of parameters that will be copied into all mapFilters

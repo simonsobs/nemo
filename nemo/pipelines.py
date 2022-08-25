@@ -30,8 +30,9 @@ from . import MockSurvey
 import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
-def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, measureFluxes = True,
-                              invertMap = False, verbose = True, writeAreaMask = False, writeFlagMask = False):
+def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
+                              measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+                              writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -40,6 +41,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
             output filtered maps and catalogs are written.
         useCachedFilters (:obj:`bool`, optional): If True, and previously made filters are found, they will be
             read from disk, rather than re-calculated (used by source injection simulations).
+        useCachedRMSMap (:obj:`bool`, optional): If True, use the previously estimated noise map, which has
+            been saved to disk. This is only useful for source injection simulations.
         measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
             detected objects.
         invertMap (bool, optional): If True, multiply all maps by -1; needed by 
@@ -91,8 +94,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     else:
         # Default single pass behaviour (also used by source injection tests)
         catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, useCachedFilters = useCachedFilters,
-                                           measureFluxes = measureFluxes, invertMap = invertMap,
-                                           verbose = verbose,
+                                           useCachedRMSMap = useCachedRMSMap, measureFluxes = measureFluxes,
+                                           invertMap = invertMap, verbose = verbose,
                                            writeAreaMask = writeAreaMask, writeFlagMask = writeFlagMask)
 
     if verbose == True and config.rank == 0:
@@ -101,9 +104,9 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, measureFluxes = True,
-                               invertMap = False, verbose = True,
-                               writeAreaMask = False, writeFlagMask = False):
+def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
+                               measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+                               writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -178,6 +181,13 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                                                diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
                                                verbose = True, undoPixelWindow = True,
                                                useCachedFilter = useCachedFilters)
+
+            if useCachedRMSMap == True and photFilter is not None: # i.e., only an option for cluster insertion sims
+                RMSMap, wcs=completeness.loadRMSMap(tileName, config.selFnDir, photFilter)
+                validMask=np.greater(RMSMap, 0)
+                SNMap=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']
+                SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
+                filteredMapDict['SNMap']=SNMap
 
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
                 filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
@@ -274,7 +284,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             print("... gathered catalogs")
             toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
             for collectedTab in optimalCatalogList:
-                if type(collectedTab) == astropy.table.table.Table:
+                if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
                     toStack.append(collectedTab)
             optimalCatalog=atpy.vstack(toStack)
             # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
@@ -296,37 +306,41 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
                                               config.origWCS, compressionType = 'PLIO_1')
 
+    # Ensure we leave together, otherwise files we need later may not be written yet by rank 0
+    if config.MPIEnabled == True:
+        config.comm.barrier()
+
     del areaMaskDict, flagMaskDict, catalogDict
 
     return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------
-def makeSelFnCollection(config, mockSurvey):
+def makeRMSTables(config):
     """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
-    in the config file, plus the full survey mask), that contain information on noise levels, area covered, 
+    in the config file, plus the full survey mask), that contain information on noise levels and area covered,
     and completeness. 
-    
-    Returns a dictionary (keys: 'full' - corresponding to whole survey, plus other keys named by footprint).
-    
+
     """
     
     # Q varies across tiles
-    Q=signals.QFit(config)
+    #Q=signals.QFit(config)
         
     # We only care about the filter used for fixed_ columns
+    if config.parDict['photFilter'] is None:
+        return None
     photFilterLabel=config.parDict['photFilter']
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             break
 
     # We'll only calculate completeness for this given selection
-    SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
+    #SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
 
     # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
-    if 'numDraws' not in config.parDict['selFnOptions'].keys():
-        config.parDict['selFnOptions']['numDraws']=2000000
-    if 'numIterations' not in config.parDict['selFnOptions'].keys():
-        config.parDict['selFnOptions']['numIterations']=100
+    #if 'numDraws' not in config.parDict['selFnOptions'].keys():
+        #config.parDict['selFnOptions']['numDraws']=2000000
+    #if 'numIterations' not in config.parDict['selFnOptions'].keys():
+        #config.parDict['selFnOptions']['numIterations']=100
     
     # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
     footprintsList=[]
@@ -341,23 +355,23 @@ def makeSelFnCollection(config, mockSurvey):
 
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
-        compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q, 
-                                           numDraws = config.parDict['selFnOptions']['numDraws'],
-                                           numIterations = config.parDict['selFnOptions']['numIterations'],
-                                           method = config.parDict['selFnOptions']['method'])
+        #compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
+                                           #numDraws = config.parDict['selFnOptions']['numDraws'],
+                                           #numIterations = config.parDict['selFnOptions']['numIterations'],
+                                           #method = config.parDict['selFnOptions']['method'],
+                                           #verbose = True)
         selFnDict={'tileName': tileName,
                    'RMSTab': RMSTab,
-                   'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
-                   'compMz': compMz}
+                   'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
         selFnCollection['full'].append(selFnDict)
 
         # Optional mass-limit maps [no footprint option here as yet]
-        if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
-            for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                completeness.makeMassLimitMap(RMSTab, SNRCut, massLimitDict['z'],
-                                              tileName, photFilterLabel, mockSurvey,
-                                              config.parDict['massOptions'], Q, config.diagnosticsDir,
-                                              config.selFnDir)
+        #if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
+            #for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
+                #completeness.makeMassLimitMap(RMSTab, SNRCut, massLimitDict['z'],
+                                              #tileName, photFilterLabel, mockSurvey,
+                                              #config.parDict['massOptions'], Q, config.diagnosticsDir,
+                                              #config.selFnDir)
 
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
@@ -367,21 +381,20 @@ def makeSelFnCollection(config, mockSurvey):
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
                                               footprintLabel = footprintDict['label'])
-                compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
-                                                   numDraws = config.parDict['selFnOptions']['numDraws'],
-                                                   numIterations = config.parDict['selFnOptions']['numIterations'],
-                                                   method = config.parDict['selFnOptions']['method'])
+                #compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
+                                                   #numDraws = config.parDict['selFnOptions']['numDraws'],
+                                                   #numIterations = config.parDict['selFnOptions']['numIterations'],
+                                                   #method = config.parDict['selFnOptions']['method'])
                 selFnDict={'tileName': tileName,
                            'RMSTab': RMSTab,
-                           'tileAreaDeg2': RMSTab['areaDeg2'].sum(),
-                           'compMz': compMz}
+                           'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
                 selFnCollection[footprintDict['label']].append(selFnDict)
 
     if config.MPIEnabled == True:
         config.comm.barrier()
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank == 0:
-            print("... gathered selection function results")
+            print("... gathered RMS tables")
             all_selFnCollection={'full': []}
             for key in selFnCollection.keys():
                 if key not in all_selFnCollection.keys():
@@ -416,12 +429,10 @@ def makeSelFnCollection(config, mockSurvey):
                 tab.sort('y0RMS')
                 tab.meta['NEMOVER']=nemo.__version__
                 tab.write(outFileName, overwrite = True)
-
-    return selFnCollection
                 
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True, 
-                           writeInfo = True, verbose = True):
+                           writeInfo = True, verbose = True, QSource = 'fit'):
     """Generate a mock cluster catalog using the given nemo config.
     
     Returns:
@@ -448,9 +459,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
         applyNoiseScatter=True
     if verbose: print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
     
-    # Q varies across tiles
-    Q=signals.QFit(config)
-    
+    Q=signals.QFit(QSource = QSource, selFnDir = config.selFnDir, tileNames = config.allTileNames)
+
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
     for filterDict in config.parDict['mapFilters']:
@@ -541,6 +551,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, 
                                      delta = delta, rhoType = rhoType, enableDrawSample = True)
     print("... mock survey parameters:")
+    print("    QSource = %s" % (QSource))
     for key in defCosmo.keys():
         print("    %s = %s" % (key, str(massOptions[key])))
     for key in ['tenToA0', 'B0', 'Mpivot', 'sigma_int']:
@@ -577,6 +588,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             #colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c']
             #colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
             mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
+            tab.meta['QSOURCE']=QSource
             catalogs.writeCatalog(tab, mockCatalogFileName)
             catalogs.writeCatalog(tab, mockCatalogFileName.replace(".csv", ".fits"))
 
@@ -595,6 +607,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                 tab=atpy.vstack([tab, stackTab])
         outFileName=config.mocksDir+os.path.sep+"mockCatalog_combined.fits"
         tab.meta['NEMOVER']=nemo.__version__
+        tab.meta['QSOURCE']=QSource
         tab.write(outFileName, overwrite = True)
     
     # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)

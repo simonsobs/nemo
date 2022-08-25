@@ -52,6 +52,9 @@ def makeParser():
                         #HSC, KiDS (default: full).""", default = None)
     parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="Include only clusters with\
                         fixed_SNR > this value.", default = 4.0, type = float)
+    parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
+                        'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
+                        results.", default = 'fit')
     #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         #want to use this, run with e.g., mpiexec -np 4 nemoMock selFnDir mocksDir -M""", 
                         #default = False)
@@ -73,6 +76,9 @@ if __name__ == '__main__':
     MPIEnabled=False
     #zStep=args.zStep
     #footprintLabel=args.footprint
+    QSource=args.QSource
+    if QSource not in ['fit', 'injection']:
+        raise Exception("QSource must be either 'fit' or 'injection'")
 
     if configFileName is None:
         configFileName=args.selFnDir+os.path.sep+"config.yml"
@@ -92,4 +98,4 @@ if __name__ == '__main__':
         raise Exception("NemoMock needs to be adapted for MPI if making multiple mocks - not done yet.")
 
     pipelines.makeMockClusterCatalog(config, numMocksToMake = numMocksToMake, combineMocks = combineMocks,
-                                     writeCatalogs = True, verbose = True)
+                                     writeCatalogs = True, verbose = True, QSource = QSource)

@@ -12,11 +12,12 @@ import numpy as np
 import astropy.table as atpy
 import astropy.io.fits as pyfits
 from astLib import *
-from nemo import startUp
-from nemo import maps
-from nemo import catalogs
+from nemo import startUp, maps, catalogs, signals
 import argparse
 import astropy.io.fits as pyfits
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 
 #------------------------------------------------------------------------------------------------------------
 def makeParser():
@@ -26,7 +27,10 @@ def makeParser():
                         or 'pointsources-N' (to generate a test catalog of N point sources that will be\
                         inserted into the map, e.g., pointsources-1000 will insert 1000 sources). If\
                         the latter, the catalog will be written to outputFileName_inputCatalog.fits\
-                        (with the .fits extension stripped from outputFileName).")
+                        (with the .fits extension stripped from outputFileName). If the former,\
+                        cosmological parameters may be specified in the FITS header using the\
+                        OM0, OB0, H0, SIGMA8, NS keywords (used only for cluster models at the\
+                        moment).")
     parser.add_argument("maskFileName", help = "A FITS image file, containing a mask of the desired sky\
                         area. Non-zero values in the mask are used to define tiles (typically 10 x 5 deg),\
                         which are processed in parallel if MPI is enabled (see -M switch). The output sky\
@@ -58,9 +62,18 @@ def makeParser():
                         help = "Random seed used only for generating (optional) cosmic microwave\
                         background or source catalog realizations (i.e., the seed is not used for\
                         noise realizations).")
-    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", type = float, default = 0.0,
+    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", default = 0.0,
                         help = "If a random cosmic microwave background realization had been added, add\
-                        uniform per-pixel white noise at the specified level.")
+                        white noise. If a number is given, uniform per-pixel white noise at the specified\
+                        level is added. Otherwise, a path to an inverse variance map can be given (must\
+                        have the same pixelization as the supplied mask).")
+    parser.add_argument("-A", "--add-map", dest = "addMap", default = None,
+                        help = "Path to a FITS map (same pixelization as the input mask) that will be\
+                        added to the output sim map. Useful if you want to add extra pre-computed signals\
+                        to the map (e.g., Galactic dust, large scale noise components etc.). Amplitudes\
+                        can be modified with the --add-map-scaling parameter.")
+    parser.add_argument("--add-map-scaling", dest = "addMapScaling", default = 1.0,
+                        help = "If given, multiply the map pointed to by --add-map by this factor.")
     parser.add_argument("--split-noise-test", dest = "splitNoiseTest", action = "store_true",
                         help = "If set, and -N and -C switches are used, split the map into two\
                         sections, with the white noise level doubled in one half of the map.")
@@ -87,13 +100,16 @@ def makeParser():
 #------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
 
-    parser = makeParser()
-    args = parser.parse_args()
+    parser=makeParser()
+    args=parser.parse_args()
     
     if args.noStrictMPIExceptions == True:
         strictMPIExceptions=False
     else:
         strictMPIExceptions=True
+
+    if args.addMap is not None:
+        assert(os.path.exists(args.addMap) == True)
 
     # Create a stub config (then we can use existing start-up stuff to dish out the tiles)
     print(">>> Setting up ...")
@@ -137,7 +153,22 @@ if __name__ == '__main__':
                 tab=atpy.Table(names = ('RADeg', 'decDeg'))
     else:
         tab=atpy.Table().read(args.catalog)
-    
+
+    # Optionally override the fiducial cosmology (only useful for cluster sims)
+    keywords=['OM0', 'OB0', 'H0', 'SIGMA8', 'NS']
+    keyCount=0
+    for key in keywords:
+        if key in tab.meta.keys():
+            keyCount=keyCount+1
+    if keyCount == len(keywords):
+        print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
+        cosmoModel=ccl.Cosmology(Omega_c = tab.meta['OM0']-tab.meta['OB0'], Omega_b = tab.meta['OB0'],
+                                 h = 0.01*tab.meta['H0'], sigma8 = tab.meta['SIGMA8'], n_s = tab.meta['NS'],
+                                 transfer_function = signals.transferFunction)
+    else:
+        print(">>> Using fiducial cosmology")
+        cosmoModel=signals.fiducialCosmoModel
+
     # Optional signal scaling (useful for diff alpha sims)
     if 'y_c' in tab.keys():
         tab['y_c']=tab['y_c']*args.scale
@@ -151,11 +182,11 @@ if __name__ == '__main__':
                config.tileCoordsDict[tileName]['clippedSection'][1]-config.tileCoordsDict[tileName]['clippedSection'][0])
         wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
         try:
-            modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName, 
+            modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName,
                                                      obsFreqGHz = args.obsFreqGHz,
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
                                                      TCMBAlpha = args.TCMBAlpha,
-                                                     profile = args.profile)
+                                                     profile = args.profile, cosmoModel = cosmoModel)
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
@@ -186,6 +217,17 @@ if __name__ == '__main__':
                 for tileName in tileModelDict.keys():
                     modelsDict[tileName]=tileModelDict[tileName]
 
+    # Noise - if number, uniform white noise level, if string, a path to ivar map
+    try:
+        addWhiteNoise=float(args.addWhiteNoise)
+    except:
+        with pyfits.open(args.addWhiteNoise) as img:
+            sigma=img[0].data[0]
+        valid=sigma > 1e-7
+        sigma[valid]=np.sqrt(1/sigma[valid])
+        #sigma=np.random.normal(0, sigma)#*noiseBoost # simCMBMap generates noise
+        addWhiteNoise=sigma
+
     # Stitching
     print(">>> Stitching tiles ...")
     if config.rank == 0:
@@ -195,11 +237,13 @@ if __name__ == '__main__':
             print("... %s ..." % (tileName))
             minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
             if modelsDict[tileName] is not None:
-                d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+modelsDict[tileName]
+                d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+np.array(modelsDict[tileName])
         # Optionally add CMB
         if args.addCMB == True:
+            # Save e.g. tSZ-only map for debugging
+            astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
             shape=(d.shape)
-            d=d+maps.simCMBMap(shape, wcs, noiseLevel = args.addWhiteNoise, beamFileName = args.beamFileName, 
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = addWhiteNoise, beam = args.beamFileName,
                                seed = args.seed)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
@@ -209,4 +253,8 @@ if __name__ == '__main__':
                 weights[:int(d.shape[0]/2)]=weights[:int(d.shape[0]/2)]*2
                 weights=np.power(weights, -2)
                 astImages.saveFITS(args.outputFileName.replace(".fits", ".ivar.fits"), weights, wcs)
+        # Optional add another component (e.g., large scale noise, to start with)
+        if args.addMap is not None:
+            with pyfits.open(args.addMap) as img:
+                d=d+float(args.addMapScaling)*img[0].data
         astImages.saveFITS(args.outputFileName, d, wcs)

@@ -550,7 +550,7 @@ class MatchedFilter(MapFilter):
                     if RMS < 10.0:  # Minimum level to stop this blowing up
                         RMS=10.0
                     # Seeds fixed so that outputs are the same on repeated runs
-                    cmb=maps.simCMBMap(self.shape, self.wcs, beamFileName = mapDict['beamFileName'], 
+                    cmb=maps.simCMBMap(self.shape, self.wcs, beam = mapDict['beamFileName'],
                                        seed = 3141592654+i, noiseLevel = RMS, fixNoiseSeed = True)
                     fMapsForNoise.append(enmap.fft(enmap.apod(cmb, self.apodPix)))
                 else:
@@ -645,7 +645,6 @@ class MatchedFilter(MapFilter):
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
                 self.signalNorm=y0/filteredSignal.max()
-
                 # For relativistic corrections (see signals module)
                 totalSignal=filteredSignal.flatten()[np.argmax(filteredSignal)]
                 filteredSignalCube=np.real(enmap.ifft(fSignalMaps*self.filt, normalize = False))
@@ -655,7 +654,6 @@ class MatchedFilter(MapFilter):
                     fRelWeight=filteredSignalPlane.flatten()[np.argmax(filteredSignal)]/totalSignal
                     self.fRelWeights[freqGHz]=fRelWeight
                 del fSignalMaps
-                self.signalNorm=y0/filteredSignal.max()
             elif self.params['outputUnits'] == 'uK':
                 #if len(self.unfilteredMapsDictList) > 1:
                     #raise Exception("multi-frequency filtering not currently supported for outputUnits 'uK' (point source finding)")
@@ -678,6 +676,9 @@ class MatchedFilter(MapFilter):
         else:
             print("... loading cached filter")
             self.loadFilter()
+            self.params['saveRMSMap']=False
+            self.params['saveFilter']=False
+            self.params['savePlots']=False
         
         # Apply filter
         filteredMap=self.applyFilter(fMapsToFilter)
@@ -1212,13 +1213,15 @@ class ArnaudModelFilter(MapFilter):
     
     """
     
-    def makeSignalTemplateMap(self, beamFileName, amplitude = None):        
-        signalMap=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'], 
-                                                   np.degrees(self.radiansMap),
-                                                   self.wcs, beamFileName, 
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
+        RADeg, decDeg=self.wcs.getCentreWCSCoords()
+        signalMap=signals.makeArnaudModelSignalMap(self.params['z'], self.params['M500MSun'],
+                                                   self.shape, self.wcs, beam = beamFileName,
+                                                   RADeg = RADeg, decDeg = decDeg,
                                                    GNFWParams = self.params['GNFWParams'],
-                                                   amplitude = amplitude)
-        
+                                                   amplitude = amplitude,
+                                                   convolveWithBeam = True)
+
         return signalMap
 
 #------------------------------------------------------------------------------------------------------------
@@ -1235,12 +1238,14 @@ class BattagliaModelFilter(MapFilter):
 
     """
     
-    def makeSignalTemplateMap(self, beamFileName, amplitude = None):        
-        signalMap=signals.makeBattagliaModelSignalMap(self.params['z'], self.params['M500MSun'], 
-                                                   np.degrees(self.radiansMap),
-                                                   self.wcs, beamFileName, 
+    def makeSignalTemplateMap(self, beamFileName, amplitude = None):
+        RADeg, decDeg=self.wcs.getCentreWCSCoords()
+        signalMap=signals.makeBattagliaModelSignalMap(self.params['z'], self.params['M500MSun'],
+                                                   self.shape, self.wcs, beam = beamFileName,
+                                                   RADeg = RADeg, decDeg = decDeg,
                                                    GNFWParams = self.params['GNFWParams'],
-                                                   amplitude = amplitude)
+                                                   amplitude = amplitude,
+                                                   convolveWithBeam = True)
         
         return signalMap
     
