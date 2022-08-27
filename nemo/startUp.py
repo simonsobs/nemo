@@ -124,7 +124,10 @@ def parseConfigFile(parDictFileName, verbose = False):
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
         if 'selFnOptions' in parDict.keys() and 'QSource' not in parDict['selFnOptions'].keys():
-            parDict['selFnOptions']['QSource']='fit'
+            if parDict['fitQ'] == True:
+                parDict['selFnOptions']['QSource']='fit'
+            else:
+                parDict['selFnOptions']['QSource']='injection'
         # Check of tile definitions
         if 'useTiling' not in list(parDict.keys()):
             parDict['useTiling']=False
