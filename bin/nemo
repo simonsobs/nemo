@@ -49,6 +49,9 @@ def makeParser():
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
                         want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M", 
                         default = False)
+    parser.add_argument("-T", "--tiling-check", dest="tilingCheck", action="store_true",
+                        help=" Runs until the tiling stage, then exits, providing info on the number of\
+                        tiles used, and writing tile coordinates to the selFn/ directory.", default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true", 
                         help="Disable strict exception handling (applies under MPI only, i.e., must be\
                         used with the -M switch). If you use this option, you will get the full traceback\
@@ -71,6 +74,10 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions, writeTileInfo = True)
+    if args.tilingCheck == True:
+        print(">>> Tiling check:")
+        print("... This config has %d tiles." % (len(config.allTileNames)))
+        sys.exit()
 
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
     if config.parDict['forcedPhotometryCatalog'] is not None:

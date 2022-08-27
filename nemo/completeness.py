@@ -198,15 +198,6 @@ class SelFn(object):
                 if key not in self.scalingRelationDict.keys():
                     self.scalingRelationDict[key]=defaults[key]
 
-            # Stuff from the source injection sims (now required for completeness calculation)
-            injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
-            inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
-            if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
-                raise Exception("%s not found - run a source injection test to generate (now required for completeness calculations)." % (injDataPath))
-            theta500s, binCentres, compThetaGrid, thetaQ=_parseSourceInjectionData(injDataPath, inputDataPath, self.SNRCut)
-            self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
-                                                                       compThetaGrid, kx = 3, ky = 3)
-
             # Q can now either be from the 'classic' fit or the source injection sims
             self.Q=signals.QFit(QSource = QSource, selFnDir = self.selFnDir, tileNames = tileNames)
 
@@ -238,6 +229,11 @@ class SelFn(object):
             self.tileAreas=np.array(tileAreas)
             self.fracArea=self.tileAreas/self.totalAreaDeg2
 
+            # Check of area consistency
+            #checkAreaDeg2=0
+            #for tileName in self.tileNames:
+                #checkAreaDeg2=checkAreaDeg2+(self.areaMaskDict[tileName]*maps.getPixelAreaArcmin2Map(self.areaMaskDict[tileName].shape, self.WCSDict[tileName])/(60**2)).sum()
+
             # For quick sample generation
             self.mockOversampleFactor=mockOversampleFactor
             self.y0NoiseAverageDict={}
@@ -252,7 +248,22 @@ class SelFn(object):
 
             # For relativistic corrections
             self.fRelDict=signals.loadFRelWeights(self.selFnDir+os.path.sep+"fRelWeights.fits")
-            
+
+            # Stuff from the source injection sims (now required for completeness calculation)
+            if self.method == 'injection':
+                injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
+                inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+                if os.path.exists(injDataPath) == False or os.path.exists(inputDataPath) == False:
+                    raise Exception("%s not found - run a source injection test to generate (now required for completeness calculations)." % (injDataPath))
+                injTab=atpy.Table().read(injDataPath)
+                inputTab=atpy.Table().read(inputDataPath)
+                if footprint is not None:
+                    injTab=self.cutCatalogToSurveyArea(injTab)
+                    inputTab=self.cutCatalogToSurveyArea(inputTab)
+                theta500s, binCentres, compThetaGrid, thetaQ=_parseSourceInjectionData(injTab, inputTab, self.SNRCut)
+                self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
+                                                                        compThetaGrid, kx = 3, ky = 3)
+
             # Initial cosmology set-up
             minMass=5e13
             zMin=0.0
@@ -268,7 +279,8 @@ class SelFn(object):
 
 
     def _setUpAreaMask(self):
-        """Sets-up WCS info and loads area masks - needed for quick position checks etc.
+        """Sets-up WCS info and loads area masks (taking into account the footprint, if specified)
+        - needed for quick position checks etc.
         
         """
         
@@ -284,7 +296,10 @@ class SelFn(object):
         self.WCSDict={}
         self.areaMaskDict={}
         for row in self.tileTab:
-            areaMap, wcs=loadAreaMask(row['tileName'], self.selFnDir)
+            if self.footprint is None:
+                areaMap, wcs=loadAreaMask(row['tileName'], self.selFnDir)
+            else:
+                areaMap, wcs=loadIntersectionMask(row['tileName'], self.selFnDir, self.footprint)
             self.WCSDict[row['tileName']]=wcs.copy()
             self.areaMaskDict[row['tileName']]=areaMap
             ra0, dec0=self.WCSDict[row['tileName']].pix2wcs(0, 0)
@@ -332,38 +347,22 @@ class SelFn(object):
         RADeg=np.array(RADeg)
         decDeg=np.array(decDeg)
         if RADeg.shape == ():
-            RADeg=[RADeg]
+            RADeg=np.array([RADeg])
         if decDeg.shape == ():
-            decDeg=[decDeg]
-        inMaskList=[]
-        for ra, dec in zip(RADeg, decDeg):
-            inMask=False
-            # Inside footprint check
-            # NOTE: Tiles may have -ve RAMin coords
-            raMask=np.logical_and(np.greater_equal(ra, self.tileTab['RAMin']), np.less(ra, self.tileTab['RAMax']))
-            negRAMask=np.logical_and(np.greater_equal(-(360-ra), self.tileTab['RAMin']), np.less(-(360-ra), self.tileTab['RAMax']))
-            raMask=np.logical_or(raMask, negRAMask)
-            decMask=np.logical_and(np.greater_equal(dec, self.tileTab['decMin']), np.less(dec, self.tileTab['decMax']))
-            tileMask=np.logical_and(raMask, decMask)
-            # This is just dealing with bytes versus strings in python3
-            matchTilesList=[]
-            for item in self.tileTab['tileName'][tileMask].tolist():
-                if type(item) == bytes:
-                    matchTilesList.append(item.decode('utf-8'))
-                else:
-                    matchTilesList.append(str(item))
-            for tileName in matchTilesList:
-                x, y=self.WCSDict[tileName].wcs2pix(ra, dec)
-                x=int(round(x)); y=int(round(y))
-                if x < self.WCSDict[tileName].header['NAXIS1'] and y < self.WCSDict[tileName].header['NAXIS2'] \
-                    and self.areaMaskDict[tileName][y, x] > 0:
-                    inMask=True
-            inMaskList.append(inMask)
-        
-        if len(inMaskList) > 1:
-            return np.array(inMaskList)
-        else:
-            return inMaskList[0]
+            decDeg=np.array([decDeg])
+        inMask=np.zeros(len(RADeg), dtype = bool)
+        for tileName in self.tileNames:
+            wcs=self.WCSDict[tileName]
+            areaMask=self.areaMaskDict[tileName]
+            if areaMask.sum() > 0:
+                coords=wcs.wcs2pix(RADeg, decDeg)
+                coords=np.array(np.round(coords), dtype = int)
+                mask1=np.logical_and(coords[:, 0] > 0, coords[:, 1] > 0)
+                mask2=np.logical_and(coords[:, 0] < areaMask.shape[1], coords[:, 1] < areaMask.shape[0])
+                mask=np.logical_and(mask1, mask2)
+                inMask[mask]=areaMask[coords[:, 1][mask], coords[:, 0][mask]]
+
+        return inMask
         
 
     def update(self, H0, Om0, Ob0, sigma8, ns, scalingRelationDict = None):
@@ -639,22 +638,18 @@ class SelFn(object):
 
     
 #------------------------------------------------------------------------------------------------------------
-def _parseSourceInjectionData(injDataPath, inputDataPath, SNRCut):
+def _parseSourceInjectionData(injTab, inputTab, SNRCut):
     """Produce arrays for constructing interpolator objects from source injection test data.
 
     Args:
-        injDataPath (:obj:`str`): Path to the output catalog produced by the source injection test.
-        inputDataPath (:obj:`str`): Path to the input catalog produced by the source injectio test.
+        injTab (:obj:`astropy.table.Table`): Output catalog produced by the source injection test.
+        inputTab (:obj:`astropy.table.Table`): Input catalog produced by the source injectio test.
         SNRCut (:obj:`float`): Selection threshold in S/N to apply.
 
     Returns:
         theta500s, ycBinCentres, compThetaGrid, thetaQ
 
     """
-
-
-    injTab=atpy.Table().read(injDataPath)
-    inputTab=atpy.Table().read(inputDataPath)
 
     # Completeness given y0 (NOT y0~) and theta500 and the S/N cut as 2D spline
     # We also derive survey-averaged Q here from the injection sim results [for y0 -> y0~ mapping]
@@ -929,8 +924,8 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         for i in yOut[yMask]:
             intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
     intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
-    maps.saveFITS(intersectFileName, intersectMask, wcs, compressionType = 'PLIO_1')
-        
+    maps.saveFITS(intersectFileName, intersectMask*areaMap, wcs, compressionType = 'PLIO_1')
+
     return intersectMask
 
 #------------------------------------------------------------------------------------------------------------

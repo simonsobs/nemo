@@ -182,8 +182,10 @@ class QFit(object):
             # Stuff from the source injection sims (now required for completeness calculation)
             injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
             inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+            injTab=atpy.Table().read(injDataPath)
+            inputTab=atpy.Table().read(inputDataPath)
             SNRCut=5.0
-            theta500s, binCentres, compThetaGrid, thetaQ=completeness._parseSourceInjectionData(injDataPath, inputDataPath, SNRCut)
+            theta500s, binCentres, compThetaGrid, thetaQ=completeness._parseSourceInjectionData(injTab, inputTab, SNRCut)
             self.fitDict[None]=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
         
         
