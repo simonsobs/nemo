@@ -838,27 +838,41 @@ def fitQ(config):
         # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
-        minTheta500Arcmin=0.1
-        maxTheta500Arcmin=500.0
-        numPoints=50
-        theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
-        zRange_wanted=np.zeros(numPoints)
-        zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
-        zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
-        zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
+        # New - we can't really do large scales accurately anyway
+        theta500Arcmin_wanted=np.logspace(np.log10(0.3), np.log10(10), 14)
+        zRange_wanted=[2.0]*3 + [1.0]*3 + [0.6]*3 + [0.3]*3 + [0.1]*2
         MRange_wanted=[]
         for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
             Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
             criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
             R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
             M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
-            MRange_wanted.append(M500)         
+            MRange_wanted.append(M500)
         MRange=MRange+MRange_wanted
-        zRange=zRange+zRange_wanted.tolist()
+        zRange=zRange+zRange_wanted
         signalMapSizeDeg=15.0
+        # Old
+        #minTheta500Arcmin=0.1
+        #maxTheta500Arcmin=500.0
+        #numPoints=50
+        #theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
+        #zRange_wanted=np.zeros(numPoints)
+        #zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
+        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
+        #zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
+        #MRange_wanted=[]
+        #for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
+            #Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
+            #criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
+            #R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
+            #M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
+            #MRange_wanted.append(M500)
+        #MRange=MRange+MRange_wanted
+        #zRange=zRange+zRange_wanted.tolist()
+        #signalMapSizeDeg=15.0
     elif zDepQ == 1:
         # On a z grid for evolving profile models (e.g., Battaglia et al. 2012)
         MRange=[ref['params']['M500MSun']]
@@ -917,17 +931,19 @@ def fitQ(config):
         # Actually measuring Q...
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
-        # Uncomment to pad signal maps
-        extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
-        yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
-        xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
-        yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
-        xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
-        extMap=enmap.pad(extMap, (yPad, xPad))
-        h=extMap.wcs.to_header()
-        h.insert(0, ('NAXIS2', extMap.shape[0]))
-        h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
-        wcs=astWCS.WCS(h, mode = 'pyfits')
+        nativeNPix=extMap.shape[0]*extMap.shape[1]
+        # Uncomment to pad signal maps [but then need to adjust normalization]
+        #extMap=enmap.enmap(extMap, wcs = wcs.AWCS)
+        #yZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[1]
+        #xZoom=signalMapSizeDeg/wcs.getFullSizeSkyDeg()[0]
+        #yPad=int(extMap.shape[0]*yZoom-extMap.shape[0])
+        #xPad=int(extMap.shape[1]*xZoom-extMap.shape[1])
+        #extMap=enmap.pad(extMap, (yPad, xPad))
+        #h=extMap.wcs.to_header()
+        #h.insert(0, ('NAXIS2', extMap.shape[0]))
+        #h.insert('NAXIS2', ('NAXIS1', extMap.shape[1]))
+        #wcs=astWCS.WCS(h, mode = 'pyfits')
+        #paddedNPix=extMap.shape[0]*extMap.shape[1]
         # Set centre coords
         shape=extMap.shape
         RADeg, decDeg=wcs.getCentreWCSCoords()
@@ -982,7 +998,8 @@ def fitQ(config):
                     QTheta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
                     Qz.append(z)
         Q=np.array(Q)
-        Q=Q/Q[0]
+        #Q=Q/Q[0]
+        Q=Q/y0
 
         # Sort and make FITS table
         QTab=atpy.Table()
@@ -996,27 +1013,26 @@ def fitQ(config):
         QTabDict[tileName]=QTab
         
         # Test plot
-        Q=QFit(QTab)
-        plotSettings.update_rcParams()
-        plt.figure(figsize=(9,6.5))
-        ax=plt.axes([0.12, 0.11, 0.86, 0.88])
-        for z in np.unique(zRange):
-            mask=(QTab['z'] == z)
-            if mask.sum() > 0:
-                plt.plot(QTab['theta500Arcmin'][mask], QTab['Q'][mask], '.', label = "z = %.2f" % (z))
-                thetaArr=np.logspace(np.log10(QTab['theta500Arcmin'][mask].min()), 
-                                 np.log10(QTab['theta500Arcmin'][mask].max()), numPoints)
-                plt.plot(thetaArr, Q.getQ(thetaArr, z, tileName = tileName), 'k-')
-        plt.legend()
-        plt.semilogx()
-        plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
-        plt.ylabel("$Q$ ($\\theta_{\\rm 500c}$, $z$)")
-        plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.pdf" % (tileName))
-        plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.png" % (tileName))
-        plt.close()
-        
-        t1=time.time()
-        print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
+        #Q=QFit(QTab)
+        #plotSettings.update_rcParams()
+        #plt.figure(figsize=(9,6.5))
+        #ax=plt.axes([0.12, 0.11, 0.86, 0.88])
+        #for z in np.unique(zRange):
+            #mask=(QTab['z'] == z)
+            #if mask.sum() > 0:
+                #plt.plot(QTab['theta500Arcmin'][mask], QTab['Q'][mask], '.', label = "z = %.2f" % (z))
+                #thetaArr=np.logspace(np.log10(QTab['theta500Arcmin'][mask].min()),
+                                 #np.log10(QTab['theta500Arcmin'][mask].max()), numPoints)
+                #plt.plot(thetaArr, Q.getQ(thetaArr, z, tileName = tileName), 'k-')
+        #plt.legend()
+        #plt.semilogx()
+        #plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
+        #plt.ylabel("$Q$ ($\\theta_{\\rm 500c}$, $z$)")
+        #plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.pdf" % (tileName))
+        #plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.png" % (tileName))
+        #plt.close()
+        #t1=time.time()
+        #print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
         del Q, filterObj #, clipDict
 
     if config.MPIEnabled == True:

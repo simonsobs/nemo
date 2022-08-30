@@ -644,7 +644,15 @@ class MatchedFilter(MapFilter):
                 signalMaps=np.array(signalMaps)
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
-                self.signalNorm=y0/filteredSignal.max()
+                # This is a 0.6% difference to the previous version
+                cRADeg, cDecDeg=self.wcs.getCentreWCSCoords()
+                cx, cy=self.wcs.wcs2pix(cRADeg, cDecDeg)
+                mapInterpolator=interpolate.RectBivariateSpline(np.arange(filteredSignal.shape[0]),
+                                                                np.arange(filteredSignal.shape[1]),
+                                                                filteredSignal, kx = 3, ky = 3)
+                peakFilteredSignal=mapInterpolator(cy, cx)[0][0]
+                #peakFilteredSignal=filteredSignal.max() # Previous version
+                self.signalNorm=y0/peakFilteredSignal
                 # For relativistic corrections (see signals module)
                 totalSignal=filteredSignal.flatten()[np.argmax(filteredSignal)]
                 filteredSignalCube=np.real(enmap.ifft(fSignalMaps*self.filt, normalize = False))
@@ -820,7 +828,7 @@ class MatchedFilter(MapFilter):
             filt=self.filt
         else:
             filt=self.reshapeFilter(mapDataToFilter.shape)
-        
+
         if 'complex' in mapDataToFilter.dtype.name:
             fMapsToFilter=mapDataToFilter
         else:
@@ -833,7 +841,7 @@ class MatchedFilter(MapFilter):
             filteredMap=maps.subtractBackground(filteredMap, self.wcs, smoothScaleDeg = self.params['bckSubScaleArcmin']/60.)
         
         filteredMap=filteredMap*self.signalNorm
-        
+
         return filteredMap
         
 #------------------------------------------------------------------------------------------------------------

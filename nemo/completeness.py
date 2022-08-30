@@ -198,9 +198,6 @@ class SelFn(object):
                 if key not in self.scalingRelationDict.keys():
                     self.scalingRelationDict[key]=defaults[key]
 
-            # Q can now either be from the 'classic' fit or the source injection sims
-            self.Q=signals.QFit(QSource = QSource, selFnDir = self.selFnDir, tileNames = tileNames)
-
             # We should be able to do everything (except clustering) with this
             # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
             RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
@@ -263,6 +260,9 @@ class SelFn(object):
                 theta500s, binCentres, compThetaGrid, thetaQ=_parseSourceInjectionData(injTab, inputTab, self.SNRCut)
                 self.compThetaInterpolator=interpolate.RectBivariateSpline(theta500s, binCentres,
                                                                         compThetaGrid, kx = 3, ky = 3)
+
+            # Q can now either be from the 'classic' fit or the source injection sims
+            self.Q=signals.QFit(QSource = QSource, selFnDir = self.selFnDir, tileNames = tileNames)
 
             # Initial cosmology set-up
             minMass=5e13
@@ -351,16 +351,17 @@ class SelFn(object):
         if decDeg.shape == ():
             decDeg=np.array([decDeg])
         inMask=np.zeros(len(RADeg), dtype = bool)
+        tabList=[]
         for tileName in self.tileNames:
             wcs=self.WCSDict[tileName]
             areaMask=self.areaMaskDict[tileName]
             if areaMask.sum() > 0:
                 coords=wcs.wcs2pix(RADeg, decDeg)
                 coords=np.array(np.round(coords), dtype = int)
-                mask1=np.logical_and(coords[:, 0] > 0, coords[:, 1] > 0)
+                mask1=np.logical_and(coords[:, 0] >= 0, coords[:, 1] >= 0)
                 mask2=np.logical_and(coords[:, 0] < areaMask.shape[1], coords[:, 1] < areaMask.shape[0])
                 mask=np.logical_and(mask1, mask2)
-                inMask[mask]=areaMask[coords[:, 1][mask], coords[:, 0][mask]]
+                inMask[mask]=inMask[mask]+areaMask[coords[:, 1][mask], coords[:, 0][mask]]
 
         return inMask
         
@@ -970,7 +971,6 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
         RMSMap=RMSMap*intersectMask
 
     RMSValues=np.unique(RMSMap[np.nonzero(RMSMap)])
-
     totalAreaDeg2=areaMapSqDeg.sum()
     tileArea=np.zeros(len(RMSValues))
     for i in range(len(RMSValues)):
