@@ -297,8 +297,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             areaMaskDict.saveMEF(config.selFnDir+os.path.sep+"areaMask.fits", compressionType = 'PLIO_1')
         if writeFlagMask == True:
             flagMaskDict.saveMEF(config.selFnDir+os.path.sep+"flagMask.fits", compressionType = 'PLIO_1')
-        if config.MPIEnabled == True:
-            config.comm.barrier()
+    if config.MPIEnabled == True:
+        config.comm.barrier()
 
     # Write masks - stitched [done by rank 0 while processesothers move on]
     if config.rank == 0:

@@ -675,8 +675,8 @@ def _parseSourceInjectionData(injTab, inputTab, SNRCut):
         valid=inpN > 0
         compThetaGrid[i][valid]=recN[valid]/inpN[valid]
         thetaQ[i]=np.median(outFlux/injFlux)
-        thetaQ_05[i]=np.percentile(outFlux/injFlux, 5)
-        thetaQ_95[i]=np.percentile(outFlux/injFlux, 95)
+        #thetaQ_05[i]=np.percentile(outFlux/injFlux, 5)
+        #thetaQ_95[i]=np.percentile(outFlux/injFlux, 95)
 
     return theta500s, binCentres, compThetaGrid, thetaQ
 
