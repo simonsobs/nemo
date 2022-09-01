@@ -291,24 +291,24 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             if len(optimalCatalog) > 0:
                 optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
 
-    # Write masks
+    # Write masks - MEFs [barrier here because needed for next step]
     if config.rank == 0:
         if writeAreaMask == True:
             areaMaskDict.saveMEF(config.selFnDir+os.path.sep+"areaMask.fits", compressionType = 'PLIO_1')
-            if config.parDict['stitchTiles'] == True:
-                areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
-                                              config.origWCS, compressionType = 'PLIO_1')
-
-
         if writeFlagMask == True:
             flagMaskDict.saveMEF(config.selFnDir+os.path.sep+"flagMask.fits", compressionType = 'PLIO_1')
-            if config.parDict['stitchTiles'] == True:
-                flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
-                                              config.origWCS, compressionType = 'PLIO_1')
+        if config.MPIEnabled == True:
+            config.comm.barrier()
 
-    # Ensure we leave together, otherwise files we need later may not be written yet by rank 0
-    #if config.MPIEnabled == True:
-        #config.comm.barrier()
+    # Write masks - stitched [done by rank 0 while processesothers move on]
+    if config.rank == 0:
+        if writeAreaMask == True and config.parDict['stitchTiles'] == True:
+            areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
+                                          config.origWCS, compressionType = 'PLIO_1')
+
+        if writeFlagMask == True and config.parDict['stitchTiles'] == True:
+            flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
+                                          config.origWCS, compressionType = 'PLIO_1')
 
     del areaMaskDict, flagMaskDict, catalogDict
 
