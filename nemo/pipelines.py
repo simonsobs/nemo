@@ -251,7 +251,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     if config.MPIEnabled == True:
         # area mask
         if writeAreaMask == True:
-            config.comm.barrier()
+            #config.comm.barrier()
             if config.rank > 0:
                 config.comm.send(areaMaskDict, dest = 0)
             elif config.rank == 0:
@@ -265,7 +265,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                         areaMaskDict[tileName]=tileDict[tileName]
         # flag mask
         if writeFlagMask == True:
-            config.comm.barrier()
+            #config.comm.barrier()
             if config.rank > 0:
                 config.comm.send(flagMaskDict, dest = 0)
             elif config.rank == 0:
@@ -278,7 +278,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                     for tileName in tileDict.keys():
                         flagMaskDict[tileName]=tileDict[tileName]
         # catalogs
-        config.comm.barrier()
+        #config.comm.barrier()
         optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
         if config.rank == 0:
             print("... gathered catalogs")
@@ -307,8 +307,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                                               config.origWCS, compressionType = 'PLIO_1')
 
     # Ensure we leave together, otherwise files we need later may not be written yet by rank 0
-    if config.MPIEnabled == True:
-        config.comm.barrier()
+    #if config.MPIEnabled == True:
+        #config.comm.barrier()
 
     del areaMaskDict, flagMaskDict, catalogDict
 
@@ -391,7 +391,7 @@ def makeRMSTables(config):
                 selFnCollection[footprintDict['label']].append(selFnDict)
 
     if config.MPIEnabled == True:
-        config.comm.barrier()
+        #config.comm.barrier()
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank == 0:
             print("... gathered RMS tables")

@@ -214,13 +214,22 @@ class QFit(object):
                         tileNames.append(ext.name)
         zMin=self._zGrid.max()
         zMax=self._zGrid.min()
+        QStack=[]
         for tileName in tileNames:
             QTab=atpy.Table().read(QFitFileName, hdu = tileName)
+            QStack.append(QTab['Q'])
             if QTab['z'].min() < zMin:
                 self.zMin=QTab['z'].min()
             if QTab['z'].max() > zMax:
                 self.zMax=QTab['z'].max()
             self.fitDict[tileName]=self._makeInterpolatorFromQTab(QTab)
+        medQ=np.median(np.array(QStack), axis = 0)
+        medQTab=atpy.Table()
+        medQTab['Q']=medQ
+        medQTab['theta500Arcmin']=QTab['theta500Arcmin']
+        medQTab['z']=QTab['z']
+        medQTab.meta=QTab.meta
+        self.fitDict[None]=self._makeInterpolatorFromQTab(medQTab)
 
 
     def _makeInterpolatorFromQTab(self, QTab):
@@ -927,7 +936,11 @@ def fitQ(config):
         for mapDict in config.parDict['unfilteredMaps']:
             obsFreqGHz=mapDict['obsFreqGHz']
             beamsDict[obsFreqGHz]=mapDict['beamFileName']
-        
+
+        # Uncomment if debugging large scale Q business
+        #MRange=[MRange[-3]]
+        #zRange=[zRange[-3]]
+
         # Actually measuring Q...
         extMap=np.zeros(filterObj.shape)
         wcs=filterObj.wcs
@@ -949,6 +962,14 @@ def fitQ(config):
         RADeg, decDeg=wcs.getCentreWCSCoords()
         x, y=wcs.wcs2pix(RADeg, decDeg)
 
+        # For testing effects of adding CMB + noise
+        #simCMBDict={}
+        #seed=1234
+        #noiseLevel=120.0
+        #for obsFreqGHz in list(beamsDict.keys()):
+            #simCMBDict[obsFreqGHz]=maps.simCMBMap(shape, wcs, noiseLevel = noiseLevel, beam = beamsDict[obsFreqGHz], seed = seed)
+        #print("... adding CMB and noise = %.3f in Q models" % (noiseLevel))
+
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
@@ -956,9 +977,9 @@ def fitQ(config):
         Q=[]
         QTheta500Arcmin=[]
         Qz=[]
-        #cubeStore={} # For debugging object painting
-        #for obsFreqGHz in list(beamsDict.keys()):
-            #cubeStore[obsFreqGHz]=[]
+        cubeStore={} # For debugging object painting
+        for obsFreqGHz in list(beamsDict.keys()):
+            cubeStore[obsFreqGHz]=[]
         for z, M500MSun in zip(zRange, MRange):
             key='%.2f_%.2f' % (z, np.log10(M500MSun))
             signalMaps=[]
@@ -979,6 +1000,8 @@ def fitQ(config):
                                                 GNFWParams = config.parDict['GNFWParams'])
                 except:
                     continue
+                #signalMap=signalMap+simCMBDict[obsFreqGHz]
+                #signalMap=signalMap+np.random.normal(0, noiseLevel, signalMap.shape)
                 #cubeStore[obsFreqGHz].append(signalMap)
                 if realSpace == True:
                     signalMaps.append(signalMap)
@@ -992,7 +1015,8 @@ def fitQ(config):
                                                                 np.arange(filteredSignal.shape[1]),
                                                                 filteredSignal, kx = 3, ky = 3)
                 peakFilteredSignal=mapInterpolator(y, x)[0][0]
-                #peakFilteredSignal=filteredSignal.max()
+                # Below is if we wanted to simulate object-finding here
+                #peakFilteredSignal=filteredSignal[int(y)-10:int(y)+10, int(x)-10:int(x)+10].max() # Avoids mess at edges
                 if peakFilteredSignal not in Q:
                     Q.append(peakFilteredSignal)
                     QTheta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
@@ -1011,32 +1035,10 @@ def fitQ(config):
         QTab.meta['ZDEPQ']=zDepQ
         QTab.meta['TILENAME']=tileName
         QTabDict[tileName]=QTab
-        
-        # Test plot
-        #Q=QFit(QTab)
-        #plotSettings.update_rcParams()
-        #plt.figure(figsize=(9,6.5))
-        #ax=plt.axes([0.12, 0.11, 0.86, 0.88])
-        #for z in np.unique(zRange):
-            #mask=(QTab['z'] == z)
-            #if mask.sum() > 0:
-                #plt.plot(QTab['theta500Arcmin'][mask], QTab['Q'][mask], '.', label = "z = %.2f" % (z))
-                #thetaArr=np.logspace(np.log10(QTab['theta500Arcmin'][mask].min()),
-                                 #np.log10(QTab['theta500Arcmin'][mask].max()), numPoints)
-                #plt.plot(thetaArr, Q.getQ(thetaArr, z, tileName = tileName), 'k-')
-        #plt.legend()
-        #plt.semilogx()
-        #plt.xlabel("$\\theta_{\\rm 500c}$ (arcmin)")
-        #plt.ylabel("$Q$ ($\\theta_{\\rm 500c}$, $z$)")
-        #plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.pdf" % (tileName))
-        #plt.savefig(config.diagnosticsDir+os.path.sep+tileName+os.path.sep+"QFit_%s.png" % (tileName))
-        #plt.close()
-        #t1=time.time()
-        #print("... Q fit finished [tileName = %s, rank = %d, time taken = %.3f] ..." % (tileName, config.rank, t1-t0))
         del Q, filterObj #, clipDict
 
     if config.MPIEnabled == True:
-        config.comm.barrier()
+        #config.comm.barrier()
         QTabDictList=config.comm.gather(QTabDict, root = 0)
         if config.rank == 0:
             print("... gathered Q fits")

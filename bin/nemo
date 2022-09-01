@@ -9,7 +9,7 @@ nemo driver script: for filtering maps and finding clusters
 import sys
 #print("Running under python: %s" % (sys.version))
 import os
-import datetime
+import datetime, time
 from nemo import *
 import nemo
 from nemo import MockSurvey
@@ -25,7 +25,6 @@ import types
 import yaml
 #import IPython
 pylab.matplotlib.interactive(False)
-plotSettings.update_rcParams()
 
 #------------------------------------------------------------------------------------------------------------
 def makeParser():
@@ -123,6 +122,7 @@ if __name__ == '__main__':
 
     # Tidying up etc.
     if config.rank == 0:
+        print("... stitching maps and tidying up [time taken to here = %.3f sec]" % (time.time()-config._timeStarted))
 
         # Stitch together map tiles - full fat versions (this will only work if 'saveFilteredMaps: True')
         if 'stitchTiles' in config.parDict.keys() and config.parDict['stitchTiles'] == True:
