@@ -661,8 +661,8 @@ def _parseSourceInjectionData(injTab, inputTab, SNRCut):
     binCentres=(binEdges[1:]+binEdges[:-1])/2
     compThetaGrid=np.zeros((theta500s.shape[0], binCentres.shape[0]))
     thetaQ=np.zeros(len(theta500s))
-    thetaQ_05=np.zeros(len(theta500s))
-    thetaQ_95=np.zeros(len(theta500s))
+    #thetaQ_05=np.zeros(len(theta500s))
+    #thetaQ_95=np.zeros(len(theta500s))
     for i in range(len(theta500s)):
         t=theta500s[i]
         injMask=np.logical_and(injTab['theta500Arcmin'] == t, injTab['SNR'] > SNRCut)
@@ -674,9 +674,10 @@ def _parseSourceInjectionData(injTab, inputTab, SNRCut):
         inpN, binEdges=np.histogram(inputFlux, bins = binEdges)
         valid=inpN > 0
         compThetaGrid[i][valid]=recN[valid]/inpN[valid]
-        thetaQ[i]=np.median(outFlux/injFlux)
-        #thetaQ_05[i]=np.percentile(outFlux/injFlux, 5)
-        #thetaQ_95[i]=np.percentile(outFlux/injFlux, 95)
+        if len(outFlux) > 0:
+            thetaQ[i]=np.median(outFlux/injFlux)
+            #thetaQ_05[i]=np.percentile(outFlux/injFlux, 5)
+            #thetaQ_95[i]=np.percentile(outFlux/injFlux, 95)
 
     return theta500s, binCentres, compThetaGrid, thetaQ
 
