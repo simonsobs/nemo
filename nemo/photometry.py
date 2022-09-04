@@ -68,7 +68,7 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
                     ringSegMap[np.equal(ringSegMap, ringIDs[i])]=-1*ringSegMap[np.equal(ringSegMap, ringIDs[i])]
         ringSegMap=np.array(np.less(ringSegMap, 0), dtype = int)
         ringMask=ringSegMap
-        filteredMapDict['surveyMask']=filteredMapDict['surveyMask']-ringMask
+        #filteredMapDict['flagMask']=filteredMapDict['flagMask']-ringMask
     else:
         ringMask=None
 
