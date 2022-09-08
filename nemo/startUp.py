@@ -123,6 +123,8 @@ def parseConfigFile(parDictFileName, verbose = False):
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
+        if parDict['selFnOptions']['method'] not in ['fast', 'injection']:
+            raise Exception("Valid completeness estimation methods are 'fast' or 'injection' - edit selFnOptions['method'] in config.")
         if 'selFnOptions' in parDict.keys() and 'QSource' not in parDict['selFnOptions'].keys():
             if parDict['fitQ'] == True:
                 parDict['selFnOptions']['QSource']='fit'

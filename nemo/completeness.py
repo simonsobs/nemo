@@ -1091,7 +1091,7 @@ def completenessByFootprint(config):
                         method = config.parDict['selFnOptions']['method'],
                         QSource = config.parDict['selFnOptions']['QSource'])
         except FootprintError:
-            pass
+            continue
             #print("... no overlapping area with footprint %s" % (footprintLabel))
 
         massLabel=selFn.mockSurvey.mdefLabel
