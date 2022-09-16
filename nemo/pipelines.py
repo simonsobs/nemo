@@ -277,19 +277,18 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 for tileDict in gathered_tileDicts:
                     for tileName in tileDict.keys():
                         flagMaskDict[tileName]=tileDict[tileName]
-        # catalogs
-        #config.comm.barrier()
-        optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
-        if config.rank == 0:
-            print("... gathered catalogs")
-            toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
-            for collectedTab in optimalCatalogList:
-                if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
-                    toStack.append(collectedTab)
-            optimalCatalog=atpy.vstack(toStack)
-            # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
-            if len(optimalCatalog) > 0:
-                optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+
+        # catalogs - every node now gets the whole catalog, for running in multipass mode
+        optimalCatalogList=config.comm.allgather(optimalCatalog)
+        if config.rank == 0: print("... gathered catalogs")
+        toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
+        for collectedTab in optimalCatalogList:
+            if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
+                toStack.append(collectedTab)
+        optimalCatalog=atpy.vstack(toStack)
+        # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
+        if len(optimalCatalog) > 0:
+            optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
 
     # Write masks - MEFs [barrier here because needed for next step]
     if config.rank == 0:
