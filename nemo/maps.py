@@ -237,8 +237,12 @@ class MapDict(dict):
             psMask=np.ones(data.shape, dtype = np.uint8)
 
         # Use for tracking regions where subtraction/in-painting took place to make flags in catalog
+        # We can also supply a flag mask at the start, e.g., for marking dusty regions without zapping them
         # NOTE: flag masks for each frequency map get combined within filter objects
-        flagMask=np.zeros(data.shape, dtype = np.uint8)
+        if 'flagMask' in list(self.keys()) and self['flagMask'] is not None:
+            flagMask=self.loadTile('flagMask', tileName)
+        else:
+            flagMask=np.zeros(data.shape, dtype = np.uint8)
 
         # Optional map clipping
         if 'RADecSection' in list(self.keys()) and self['RADecSection'] is not None:

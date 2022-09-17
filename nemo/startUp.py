@@ -38,7 +38,7 @@ def parseConfigFile(parDictFileName, verbose = False):
         # We've moved masks out of the individual map definitions in the config file
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
-        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
+        maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
                   'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
@@ -646,7 +646,7 @@ class NemoConfig(object):
 
     def _checkWCSConsistency(self):
         # Check consistency of WCS across maps
-        mapKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
+        mapKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask', 'flagMask']
         refWCS=None
         for mapDict in self.parDict['unfilteredMaps']:
             for key in mapKeys:
