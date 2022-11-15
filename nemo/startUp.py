@@ -123,8 +123,8 @@ def parseConfigFile(parDictFileName, verbose = False):
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
-        if parDict['selFnOptions']['method'] not in ['fast', 'injection']:
-            raise Exception("Valid completeness estimation methods are 'fast' or 'injection' - edit selFnOptions['method'] in config.")
+        if 'selFnOptions' in parDict.keys() and parDict['selFnOptions']['method'] not in ['fast', 'injection']:
+                raise Exception("Valid completeness estimation methods are 'fast' or 'injection' - edit selFnOptions['method'] in config.")
         if 'selFnOptions' in parDict.keys() and 'QSource' not in parDict['selFnOptions'].keys():
             if parDict['fitQ'] == True:
                 parDict['selFnOptions']['QSource']='fit'
@@ -565,17 +565,17 @@ class NemoConfig(object):
                 # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
                 # (which happens if image dimensions are both odd)
                 # I _think_ this is related to the interpolation done in signals.fitQ
-                if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
-                    newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
-                    newArr[:clip['data'].shape[0], :]=clip['data']
-                    newWCS=clip['wcs'].copy()
-                    newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
-                    newWCS.updateFromHeader()
-                    testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
-                    # Check if we see the same sky, if not and we trip this, we need to think about this more
-                    assert((testClip['data']-clip['data']).sum() == 0)
-                    clip['data']=newArr
-                    clip['wcs']=newWCS
+                # if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
+                #     newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
+                #     newArr[:clip['data'].shape[0], :]=clip['data']
+                #     newWCS=clip['wcs'].copy()
+                #     newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
+                #     newWCS.updateFromHeader()
+                #     testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
+                #     # Check if we see the same sky, if not and we trip this, we need to think about this more
+                #     assert((testClip['data']-clip['data']).sum() == 0)
+                #     clip['data']=newArr
+                #     clip['wcs']=newWCS
 
                 # Storing clip coords etc. so can stitch together later
                 # areaMaskSection here is used to define the region that would be kept (takes out overlap)
