@@ -240,7 +240,7 @@ class MapDict(dict):
         # We can also supply a flag mask at the start, e.g., for marking dusty regions without zapping them
         # NOTE: flag masks for each frequency map get combined within filter objects
         if 'flagMask' in list(self.keys()) and self['flagMask'] is not None:
-            flagMask=self.loadTile('flagMask', tileName)
+            flagMask=self.loadTile('flagMask', tileName)*surveyMask
         else:
             flagMask=np.zeros(data.shape, dtype = np.uint8)
 
