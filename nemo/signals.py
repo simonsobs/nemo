@@ -438,7 +438,7 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
     
     # Adjust tol for speed vs. range of b covered
     # bRange=np.linspace(0, 30, 1000) # old
-    bRange=np.logspace(np.log10(1e-6), np.log10(100), 1000)
+    bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
     cylPProfile=[]
     tol=1e-6
     for i in range(len(bRange)):
@@ -518,7 +518,8 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     GNFWParams['alpha']=1.0    
     
     # Adjust tol for speed vs. range of b covered
-    bRange=np.linspace(0, 30, 1000)
+    # bRange=np.linspace(0, 30, 1000) # old
+    bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
     cylPProfile=[]
     tol=1e-6
     for i in range(len(bRange)):
