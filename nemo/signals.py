@@ -437,7 +437,8 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
         GNFWParams=gnfw._default_params
     
     # Adjust tol for speed vs. range of b covered
-    bRange=np.linspace(0, 30, 1000)
+    # bRange=np.linspace(0, 30, 1000) # old
+    bRange=np.logspace(np.log10(1e-6), np.log10(100), 1000)
     cylPProfile=[]
     tol=1e-6
     for i in range(len(bRange)):
@@ -604,7 +605,7 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
         rprof=rht.harm2real(lprof)
         r, rprof=rht.unpad(rht.r, rprof)
     else:
-        rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+        rDeg=np.logspace(np.log10(1e-6), np.log10(maxSizeDeg), 5000)
         rprof=interpolate.splev(rDeg, tckP, ext = 1)
         r=np.radians(rDeg)
         if amplitude is not None:
@@ -621,8 +622,8 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
     return np.array(signalMap)
 
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,
-                             GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,
+def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
+                             GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
                              convolveWithBeam = True, cosmoModel = None):
     """Makes a 2d signal only map containing an Arnaud model cluster. 
     
@@ -687,8 +688,8 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     return signalMap
 
 #------------------------------------------------------------------------------------------------------------
-def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,
-                                GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,
+def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
+                                GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
                                 convolveWithBeam = True, cosmoModel = None):
     """Makes a 2d signal only map containing a Battaglia+2012 model cluster (taking into account the redshift
     evolution described in Table 1 and equation 11 there).
