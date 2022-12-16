@@ -850,8 +850,8 @@ def fitQ(config):
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
         # New - we can't really do large scales accurately anyway
-        theta500Arcmin_wanted=np.logspace(np.log10(0.3), np.log10(10), 14)
-        zRange_wanted=[2.0]*3 + [1.0]*3 + [0.6]*3 + [0.3]*3 + [0.1]*2
+        theta500Arcmin_wanted=np.logspace(np.log10(0.1), np.log10(30), 50)
+        zRange_wanted=[2.0]*10 + [1.0]*10 + [0.6]*10 + [0.3]*10 + [0.1]*10
         MRange_wanted=[]
         for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
             Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
@@ -863,27 +863,27 @@ def fitQ(config):
         zRange=zRange+zRange_wanted
         signalMapSizeDeg=15.0
         # Old
-        #minTheta500Arcmin=0.1
-        #maxTheta500Arcmin=500.0
-        #numPoints=50
-        #theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
-        #zRange_wanted=np.zeros(numPoints)
-        #zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
-        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
-        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
-        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
-        #zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
-        #zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
-        #MRange_wanted=[]
-        #for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
-            #Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
-            #criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
-            #R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
-            #M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
-            #MRange_wanted.append(M500)
-        #MRange=MRange+MRange_wanted
-        #zRange=zRange+zRange_wanted.tolist()
-        #signalMapSizeDeg=15.0
+        # minTheta500Arcmin=0.1
+        # maxTheta500Arcmin=500
+        # numPoints=50
+        # theta500Arcmin_wanted=np.logspace(np.log10(minTheta500Arcmin), np.log10(maxTheta500Arcmin), numPoints)
+        # zRange_wanted=np.zeros(numPoints)
+        # zRange_wanted[np.less(theta500Arcmin_wanted, 3.0)]=2.0
+        # zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 3.0), np.less(theta500Arcmin_wanted, 6.0))]=1.0
+        # zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 6.0), np.less(theta500Arcmin_wanted, 10.0))]=0.5
+        # zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 10.0), np.less(theta500Arcmin_wanted, 20.0))]=0.1
+        # zRange_wanted[np.logical_and(np.greater(theta500Arcmin_wanted, 20.0), np.less(theta500Arcmin_wanted, 30.0))]=0.05
+        # zRange_wanted[np.greater(theta500Arcmin_wanted, 30.0)]=0.01
+        # MRange_wanted=[]
+        # for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
+        #     Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
+        #     criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
+        #     R500Mpc=np.tan(np.radians(theta500Arcmin/60.0))*ccl.angular_diameter_distance(cosmoModel, 1/(1+z))
+        #     M500=(4/3.0)*np.pi*np.power(R500Mpc, 3)*500*criticalDensity
+        #     MRange_wanted.append(M500)
+        # MRange=MRange+MRange_wanted
+        # zRange=zRange+zRange_wanted.tolist()
+        # signalMapSizeDeg=15.0
     elif zDepQ == 1:
         # On a z grid for evolving profile models (e.g., Battaglia et al. 2012)
         MRange=[ref['params']['M500MSun']]
@@ -1000,6 +1000,7 @@ def fitQ(config):
                     signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
                                                 amplitude = amplitude, convolveWithBeam = True,
                                                 GNFWParams = config.parDict['GNFWParams'])
+                    signalMap=enmap.apply_window(signalMap, pow = 1.0)
                 except:
                     continue
                 #signalMap=signalMap+simCMBDict[obsFreqGHz]
@@ -1024,7 +1025,8 @@ def fitQ(config):
                     QTheta500Arcmin.append(calcTheta500Arcmin(z, M500MSun, fiducialCosmoModel))
                     Qz.append(z)
         Q=np.array(Q)
-        #Q=Q/Q[0]
+        if abs(1-Q[0]/y0) > 1e-6:
+            raise Exception("Q[0]/y0 outside tolerance")
         Q=Q/y0
 
         # Sort and make FITS table
