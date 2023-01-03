@@ -581,7 +581,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
 
 #------------------------------------------------------------------------------------------------------------
 def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
-                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-08):
+                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = None):
     """Use Sigurd's fast object painter to paint given signal into map.
 
     """
