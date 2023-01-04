@@ -615,8 +615,22 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
     amps=np.array([amp], dtype = dtype)
 
     # Work around the fact that the profile gets truncated if we're trying to paste in something negative
-    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
-                                    rmax = np.radians(maxSizeDeg))
+    # NOTE: Added a (hopefully) temporary workaround to catch when this makes bad maps
+    # Those (for some reason) always have only 8 pixels width in the x direction
+    goodMap=False
+    attempts=0
+    maxAttempts=10
+    while goodMap is False:
+        signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
+                                        rmax = np.radians(maxSizeDeg), prof_equi = False)
+        if np.where(np.sum(abs(signalMap), axis = 0) != 0)[0].shape[0] != 8:
+            goodMap=True
+        else:
+            print("Object painting failed - trying again...")
+        attempts=attempts+1
+        if attempts > maxAttempts:
+            raise Exception("Exceeded maximum number of attempts at painting object - proper fix for this needed.")
+
     if rprof[0] < 0:
         signalMap=signalMap*-1
 
