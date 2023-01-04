@@ -217,7 +217,7 @@ class QFit(object):
         QStack=[]
         for tileName in tileNames:
             QTab=atpy.Table().read(QFitFileName, hdu = tileName)
-            QStack.append(QTab['Q'])
+            QStack.append(QTab['Q'].data)
             if QTab['z'].min() < zMin:
                 self.zMin=QTab['z'].min()
             if QTab['z'].max() > zMax:
@@ -614,22 +614,8 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
     poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
     amps=np.array([amp], dtype = dtype)
 
-    # Work around the fact that the profile gets truncated if we're trying to paste in something negative
-    # NOTE: Added a (hopefully) temporary workaround to catch when this makes bad maps
-    # Those (for some reason) always have only 8 pixels width in the x direction
-    goodMap=False
-    attempts=0
-    maxAttempts=10
-    while goodMap is False:
-        signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
-                                        rmax = np.radians(maxSizeDeg), prof_equi = False)
-        if np.where(np.sum(abs(signalMap), axis = 0) != 0)[0].shape[0] != 8:
-            goodMap=True
-        else:
-            print("Object painting failed - trying again...")
-        attempts=attempts+1
-        if attempts > maxAttempts:
-            raise Exception("Exceeded maximum number of attempts at painting object - proper fix for this needed.")
+    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
+                                    rmax = np.radians(maxSizeDeg), prof_equi = False)
 
     if rprof[0] < 0:
         signalMap=signalMap*-1
@@ -1010,13 +996,13 @@ def fitQ(config):
                 # Yes, this should have the beam in it (certainly for TILe-C)
                 # NOTE: CCL can blow up for some of the extreme masses we try to feed in here
                 # (so we just skip those if it happens)
-                try:
-                    signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
-                                                amplitude = amplitude, convolveWithBeam = True,
-                                                GNFWParams = config.parDict['GNFWParams'])
-                    signalMap=enmap.apply_window(signalMap, pow = 1.0)
-                except:
-                    continue
+                # try:
+                signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
+                                             amplitude = amplitude, convolveWithBeam = True,
+                                             GNFWParams = config.parDict['GNFWParams'])
+                signalMap=enmap.apply_window(signalMap, pow = 1.0)
+                # except:
+                #     continue
                 #signalMap=signalMap+simCMBDict[obsFreqGHz]
                 #signalMap=signalMap+np.random.normal(0, noiseLevel, signalMap.shape)
                 #cubeStore[obsFreqGHz].append(signalMap)
