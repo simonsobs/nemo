@@ -235,8 +235,10 @@ def makeParser():
                         (.fits format). If not given, the name of the output catalog file will be based on\
                         either configFileName or catFileName.", default = None)
     parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
-                        'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
-                        results.", default = 'fit')
+                        'fit' (the 'classic' method), 'injection' (for Q based on source injection test\
+                        results), or 'hybrid' (uses the 'fit' method for scales smaller than the reference\
+                        filter scale, and the 'injection' method for scales larger than the reference filter\
+                        scale).", default = 'fit')
     parser.add_argument("-x", "--x-match-arcmin", dest="xMatchArcmin", default = 2.5,
                         help = "Specifies the cross-match radius (in arcmin) to use when matching the redshift\
                         catalog onto the cluster candidate catalog.")
@@ -273,8 +275,8 @@ if __name__ == '__main__':
     outFileName=args.outFileName
     forcedPhotometry=args.forcedPhotometry
     QSource=args.QSource
-    if QSource not in ['fit', 'injection']:
-        raise Exception("QSource must be either 'fit' or 'injection'")
+    if QSource not in ['fit', 'injection', 'hybrid']:
+        raise Exception("QSource must be either 'fit', 'injection', or 'hybrid'")
     
     if args.noStrictMPIExceptions == True:
         strictMPIExceptions=False

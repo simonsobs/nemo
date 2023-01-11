@@ -139,8 +139,10 @@ class QFit(object):
     
     Args:
         QSource (:obj:`str`, optional): The source to use for Q (the filter mismatch function) - either
-            'fit' (to use results from the original Q-fitting routine) or 'injection' (to use Q derived
-            from source injection simulations). For the latter, `selFnDir` must be supplied.
+            'fit' (to use results from the original Q-fitting routine), 'injection' (to use Q derived
+            from source injection simulations), or 'hybrid' (to use 'fit' at scales less than the
+            reference filter scale, and 'injection' at scales greater than the reference filter scale).
+            For the 'injection' and 'hybrid' methods, `selFnDir` must be supplied.
         selFnDir (:obj:`str`, optional): Path to a ``selFn/`` directory, as produced by the :ref:`nemoCommand`
             command. This directory contains information such as the survey noise maps, area masks,
             and information needed to construct the filter mismatch function, `Q`, used in mass
@@ -167,27 +169,33 @@ class QFit(object):
         self.fitDict={}
 
         self.QSource=QSource
-        if self.QSource not in ['fit', 'injection']:
-            raise Exception("QSource must be either 'fit' or 'injection'")
+        if self.QSource not in ['fit', 'injection', 'hybrid']:
+            raise Exception("QSource must be either 'fit', 'injection', or 'hybrid'")
 
-        if self.QSource == 'fit':
+        if self.QSource == 'fit' or self.QSource == 'hybrid':
             if self.selFnDir is not None and QFitFileName is None:
                 self.loadQ(self.selFnDir+os.path.sep+"QFit.fits", tileNames = tileNames)
             if QFitFileName is not None:
                 self.loadQ(QFitFileName, tileNames = tileNames)
 
         elif self.QSource == 'injection':
-            if self.selFnDir is None:
-                raise Exception("selFnDir must be supplied when using 'injection' QSource")
-            # Stuff from the source injection sims (now required for completeness calculation)
-            injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
-            inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
-            injTab=atpy.Table().read(injDataPath)
-            inputTab=atpy.Table().read(inputDataPath)
-            SNRCut=5.0
-            theta500s, binCentres, compThetaGrid, thetaQ=completeness._parseSourceInjectionData(injTab, inputTab, SNRCut)
+            theta500s, thetaQ=self._loadInjectionData()
             self.fitDict[None]=interpolate.InterpolatedUnivariateSpline(theta500s, thetaQ, ext = 1)
-        
+
+
+    def _loadInjectionData(self):
+        # Stuff from the source injection sims (now required for completeness calculation)
+        if self.selFnDir is None:
+            raise Exception("selFnDir must be supplied when using 'injection' or 'hybrid' QSource")
+        injDataPath=self.selFnDir+os.path.sep+"sourceInjectionData.fits"
+        inputDataPath=self.selFnDir+os.path.sep+"sourceInjectionInputCatalog.fits"
+        injTab=atpy.Table().read(injDataPath)
+        inputTab=atpy.Table().read(inputDataPath)
+        SNRCut=5.0
+        theta500s, binCentres, compThetaGrid, thetaQ=completeness._parseSourceInjectionData(injTab, inputTab, SNRCut)
+
+        return theta500s, thetaQ
+
         
     def loadQ(self, QFitFileName, tileNames = None):
         """Load the filter mismatch function Q (see `Hasselfield et al. 2013 
@@ -205,6 +213,10 @@ class QFit(object):
 
         """
 
+        if self.QSource == 'hybrid':
+            injThetas, injQs=self._loadInjectionData()
+            refTheta=None
+
         # Inspect file and get tile names if MEF
         if tileNames is None:
             tileNames=[]
@@ -215,19 +227,38 @@ class QFit(object):
         zMin=self._zGrid.max()
         zMax=self._zGrid.min()
         QStack=[]
+        thetaStack=[]
         for tileName in tileNames:
             QTab=atpy.Table().read(QFitFileName, hdu = tileName)
-            QStack.append(QTab['Q'].data)
             if QTab['z'].min() < zMin:
                 self.zMin=QTab['z'].min()
             if QTab['z'].max() > zMax:
                 self.zMax=QTab['z'].max()
+            if self.QSource == 'hybrid':
+                # Splice on the injection Q estimate at scales larger than reference scale
+                # NOTE: Doing things this way to ensure using same thetas across all tiles
+                # (so we can average easily below)
+                if refTheta is None:
+                    refTheta=QTab['theta500Arcmin'][QTab['Q'] > 1].min()
+                fitQs=QTab['Q'][QTab['theta500Arcmin'] <= refTheta]
+                fitThetas=QTab['theta500Arcmin'][QTab['theta500Arcmin'] <= refTheta]
+                hybQTab=atpy.Table()
+                hybQTab['theta500Arcmin']=list(fitThetas)+list(injThetas[injThetas > refTheta])
+                hybQTab['Q']=list(fitQs)+list(injQs[injThetas > refTheta])
+                hybQTab.meta=QTab.meta
+                QTab=hybQTab
+            QStack.append(QTab['Q'].data)
+            thetaStack.append(QTab['theta500Arcmin'].data)
             self.fitDict[tileName]=self._makeInterpolatorFromQTab(QTab)
+
+        # Average Q across all tiles
         medQ=np.median(np.array(QStack), axis = 0)
+        medTheta=np.median(np.array(thetaStack), axis = 0)
         medQTab=atpy.Table()
         medQTab['Q']=medQ
         medQTab['theta500Arcmin']=QTab['theta500Arcmin']
-        medQTab['z']=QTab['z']
+        if 'z' in QTab.keys():
+            medQTab['z']=QTab['z']
         medQTab.meta=QTab.meta
         self.fitDict[None]=self._makeInterpolatorFromQTab(medQTab)
 
