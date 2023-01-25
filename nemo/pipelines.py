@@ -188,6 +188,10 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 SNMap=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']
                 SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
                 filteredMapDict['SNMap']=SNMap
+                # print("check how our insertion sim looks")
+                # import IPython
+                # IPython.embed()
+                # sys.exit()
 
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
                 filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)

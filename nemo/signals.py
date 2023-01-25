@@ -441,7 +441,7 @@ def calcTheta500Arcmin(z, M500, cosmoModel):
     return theta500Arcmin
     
 #------------------------------------------------------------------------------------------------------------
-def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
+def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None, binning = 'log'):
     """Given z, M500 (in MSun), returns dictionary containing Arnaud model profile (well, knots from spline 
     fit, 'tckP' - assumes you want to interpolate onto an array with units of degrees) and parameters 
     (particularly 'y0', 'theta500Arcmin').
@@ -468,8 +468,12 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None):
         GNFWParams=gnfw._default_params
     
     # Adjust tol for speed vs. range of b covered
-    # bRange=np.linspace(0, 30, 1000) # old
-    bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
+    if binning == 'linear': # Old
+        bRange=np.linspace(0, 30, 1000)
+    elif binning == 'log':
+        bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
+    else:
+        raise Exception("'binning' must be 'linear' or 'log' (given '%s')." % (binning))
     cylPProfile=[]
     tol=1e-6
     for i in range(len(bRange)):
@@ -612,8 +616,12 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
 
 #------------------------------------------------------------------------------------------------------------
 def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
-                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = None):
+                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12):
     """Use Sigurd's fast object painter to paint given signal into map.
+
+    Notes:
+        Setting vmin arbitrarily small seems the best way to avoid unwanted behavior (e.g., cutting off
+        clusters before they are painted in properly).
 
     """
 
@@ -656,7 +664,7 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                              GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
-                             convolveWithBeam = True, cosmoModel = None):
+                             convolveWithBeam = True, cosmoModel = None, painter = 'pixell'):
     """Makes a 2d signal only map containing an Arnaud model cluster. 
     
     Args:
@@ -691,31 +699,31 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
         
     """
 
-    #----
-    # Old
+    if RADeg is None or decDeg is None:
+        RADeg, decDeg=wcs.getCentreWCSCoords()
+
     # Making the 1d profile itself is the slowest part (~1 sec)
-    #t0=time.time()
-    #signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams)
-    #tckP=signalDict['tckP']
-
-    ## Make cluster map (unit-normalised profile)
-    #rDeg=np.linspace(0.0, maxSizeDeg, 5000)
-    #profile1d=interpolate.splev(rDeg, tckP, ext = 1)
-    #if amplitude is not None:
-        #profile1d=profile1d*amplitude
-    #r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    #signalMap=r2p(degreesMap)
-    
-    #if convolveWithBeam == True:
-        #signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
-    #t1=time.time()
-
-    # New - using Sigurd object painter
     signalDict=makeArnaudModelProfile(z, M500, GNFWParams = GNFWParams, cosmoModel = cosmoModel)
     tckP=signalDict['tckP']
-    return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
-                           amplitude = amplitude, maxSizeDeg = maxSizeDeg,
-                           convolveWithBeam = convolveWithBeam)
+
+    if painter == 'legacy': # Old method
+        degreesMap=np.ones(shape, dtype = np.float64)*1e6
+        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg,
+                                                                    maxSizeDeg)
+        rDeg=np.linspace(0.0, maxSizeDeg, 5000)
+        profile1d=interpolate.splev(rDeg, tckP, ext = 1)
+        if amplitude is not None:
+            profile1d=profile1d*amplitude
+        r2p=interpolate.interp1d(rDeg, profile1d, bounds_error=False, fill_value=0.0)
+        signalMap=r2p(degreesMap)
+        if convolveWithBeam == True:
+            signalMap=maps.convolveMapWithBeam(signalMap, wcs, beam, maxDistDegrees = maxSizeDeg)
+    elif painter == 'pixell': # New method - using Sigurd's object painter
+        signalMap=_paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
+                                  amplitude = amplitude, maxSizeDeg = maxSizeDeg,
+                                  convolveWithBeam = convolveWithBeam)
+    else:
+        raise Exception("'painter' must be 'legacy' or 'pixell' (given '%s')." % (painter))
 
     return signalMap
 

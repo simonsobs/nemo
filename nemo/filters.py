@@ -50,8 +50,8 @@ import astropy.table as atpy
 import time
 
 #-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = '.',
-               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedFilter = False,
+def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = '.', \
+               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedFilter = False, \
                returnFilter = False):
     """Builds and applies filters to the unfiltered map(s). 
     
