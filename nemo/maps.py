@@ -1145,6 +1145,33 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSe
     if fixNoiseSeed == False:
         np.random.seed()
 
+    randMap=randMap+simNoiseMap(shape, noiseLevel, fixNoiseSeed = fixNoiseSeed)
+
+    np.random.seed()
+    
+    return randMap
+
+#-------------------------------------------------------------------------------------------------------------
+def simNoiseMap(shape, noiseLevel, fixNoiseSeed = False):
+    """Generate a simulated white noise map.
+
+    Args:
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
+        noiseLevel (:obj:`numpy.ndarray` or float): If a single number, this is taken as sigma (in map units,
+            usually uK) for generating white noise that is added across the whole map. Alternatively, an array
+            with the same dimensions as shape may be used, specifying sigma (in map units) per corresponding
+            pixel. Noise will only be added where non-zero values appear in noiseLevel.
+        fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
+
+    Returns:
+        A map (:obj:`numpy.ndarray`)
+
+    """
+
+    randMap=np.zeros(shape)
+    if fixNoiseSeed == False:
+        np.random.seed()
+
     if type(noiseLevel) == np.ndarray:
         mask=np.nonzero(noiseLevel)
         generatedNoise=np.zeros(randMap.shape)
@@ -1154,11 +1181,11 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSe
         if noiseLevel > 0:
             generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
             randMap=randMap+generatedNoise
-    
+
     np.random.seed()
-    
+
     return randMap
-        
+
 #-------------------------------------------------------------------------------------------------------------
 def subtractBackground(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 30.0/60.0):
     """Smoothes map with Gaussian of given scale and subtracts it, to get rid of large scale power.

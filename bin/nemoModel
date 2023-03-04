@@ -240,11 +240,14 @@ if __name__ == '__main__':
                 d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+np.array(modelsDict[tileName])
         # Optionally add CMB
         if args.addCMB == True:
-            # Save e.g. tSZ-only map for debugging
+            # Save tSZ-only map for debugging
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
             shape=(d.shape)
-            d=d+maps.simCMBMap(shape, wcs, noiseLevel = addWhiteNoise, beam = args.beamFileName,
+            # Split adding CMB and noise to enable more tests
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = 0, beam = args.beamFileName,
                                seed = args.seed)
+            astImages.saveFITS(args.outputFileName.replace(".fits", "_signalAndCMB.fits"), d, wcs)
+            d=d+maps.simNoiseMap(shape, noiseLevel)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
                 d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addWhiteNoise, [int(d.shape[0]/2), d.shape[1]])
@@ -253,7 +256,7 @@ if __name__ == '__main__':
                 weights[:int(d.shape[0]/2)]=weights[:int(d.shape[0]/2)]*2
                 weights=np.power(weights, -2)
                 astImages.saveFITS(args.outputFileName.replace(".fits", ".ivar.fits"), weights, wcs)
-        # Optional add another component (e.g., large scale noise, to start with)
+        # Optionally add another component (e.g., large scale noise, to start with)
         if args.addMap is not None:
             with pyfits.open(args.addMap) as img:
                 d=d+float(args.addMapScaling)*img[0].data
