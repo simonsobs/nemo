@@ -247,7 +247,7 @@ if __name__ == '__main__':
             d=d+maps.simCMBMap(shape, wcs, noiseLevel = 0, beam = args.beamFileName,
                                seed = args.seed)
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalAndCMB.fits"), d, wcs)
-            d=d+maps.simNoiseMap(shape, noiseLevel)
+            d=d+maps.simNoiseMap(shape, addWhiteNoise)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
                 d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addWhiteNoise, [int(d.shape[0]/2), d.shape[1]])
