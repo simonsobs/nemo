@@ -625,6 +625,7 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
 
     """
 
+    # Now allowing arrays of sky coords and amplitudes (but one profile shape)
     if RADeg is None and decDeg is None:
         RADeg, decDeg=wcs.getCentreWCSCoords()
     dtype=np.float32 # only float32 supported by fast srcsim
@@ -636,9 +637,6 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
             beam=BeamProfile(beamFileName = beam)
         rht=utils.RadialFourierTransform()
         rprof=interpolate.splev(np.degrees(rht.r), tckP, ext = 1)
-        if amplitude is not None:
-            rprof=rprof*amplitude
-            amp=1.0
         lbeam=np.interp(rht.l, beam.ell, beam.Bell)
         lprof=rht.real2harm(rprof)
         lprof*=lbeam
@@ -648,10 +646,18 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
         rDeg=np.logspace(np.log10(1e-6), np.log10(maxSizeDeg), 5000)
         rprof=interpolate.splev(rDeg, tckP, ext = 1)
         r=np.radians(rDeg)
-        if amplitude is not None:
-            amp=amplitude
-    poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
-    amps=np.array([amp], dtype = dtype)
+    if amplitude is not None:
+        amp=rprof[0]*amplitude
+        rprof=rprof/rprof[0]
+
+    if type(RADeg) == np.ndarray and type(decDeg) == np.ndarray:
+        poss=np.array([np.radians(decDeg), np.radians(RADeg)]).astype(dtype)
+    else:
+        poss=np.array([[np.radians(decDeg)], [np.radians(RADeg)]]).astype(dtype)
+    if type(amp) == np.ndarray:
+        amps=np.array(amp, dtype = dtype)
+    else:
+        amps=np.array([amp], dtype = dtype)
 
     signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
                                     rmax = np.radians(maxSizeDeg), prof_equi = False)
@@ -665,7 +671,7 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
 def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                              GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
                              convolveWithBeam = True, cosmoModel = None, painter = 'pixell'):
-    """Makes a 2d signal only map containing an Arnaud model cluster. 
+    """Makes a 2d signal only map containing an Arnaud model cluster.
     
     Args:
         z (float): Redshift; used for setting angular size.
@@ -675,15 +681,15 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
         beam (:obj:`str` or :obj:`signals.BeamProfile`): Either the file name of the text file that describes
             the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
             no beam convolution is applied.
-        RADeg: If None, the signal will be inserted at the center of the generated map.
-        decDeg: If None, the signal will be inserted at the center of the generated map.
+        RADeg (float, or array, optional): If None, the signal will be inserted at the center of the generated map.
+        decDeg (float, or array, optional): If None, the signal will be inserted at the center of the generated map.
         GNFWParams (dict, optional): Used to specify a different profile shape to the default (which follows 
             Arnaud et al. 2010). If GNFWParams = 'default', then the default parameters as listed in 
             gnfw.py are used, i.e., GNFWParams = {'gamma': 0.3081, 'alpha': 1.0510, 'beta': 5.4905, 
             'tol': 1e-7, 'npts': 100}. Otherwise, give a dictionary that specifies the wanted values. This 
             would usually be specified using the GNFWParams key in the .yml config used when running nemo
             (see the examples/ directory).
-        amplitude (float, optional): Amplitude of the cluster, i.e., the central decrement (in map units, 
+        amplitude (float, or array, optional): Amplitude of the cluster, i.e., the central decrement (in map units,
             e.g., uK), or the central Comptonization parameter (dimensionless), before beam convolution. 
             Not needed for generating filter kernels.
         maxSizeDeg (float, optional): Use to limit the region over which the beam convolution is done, 
@@ -696,6 +702,11 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     Note:
         The pixel window function is not applied here; use pixell.enmap.apply_window to do that (see 
         nemo.filters.filterMaps).    
+
+    Note:
+        If arrays of sky coordinates and amplitudes are given, multiple clusters (with the same profile) will
+        be painted in the map. This is useful for running cluster injection simulations for estimating
+        completeness, but only works with the 'pixell' object painter.
         
     """
 

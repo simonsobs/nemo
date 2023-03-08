@@ -1653,46 +1653,58 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
         # Clusters - insert one at a time (with different scales etc.)
         count=0
-        for row in catalog:
-            # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
-            # NOTE: Should move this out of this switch so applied to all catalog types
-            if validAreaSection is not None:
-                x0, x1, y0, y1=validAreaSection
-                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
-                    continue
-            count=count+1
-            if 'true_M500c' in catalog.keys():
-                # This case is for when we're running from nemoMock output
-                # Since the idea of this is to create noise-free model images, we must use true values here
-                # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
-                M500=row['true_M500c']*1e14
-                z=row['redshift']
-                y0ToInsert=row['true_y_c']*1e-4
-            elif override is not None:
-                z=override['redshift']
-                M500=override['M500']
-                y0ToInsert=row['y_c']*1e-4
-            else:
-                # NOTE: This case is for running from nemo output
-                # We need to adapt this for when the template names are not in this format
-                if 'template' not in catalog.keys():
-                    raise Exception("No M500, z, or template column found in catalog.")
-                bits=row['template'].split("#")[0].split("_")
-                M500=float(bits[1][1:].replace("p", "."))
-                z=float(bits[2][1:].replace("p", "."))
-                y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
-            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
-            maxSizeDeg=5*(theta500Arcmin/60)
-            signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
-                                            decDeg = row['decDeg'], beam = beam,
-                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                            cosmoModel = cosmoModel)
+        # First bit here (override) is for doing injection sims faster
+        if override is not None:
+            z=override['redshift']
+            M500=override['M500']
+            y0ToInsert=catalog['y_c'].data*1e-4
+            RAs=catalog['RADeg'].data
+            decs=catalog['decDeg'].data
+            modelMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = RAs,
+                                          decDeg = decs, beam = beam,
+                                          GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                          cosmoModel = cosmoModel)
             if obsFreqGHz is not None:
-                signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
-                                            TCMBAlpha = TCMBAlpha, z = z)
-            modelMap=modelMap+signalMap
+                modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
+                                         TCMBAlpha = TCMBAlpha, z = z)
+        else:
+            for row in catalog:
+                # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
+                # NOTE: Should move this out of this switch so applied to all catalog types
+                if validAreaSection is not None:
+                    x0, x1, y0, y1=validAreaSection
+                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                    if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
+                        continue
+                count=count+1
+                if 'true_M500c' in catalog.keys():
+                    # This case is for when we're running from nemoMock output
+                    # Since the idea of this is to create noise-free model images, we must use true values here
+                    # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
+                    M500=row['true_M500c']*1e14
+                    z=row['redshift']
+                    y0ToInsert=row['true_y_c']*1e-4
+                else:
+                    # NOTE: This case is for running from nemo output
+                    # We need to adapt this for when the template names are not in this format
+                    if 'template' not in catalog.keys():
+                        raise Exception("No M500, z, or template column found in catalog.")
+                    bits=row['template'].split("#")[0].split("_")
+                    M500=float(bits[1][1:].replace("p", "."))
+                    z=float(bits[2][1:].replace("p", "."))
+                    y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+                theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+                maxSizeDeg=5*(theta500Arcmin/60)
+                signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                                                decDeg = row['decDeg'], beam = beam,
+                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                                cosmoModel = cosmoModel)
+                if obsFreqGHz is not None:
+                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
+                                                TCMBAlpha = TCMBAlpha, z = z)
+                modelMap=modelMap+signalMap
     else:
         # Sources - slower but more accurate way
         for row in catalog:
