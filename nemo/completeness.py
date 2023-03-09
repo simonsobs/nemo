@@ -134,7 +134,7 @@ class SelFn(object):
                  zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
-                 massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'injection',
+                 massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
                  QSource = 'fit'):
         
         self.SNRCut=SNRCut

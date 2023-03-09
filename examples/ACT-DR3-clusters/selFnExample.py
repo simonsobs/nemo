@@ -46,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument("-S", "--SNR-cut", dest = "SNRCut", help="""Use only clusters with fixed_SNR > 
                         this value.""", default = 5.0, type = float)
     parser.add_argument("-z", "--z-step", dest = "zStep", help="""Redshift bin width (default: 0.1).""", 
-                        default = 0.1, type = float)
+                        default = 0.02, type = float)
     args = parser.parse_args()
     
     configFileName=args.configFileName
@@ -57,7 +57,8 @@ if __name__ == '__main__':
     
     print(">>> Setting up SNR > %.2f selection function ..." % (SNRCut))
     selFn=completeness.SelFn(selFnDir, SNRCut, configFileName = configFileName, 
-                             footprintLabel = footprintLabel, zStep = zStep)
+                             footprint = footprintLabel, zStep = zStep)
+    massLabel="M%d%s" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0])
 
     # If we want to play with scaling relation also
     scalingRelationDict=selFn.scalingRelationDict
@@ -68,7 +69,7 @@ if __name__ == '__main__':
     printNumClusters(H0, Om0, Ob0, sigma_8, n_s, scalingRelationDict = scalingRelationDict)
     t1=time.time()
     print("... iteration took %.3f sec ..." % (t1-t0))
-    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test0", "test0_Mz.pdf")
+    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test0", massLabel, "test0_Mz.pdf")
     
     # A complete iteration of changing cosmological parameters    
     t0=time.time()
@@ -76,7 +77,7 @@ if __name__ == '__main__':
     printNumClusters(H0, Om0, Ob0, sigma_8, n_s, scalingRelationDict = scalingRelationDict)
     t1=time.time()
     print("... iteration took %.3f sec ..." % (t1-t0))
-    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test1", "test1_Mz.pdf")
+    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test1", massLabel, "test1_Mz.pdf")
     
     # Changing the scaling relation normalisation
     t0=time.time()
@@ -84,7 +85,7 @@ if __name__ == '__main__':
     printNumClusters(H0, Om0, Ob0, sigma_8, n_s, scalingRelationDict = scalingRelationDict)
     t1=time.time()
     print("... iteration took %.3f sec ..." % (t1-t0))
-    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test2", "test2_Mz.pdf")
+    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test2", massLabel, "test2_Mz.pdf")
 
     # Changing the scaling relation intrinsic scatter
     t0=time.time()
@@ -93,5 +94,5 @@ if __name__ == '__main__':
     printNumClusters(H0, Om0, Ob0, sigma_8, n_s, scalingRelationDict = scalingRelationDict)
     t1=time.time()
     print("... iteration took %.3f sec ..." % (t1-t0))
-    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test3", "test3_Mz.pdf")
+    completeness.makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, "test3", massLabel, "test3_Mz.pdf")
     
