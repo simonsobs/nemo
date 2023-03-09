@@ -297,8 +297,8 @@ class NemoConfig(object):
             self.parDict['sourceInjectionTest']=True
 
         # Source injection test is now required for calculation of the selection function
-        if 'calcSelFn' in self.parDict.keys() and self.parDict['calcSelFn'] == True:
-            self.parDict['sourceInjectionTest']=True
+        #if 'calcSelFn' in self.parDict.keys() and self.parDict['calcSelFn'] == True:
+        #    self.parDict['sourceInjectionTest']=True
 
         # We want the original map WCS and shape (for using stitchMaps later)
         try:

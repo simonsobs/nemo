@@ -35,6 +35,7 @@ longNames: False
 
 # Photometry options
 photFilter: 'Arnaud_M2e14_z0p4' # Defines the reference filter for cluster selection / mass estimates
+fitQ: True
 
 # Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
 # The example below is for the Planck Pressure Profile (PPP)
@@ -58,17 +59,19 @@ massOptions: {tenToA0: 4.95e-5,
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
 calcSelFn: True
 selFnOptions: {fixedSNRCut: 5.0,
-               method: 'montecarlo',
+               method: 'fast',
                numIterations: 1000, 
                massLimitMaps: [{z: 0.5}]}
                
-#selFnFootprints: 
+# selFnFootprints: 
 #    - {label: "HSC",
 #       maskList: ["HSCCheckAndSelFn/s19a_fdfc_CAR_contarea_ziy-gt-5.fits"]}
 #    - {label: "KiDS",
 #       maskList: ["KiDSSelFn/mask_KiDSN.fits", "KiDSSelFn/mask_KiDSS.fits"]}
 #    - {label: "DES",
 #       maskList: ["DESY3/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+#    - {label: "DECaLS",
+#       maskList: ["DECaLS_DR8_mask.fits"]}
 
 # Filter definitions:
 # allFilters is a dictionary of parameters that will be copied into all mapFilters
@@ -123,8 +126,7 @@ mapFilters:
        params: {M500MSun: 8.0e+14, z: 1.2}}
 
 # Source injection test - this can also be enabled with the nemo -I switch
-#sourceInjectionTest: False
-sourceInjectionIterations: 200
+sourceInjectionIterations: 9
 sourcesPerTile: 50
 sourceInjectionModels:
     - {redshift: 0.8, M500: 2.0e+14}
