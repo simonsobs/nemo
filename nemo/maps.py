@@ -1660,6 +1660,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             y0ToInsert=catalog['y_c'].data*1e-4
             RAs=catalog['RADeg'].data
             decs=catalog['decDeg'].data
+            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+            maxSizeDeg=5*(theta500Arcmin/60)
             modelMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = RAs,
                                           decDeg = decs, beam = beam,
                                           GNFWParams = GNFWParams, amplitude = y0ToInsert,
