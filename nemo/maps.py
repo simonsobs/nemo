@@ -1874,6 +1874,8 @@ def sourceInjectionTest(config):
                         amplitudeRange=[0.001, 10]
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                        if amplitudeRange == 'smart':
+                            amplitudeRange=[realCatalog['fixed_y_c'].min()*0.01, realCatalog['fixed_y_c'].max()]
                     if 'sourceInjectionDistribution' not in config.parDict.keys():
                         distribution='linear'
                     else:
