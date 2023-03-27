@@ -158,7 +158,12 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     if photFilter is not None and len(config.parDict['mapFilters']) > 1:
         assert(filtersList[0]['label'] == photFilter)
     photFilteredMapDict=None
-    
+
+    # For source injection stuff (yes, this is messy - see below for why we do this)
+    usePixelWindow=True
+    if useCachedRMSMap == True:
+        undoPixelWindow=False
+
     # Make filtered maps for each filter and tile
     catalogDict={}
     areaMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
@@ -179,19 +184,26 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
 
             filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName, 
                                                diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
-                                               verbose = True, undoPixelWindow = True,
+                                               verbose = True, undoPixelWindow = undoPixelWindow,
                                                useCachedFilter = useCachedFilters)
 
             if useCachedRMSMap == True and photFilter is not None: # i.e., only an option for cluster insertion sims
+                # This is messy:
+                # 1. the saved RMS map doesn't have pixel window correction undone
+                # 2. we make the S/N map before doing the pixel window correction (it would cancel)
+                # 3. but if we're running a source injection sim using the cached RMS map, we'd make a new SN map
+                #    here that has the pixel window correction undone for S, but not for N
+                # 4. so, if we're doing source injection sims, we DON'T want to undo pixel window in call to filterMaps
+                #    above
+                # 5. but then we DO want to undo the pixel window after we've made our new S/N map here
                 RMSMap, wcs=completeness.loadRMSMap(tileName, config.selFnDir, photFilter)
                 validMask=np.greater(RMSMap, 0)
                 SNMap=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']
                 SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
                 filteredMapDict['SNMap']=SNMap
-                # print("check how our insertion sim looks")
-                # import IPython
-                # IPython.embed()
-                # sys.exit()
+                mask=np.equal(filteredMapDict['data'], 0)
+                filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+                filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
                 filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
