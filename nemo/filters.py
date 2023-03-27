@@ -717,6 +717,7 @@ class MatchedFilter(MapFilter):
                 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
+        # NOTE: This all works on maps which have a zero border. If they don't, edgeTrimArcmin has no effect
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
             trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
         elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart":
@@ -730,10 +731,15 @@ class MatchedFilter(MapFilter):
         else:
             edgeCheck=np.ones(filteredMap.shape)
         filteredMap=filteredMap*edgeCheck
-        apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask
         filteredMap=filteredMap*surveyMask # NOTE: Needed for 2-pass (I think)
         del edgeCheck
+
+        # Just in case... we always want to trim the apodized region from the region searched
+        # This has no effect if we're using a survey mask already
+        # Doing this makes life easier when running tests that use small survey masks or go right to edge of tile otherwise
+        apodMask=np.equal(enmap.apod(np.ones(filteredMap.shape), self.apodPix), 1)
+        surveyMask=surveyMask*apodMask
 
         # Apply final survey mask to signal-to-noise map and RMS map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
@@ -1131,9 +1137,14 @@ class RealSpaceMatchedFilter(MapFilter):
             edgeCheck=np.ones(filteredMap.shape)
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
         filteredMap=filteredMap*edgeCheck
-        apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask
         del edgeCheck
+
+        # Just in case... we always want to trim the apodized region from the region searched
+        # This has no effect if we're using a survey mask already
+        # Doing this makes life easier when running tests that use small survey masks or go right to edge of tile otherwise
+        apodMask=np.equal(enmap.apod(np.ones(filteredMap.shape), self.apodPix), 1)
+        surveyMask=surveyMask*apodMask
 
         # Apply final survey mask to signal-to-noise map and RMS map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on

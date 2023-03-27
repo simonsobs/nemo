@@ -1936,6 +1936,10 @@ def sourceInjectionTest(config):
             # Ideally we shouldn't have blank tiles... but if we do, skip
             if len(mockCatalog) > 0:
 
+                # Uncomment line below if want to save filtered maps for quick and dirty debugging
+                # Overwrites the original filtered map, but can compare to 'stitched' map
+                # config.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
+
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
                                                                useCachedRMSMap = True, writeAreaMask = False,
                                                                writeFlagMask = False)
@@ -1955,6 +1959,7 @@ def sourceInjectionTest(config):
                                                                               radiusArcmin = realExclusionRadiusArcmin)
                     except:
                         raise Exception("Source injection test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
+
                     # Catching any crazy mismatches, writing output for debugging
                     if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
                         mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)

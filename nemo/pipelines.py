@@ -160,7 +160,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     photFilteredMapDict=None
 
     # For source injection stuff (yes, this is messy - see below for why we do this)
-    usePixelWindow=True
+    undoPixelWindow=True
     if useCachedRMSMap == True:
         undoPixelWindow=False
 
