@@ -292,7 +292,7 @@ class MapDict(dict):
             outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (self['obsFreqGHz'], tileName)
             saveFITS(outFileName, data, wcs)
 
-        # For position recovery tests
+        # For position recovery tests, completeness calculations
         if 'injectSources' in list(self.keys()):
             # NOTE: Need to add varying GNFWParams here
             if 'GNFWParams' in self['injectSources'].keys():
@@ -301,9 +301,13 @@ class MapDict(dict):
             else:
                 GNFWParams=None
                 obsFreqGHz=None
+            # Unsure if we actually want/need the below...
+            # source injection sim tiles are processed independently (so shouldn't be double counting in overlaps anyway)
+            validAreaSection=self.tileCoordsDict[tileName]['areaMaskInClipSection']
             modelMap=makeModelImage(data.shape, wcs, self['injectSources']['catalog'],
                                     self['beamFileName'], obsFreqGHz = obsFreqGHz,
-                                    GNFWParams = GNFWParams,
+                                    GNFWParams = GNFWParams, profile = self['injectSources']['profile'],
+                                    validAreaSection = validAreaSection,
                                     override = self['injectSources']['override'])
             if modelMap is not None:
                 modelMap[weights == 0]=0
@@ -1626,7 +1630,19 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         SNRKey=None
     if SNRKey is not None:
         catalog=catalog[catalog[SNRKey] > minSNR]
-        
+
+    # If we want to restrict painting to just area mask within in a tile
+    # (avoids double painting of objects in overlap areas)
+    if validAreaSection is not None:
+        x0, x1, y0, y1=validAreaSection
+        coords=wcs.wcs2pix(catalog['RADeg'], catalog['decDeg'])
+        x=np.array(coords)[:, 0]
+        y=np.array(coords)[:, 1]
+        xMask=np.logical_and(x >= x0, x < x1)
+        yMask=np.logical_and(y >= y0, y < y1)
+        cMask=np.logical_and(xMask, yMask)
+        catalog=catalog[cMask]
+
     if len(catalog) == 0:
         return None
 
@@ -1672,13 +1688,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                          TCMBAlpha = TCMBAlpha, z = z)
         else:
             for row in catalog:
-                # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
-                # NOTE: Should move this out of this switch so applied to all catalog types
-                if validAreaSection is not None:
-                    x0, x1, y0, y1=validAreaSection
-                    x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                    if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
-                        continue
                 count=count+1
                 if 'true_M500c' in catalog.keys():
                     # This case is for when we're running from nemoMock output
@@ -1875,7 +1884,7 @@ def sourceInjectionTest(config):
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
                         if amplitudeRange == 'smart':
-                            amplitudeRange=[realCatalog['fixed_y_c'].min()*0.01, realCatalog['fixed_y_c'].max()]
+                            amplitudeRange=[realCatalog['fixed_y_c'].min()*0.5, realCatalog['fixed_y_c'].max()]
                     if 'sourceInjectionDistribution' not in config.parDict.keys():
                         distribution='linear'
                     else:
@@ -1889,7 +1898,7 @@ def sourceInjectionTest(config):
                     # Or... proper mock, but this takes ~24 sec for E-D56
                     #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]
                     injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'],
-                                   'override': sourceInjectionModel}
+                                   'override': sourceInjectionModel, 'profile': 'A10'}
                 elif filtDict['class'].find("Beam") != -1:
                     if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
                         amplitudeRange=[1, 1000]
