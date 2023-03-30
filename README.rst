@@ -9,8 +9,8 @@ and capable of analyzing maps that will be produced by the
 * **Documentation:** https://nemo-sz.readthedocs.io
 * **License:** `BSD 3-Clause <LICENSE>`_
 * **Authors:** Matt Hilton, with contributions from Simone Aiola, David Alonso,
-  Matthew Hasselfield, Kevin Huffenberger, Toby Marriage, Sigurd Naess, and Cristóbal Sifón
-  (not all reflected on GitHub).
+  Matthew Hasselfield, Kevin Huffenberger, Toby Marriage, Niall MacCrann,
+  Sigurd Naess, and Cristóbal Sifón (not all reflected on GitHub).
 * **Installation:** ``pip install nemo-sz``
 * **Support:** Please use the `GitHub issues page <https://github.com/simonsobs/nemo/issues>`_, 
   and/or contact `Matt Hilton <mailto:matt.hilton@mykolab.com>`_.

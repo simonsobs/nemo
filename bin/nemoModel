@@ -62,11 +62,16 @@ def makeParser():
                         help = "Random seed used only for generating (optional) cosmic microwave\
                         background or source catalog realizations (i.e., the seed is not used for\
                         noise realizations).")
-    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", default = 0.0,
+    parser.add_argument("-N", "--add-noise", dest = "addNoise", default = 0.0,
                         help = "If a random cosmic microwave background realization had been added, add\
                         white noise. If a number is given, uniform per-pixel white noise at the specified\
                         level is added. Otherwise, a path to an inverse variance map can be given (must\
                         have the same pixelization as the supplied mask).")
+    parser.add_argument("-k", "--lknee", dest = "lKnee", default = None, type = float,
+                        help = "Must be used with -N (--add-noise) and -C (--add-cmb). If given,\
+                        1/f noise with power spectrum N_l = (1 + l/lknee)^-3) will be generated and added\
+                        to the map (see Appendix A of MacCrann et al. 2023). Reasonable values to use\
+                        are 2000 for ACT f090, and 3000 for ACT f150.")
     parser.add_argument("-A", "--add-map", dest = "addMap", default = None,
                         help = "Path to a FITS map (same pixelization as the input mask) that will be\
                         added to the output sim map. Useful if you want to add extra pre-computed signals\
@@ -219,14 +224,16 @@ if __name__ == '__main__':
 
     # Noise - if number, uniform white noise level, if string, a path to ivar map
     try:
-        addWhiteNoise=float(args.addWhiteNoise)
+        addNoise=float(args.addNoise)
     except:
-        with pyfits.open(args.addWhiteNoise) as img:
-            sigma=img[0].data[0]
+        with pyfits.open(args.addNoise) as img:
+            if img[0].data.ndim == 2:
+                sigma=img[0].data
+            else:
+                sigma=img[0].data[0]
         valid=sigma > 1e-7
         sigma[valid]=np.sqrt(1/sigma[valid])
-        #sigma=np.random.normal(0, sigma)#*noiseBoost # simCMBMap generates noise
-        addWhiteNoise=sigma
+        addNoise=sigma
 
     # Stitching
     print(">>> Stitching tiles ...")
@@ -244,15 +251,15 @@ if __name__ == '__main__':
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
             shape=(d.shape)
             # Split adding CMB and noise to enable more tests
-            d=d+maps.simCMBMap(shape, wcs, noiseLevel = 0, beam = args.beamFileName,
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = None, beam = args.beamFileName,
                                seed = args.seed)
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalAndCMB.fits"), d, wcs)
-            d=d+maps.simNoiseMap(shape, addWhiteNoise)
+            d=d+maps.simNoiseMap(shape, addNoise, wcs = wcs, lKnee = args.lKnee)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
-                d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addWhiteNoise, [int(d.shape[0]/2), d.shape[1]])
+                d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addNoise, [int(d.shape[0]/2), d.shape[1]])
                 # Doesn't really matter about absolute scaling of this
-                weights=np.ones(d.shape)*args.addWhiteNoise
+                weights=np.ones(d.shape)*args.addNoise
                 weights[:int(d.shape[0]/2)]=weights[:int(d.shape[0]/2)]*2
                 weights=np.power(weights, -2)
                 astImages.saveFITS(args.outputFileName.replace(".fits", ".ivar.fits"), weights, wcs)

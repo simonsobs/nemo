@@ -28,6 +28,7 @@ import copy
 import yaml
 import pickle
 from pixell import enmap, curvedsky, utils, powspec
+import sharp
 import nemo
 from . import catalogs
 from . import signals
@@ -1110,7 +1111,7 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSeed = False):
+def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1124,7 +1125,6 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSe
             the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
             no beam convolution is applied.
         seed (:obj:`int`): The seed used for the random CMB realisation.
-        fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
             
     Returns:
         A map (:obj:`numpy.ndarray`)
@@ -1146,18 +1146,18 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSe
         ps*=lbeam
 
     randMap=curvedsky.rand_map(shape, wcs.AWCS, ps = ps, spin = [0,2], seed = seed)
-    if fixNoiseSeed == False:
-        np.random.seed()
 
-    randMap=randMap+simNoiseMap(shape, noiseLevel, fixNoiseSeed = fixNoiseSeed)
+    if noiseLevel is not None:
+        randMap=randMap+simNoiseMap(shape, noiseLevel)
 
     np.random.seed()
     
     return randMap
 
 #-------------------------------------------------------------------------------------------------------------
-def simNoiseMap(shape, noiseLevel, fixNoiseSeed = False):
-    """Generate a simulated white noise map.
+def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3):
+    """Generate a simulated noise map. This may contain just white noise, or optionally a 1/f noise component
+    can be generated.
 
     Args:
         shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
@@ -1165,28 +1165,68 @@ def simNoiseMap(shape, noiseLevel, fixNoiseSeed = False):
             usually uK) for generating white noise that is added across the whole map. Alternatively, an array
             with the same dimensions as shape may be used, specifying sigma (in map units) per corresponding
             pixel. Noise will only be added where non-zero values appear in noiseLevel.
-        fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
+        lKnee (:obj:`float`): If given, 1/f noise will be generated using the power spectrum
+            N_l = (1 + l/lknee)^-alpha) - see Appendix A of MacCrann et al. 2023.
+        alpha (:obj:`float`): Power-law exponent in the power spectrum used for generating 1/f noise. Has
+            no effect unless lKnee is also given.
 
     Returns:
         A map (:obj:`numpy.ndarray`)
 
     """
 
-    randMap=np.zeros(shape)
-    if fixNoiseSeed == False:
-        np.random.seed()
-
-    if type(noiseLevel) == np.ndarray:
-        mask=np.nonzero(noiseLevel)
-        generatedNoise=np.zeros(randMap.shape)
-        generatedNoise[mask]=np.random.normal(0, noiseLevel[mask], noiseLevel[mask].shape)
-        randMap=randMap+generatedNoise
-    else:
-        if noiseLevel > 0:
-            generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
-            randMap=randMap+generatedNoise
-
     np.random.seed()
+
+    if lKnee is None:
+        # White noise only
+        randMap=np.zeros(shape)
+        if type(noiseLevel) == np.ndarray:
+            mask=np.nonzero(noiseLevel)
+            generatedNoise=np.zeros(randMap.shape)
+            generatedNoise[mask]=np.random.normal(0, noiseLevel[mask], noiseLevel[mask].shape)
+        else:
+            if noiseLevel > 0:
+                generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
+        randMap=randMap+generatedNoise
+
+    else:
+        # 1/f noise + white noise, using Niall's routines
+        mlmax=6000 # following config in Niall's code, could be made a parameter
+        if wcs is None:
+            raise Exception("wcs is None - need to supply a wcs to generate a noise map with 1/f noise included.")
+        if type(noiseLevel) == np.ndarray:
+            mask=np.nonzero(noiseLevel)
+            ivarMap=np.zeros(shape)
+            ivarMap[mask]=1/noiseLevel[mask]**2
+            ivarMap=enmap.enmap(ivarMap, wcs.AWCS)
+        else:
+            ivarMap=enmap.enmap(np.ones(shape)*(1/noiseLevel**2), wcs.AWCS)
+
+        def _mod_noise_map(ivar, Nl):
+            map1 = enmap.rand_gauss(ivar.shape, ivar.wcs)
+            lmax = len(Nl)-1
+            ainfo = sharp.alm_info(lmax)
+            alm = curvedsky.map2alm(map1, ainfo=ainfo)
+            map2 = curvedsky.alm2map(alm, np.zeros_like(map1))
+            map1 -= map2
+            ainfo.lmul(alm, Nl**0.5, alm)
+            map2 = curvedsky.alm2map(alm, np.zeros_like(map1))
+            map1 += map2
+            map1 *= ivar**-0.5
+            ivar_nonzero = ivar>0.
+            ivar_median = np.median(ivar[ivar_nonzero])
+            valid_ivar = ivar_nonzero*(ivar>ivar_median/1.e6)
+            map1[~(valid_ivar)] = 0.
+            return map1
+
+        assert np.all(np.isfinite(ivarMap))
+        shape, wcs=ivarMap.shape, ivarMap.wcs
+        ells = np.arange(mlmax+1)
+        Nl_atm = (lKnee/ells)**-alpha + 1
+        Nl_atm[~np.isfinite(Nl_atm)] = 0.
+        assert np.all(np.isfinite(Nl_atm))
+        randMap = _mod_noise_map(ivarMap, Nl_atm)
+        assert np.all(np.isfinite(randMap))
 
     return randMap
 
