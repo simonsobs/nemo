@@ -1195,7 +1195,7 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3):
         if wcs is None:
             raise Exception("wcs is None - need to supply a wcs to generate a noise map with 1/f noise included.")
         if type(noiseLevel) == np.ndarray:
-            mask=np.nonzero(noiseLevel)
+            mask=noiseLevel > 1e-07
             ivarMap=np.zeros(shape)
             ivarMap[mask]=1/noiseLevel[mask]**2
             ivarMap=enmap.enmap(ivarMap, wcs.AWCS)
