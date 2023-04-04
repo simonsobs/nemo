@@ -135,7 +135,7 @@ class SelFn(object):
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
-                 QSource = 'fit'):
+                 QSource = 'fit', noiseCut = None):
         
         self.SNRCut=SNRCut
         if footprint == 'full':
@@ -206,6 +206,8 @@ class SelFn(object):
             if os.path.exists(RMSTabFileName) == False:
                 raise FootprintError
             self.RMSTab=atpy.Table().read(RMSTabFileName)
+            if noiseCut is not None:
+                self.RMSTab=self.RMSTab[self.RMSTab['y0RMS'] < noiseCut]
             self.RMSDict={}
             tileNames=[]
             for tileName in self.tileNames:
@@ -217,7 +219,9 @@ class SelFn(object):
                     tileNames.append(tileName)
             self.tileNames=tileNames
             self.totalAreaDeg2=self.RMSTab['areaDeg2'].sum()
-            
+            # If want a plot of noise distribution
+            # plt.hist(self.RMSTab['y0RMS'], weights = self.RMSTab['areaDeg2'], bins  = 100, density=True)
+
             # For weighting - arrays where entries correspond with tileNames list
             tileAreas=[]    
             for tileName in self.tileNames:
