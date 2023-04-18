@@ -39,7 +39,7 @@ def parseConfigFile(parDictFileName, verbose = False):
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
         maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor']
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -104,6 +104,8 @@ def parseConfigFile(parDictFileName, verbose = False):
             for entry in parDict['tileNameList']:
                 newList.append(entry.upper())
             parDict['tileNameList']=newList
+        if 'reprojectToTan' not in parDict.keys():
+            parDict['reprojectToTan']=False
         # We shouldn't have to give this unless we're using it
         if 'catalogCuts' not in parDict.keys():
             parDict['catalogCuts']=[]
@@ -521,7 +523,8 @@ class NemoConfig(object):
         if self.parDict['useTiling'] == False:
             clipCoordsDict[ext.name]={'clippedSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']],
                                       'header': wcs.header,
-                                      'areaMaskInClipSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']]}
+                                      'areaMaskInClipSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']],
+                                      'reprojectToTan': self.parDict['reprojectToTan']}
 
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
@@ -589,7 +592,8 @@ class NemoConfig(object):
                 clip_y1=int(round(clip_y1))
                 if name not in clipCoordsDict:
                     clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
-                                          'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
+                                          'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1],
+                                          'reprojectToTan': self.parDict['reprojectToTan']}
                     if self.verbose:
                         print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
 

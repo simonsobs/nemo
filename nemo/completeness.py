@@ -206,10 +206,13 @@ class SelFn(object):
             if os.path.exists(RMSTabFileName) == False:
                 raise FootprintError
             self.RMSTab=atpy.Table().read(RMSTabFileName)
+            # Sanitise just in case [this is an edge case that has happened on one sim]
+            self.RMSTab=self.RMSTab[self.RMSTab['areaDeg2'] > 0]
             if noiseCut is not None:
                 self.RMSTab=self.RMSTab[self.RMSTab['y0RMS'] < noiseCut]
             self.RMSDict={}
             tileNames=[]
+            totalAreaDeg2=0.0 # Doing it this way so that tileNames can be chosen and fed into selFn
             for tileName in self.tileNames:
                 tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
                 if downsampleRMS == True and len(tileTab) > 0:
@@ -217,8 +220,9 @@ class SelFn(object):
                 if len(tileTab) > 0:    # We may have some blank tiles...
                     self.RMSDict[tileName]=tileTab
                     tileNames.append(tileName)
+                    totalAreaDeg2=totalAreaDeg2+tileTab['areaDeg2'].sum()
             self.tileNames=tileNames
-            self.totalAreaDeg2=self.RMSTab['areaDeg2'].sum()
+            self.totalAreaDeg2=totalAreaDeg2
             # If want a plot of noise distribution
             # plt.hist(self.RMSTab['y0RMS'], weights = self.RMSTab['areaDeg2'], bins  = 100, density=True)
 
