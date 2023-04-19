@@ -126,6 +126,7 @@ if __name__ == '__main__':
     parDict['unfilteredMaps']=[mapDict]
     parDict['mapFilters']=[]
     parDict['useTiling']=False
+    parDict['reprojectToTan']=False
     if args.MPIEnabled == True or args.breakIntoTiles == True:
         parDict['useTiling']=True
         parDict['tileOverlapDeg']=1.0
