@@ -870,11 +870,13 @@ def getCatalogWithinImage(tab, shape, wcs, mask = None):
     
     """
     
-    xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist())
-    xyCoords=np.array(xyCoords, dtype = int)
+    xyCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()))
     selected=[]
     for i in range(len(tab)):
         x, y=xyCoords[i][0], xyCoords[i][1]
+        if np.isnan(x) == True or np.isnan(y) == True:
+            selected.append(False)
+            continue
         if x >= 0 and x < shape[1]-1 and y >= 0 and y < shape[0]-1:
             if mask is not None:
                 if mask[int(round(y)), int(round(x))] == 1:
