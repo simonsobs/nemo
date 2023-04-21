@@ -1260,7 +1260,7 @@ def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None):
     return randMap
 
 #-------------------------------------------------------------------------------------------------------------
-def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3):
+def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMode = 'perPixel'):
     """Generate a simulated noise map. This may contain just white noise, or optionally a 1/f noise component
     can be generated.
 
@@ -1274,6 +1274,8 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3):
             N_l = (1 + l/lknee)^-alpha) - see Appendix A of MacCrann et al. 2023.
         alpha (:obj:`float`): Power-law exponent in the power spectrum used for generating 1/f noise. Has
             no effect unless lKnee is also given.
+        noiseMode(:obj:`str`): Either 'perPixel', or 'perSquareArcmin' - if the latter, constant noise in terms
+            of surface brightness will be added (accounts for varying pixel scale, if present).
 
     Returns:
         A map (:obj:`numpy.ndarray`)
@@ -1281,6 +1283,12 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3):
     """
 
     np.random.seed()
+
+    assert(noiseMode in ['perPixel', 'perSquareArcmin'])
+    if noiseMode == 'perSquareArcmin' and lKnee is not None:
+        raise Exception("Adding 1/f noise when noiseMode != 'perPixel' is not supported yet")
+    if noiseMode == 'perSquareArcmin' and type(noiseLevel) == np.ndarray:
+        raise Exception("noiseLevel is a map - this is only currently supported if noiseMode = 'perPixel' (noiseMode = 'perSquareArcmin' given)")
 
     if lKnee is None:
         # White noise only
@@ -1291,7 +1299,11 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3):
             generatedNoise[mask]=np.random.normal(0, noiseLevel[mask], noiseLevel[mask].shape)
         else:
             if noiseLevel > 0:
-                generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
+                if noiseMode == 'perPixel':
+                    generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
+                else:
+                    arcmin2Map=getPixelAreaArcmin2Map(shape, wcs)
+                    generatedNoise=np.random.normal(0, noiseLevel/arcmin2Map, randMap.shape)
         randMap=randMap+generatedNoise
 
     else:
