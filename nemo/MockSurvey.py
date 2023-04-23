@@ -357,10 +357,10 @@ class MockSurvey(object):
         return PLog10M
 
 
-    def drawSample(self, y0Noise, scalingRelationDict, QFit = None, wcs = None, photFilterLabel = None,
-                   tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
-                   areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
-                   applyIntrinsicScatter = True, applyNoiseScatter = True,
+    def drawSample(self, y0Noise, scalingRelationDict, QFit = None, wcs = None, photFilterLabel = None,\
+                   tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,\
+                   areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True,\
+                   applyIntrinsicScatter = True, applyNoiseScatter = True,\
                    applyRelativisticCorrection = True, verbose = False):
         """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
         Nemo catalogs) by applying the given scaling relation parameters, and then (optionally) applying

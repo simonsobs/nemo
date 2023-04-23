@@ -30,7 +30,10 @@ import pickle
 from pixell import enmap, curvedsky, utils, powspec
 import sharp
 import nemo
-import reproject
+try:
+    import reproject
+except:
+    pass
 from . import catalogs
 from . import signals
 from . import photometry
