@@ -17,6 +17,7 @@ if on_rtd is None:
     import pyccl as ccl
 from . import signals
 from . import catalogs
+from . import maps
 import pickle
 from scipy import interpolate
 from scipy import integrate
@@ -455,16 +456,20 @@ class MockSurvey(object):
         # NOTE: switched to using valid part of RMSMap here rather than areaMask - we need to fix the latter to same area
         # It isn't a significant issue though
         if type(y0Noise) == np.ndarray and y0Noise.ndim == 2:
+            # Choose random pixels with the map, but weight each pixel by area (to account for projection e.g. CAR)
+            # NOTE: This is very memory heavy for normal ACT CAR maps, might be an idea to downsample first
+            assert(wcs is not None)
             RMSMap=y0Noise
             ysInMask, xsInMask=np.where(RMSMap != 0)
-            coordIndices=np.random.randint(0, len(xsInMask), numClusters)
-            ys=ysInMask[coordIndices]
-            xs=xsInMask[coordIndices]
-            if wcs is not None:
-                RADecCoords=wcs.pix2wcs(xs, ys)
-                RADecCoords=np.array(RADecCoords)
-                RAs=RADecCoords[:, 0]
-                decs=RADecCoords[:, 1]
+            pixAreaWeights=maps.getPixelAreaArcmin2Map(RMSMap.shape, wcs)[ysInMask, xsInMask]
+            pixAreaWeights=pixAreaWeights/pixAreaWeights.sum()
+            ys=np.random.choice(ysInMask, size = numClusters, p = pixAreaWeights)
+            xs=np.random.choice(xsInMask, size = numClusters, p = pixAreaWeights)
+            del pixAreaWeights
+            RADecCoords=wcs.pix2wcs(xs, ys)
+            RADecCoords=np.array(RADecCoords)
+            RAs=RADecCoords[:, 0]
+            decs=RADecCoords[:, 1]
             y0Noise=RMSMap[ys, xs]
         else:
             y0Noise=np.ones(numClusters)*y0Noise
