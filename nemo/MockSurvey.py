@@ -456,16 +456,31 @@ class MockSurvey(object):
         # NOTE: switched to using valid part of RMSMap here rather than areaMask - we need to fix the latter to same area
         # It isn't a significant issue though
         if type(y0Noise) == np.ndarray and y0Noise.ndim == 2:
-            # Choose random pixels with the map, but weight each pixel by area (to account for projection e.g. CAR)
-            # NOTE: This is very memory heavy for normal ACT CAR maps, might be an idea to downsample first
+            # This generates even density RA, dec coords taking into account the projection
             assert(wcs is not None)
             RMSMap=y0Noise
-            ysInMask, xsInMask=np.where(RMSMap != 0)
-            pixAreaWeights=maps.getPixelAreaArcmin2Map(RMSMap.shape, wcs)[ysInMask, xsInMask]
-            pixAreaWeights=pixAreaWeights/pixAreaWeights.sum()
-            ys=np.random.choice(ysInMask, size = numClusters, p = pixAreaWeights)
-            xs=np.random.choice(xsInMask, size = numClusters, p = pixAreaWeights)
-            del pixAreaWeights
+            xsList=[]
+            ysList=[]
+            maxCount=100
+            count=0
+            while(len(xsList) < numClusters):
+                count=count+1
+                if count > maxCount:
+                    raise Exception("Failed to generate enough random coords in %d iterations" % (maxCount))
+                theta=np.degrees(np.pi*2*np.random.uniform(0, 1, numClusters))
+                phi=np.degrees(np.arccos(2*np.random.uniform(0, 1, numClusters)-1))-90
+                xyCoords=np.array(wcs.wcs2pix(theta, phi))
+                xs=np.array(np.round(xyCoords[:, 0]), dtype = int)
+                ys=np.array(np.round(xyCoords[:, 1]), dtype = int)
+                mask=np.logical_and(np.logical_and(xs >= 0, xs < RMSMap.shape[1]), np.logical_and(ys >= 0, ys < RMSMap.shape[0]))
+                xs=xs[mask]
+                ys=ys[mask]
+                mask=RMSMap[ys, xs] > 0
+                xsList=xsList+xs[mask].tolist()
+                ysList=ysList+ys[mask].tolist()
+            xs=np.array(xsList)[:numClusters]
+            ys=np.array(ysList)[:numClusters]
+            del xsList, ysList
             RADecCoords=wcs.pix2wcs(xs, ys)
             RADecCoords=np.array(RADecCoords)
             RAs=RADecCoords[:, 0]
