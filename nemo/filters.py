@@ -551,7 +551,7 @@ class MatchedFilter(MapFilter):
                         RMS=10.0
                     # Seeds fixed so that outputs are the same on repeated runs
                     cmb=maps.simCMBMap(self.shape, self.wcs, beam = mapDict['beamFileName'],
-                                       seed = 3141592654+i, noiseLevel = RMS, fixNoiseSeed = True)
+                                       seed = 3141592654+i, noiseLevel = RMS)
                     fMapsForNoise.append(enmap.fft(enmap.apod(cmb, self.apodPix)))
                 else:
                     raise Exception("'%s' is not a valid filter noise method name - fix the .yml config file" % (self.params['noiseParams']['method']))
