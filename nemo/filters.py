@@ -406,11 +406,17 @@ class MapFilter(object):
                     RMSMap[weightMask]=chunkRMS
 
         # The grid method now recognises numNoiseBins in cells
-        else:  
-            gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-            overlapPix=int(gridSize/2)
-            numXChunks=mapData.shape[1]/gridSize
-            numYChunks=mapData.shape[0]/gridSize
+        else:
+            # We may want to just bin and not grid
+            if 'noiseGridArcmin' not in self.params['noiseParams'].keys() or self.params['noiseParams']['noiseGridArcmin'] is None:
+                overlapPix=0
+                numXChunks=1
+                numYChunks=1
+            else: # The usual gridding
+                gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+                overlapPix=int(gridSize/2)
+                numXChunks=mapData.shape[1]/gridSize
+                numYChunks=mapData.shape[0]/gridSize
             yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
             xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
             apodMask=np.not_equal(mapData, 0)
@@ -720,7 +726,8 @@ class MatchedFilter(MapFilter):
         # NOTE: This all works on maps which have a zero border. If they don't, edgeTrimArcmin has no effect
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
             trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-        elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart":
+        elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart"\
+                and self.params['noiseParams']['noiseGridArcmin'] is not None:
             gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
             trimSizePix=int(round(gridSize*3.0))
         else:
