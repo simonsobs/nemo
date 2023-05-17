@@ -271,9 +271,26 @@ if __name__ == '__main__':
             d=d+maps.simCMBMap(shape, wcs, noiseLevel = None, beam = args.beamFileName,
                                seed = args.seed)
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalAndCMB.fits"), d, wcs)
-            # Support trimming of inv var map, if we have one that doesn't match area mask?
+            # Support trimming of inv var map, if we have one that doesn't match area mask
+            # NOTE: As it's noise, we don't actually care about matching RA, dec coords strictly
+            # so we don't worry about +/-1 pixel offsets here
             if type(addNoise) == np.ndarray and shape != addNoise.shape:
-                raise Exception("Given inv var map does not have the same dimensions as the output sim map - should match the given mask")
+                RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
+                clipOk=False
+                count=0
+                while clipOk is False:
+                    count=count+1
+                    clip=astImages.clipUsingRADecCoords(addNoise, wcs, RAMin, RAMax, decMin, decMax)
+                    if clip['data'].shape[0] < d.shape[0]:
+                        decMax=decMax+0.01
+                    if clip['data'].shape[1] < d.shape[1]:
+                        RAMax=RAMax+0.01
+                    if clip['data'].shape[0] >= d.shape[0] and clip['data'].shape[1] >= d.shape[1]:
+                        clipOk=True
+                    if count > 20:
+                        raise Exception("Clipping ivar map to suitable size failed to converge quickly enough.")
+                addNoise=clip['data'][:d.shape[0], :d.shape[1]]
+                # raise Exception("Given inv var map does not have the same dimensions as the output sim map - should match the given mask")
             d=d+maps.simNoiseMap(shape, addNoise, wcs = wcs, lKnee = args.lKnee, noiseMode = noiseMode)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
