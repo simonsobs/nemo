@@ -280,7 +280,7 @@ if __name__ == '__main__':
                 count=0
                 while clipOk is False:
                     count=count+1
-                    clip=astImages.clipUsingRADecCoords(addNoise, wcs, RAMin, RAMax, decMin, decMax)
+                    clip=astImages.clipUsingRADecCoords(addNoise, addNoiseWCS, RAMin, RAMax, decMin, decMax)
                     if clip['data'].shape[0] < d.shape[0]:
                         decMax=decMax+0.01
                     if clip['data'].shape[1] < d.shape[1]:
