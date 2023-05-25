@@ -273,18 +273,25 @@ if __name__ == '__main__':
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalAndCMB.fits"), d, wcs)
             # Support trimming of inv var map, if we have one that doesn't match area mask
             # NOTE: As it's noise, we don't actually care about matching RA, dec coords strictly
-            # so we don't worry about +/-1 pixel offsets here
+            # So we don't worry about +/-1 pixel offsets here
+            # But we do have to deal with RA wrapping, and whether RAMax needs to increase/decrease
             if type(addNoise) == np.ndarray and shape != addNoise.shape:
                 RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
                 clipOk=False
                 count=0
+                lastWidth=None
+                direction=1
                 while clipOk is False:
                     count=count+1
                     clip=astImages.clipUsingRADecCoords(addNoise, addNoiseWCS, RAMin, RAMax, decMin, decMax)
+                    if lastWidth is not None:
+                        if lastWidth > clip['data'].shape[1]:
+                            direction=direction*-1
+                    lastWidth=clip['data'].shape[1]
                     if clip['data'].shape[0] < d.shape[0]:
                         decMax=decMax+0.01
                     if clip['data'].shape[1] < d.shape[1]:
-                        RAMax=RAMax+0.01
+                        RAMax=RAMax+0.01*direction
                     if clip['data'].shape[0] >= d.shape[0] and clip['data'].shape[1] >= d.shape[1]:
                         clipOk=True
                     if count > 20:
