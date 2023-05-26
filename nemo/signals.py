@@ -899,9 +899,12 @@ def fitQ(config):
         # To safely (numerically, at least) apply Q at z ~ 0.01, we need to go to theta500 ~ 500 arcmin (< 10 deg)
         MRange=[ref['params']['M500MSun']]
         zRange=[ref['params']['z']]
-        # New - we can't really do large scales accurately anyway
-        theta500Arcmin_wanted=np.logspace(np.log10(0.1), np.log10(30), 50)
-        zRange_wanted=[2.0]*10 + [1.0]*10 + [0.6]*10 + [0.3]*10 + [0.1]*10
+        # Old - to 30 arcmin
+        # theta500Arcmin_wanted=np.logspace(np.log10(0.1), np.log10(30), 50)
+        # zRange_wanted=[2.0]*10 + [1.0]*10 + [0.6]*10 + [0.3]*10 + [0.1]*10
+        # New - same spacing over same range, with some extra scales
+        theta500Arcmin_wanted=np.power(10, np.arange(np.log10(0.1), np.log10(50), 0.05055349))
+        zRange_wanted=[2.0]*10 + [1.0]*10 + [0.6]*10 + [0.3]*10 + [0.1]*10 + [0.07]*4
         MRange_wanted=[]
         for theta500Arcmin, z in zip(theta500Arcmin_wanted, zRange_wanted):
             Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
