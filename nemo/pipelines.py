@@ -30,8 +30,8 @@ from . import MockSurvey
 import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
-def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
-                              measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
+                              measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,\
                               writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
@@ -104,8 +104,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
-                               measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
+                               measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,\
                                writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
@@ -446,7 +446,7 @@ def makeRMSTables(config):
                 tab.write(outFileName, overwrite = True)
                 
 #------------------------------------------------------------------------------------------------------------
-def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True, 
+def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True,\
                            writeInfo = True, verbose = True, QSource = 'fit'):
     """Generate a mock cluster catalog using the given nemo config.
     

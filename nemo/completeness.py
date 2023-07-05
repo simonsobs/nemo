@@ -596,10 +596,6 @@ class SelFn(object):
                 overrides self.mockOversampleFactor.
             applyPoissonScatter (:obj:`bool`, optional): If True, apply Poisson scatter to the cluster
                 number counts when generating the mock catalog.
-
-        Note:
-            This currently uses the average noise level in each tile, rather than the full noise
-            distribution in each tile.
         
         """
         
@@ -608,7 +604,7 @@ class SelFn(object):
 
         mockTabsList=[]
         for tileName, areaDeg2 in zip(self.tileNames, self.tileAreas):
-            mockTab=self.mockSurvey.drawSample(self.y0NoiseAverageDict[tileName], self.scalingRelationDict, 
+            mockTab=self.mockSurvey.drawSample(self.RMSDict[tileName], self.scalingRelationDict,
                                                self.Q, wcs = None, 
                                                photFilterLabel = self.photFilterLabel, tileName = tileName, 
                                                makeNames = False,

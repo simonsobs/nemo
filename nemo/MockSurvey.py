@@ -369,9 +369,9 @@ class MockSurvey(object):
         
         Args:
             y0Noise (:obj:`float` or :obj:`np.ndarray`): Either a single number (if using e.g., a survey
-                average) or a noise map (2d array). A noise map must be provided here if you want the
-                output catalog to contain RA, dec coordinates (in addition, a WCS object must also be
-                provided - see below).
+                average), an RMS table (with columns 'areaDeg2' and 'y0RMS'), or a noise map (2d array).
+                A noise map must be provided here if you want the output catalog to contain RA, dec
+                coordinates (in addition, a WCS object must also be provided - see below).
             scalingRelationDict (:obj:`dict`): A dictionary containing keys 'tenToA0', 'B0', 'Mpivot',
                 'sigma_int' that describes the scaling relation between y0~ and mass (this is the
                 format of `massOptions` in Nemo .yml config files).
@@ -456,12 +456,13 @@ class MockSurvey(object):
         # NOTE: switched to using valid part of RMSMap here rather than areaMask - we need to fix the latter to same area
         # It isn't a significant issue though
         if type(y0Noise) == np.ndarray and y0Noise.ndim == 2:
-            # This generates even density RA, dec coords taking into account the projection
+            # This generates even density RA, dec coords on the whole sky taking into account the projection
+            # Consequently, this is inefficient if fed individual tiles rather than a full sky noise map
             assert(wcs is not None)
             RMSMap=y0Noise
             xsList=[]
             ysList=[]
-            maxCount=100
+            maxCount=10000
             count=0
             while(len(xsList) < numClusters):
                 count=count+1
@@ -486,6 +487,15 @@ class MockSurvey(object):
             RAs=RADecCoords[:, 0]
             decs=RADecCoords[:, 1]
             y0Noise=RMSMap[ys, xs]
+        elif type(y0Noise) == atpy.Table:
+            noisetck=interpolate.splrep(np.cumsum(y0Noise['areaDeg2']/y0Noise['areaDeg2'].sum()), y0Noise['y0RMS'], k = 1)
+            rnd=np.random.uniform(0, 1, numClusters)
+            vals=interpolate.splev(rnd, noisetck, ext = 3)
+            if np.any(vals < 0) or np.any(vals == np.nan):
+                raise Exception("Failed to make interpolating spline for RMSTab in tileName = %s" % (tileName))
+            y0Noise=vals
+            RAs=np.zeros(numClusters)
+            decs=np.zeros(numClusters)
         else:
             y0Noise=np.ones(numClusters)*y0Noise
             RAs=np.zeros(numClusters)
