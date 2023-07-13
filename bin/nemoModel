@@ -148,7 +148,7 @@ if __name__ == '__main__':
     # - if number with sb suffix, uniform white noise level per square arcmin
     # - if string, a path to ivar map
     if config.rank == 0:
-        if args.addNoise[-2:] == 'sb':
+        if type(args.addNoise) == str and args.addNoise[-2:] == 'sb':
             addNoise=float(args.addNoise.split('sb')[0])
             noiseMode='perSquareArcmin'
         else:

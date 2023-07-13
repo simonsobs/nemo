@@ -1296,9 +1296,9 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMo
     if lKnee is None:
         # White noise only
         randMap=np.zeros(shape)
+        generatedNoise=np.zeros(randMap.shape)
         if type(noiseLevel) == np.ndarray:
             mask=np.nonzero(noiseLevel)
-            generatedNoise=np.zeros(randMap.shape)
             generatedNoise[mask]=np.random.normal(0, noiseLevel[mask], noiseLevel[mask].shape)
         else:
             if noiseLevel > 0:
@@ -1793,7 +1793,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
 
     # If we want to restrict painting to just area mask within in a tile
     # (avoids double painting of objects in overlap areas)
-    if validAreaSection is not None:
+    if validAreaSection is not None and len(catalog) > 0:
         x0, x1, y0, y1=validAreaSection
         coords=wcs.wcs2pix(catalog['RADeg'], catalog['decDeg'])
         x=np.array(coords)[:, 0]
@@ -1808,16 +1808,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
 
     if cosmoModel is None:
         cosmoModel=signals.fiducialCosmoModel
-    
-    # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
-    if profile == 'A10':
-        makeClusterSignalMap=signals.makeArnaudModelSignalMap
-    elif profile == 'B12':
-        makeClusterSignalMap=signals.makeBattagliaModelSignalMap
-    else:
-        raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
-                        to accept a string of GNFW parameters, but that is not implemented yet.")
-    
+
     # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
     numFWHM=5.0
     beam=signals.BeamProfile(beamFileName = beamFileName)
@@ -1828,6 +1819,14 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
         # Clusters - insert one at a time (with different scales etc.)
+        # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
+        if profile == 'A10':
+            makeClusterSignalMap=signals.makeArnaudModelSignalMap
+        elif profile == 'B12':
+            makeClusterSignalMap=signals.makeBattagliaModelSignalMap
+        else:
+            raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
+                            to accept a string of GNFW parameters, but that is not implemented yet.")
         count=0
         # First bit here (override) is for doing injection sims faster
         if override is not None:
@@ -2073,7 +2072,7 @@ def sourceInjectionTest(config):
                                                             amplitudeRange = amplitudeRange,
                                                             amplitudeDistribution = distribution,
                                                             selFn = selFn, maskDilationPix = 20)
-                    injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
+                    injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel, 'profile': None}
                 else:
                     raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
                 if 'theta500Arcmin' in sourceInjectionModel.keys():
