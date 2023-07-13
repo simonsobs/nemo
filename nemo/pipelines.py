@@ -333,7 +333,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
 def makeRMSTables(config):
     """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
     in the config file, plus the full survey mask), that contain information on noise levels and area covered,
-    and completeness. 
+    and completeness.
 
     """
     
