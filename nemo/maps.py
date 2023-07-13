@@ -20,15 +20,18 @@ import glob
 import os
 import sys
 import math
-import pyximport; pyximport.install()
-import nemoCython
 import time
 import shutil
 import copy
 import yaml
 import pickle
 from pixell import enmap, curvedsky, utils, powspec
+import sharp
 import nemo
+try:
+    import reproject
+except:
+    pass
 from . import catalogs
 from . import signals
 from . import photometry
@@ -86,6 +89,10 @@ class MapDict(dict):
         Returns:
             Map data as a 2d array (and optionally a WCS)
 
+        Note:
+            Tiles can be re-projected from CAR to TAN on the fly if the 'reprojectToTan' is set in the
+            Nemo config.
+
         """
 
         if mapKey not in self.validMapKeys:
@@ -103,7 +110,7 @@ class MapDict(dict):
                         if tileData is not None:
                             break
                 assert tileData is not None
-                if returnWCS == True:
+                if returnWCS == True or self['reprojectToTan'] == True:
                     # Zapping keywords in old ACT maps that confuse astropy.wcs
                     wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
                 data=tileData
@@ -116,7 +123,7 @@ class MapDict(dict):
                 for ext in img:
                     if img[ext].data is not None:
                         break
-                if returnWCS == True:
+                if returnWCS == True or self['reprojectToTan'] == True:
                     wcs=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
                 minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
                 if img[ext].data.ndim == 3:
@@ -138,6 +145,23 @@ class MapDict(dict):
             data[maxY:, :]=0
             data[:, :minX]=0
             data[:, maxX:]=0
+
+        # Optional TAN reprojection - may help avoid biases due to distortion at high dec in CAR
+        # WARNING: Probably introduces a new pixel window if we're not careful
+        if self['reprojectToTan'] == True:
+            if mapKey in self._maskKeys:
+                order=0
+            else:
+                order='bicubic'
+            tanWCS=_makeTanWCS(wcs)
+            ySizePix, xSizePix=tanWCS.header['NAXIS2'], tanWCS.header['NAXIS1']
+            tanData, footprint=reproject.reproject_interp((data, wcs.AWCS), tanWCS.AWCS, shape_out = [ySizePix, xSizePix],
+                                                          order = order, return_footprint = True)
+            tanData[footprint == 0]=0 # get rid of nans which will be in borders anyway
+            # checkData=reproject.reproject_interp((tanData, tanWCS.AWCS), wcs.AWCS, shape_out = data.shape, order = 'bicubic',
+                                                 # return_footprint = False)
+            wcs=tanWCS
+            data=tanData
 
         if returnWCS == True:
             return data, wcs
@@ -237,8 +261,12 @@ class MapDict(dict):
             psMask=np.ones(data.shape, dtype = np.uint8)
 
         # Use for tracking regions where subtraction/in-painting took place to make flags in catalog
+        # We can also supply a flag mask at the start, e.g., for marking dusty regions without zapping them
         # NOTE: flag masks for each frequency map get combined within filter objects
-        flagMask=np.zeros(data.shape, dtype = np.uint8)
+        if 'flagMask' in list(self.keys()) and self['flagMask'] is not None:
+            flagMask=self.loadTile('flagMask', tileName)*surveyMask
+        else:
+            flagMask=np.zeros(data.shape, dtype = np.uint8)
 
         # Optional map clipping
         if 'RADecSection' in list(self.keys()) and self['RADecSection'] is not None:
@@ -288,7 +316,7 @@ class MapDict(dict):
             outFileName=diagnosticsDir+os.path.sep+"CMBSim_%d#%s.fits" % (self['obsFreqGHz'], tileName)
             saveFITS(outFileName, data, wcs)
 
-        # For position recovery tests
+        # For position recovery tests, completeness calculations
         if 'injectSources' in list(self.keys()):
             # NOTE: Need to add varying GNFWParams here
             if 'GNFWParams' in self['injectSources'].keys():
@@ -297,9 +325,13 @@ class MapDict(dict):
             else:
                 GNFWParams=None
                 obsFreqGHz=None
+            # Unsure if we actually want/need the below...
+            # source injection sim tiles are processed independently (so shouldn't be double counting in overlaps anyway)
+            validAreaSection=self.tileCoordsDict[tileName]['areaMaskInClipSection']
             modelMap=makeModelImage(data.shape, wcs, self['injectSources']['catalog'],
                                     self['beamFileName'], obsFreqGHz = obsFreqGHz,
-                                    GNFWParams = GNFWParams,
+                                    GNFWParams = GNFWParams, profile = self['injectSources']['profile'],
+                                    validAreaSection = validAreaSection,
                                     override = self['injectSources']['override'])
             if modelMap is not None:
                 modelMap[weights == 0]=0
@@ -378,9 +410,9 @@ class MapDict(dict):
                         maskRadiusArcmin=ASizeArcmin/2
                     else:
                         raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
-                    rDegMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rDegMap, wcs,
-                                                                                row['RADeg'], row['decDeg'],
-                                                                                maskRadiusArcmin/60)
+                    rDegMap, xBounds, yBounds=makeDegreesDistanceMap(rDegMap, wcs,
+                                                                     row['RADeg'], row['decDeg'],
+                                                                     maskRadiusArcmin/60)
                     surveyMask[rDegMap < maskRadiusArcmin/60.0]=0
                     psMask[rDegMap < maskRadiusArcmin/60.0]=0
                     data[rDegMap < maskRadiusArcmin/60.0]=bckData[rDegMap < maskRadiusArcmin/60.0]
@@ -415,9 +447,9 @@ class MapDict(dict):
                         maskRadiusArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
                     if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
                         maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
-                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
-                                                                                row['RADeg'], row['decDeg'],
-                                                                                maskRadiusArcmin/60)
+                    rArcminMap, xBounds, yBounds=makeDegreesDistanceMap(rArcminMap, wcs,
+                                                                        row['RADeg'], row['decDeg'],
+                                                                        maskRadiusArcmin/60)
                     rArcminMap=rArcminMap*60
                     surveyMask[rArcminMap < maskRadiusArcmin]=0
                     psMask[rArcminMap < maskRadiusArcmin]=0
@@ -466,7 +498,8 @@ class MapDictList(object):
 #------------------------------------------------------------------------------------------------------------
 class TileDict(dict):
     """A dictionary for collecting tile images, for later saving as multi-extension FITS or outputting as a
-    single monolithic FITS image. Keys within the dictionary map to tile names.
+    single monolithic FITS image. Keys within the dictionary map to tile names. Handles on-the-fly
+    reprojection between TAN and CAR if specified in the Nemo config.
 
     Args:
         inputDict (:obj:`dict`): Input dictionary (keys map to tile names).
@@ -510,17 +543,22 @@ class TileDict(dict):
         """
         newImg=pyfits.HDUList()
         for tileName in self.keys():
+            if self.tileCoordsDict[tileName]['reprojectToTan'] == True:
+                wcs=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+                tanWCS=_makeTanWCS(wcs)
+                header=tanWCS.header
+            else:
+                header=self.tileCoordsDict[tileName]['header']
             if compressionType is not None:
                 if compressionType == 'PLIO_1':
                     dtype=np.uint8
                 else:
                     dtype=np.float
                 hdu=pyfits.CompImageHDU(np.array(self[tileName], dtype = dtype),
-                                        self.tileCoordsDict[tileName]['header'], name = tileName,
+                                        header, name = tileName,
                                         compression_type = compressionType)
             else:
-                hdu=pyfits.ImageHDU(self[tileName], self.tileCoordsDict[tileName]['header'],
-                                    name = tileName)
+                hdu=pyfits.ImageHDU(self[tileName], header, name = tileName)
             newImg.append(hdu)
         newImg.writeto(outFileName, overwrite = True)
 
@@ -541,12 +579,71 @@ class TileDict(dict):
             None
 
         """
+
         wcs=stitchedWCS
         d=np.zeros([stitchedWCS.header['NAXIS2'], stitchedWCS.header['NAXIS1']])
         for tileName in self.keys():
+            if self.tileCoordsDict[tileName]['reprojectToTan'] == True:
+                carWCS=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+                tanWCS=_makeTanWCS(carWCS)
+                shape=[self.tileCoordsDict[tileName]['header']['NAXIS2'],
+                       self.tileCoordsDict[tileName]['header']['NAXIS1']]
+                if compressionType == 'PLIO_1':
+                    order=0
+                else:
+                    order='bicubic'
+                carData, footprint=reproject.reproject_interp((self[tileName], tanWCS.AWCS), carWCS.AWCS, shape_out = shape, order = order,
+                                                              return_footprint = True)
+                carData[footprint == 0]=0 # get rid of nans which will be in borders anyway
+            else:
+                carData=self[tileName]
             minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
-            d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+self[tileName]
+            d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+carData
         saveFITS(outFileName, d, wcs, compressionType = compressionType)
+
+#-------------------------------------------------------------------------------------------------------------
+def _makeTanWCS(wcs, pixScale = 0.5/60.0):
+    """Generate a TAN WCS.
+
+    Returns:
+        TAN WCS
+
+    """
+
+    RADeg, decDeg=wcs.getCentreWCSCoords()
+    CRVAL1, CRVAL2=RADeg, decDeg
+    xSizeDeg, ySizeDeg=wcs.getFullSizeSkyDeg()
+    xSizePix, ySizePix=int(xSizeDeg/pixScale), int(ySizeDeg/pixScale)
+    xRefPix=xSizePix/2.0
+    yRefPix=ySizePix/2.0
+    xOutPixScale=xSizeDeg/xSizePix
+    yOutPixScale=ySizeDeg/ySizePix
+    newHead=pyfits.Header()
+    newHead['NAXIS']=2
+    newHead['NAXIS1']=xSizePix
+    newHead['NAXIS2']=ySizePix
+    newHead['CTYPE1']='RA---TAN'
+    newHead['CTYPE2']='DEC--TAN'
+    newHead['CRVAL1']=CRVAL1
+    newHead['CRVAL2']=CRVAL2
+    newHead['CRPIX1']=xRefPix+1
+    newHead['CRPIX2']=yRefPix+1
+    newHead['CDELT1']=-xOutPixScale
+    newHead['CDELT2']=xOutPixScale    # Makes more sense to use same pix scale
+    newHead['CUNIT1']='DEG'
+    newHead['CUNIT2']='DEG'
+    tanWCS=astWCS.WCS(newHead, mode='pyfits')
+
+    return tanWCS
+
+    import reproject
+    tanData, footprint=reproject.reproject_interp((data, wcs.AWCS), tanWCS.AWCS, shape_out = [ySizePix, xSizePix],
+                                                    order = 'bicubic', return_footprint = True)
+    tanData[footprint == 0]=0 # get rid of nans which will be in borders anyway
+    # checkData=reproject.reproject_interp((tanData, tanWCS.AWCS), wcs.AWCS, shape_out = data.shape, order = 'bicubic',
+                                            # return_footprint = False)
+    wcs=tanWCS
+    data=tanData
 
 #-------------------------------------------------------------------------------------------------------------
 def convertToY(mapData, obsFrequencyGHz = 148):
@@ -900,8 +997,26 @@ def stitchTiles(config):
                         continue
                     areaMask, areaWCS=completeness.loadAreaMask(tileName, config.selFnDir)
                     minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
-                    # Accounting for tiles that may have been extended by 1 pix for FFT purposes (Q-related)
+                    # Accounting for tiles that may have been extended by 1 pix for FFT purposes (Q-related, may no longer be relevant)
                     height=maxY-minY; width=maxX-minX
+                    # Check if we reprojected to TAN and if so, go back to CAR
+                    if tileCoordsDict[tileName]['reprojectToTan'] == True:
+                        carWCS=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
+                        tanWCS=_makeTanWCS(carWCS) # this should match areaWCS actually
+                        shape=[config.tileCoordsDict[tileName]['header']['NAXIS2'],
+                               config.tileCoordsDict[tileName]['header']['NAXIS1']]
+                        if compressionType == 'PLIO_1':
+                            order=0
+                        else:
+                            order='bicubic'
+                        carData, footprint=reproject.reproject_interp((tileData, tanWCS.AWCS), carWCS.AWCS,
+                                                                      shape_out = shape, order = order,
+                                                                      return_footprint = True)
+                        carData[footprint == 0]=0 # get rid of nans which will be in borders anyway
+                        tileData=carData
+                        areaMask=reproject.reproject_interp((areaMask, tanWCS.AWCS), carWCS.AWCS,
+                                                             shape_out = shape, order = 0, return_footprint = False)
+                        areaMask[footprint == 0]=0
                     d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+areaMask[:height, :width]*tileData[:height, :width]
                 saveFITS(outFileName, d, wcs, compressionType = compressionType)
 
@@ -986,9 +1101,9 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
     for obj in catalog:
         if wcs.coordsAreInImage(obj['RADeg'], obj['decDeg']) == True:
             degreesMap=np.ones(mapData.shape, dtype = float)*1e6
-            rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                       obj['RADeg'], obj['decDeg'], 
-                                                                       20.0/60.0)         
+            rRange, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs,
+                                                            obj['RADeg'], obj['decDeg'],
+                                                            20.0/60.0)
             circleMask=np.less(rRange, radiusArcmin/60.0)
             grownCircleMask=np.less(rRange, (radiusArcmin*growMaskedArea)/60.0)
             maskMap[grownCircleMask]=1.0
@@ -1074,9 +1189,9 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
             RADeg, decDeg=mapWCS.pix2wcs(pos[1], pos[0])
             if np.isnan(RADeg) == False and np.isnan(decDeg) == False:
                 degreesMap=np.ones(mapData.shape, dtype = float)*1e6
-                rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, mapWCS, 
-                                                                           RADeg, decDeg, 
-                                                                           (radiusArcmin*4)/60.0)        
+                rRange, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, mapWCS,
+                                                                RADeg, decDeg,
+                                                                (radiusArcmin*4)/60.0)
                 # Get pedestal level and white noise level from average between radiusArcmin and  2*radiusArcmin
                 annulusMask=np.logical_and(np.greater(rRange, radiusArcmin/60.0), \
                                               np.less(rRange, 2*radiusArcmin/60.0))
@@ -1102,7 +1217,7 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSeed = False):
+def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1116,7 +1231,6 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSe
             the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
             no beam convolution is applied.
         seed (:obj:`int`): The seed used for the random CMB realisation.
-        fixNoiseSeed (:obj:`bool`): If True, forces white noise to be generated with given seed.
             
     Returns:
         A map (:obj:`numpy.ndarray`)
@@ -1138,23 +1252,102 @@ def simCMBMap(shape, wcs, noiseLevel = 0.0, beam = None, seed = None, fixNoiseSe
         ps*=lbeam
 
     randMap=curvedsky.rand_map(shape, wcs.AWCS, ps = ps, spin = [0,2], seed = seed)
-    if fixNoiseSeed == False:
-        np.random.seed()
 
-    if type(noiseLevel) == np.ndarray:
-        mask=np.nonzero(noiseLevel)
-        generatedNoise=np.zeros(randMap.shape)
-        generatedNoise[mask]=np.random.normal(0, noiseLevel[mask], noiseLevel[mask].shape)
-        randMap=randMap+generatedNoise
-    else:
-        if noiseLevel > 0:
-            generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
-            randMap=randMap+generatedNoise
-    
+    if noiseLevel is not None:
+        randMap=randMap+simNoiseMap(shape, noiseLevel)
+
     np.random.seed()
     
     return randMap
-        
+
+#-------------------------------------------------------------------------------------------------------------
+def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMode = 'perPixel'):
+    """Generate a simulated noise map. This may contain just white noise, or optionally a 1/f noise component
+    can be generated.
+
+    Args:
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
+        noiseLevel (:obj:`numpy.ndarray` or float): If a single number, this is taken as sigma (in map units,
+            usually uK) for generating white noise that is added across the whole map. Alternatively, an array
+            with the same dimensions as shape may be used, specifying sigma (in map units) per corresponding
+            pixel. Noise will only be added where non-zero values appear in noiseLevel.
+        lKnee (:obj:`float`): If given, 1/f noise will be generated using the power spectrum
+            N_l = (1 + l/lknee)^-alpha) - see Appendix A of MacCrann et al. 2023.
+        alpha (:obj:`float`): Power-law exponent in the power spectrum used for generating 1/f noise. Has
+            no effect unless lKnee is also given.
+        noiseMode(:obj:`str`): Either 'perPixel', or 'perSquareArcmin' - if the latter, constant noise in terms
+            of surface brightness will be added (accounts for varying pixel scale, if present).
+
+    Returns:
+        A map (:obj:`numpy.ndarray`)
+
+    """
+
+    np.random.seed()
+
+    assert(noiseMode in ['perPixel', 'perSquareArcmin'])
+    if noiseMode == 'perSquareArcmin' and lKnee is not None:
+        raise Exception("Adding 1/f noise when noiseMode != 'perPixel' is not supported yet")
+    if noiseMode == 'perSquareArcmin' and type(noiseLevel) == np.ndarray:
+        raise Exception("noiseLevel is a map - this is only currently supported if noiseMode = 'perPixel' (noiseMode = 'perSquareArcmin' given)")
+
+    if lKnee is None:
+        # White noise only
+        randMap=np.zeros(shape)
+        generatedNoise=np.zeros(randMap.shape)
+        if type(noiseLevel) == np.ndarray:
+            mask=np.nonzero(noiseLevel)
+            generatedNoise[mask]=np.random.normal(0, noiseLevel[mask], noiseLevel[mask].shape)
+        else:
+            if noiseLevel > 0:
+                if noiseMode == 'perPixel':
+                    generatedNoise=np.random.normal(0, noiseLevel, randMap.shape)
+                else:
+                    arcmin2Map=getPixelAreaArcmin2Map(shape, wcs)
+                    generatedNoise=np.random.normal(0, noiseLevel/arcmin2Map, randMap.shape)
+        randMap=randMap+generatedNoise
+
+    else:
+        # 1/f noise + white noise, using Niall's routines
+        mlmax=6000 # following config in Niall's code, could be made a parameter
+        if wcs is None:
+            raise Exception("wcs is None - need to supply a wcs to generate a noise map with 1/f noise included.")
+        if type(noiseLevel) == np.ndarray:
+            mask=noiseLevel > 1e-07
+            ivarMap=np.zeros(shape)
+            ivarMap[mask]=1/noiseLevel[mask]**2
+            ivarMap=enmap.enmap(ivarMap, wcs.AWCS)
+        else:
+            ivarMap=enmap.enmap(np.ones(shape)*(1/noiseLevel**2), wcs.AWCS)
+
+        def _mod_noise_map(ivar, Nl):
+            map1 = enmap.rand_gauss(ivar.shape, ivar.wcs)
+            lmax = len(Nl)-1
+            ainfo = sharp.alm_info(lmax)
+            alm = curvedsky.map2alm(map1, ainfo=ainfo)
+            map2 = curvedsky.alm2map(alm, np.zeros_like(map1))
+            map1 -= map2
+            ainfo.lmul(alm, Nl**0.5, alm)
+            map2 = curvedsky.alm2map(alm, np.zeros_like(map1))
+            map1 += map2
+            map1 *= ivar**-0.5
+            ivar_nonzero = ivar>0.
+            ivar_median = np.median(ivar[ivar_nonzero])
+            valid_ivar = ivar_nonzero*(ivar>ivar_median/1.e6)
+            map1[~(valid_ivar)] = 0.
+            return map1
+
+        assert np.all(np.isfinite(ivarMap))
+        shape, wcs=ivarMap.shape, ivarMap.wcs
+        ells = np.arange(mlmax+1)
+        Nl_atm = (lKnee/ells)**-alpha + 1
+        Nl_atm[~np.isfinite(Nl_atm)] = 0.
+        assert np.all(np.isfinite(Nl_atm))
+        randMap = _mod_noise_map(ivarMap, Nl_atm)
+        assert np.all(np.isfinite(randMap))
+
+    return randMap
+
 #-------------------------------------------------------------------------------------------------------------
 def subtractBackground(data, wcs, RADeg = 'centre', decDeg = 'centre', smoothScaleDeg = 30.0/60.0):
     """Smoothes map with Gaussian of given scale and subtracts it, to get rid of large scale power.
@@ -1207,8 +1400,8 @@ def convolveMapWithBeam(data, wcs, beam, maxDistDegrees = 1.0):
         xPad=0
     degreesMap=np.ones([data.shape[0]+yPad, data.shape[1]+xPad], dtype = float)*1e6
     RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2)+1, int(degreesMap.shape[0]/2)+1)
-    degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 
-                                                                   maxDistDegrees)
+    degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg,
+                                                        maxDistDegrees)
     beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
     if (yBounds[1]-yBounds[0]) > beamMap.shape[1] and (yBounds[1]-yBounds[0]) % 2 == 0:
         yBounds[0]=yBounds[0]-1
@@ -1535,8 +1728,8 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
     return contaminTabDict
 
 #------------------------------------------------------------------------------------------------------------
-def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default', 
-                   profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,
+def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default',\
+                   profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,\
                    validAreaSection = None, minSNR = -99, TCMBAlpha = 0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
@@ -1595,22 +1788,25 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         SNRKey=None
     if SNRKey is not None:
         catalog=catalog[catalog[SNRKey] > minSNR]
-        
+
+    # If we want to restrict painting to just area mask within in a tile
+    # (avoids double painting of objects in overlap areas)
+    if validAreaSection is not None and len(catalog) > 0:
+        x0, x1, y0, y1=validAreaSection
+        coords=wcs.wcs2pix(catalog['RADeg'], catalog['decDeg'])
+        x=np.array(coords)[:, 0]
+        y=np.array(coords)[:, 1]
+        xMask=np.logical_and(x >= x0, x < x1)
+        yMask=np.logical_and(y >= y0, y < y1)
+        cMask=np.logical_and(xMask, yMask)
+        catalog=catalog[cMask]
+
     if len(catalog) == 0:
         return None
 
     if cosmoModel is None:
         cosmoModel=signals.fiducialCosmoModel
-    
-    # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
-    if profile == 'A10':
-        makeClusterSignalMap=signals.makeArnaudModelSignalMap
-    elif profile == 'B12':
-        makeClusterSignalMap=signals.makeBattagliaModelSignalMap
-    else:
-        raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
-                        to accept a string of GNFW parameters, but that is not implemented yet.")
-    
+
     # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
     numFWHM=5.0
     beam=signals.BeamProfile(beamFileName = beamFileName)
@@ -1621,47 +1817,62 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
         # Clusters - insert one at a time (with different scales etc.)
+        # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
+        if profile == 'A10':
+            makeClusterSignalMap=signals.makeArnaudModelSignalMap
+        elif profile == 'B12':
+            makeClusterSignalMap=signals.makeBattagliaModelSignalMap
+        else:
+            raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
+                            to accept a string of GNFW parameters, but that is not implemented yet.")
         count=0
-        for row in catalog:
-            # This should avoid overlaps if tiled - we only add cluster if inside areaMask region
-            # NOTE: Should move this out of this switch so applied to all catalog types
-            if validAreaSection is not None:
-                x0, x1, y0, y1=validAreaSection
-                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
-                    continue
-            count=count+1
-            if 'true_M500c' in catalog.keys():
-                # This case is for when we're running from nemoMock output
-                # Since the idea of this is to create noise-free model images, we must use true values here
-                # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
-                M500=row['true_M500c']*1e14
-                z=row['redshift']
-                y0ToInsert=row['true_y_c']*1e-4
-            elif override is not None:
-                z=override['redshift']
-                M500=override['M500']
-                y0ToInsert=row['y_c']*1e-4
-            else:
-                # NOTE: This case is for running from nemo output
-                # We need to adapt this for when the template names are not in this format
-                if 'template' not in catalog.keys():
-                    raise Exception("No M500, z, or template column found in catalog.")
-                bits=row['template'].split("#")[0].split("_")
-                M500=float(bits[1][1:].replace("p", "."))
-                z=float(bits[2][1:].replace("p", "."))
-                y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+        # First bit here (override) is for doing injection sims faster
+        if override is not None:
+            z=override['redshift']
+            M500=override['M500']
+            y0ToInsert=catalog['y_c'].data*1e-4
+            RAs=catalog['RADeg'].data
+            decs=catalog['decDeg'].data
             theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
             maxSizeDeg=5*(theta500Arcmin/60)
-            signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
-                                            decDeg = row['decDeg'], beam = beam,
-                                            GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                            maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                            cosmoModel = cosmoModel)
+            modelMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = RAs,
+                                          decDeg = decs, beam = beam,
+                                          GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                          cosmoModel = cosmoModel)
             if obsFreqGHz is not None:
-                signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
-                                            TCMBAlpha = TCMBAlpha, z = z)
-            modelMap=modelMap+signalMap
+                modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
+                                         TCMBAlpha = TCMBAlpha, z = z)
+        else:
+            for row in catalog:
+                count=count+1
+                if 'true_M500c' in catalog.keys():
+                    # This case is for when we're running from nemoMock output
+                    # Since the idea of this is to create noise-free model images, we must use true values here
+                    # (to avoid any extra scatter/selection effects after adding model clusters to noise maps).
+                    M500=row['true_M500c']*1e14
+                    z=row['redshift']
+                    y0ToInsert=row['true_y_c']*1e-4
+                else:
+                    # NOTE: This case is for running from nemo output
+                    # We need to adapt this for when the template names are not in this format
+                    if 'template' not in catalog.keys():
+                        raise Exception("No M500, z, or template column found in catalog.")
+                    bits=row['template'].split("#")[0].split("_")
+                    M500=float(bits[1][1:].replace("p", "."))
+                    z=float(bits[2][1:].replace("p", "."))
+                    y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+                theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+                maxSizeDeg=5*(theta500Arcmin/60)
+                signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                                                decDeg = row['decDeg'], beam = beam,
+                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                                cosmoModel = cosmoModel)
+                if obsFreqGHz is not None:
+                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
+                                                TCMBAlpha = TCMBAlpha, z = z)
+                modelMap=modelMap+signalMap
     else:
         # Sources - slower but more accurate way
         for row in catalog:
@@ -1671,22 +1882,12 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
                     continue
             degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                        row['RADeg'], row['decDeg'], 
-                                                                        maxSizeDeg)
+            degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs,
+                                                                row['RADeg'], row['decDeg'],
+                                                                maxSizeDeg)
             signalMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)*row['deltaT_c']
             modelMap=modelMap+signalMap
-        # Sources - note this is extremely fast, but goes wrong for closely packed sources
-        # So we should just get rid of it
-        #fluxScaleMap=np.zeros(modelMap.shape)
-        #for row in catalog:
-            #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                        #row['RADeg'], row['decDeg'], 
-                                                                        #maxSizeDeg)
-            #fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
-        #modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
-        #modelMap=modelMap*fluxScaleMap
-        
+
     # Optional: apply pixel window function - generally this should be True
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
     if applyPixelWindow == True:
@@ -1829,6 +2030,8 @@ def sourceInjectionTest(config):
                         amplitudeRange=[0.001, 10]
                     else:
                         amplitudeRange=config.parDict['sourceInjectionAmplitudeRange']
+                        if amplitudeRange == 'auto':
+                            amplitudeRange=[realCatalog['fixed_y_c'].min()*0.5, realCatalog['fixed_y_c'].max()]
                     if 'sourceInjectionDistribution' not in config.parDict.keys():
                         distribution='linear'
                     else:
@@ -1842,7 +2045,7 @@ def sourceInjectionTest(config):
                     # Or... proper mock, but this takes ~24 sec for E-D56
                     #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]
                     injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'],
-                                   'override': sourceInjectionModel}
+                                   'override': sourceInjectionModel, 'profile': 'A10'}
                 elif filtDict['class'].find("Beam") != -1:
                     if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
                         amplitudeRange=[1, 1000]
@@ -1857,7 +2060,7 @@ def sourceInjectionTest(config):
                                                             amplitudeRange = amplitudeRange,
                                                             amplitudeDistribution = distribution,
                                                             selFn = selFn, maskDilationPix = 20)
-                    injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel}
+                    injectSources={'catalog': mockCatalog, 'override': sourceInjectionModel, 'profile': None}
                 else:
                     raise Exception("Don't know how to generate injected source catalogs for filterClass '%s'" % (filtDict['class']))
                 if 'theta500Arcmin' in sourceInjectionModel.keys():
@@ -1880,6 +2083,10 @@ def sourceInjectionTest(config):
             # Ideally we shouldn't have blank tiles... but if we do, skip
             if len(mockCatalog) > 0:
 
+                # Uncomment line below if want to save filtered maps for quick and dirty debugging
+                # Overwrites the original filtered map, but can compare to 'stitched' map
+                # config.parDict['mapFilters'][0]['params']['saveFilteredMaps']=True
+
                 recCatalog=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilters = True,
                                                                useCachedRMSMap = True, writeAreaMask = False,
                                                                writeFlagMask = False)
@@ -1899,6 +2106,7 @@ def sourceInjectionTest(config):
                                                                               radiusArcmin = realExclusionRadiusArcmin)
                     except:
                         raise Exception("Source injection test: cross match failed on tileNames = %s; mockCatalog length = %d; recCatalog length = %d" % (str(config.tileNames), len(mockCatalog), len(recCatalog)))
+
                     # Catching any crazy mismatches, writing output for debugging
                     if clusterMode == False and np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10).sum() > 0:
                         mask=np.logical_and(rDeg > 1.5/60, x_recCatalog['SNR'] > 10)
@@ -2198,6 +2406,66 @@ def saveFITS(outputFileName, mapData, wcs, compressionType = None):
     newImg.append(hdu)
     newImg.writeto(outputFileName)
     newImg.close()
+
+#---------------------------------------------------------------------------------------------------
+def makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, maxDistDegrees):
+    """Fills (in place) the 2d array degreesMap with distance in degrees from the given position,
+    out to some user-specified maximum distance.
+
+    Args:
+        degreesMap (:obj:`np.ndarray`): Map (2d array) that will be filled with angular distance
+            from the given coordinates. Probably you should feed in an array set to some extreme
+            initial value (e.g., 1e6 everywhere) to make it easy to filter for pixels near the
+            object coords afterwards.
+        wcs (:obj:`astWCS.WCS`): WCS corresponding to degreesMap.
+        RADeg (float): RA in decimal degrees of position of interest (e.g., object location).
+        decDeg (float): Declination in decimal degrees of position of interest (e.g., object
+            location).
+        maxDistDegrees: The maximum radius out to which distance will be calculated.
+
+    Returns:
+        A map (2d array) of distance in degrees from the given position,
+        (min x, max x) pixel coords corresponding to maxDistDegrees box,
+        (min y, max y) pixel coords corresponding to maxDistDegrees box
+
+    Note:
+        This routine measures the pixel scale local to the given position, then assumes that it
+        does not change. So, this routine may only be accurate close to the given position,
+        depending upon the WCS projection used.
+
+    """
+
+    x0, y0=wcs.wcs2pix(RADeg, decDeg)
+    ra0, dec0=RADeg, decDeg
+    ra1, dec1=wcs.pix2wcs(x0+1, y0+1)
+    xPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
+    yPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
+
+    xDistPix=int(round((maxDistDegrees)/xPixScale))
+    yDistPix=int(round((maxDistDegrees)/yPixScale))
+
+    Y=degreesMap.shape[0]
+    X=degreesMap.shape[1]
+
+    minX=int(round(x0))-xDistPix
+    maxX=int(round(x0))+xDistPix
+    minY=int(round(y0))-yDistPix
+    maxY=int(round(y0))+yDistPix
+    if minX < 0:
+        minX=0
+    if maxX > X:
+        maxX=X
+    if minY < 0:
+        minY=0
+    if maxY > Y:
+        maxY=Y
+
+    xDeg=(np.arange(degreesMap.shape[1])-x0)*xPixScale
+    yDeg=(np.arange(degreesMap.shape[0])-y0)*yPixScale
+    for i in range(minY, maxY):
+        degreesMap[i][minX:maxX]=np.sqrt(yDeg[i]**2+xDeg[minX:maxX]**2)
+
+    return degreesMap, [minX, maxX], [minY, maxY]
 
 #---------------------------------------------------------------------------------------------------
 def makeExtendedSourceMask(config, tileName):

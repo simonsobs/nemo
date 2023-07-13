@@ -62,11 +62,18 @@ def makeParser():
                         help = "Random seed used only for generating (optional) cosmic microwave\
                         background or source catalog realizations (i.e., the seed is not used for\
                         noise realizations).")
-    parser.add_argument("-N", "--add-white-noise", dest = "addWhiteNoise", default = 0.0,
+    parser.add_argument("-N", "--add-noise", dest = "addNoise", default = 0.0,
                         help = "If a random cosmic microwave background realization had been added, add\
                         white noise. If a number is given, uniform per-pixel white noise at the specified\
-                        level is added. Otherwise, a path to an inverse variance map can be given (must\
-                        have the same pixelization as the supplied mask).")
+                        level is added. If a number followed by 'sb' is given (e.g., 40sb), then constant\
+                        surface brightness noise (per square arcmin) is added, adjusting for varying pixel\
+                        scale across the map (if present). Otherwise, a path to an inverse variance map\
+                        can be given (must have the same pixelization as the supplied mask).")
+    parser.add_argument("-k", "--lknee", dest = "lKnee", default = None, type = float,
+                        help = "Must be used with -N (--add-noise) and -C (--add-cmb). If given,\
+                        1/f noise with power spectrum N_l = (1 + l/lknee)^-3) will be generated and added\
+                        to the map (see Appendix A of MacCrann et al. 2023). Reasonable values to use\
+                        are 2000 for ACT f090, and 3000 for ACT f150.")
     parser.add_argument("-A", "--add-map", dest = "addMap", default = None,
                         help = "Path to a FITS map (same pixelization as the input mask) that will be\
                         added to the output sim map. Useful if you want to add extra pre-computed signals\
@@ -121,6 +128,7 @@ if __name__ == '__main__':
     parDict['unfilteredMaps']=[mapDict]
     parDict['mapFilters']=[]
     parDict['useTiling']=False
+    parDict['reprojectToTan']=False
     if args.MPIEnabled == True or args.breakIntoTiles == True:
         parDict['useTiling']=True
         parDict['tileOverlapDeg']=1.0
@@ -134,7 +142,34 @@ if __name__ == '__main__':
     baseDir, fileName=os.path.split(args.outputFileName)
     if baseDir != '':
         os.makedirs(baseDir, exist_ok = True)
-    
+
+    # Noise:
+    # - if number, uniform white noise level per pixel
+    # - if number with sb suffix, uniform white noise level per square arcmin
+    # - if string, a path to ivar map
+    if config.rank == 0:
+        if type(args.addNoise) == str and args.addNoise[-2:] == 'sb':
+            addNoise=float(args.addNoise.split('sb')[0])
+            noiseMode='perSquareArcmin'
+        else:
+            noiseMode='perPixel'
+            try:
+                addNoise=float(args.addNoise)
+            except:
+                # Assumed inv var map path
+                with pyfits.open(args.addNoise) as img:
+                    if img[0].data.ndim == 2:
+                        sigma=img[0].data
+                    else:
+                        sigma=img[0].data[0]
+                    addNoiseWCS=astWCS.WCS(img[0].header, mode = 'pyfits')
+                valid=sigma > 1e-7
+                sigma[valid]=np.sqrt(1/sigma[valid])
+                addNoise=sigma
+    else:
+        addNoise=None
+        noiseMode=None
+
     if args.catalog[:12] == 'pointsources':
         try:
             numSources=int(args.catalog.split("-")[-1])
@@ -217,17 +252,6 @@ if __name__ == '__main__':
                 for tileName in tileModelDict.keys():
                     modelsDict[tileName]=tileModelDict[tileName]
 
-    # Noise - if number, uniform white noise level, if string, a path to ivar map
-    try:
-        addWhiteNoise=float(args.addWhiteNoise)
-    except:
-        with pyfits.open(args.addWhiteNoise) as img:
-            sigma=img[0].data[0]
-        valid=sigma > 1e-7
-        sigma[valid]=np.sqrt(1/sigma[valid])
-        #sigma=np.random.normal(0, sigma)#*noiseBoost # simCMBMap generates noise
-        addWhiteNoise=sigma
-
     # Stitching
     print(">>> Stitching tiles ...")
     if config.rank == 0:
@@ -240,20 +264,50 @@ if __name__ == '__main__':
                 d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+np.array(modelsDict[tileName])
         # Optionally add CMB
         if args.addCMB == True:
-            # Save e.g. tSZ-only map for debugging
+            # Save tSZ-only map for debugging
             astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
             shape=(d.shape)
-            d=d+maps.simCMBMap(shape, wcs, noiseLevel = addWhiteNoise, beam = args.beamFileName,
+            # Split adding CMB and noise to enable more tests
+            d=d+maps.simCMBMap(shape, wcs, noiseLevel = None, beam = args.beamFileName,
                                seed = args.seed)
+            astImages.saveFITS(args.outputFileName.replace(".fits", "_signalAndCMB.fits"), d, wcs)
+            # Support trimming of inv var map, if we have one that doesn't match area mask
+            # NOTE: As it's noise, we don't actually care about matching RA, dec coords strictly
+            # So we don't worry about +/-1 pixel offsets here
+            # But we do have to deal with RA wrapping, and whether RAMax needs to increase/decrease
+            if type(addNoise) == np.ndarray and shape != addNoise.shape:
+                RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
+                clipOk=False
+                count=0
+                lastWidth=None
+                direction=1
+                while clipOk is False:
+                    count=count+1
+                    clip=astImages.clipUsingRADecCoords(addNoise, addNoiseWCS, RAMin, RAMax, decMin, decMax)
+                    if lastWidth is not None:
+                        if lastWidth > clip['data'].shape[1]:
+                            direction=direction*-1
+                    lastWidth=clip['data'].shape[1]
+                    if clip['data'].shape[0] < d.shape[0]:
+                        decMax=decMax+0.01
+                    if clip['data'].shape[1] < d.shape[1]:
+                        RAMax=RAMax+0.01*direction
+                    if clip['data'].shape[0] >= d.shape[0] and clip['data'].shape[1] >= d.shape[1]:
+                        clipOk=True
+                    if count > 20:
+                        raise Exception("Clipping ivar map to suitable size failed to converge quickly enough.")
+                addNoise=clip['data'][:d.shape[0], :d.shape[1]]
+                # raise Exception("Given inv var map does not have the same dimensions as the output sim map - should match the given mask")
+            d=d+maps.simNoiseMap(shape, addNoise, wcs = wcs, lKnee = args.lKnee, noiseMode = noiseMode)
             # For testing abrupt noise changes
             if args.splitNoiseTest == True:
-                d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addWhiteNoise, [int(d.shape[0]/2), d.shape[1]])
+                d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addNoise, [int(d.shape[0]/2), d.shape[1]])
                 # Doesn't really matter about absolute scaling of this
-                weights=np.ones(d.shape)*args.addWhiteNoise
+                weights=np.ones(d.shape)*args.addNoise
                 weights[:int(d.shape[0]/2)]=weights[:int(d.shape[0]/2)]*2
                 weights=np.power(weights, -2)
                 astImages.saveFITS(args.outputFileName.replace(".fits", ".ivar.fits"), weights, wcs)
-        # Optional add another component (e.g., large scale noise, to start with)
+        # Optionally add another component (e.g., large scale noise, to start with)
         if args.addMap is not None:
             with pyfits.open(args.addMap) as img:
                 d=d+float(args.addMapScaling)*img[0].data

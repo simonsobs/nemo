@@ -9,7 +9,7 @@ nemo driver script: for filtering maps and finding clusters
 import sys
 #print("Running under python: %s" % (sys.version))
 import os
-import datetime
+import datetime, time
 from nemo import *
 import nemo
 from nemo import MockSurvey
@@ -25,7 +25,6 @@ import types
 import yaml
 #import IPython
 pylab.matplotlib.interactive(False)
-plotSettings.update_rcParams()
 
 #------------------------------------------------------------------------------------------------------------
 def makeParser():
@@ -49,6 +48,9 @@ def makeParser():
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
                         want to use this, run with e.g., mpiexec -np 4 nemo configFile.yml -M", 
                         default = False)
+    parser.add_argument("-T", "--tiling-check", dest="tilingCheck", action="store_true",
+                        help=" Runs until the tiling stage, then exits, providing info on the number of\
+                        tiles used, and writing tile coordinates to the selFn/ directory.", default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true", 
                         help="Disable strict exception handling (applies under MPI only, i.e., must be\
                         used with the -M switch). If you use this option, you will get the full traceback\
@@ -71,6 +73,10 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDictFileName, calcSelFn = args.calcSelFn,
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions, writeTileInfo = True)
+    if args.tilingCheck == True:
+        print(">>> Tiling check:")
+        print("... This config has %d tiles." % (len(config.allTileNames)))
+        sys.exit()
 
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
     if config.parDict['forcedPhotometryCatalog'] is not None:
@@ -94,15 +100,14 @@ if __name__ == '__main__':
         if config.rank == 0: print("... already made catalog %s" % (optimalCatalogFileName))
                 
     # Q function (filter mismatch) - if needed options have been given
-    # NOTE: This may not be needed in future (if source injection sim Q is used instead)
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
         if os.path.exists(config.selFnDir+os.path.sep+"QFit.fits") == False:
             signals.fitQ(config)
 
-    # This now just generates the noise versus area tables
+    # Generates the noise versus area tables, and adds 'footprint_label' columns to output catalogs
     pipelines.makeRMSTables(config)
 
-    # Source injection test - this is now core for the selection function calculation
+    # Source injection test - one way to calculate completeness ; needed for position recovery tests
     sourceInjTable=None
     sourceInjPath=config.selFnDir+os.path.sep+"sourceInjectionData.fits"
     if os.path.exists(sourceInjPath) == False:
@@ -116,6 +121,7 @@ if __name__ == '__main__':
 
     # Tidying up etc.
     if config.rank == 0:
+        print("... stitching maps and tidying up [time taken to here = %.3f sec]" % (time.time()-config._timeStarted))
 
         # Stitch together map tiles - full fat versions (this will only work if 'saveFilteredMaps: True')
         if 'stitchTiles' in config.parDict.keys() and config.parDict['stitchTiles'] == True:

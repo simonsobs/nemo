@@ -58,7 +58,7 @@ massOptions: {tenToA0: 4.95e-5,
 # Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
 calcSelFn: False
 selFnOptions: {fixedSNRCut: 5.0,
-               method: 'montecarlo',
+               method: 'injection',
                numIterations: 1000, 
                massLimitMaps: [{z: 0.5}]}
                

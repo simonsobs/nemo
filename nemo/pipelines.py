@@ -27,11 +27,10 @@ from . import maps
 from . import signals
 from . import completeness
 from . import MockSurvey
-import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
-def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
-                              measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
+                              measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,\
                               writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
@@ -104,8 +103,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
-def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,
-                               measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,
+def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
+                               measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,\
                                writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
@@ -158,7 +157,12 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     if photFilter is not None and len(config.parDict['mapFilters']) > 1:
         assert(filtersList[0]['label'] == photFilter)
     photFilteredMapDict=None
-    
+
+    # For source injection stuff (yes, this is messy - see below for why we do this)
+    undoPixelWindow=True
+    if useCachedRMSMap == True:
+        undoPixelWindow=False
+
     # Make filtered maps for each filter and tile
     catalogDict={}
     areaMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
@@ -179,15 +183,26 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
 
             filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName, 
                                                diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
-                                               verbose = True, undoPixelWindow = True,
+                                               verbose = True, undoPixelWindow = undoPixelWindow,
                                                useCachedFilter = useCachedFilters)
 
             if useCachedRMSMap == True and photFilter is not None: # i.e., only an option for cluster insertion sims
+                # This is messy:
+                # 1. the saved RMS map doesn't have pixel window correction undone
+                # 2. we make the S/N map before doing the pixel window correction (it would cancel)
+                # 3. but if we're running a source injection sim using the cached RMS map, we'd make a new SN map
+                #    here that has the pixel window correction undone for S, but not for N
+                # 4. so, if we're doing source injection sims, we DON'T want to undo pixel window in call to filterMaps
+                #    above
+                # 5. but then we DO want to undo the pixel window after we've made our new S/N map here
                 RMSMap, wcs=completeness.loadRMSMap(tileName, config.selFnDir, photFilter)
                 validMask=np.greater(RMSMap, 0)
                 SNMap=np.zeros(filteredMapDict['data'].shape)+filteredMapDict['data']
                 SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
                 filteredMapDict['SNMap']=SNMap
+                mask=np.equal(filteredMapDict['data'], 0)
+                filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+                filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
                 filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
@@ -251,7 +266,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     if config.MPIEnabled == True:
         # area mask
         if writeAreaMask == True:
-            config.comm.barrier()
+            #config.comm.barrier()
             if config.rank > 0:
                 config.comm.send(areaMaskDict, dest = 0)
             elif config.rank == 0:
@@ -265,7 +280,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                         areaMaskDict[tileName]=tileDict[tileName]
         # flag mask
         if writeFlagMask == True:
-            config.comm.barrier()
+            #config.comm.barrier()
             if config.rank > 0:
                 config.comm.send(flagMaskDict, dest = 0)
             elif config.rank == 0:
@@ -277,38 +292,37 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 for tileDict in gathered_tileDicts:
                     for tileName in tileDict.keys():
                         flagMaskDict[tileName]=tileDict[tileName]
-        # catalogs
-        config.comm.barrier()
-        optimalCatalogList=config.comm.gather(optimalCatalog, root = 0)
-        if config.rank == 0:
-            print("... gathered catalogs")
-            toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
-            for collectedTab in optimalCatalogList:
-                if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
-                    toStack.append(collectedTab)
-            optimalCatalog=atpy.vstack(toStack)
-            # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
-            if len(optimalCatalog) > 0:
-                optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
 
-    # Write masks
+        # catalogs - every node now gets the whole catalog, for running in multipass mode
+        optimalCatalogList=config.comm.allgather(optimalCatalog)
+        if config.rank == 0: print("... gathered catalogs")
+        toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
+        for collectedTab in optimalCatalogList:
+            if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
+                toStack.append(collectedTab)
+        optimalCatalog=atpy.vstack(toStack)
+        # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
+        if len(optimalCatalog) > 0:
+            optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
+
+    # Write masks - MEFs [barrier here because needed for next step]
     if config.rank == 0:
         if writeAreaMask == True:
             areaMaskDict.saveMEF(config.selFnDir+os.path.sep+"areaMask.fits", compressionType = 'PLIO_1')
-            if config.parDict['stitchTiles'] == True:
-                areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
-                                              config.origWCS, compressionType = 'PLIO_1')
-
-
         if writeFlagMask == True:
             flagMaskDict.saveMEF(config.selFnDir+os.path.sep+"flagMask.fits", compressionType = 'PLIO_1')
-            if config.parDict['stitchTiles'] == True:
-                flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
-                                              config.origWCS, compressionType = 'PLIO_1')
-
-    # Ensure we leave together, otherwise files we need later may not be written yet by rank 0
     if config.MPIEnabled == True:
         config.comm.barrier()
+
+    # Write masks - stitched [done by rank 0 while processesothers move on]
+    if config.rank == 0:
+        if writeAreaMask == True and config.parDict['stitchTiles'] == True:
+            areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
+                                          config.origWCS, compressionType = 'PLIO_1')
+
+        if writeFlagMask == True and config.parDict['stitchTiles'] == True:
+            flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
+                                          config.origWCS, compressionType = 'PLIO_1')
 
     del areaMaskDict, flagMaskDict, catalogDict
 
@@ -318,13 +332,10 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
 def makeRMSTables(config):
     """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
     in the config file, plus the full survey mask), that contain information on noise levels and area covered,
-    and completeness. 
+    and completeness. Adds footprint columns to object catalog.
 
     """
-    
-    # Q varies across tiles
-    #Q=signals.QFit(config)
-        
+
     # We only care about the filter used for fixed_ columns
     if config.parDict['photFilter'] is None:
         return None
@@ -332,15 +343,6 @@ def makeRMSTables(config):
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             break
-
-    # We'll only calculate completeness for this given selection
-    #SNRCut=config.parDict['selFnOptions']['fixedSNRCut']
-
-    # Handle any missing options for calcCompleteness (these aren't used by the default fast method anyway)
-    #if 'numDraws' not in config.parDict['selFnOptions'].keys():
-        #config.parDict['selFnOptions']['numDraws']=2000000
-    #if 'numIterations' not in config.parDict['selFnOptions'].keys():
-        #config.parDict['selFnOptions']['numIterations']=100
     
     # We can calculate stats in different extra areas (e.g., inside optical survey footprints)
     footprintsList=[]
@@ -355,23 +357,10 @@ def makeRMSTables(config):
 
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
-        #compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
-                                           #numDraws = config.parDict['selFnOptions']['numDraws'],
-                                           #numIterations = config.parDict['selFnOptions']['numIterations'],
-                                           #method = config.parDict['selFnOptions']['method'],
-                                           #verbose = True)
         selFnDict={'tileName': tileName,
                    'RMSTab': RMSTab,
                    'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
         selFnCollection['full'].append(selFnDict)
-
-        # Optional mass-limit maps [no footprint option here as yet]
-        #if 'massLimitMaps' in list(config.parDict['selFnOptions'].keys()):
-            #for massLimitDict in config.parDict['selFnOptions']['massLimitMaps']:
-                #completeness.makeMassLimitMap(RMSTab, SNRCut, massLimitDict['z'],
-                                              #tileName, photFilterLabel, mockSurvey,
-                                              #config.parDict['massOptions'], Q, config.diagnosticsDir,
-                                              #config.selFnDir)
 
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
@@ -381,17 +370,13 @@ def makeRMSTables(config):
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
                                               footprintLabel = footprintDict['label'])
-                #compMz=completeness.calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, config.parDict['massOptions'], Q,
-                                                   #numDraws = config.parDict['selFnOptions']['numDraws'],
-                                                   #numIterations = config.parDict['selFnOptions']['numIterations'],
-                                                   #method = config.parDict['selFnOptions']['method'])
                 selFnDict={'tileName': tileName,
                            'RMSTab': RMSTab,
                            'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
                 selFnCollection[footprintDict['label']].append(selFnDict)
 
     if config.MPIEnabled == True:
-        config.comm.barrier()
+        #config.comm.barrier()
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank == 0:
             print("... gathered RMS tables")
@@ -429,9 +414,19 @@ def makeRMSTables(config):
                 tab.sort('y0RMS')
                 tab.meta['NEMOVER']=nemo.__version__
                 tab.write(outFileName, overwrite = True)
-                
+
+        # Add footprint columns to object catalog
+        catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+        tab=atpy.Table().read(catFileName)
+        for footprintDict in footprintsList:
+            for maskPath in footprintDict['maskList']:
+                m, wcs=maps.chunkLoadMask(maskPath)
+                tab=catalogs.addFootprintColumnToCatalog(tab, footprintDict['label'], m, wcs)
+        catalogs.writeCatalog(tab, catFileName)
+        catalogs.writeCatalog(tab, catFileName.replace(".fits", ".csv"))
+
 #------------------------------------------------------------------------------------------------------------
-def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True, 
+def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True,\
                            writeInfo = True, verbose = True, QSource = 'fit'):
     """Generate a mock cluster catalog using the given nemo config.
     
@@ -773,7 +768,7 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             shape=(wcs.header['NAXIS2'], wcs.header['NAXIS1'])
             degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
             RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
             beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
             refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
             matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
@@ -986,9 +981,9 @@ def _extractSpecCAP(config, tab, kernelDict, method = 'CAP', diskRadiusArcmin = 
             tileTab['diskSNR_%s' % (label)]=np.zeros(len(tileTab))
         for row in tileTab:
             degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                           row['RADeg'], row['decDeg'],
-                                                                           maxSizeDeg)
+            degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs,
+                                                                     row['RADeg'], row['decDeg'],
+                                                                     maxSizeDeg)
             innerMask=degreesMap < innerRadiusArcmin/60
             outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
             for mapDict, label in zip(mapDictList, freqLabels):
@@ -1005,9 +1000,9 @@ def _extractSpecCAP(config, tab, kernelDict, method = 'CAP', diskRadiusArcmin = 
                 randTab['diskT_uKArcmin2_%s' % (label)]=np.zeros(len(randTab))
             for row in randTab:
                 degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
-                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                                row['RADeg'], row['decDeg'], 
-                                                                                maxSizeDeg)
+                degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs,
+                                                                         row['RADeg'], row['decDeg'],
+                                                                         maxSizeDeg)
                 innerMask=degreesMap < innerRadiusArcmin/60
                 outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
                 for mapDict, label in zip(mapDictList, freqLabels):

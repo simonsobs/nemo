@@ -42,5 +42,5 @@ def update_rcParams(dict={}):
     # From https://github.com/mhasself/rg_friendly
     plt.rcParams['axes.prop_cycle']=cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 
-
-
+# Let's just do this whenever it's imported
+update_rcParams()

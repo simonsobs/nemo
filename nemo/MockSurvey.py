@@ -17,6 +17,7 @@ if on_rtd is None:
     import pyccl as ccl
 from . import signals
 from . import catalogs
+from . import maps
 import pickle
 from scipy import interpolate
 from scipy import integrate
@@ -357,10 +358,10 @@ class MockSurvey(object):
         return PLog10M
 
 
-    def drawSample(self, y0Noise, scalingRelationDict, QFit = None, wcs = None, photFilterLabel = None,
-                   tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,
-                   areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True, 
-                   applyIntrinsicScatter = True, applyNoiseScatter = True,
+    def drawSample(self, y0Noise, scalingRelationDict, QFit = None, wcs = None, photFilterLabel = None,\
+                   tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,\
+                   areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True,\
+                   applyIntrinsicScatter = True, applyNoiseScatter = True,\
                    applyRelativisticCorrection = True, verbose = False):
         """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
         Nemo catalogs) by applying the given scaling relation parameters, and then (optionally) applying
@@ -368,9 +369,9 @@ class MockSurvey(object):
         
         Args:
             y0Noise (:obj:`float` or :obj:`np.ndarray`): Either a single number (if using e.g., a survey
-                average) or a noise map (2d array). A noise map must be provided here if you want the
-                output catalog to contain RA, dec coordinates (in addition, a WCS object must also be
-                provided - see below).
+                average), an RMS table (with columns 'areaDeg2' and 'y0RMS'), or a noise map (2d array).
+                A noise map must be provided here if you want the output catalog to contain RA, dec
+                coordinates (in addition, a WCS object must also be provided - see below).
             scalingRelationDict (:obj:`dict`): A dictionary containing keys 'tenToA0', 'B0', 'Mpivot',
                 'sigma_int' that describes the scaling relation between y0~ and mass (this is the
                 format of `massOptions` in Nemo .yml config files).
@@ -455,17 +456,46 @@ class MockSurvey(object):
         # NOTE: switched to using valid part of RMSMap here rather than areaMask - we need to fix the latter to same area
         # It isn't a significant issue though
         if type(y0Noise) == np.ndarray and y0Noise.ndim == 2:
+            # This generates even density RA, dec coords on the whole sky taking into account the projection
+            # Consequently, this is inefficient if fed individual tiles rather than a full sky noise map
+            assert(wcs is not None)
             RMSMap=y0Noise
-            ysInMask, xsInMask=np.where(RMSMap != 0)
-            coordIndices=np.random.randint(0, len(xsInMask), numClusters)
-            ys=ysInMask[coordIndices]
-            xs=xsInMask[coordIndices]
-            if wcs is not None:
-                RADecCoords=wcs.pix2wcs(xs, ys)
-                RADecCoords=np.array(RADecCoords)
-                RAs=RADecCoords[:, 0]
-                decs=RADecCoords[:, 1]
+            xsList=[]
+            ysList=[]
+            maxCount=10000
+            count=0
+            while(len(xsList) < numClusters):
+                count=count+1
+                if count > maxCount:
+                    raise Exception("Failed to generate enough random coords in %d iterations" % (maxCount))
+                theta=np.degrees(np.pi*2*np.random.uniform(0, 1, numClusters))
+                phi=np.degrees(np.arccos(2*np.random.uniform(0, 1, numClusters)-1))-90
+                xyCoords=np.array(wcs.wcs2pix(theta, phi))
+                xs=np.array(np.round(xyCoords[:, 0]), dtype = int)
+                ys=np.array(np.round(xyCoords[:, 1]), dtype = int)
+                mask=np.logical_and(np.logical_and(xs >= 0, xs < RMSMap.shape[1]), np.logical_and(ys >= 0, ys < RMSMap.shape[0]))
+                xs=xs[mask]
+                ys=ys[mask]
+                mask=RMSMap[ys, xs] > 0
+                xsList=xsList+xs[mask].tolist()
+                ysList=ysList+ys[mask].tolist()
+            xs=np.array(xsList)[:numClusters]
+            ys=np.array(ysList)[:numClusters]
+            del xsList, ysList
+            RADecCoords=wcs.pix2wcs(xs, ys)
+            RADecCoords=np.array(RADecCoords)
+            RAs=RADecCoords[:, 0]
+            decs=RADecCoords[:, 1]
             y0Noise=RMSMap[ys, xs]
+        elif type(y0Noise) == atpy.Table:
+            noisetck=interpolate.splrep(np.cumsum(y0Noise['areaDeg2']/y0Noise['areaDeg2'].sum()), y0Noise['y0RMS'], k = 1)
+            rnd=np.random.uniform(0, 1, numClusters)
+            vals=interpolate.splev(rnd, noisetck, ext = 3)
+            if np.any(vals < 0) or np.any(vals == np.nan):
+                raise Exception("Failed to make interpolating spline for RMSTab in tileName = %s" % (tileName))
+            y0Noise=vals
+            RAs=np.zeros(numClusters)
+            decs=np.zeros(numClusters)
         else:
             y0Noise=np.ones(numClusters)*y0Noise
             RAs=np.zeros(numClusters)

@@ -36,8 +36,6 @@ import copy
 import sys
 import glob
 import itertools
-import pyximport; pyximport.install()
-import nemoCython
 import nemo
 from . import maps
 from . import signals
@@ -50,8 +48,8 @@ import astropy.table as atpy
 import time
 
 #-------------------------------------------------------------------------------------------------------------
-def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = '.',
-               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedFilter = False,
+def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = '.', \
+               selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedFilter = False, \
                returnFilter = False):
     """Builds and applies filters to the unfiltered map(s). 
     
@@ -406,11 +404,17 @@ class MapFilter(object):
                     RMSMap[weightMask]=chunkRMS
 
         # The grid method now recognises numNoiseBins in cells
-        else:  
-            gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-            overlapPix=int(gridSize/2)
-            numXChunks=mapData.shape[1]/gridSize
-            numYChunks=mapData.shape[0]/gridSize
+        else:
+            # We may want to just bin and not grid
+            if 'noiseGridArcmin' not in self.params['noiseParams'].keys() or self.params['noiseParams']['noiseGridArcmin'] is None:
+                overlapPix=0
+                numXChunks=1
+                numYChunks=1
+            else: # The usual gridding
+                gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+                overlapPix=int(gridSize/2)
+                numXChunks=mapData.shape[1]/gridSize
+                numYChunks=mapData.shape[0]/gridSize
             yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
             xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
             apodMask=np.not_equal(mapData, 0)
@@ -551,7 +555,7 @@ class MatchedFilter(MapFilter):
                         RMS=10.0
                     # Seeds fixed so that outputs are the same on repeated runs
                     cmb=maps.simCMBMap(self.shape, self.wcs, beam = mapDict['beamFileName'],
-                                       seed = 3141592654+i, noiseLevel = RMS, fixNoiseSeed = True)
+                                       seed = 3141592654+i, noiseLevel = RMS)
                     fMapsForNoise.append(enmap.fft(enmap.apod(cmb, self.apodPix)))
                 else:
                     raise Exception("'%s' is not a valid filter noise method name - fix the .yml config file" % (self.params['noiseParams']['method']))
@@ -644,7 +648,15 @@ class MatchedFilter(MapFilter):
                 signalMaps=np.array(signalMaps)
                 fSignalMaps=np.array(fSignalMaps)        
                 filteredSignal=self.applyFilter(fSignalMaps)
-                self.signalNorm=y0/filteredSignal.max()
+                # This is a 0.6% difference to the previous version
+                cRADeg, cDecDeg=self.wcs.getCentreWCSCoords()
+                cx, cy=self.wcs.wcs2pix(cRADeg, cDecDeg)
+                mapInterpolator=interpolate.RectBivariateSpline(np.arange(filteredSignal.shape[0]),
+                                                                np.arange(filteredSignal.shape[1]),
+                                                                filteredSignal, kx = 3, ky = 3)
+                peakFilteredSignal=mapInterpolator(cy, cx)[0][0]
+                #peakFilteredSignal=filteredSignal.max() # Previous version
+                self.signalNorm=y0/peakFilteredSignal
                 # For relativistic corrections (see signals module)
                 totalSignal=filteredSignal.flatten()[np.argmax(filteredSignal)]
                 filteredSignalCube=np.real(enmap.ifft(fSignalMaps*self.filt, normalize = False))
@@ -709,9 +721,11 @@ class MatchedFilter(MapFilter):
                 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
         # NOTE: Now point source mask is applied above, we fill the holes back in here when finding edges
+        # NOTE: This all works on maps which have a zero border. If they don't, edgeTrimArcmin has no effect
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
             trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-        elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart":
+        elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart"\
+                and self.params['noiseParams']['noiseGridArcmin'] is not None:
             gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
             trimSizePix=int(round(gridSize*3.0))
         else:
@@ -722,10 +736,15 @@ class MatchedFilter(MapFilter):
         else:
             edgeCheck=np.ones(filteredMap.shape)
         filteredMap=filteredMap*edgeCheck
-        apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask
         filteredMap=filteredMap*surveyMask # NOTE: Needed for 2-pass (I think)
         del edgeCheck
+
+        # Just in case... we always want to trim the apodized region from the region searched
+        # This has no effect if we're using a survey mask already
+        # Doing this makes life easier when running tests that use small survey masks or go right to edge of tile otherwise
+        apodMask=np.equal(enmap.apod(np.ones(filteredMap.shape), self.apodPix), 1)
+        surveyMask=surveyMask*apodMask
 
         # Apply final survey mask to signal-to-noise map and RMS map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on
@@ -820,7 +839,7 @@ class MatchedFilter(MapFilter):
             filt=self.filt
         else:
             filt=self.reshapeFilter(mapDataToFilter.shape)
-        
+
         if 'complex' in mapDataToFilter.dtype.name:
             fMapsToFilter=mapDataToFilter
         else:
@@ -833,7 +852,7 @@ class MatchedFilter(MapFilter):
             filteredMap=maps.subtractBackground(filteredMap, self.wcs, smoothScaleDeg = self.params['bckSubScaleArcmin']/60.)
         
         filteredMap=filteredMap*self.signalNorm
-        
+
         return filteredMap
         
 #------------------------------------------------------------------------------------------------------------
@@ -1123,9 +1142,14 @@ class RealSpaceMatchedFilter(MapFilter):
             edgeCheck=np.ones(filteredMap.shape)
         edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
         filteredMap=filteredMap*edgeCheck
-        apodMask=np.not_equal(filteredMap, 0)
         surveyMask=edgeCheck*surveyMask*psMask
         del edgeCheck
+
+        # Just in case... we always want to trim the apodized region from the region searched
+        # This has no effect if we're using a survey mask already
+        # Doing this makes life easier when running tests that use small survey masks or go right to edge of tile otherwise
+        apodMask=np.equal(enmap.apod(np.ones(filteredMap.shape), self.apodPix), 1)
+        surveyMask=surveyMask*apodMask
 
         # Apply final survey mask to signal-to-noise map and RMS map
         # NOTE: need to avoid NaNs in here, otherwise map interpolation for e.g. S/N will fail later on

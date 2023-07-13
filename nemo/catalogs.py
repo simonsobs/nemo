@@ -15,6 +15,7 @@ from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
 import astropy.io.fits as pyfits
 from scipy import ndimage
+from . import maps
 
 # For adding meta data to output
 import datetime
@@ -870,11 +871,13 @@ def getCatalogWithinImage(tab, shape, wcs, mask = None):
     
     """
     
-    xyCoords=wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist())
-    xyCoords=np.array(xyCoords, dtype = int)
+    xyCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()))
     selected=[]
     for i in range(len(tab)):
         x, y=xyCoords[i][0], xyCoords[i][1]
+        if np.isnan(x) == True or np.isnan(y) == True:
+            selected.append(False)
+            continue
         if x >= 0 and x < shape[1]-1 and y >= 0 and y < shape[0]-1:
             if mask is not None:
                 if mask[int(round(y)), int(round(x))] == 1:
@@ -887,3 +890,35 @@ def getCatalogWithinImage(tab, shape, wcs, mask = None):
             selected.append(False)
     
     return tab[selected]
+
+#------------------------------------------------------------------------------------------------------------
+def addFootprintColumnToCatalog(tab, label, areaMask, wcs):
+    """Add `footprint_label` column to the catalog, flagging objects found within the valid area of the given
+    mask.
+
+    Args:
+        tab (:obj:`astropy.table.Table`): Catalog, as an astropy Table object. Must have columns called
+            'RADeg', 'decDeg' that contain object coordinates in decimal degrees.
+        label (:obj:`str`): A column named `footprint_label` will be added to the catalog. Objects in the
+            catalog that fall within the valid area of the given area mask will have `footprint_label`
+            set to True.
+        areaMask (:obj:`np.ndarray`): Mask image defining the footprint corresponding to the given WCS.
+            Pixels with value = 1 indicate valid area, and pixels with value = 0 are considered to be
+            outside the mask.
+        wcs (:obj:`astWCS.WCS`): WCS of the area mask that defines the footprint.
+
+    Returns:
+        An astropy Table with `footprint_label` column added.
+
+    """
+
+    inMask=np.zeros(len(tab['RADeg'].data), dtype = bool)
+    coords=wcs.wcs2pix(tab['RADeg'].data, tab['decDeg'].data)
+    coords=np.array(np.round(coords), dtype = int)
+    mask1=np.logical_and(coords[:, 0] >= 0, coords[:, 1] >= 0)
+    mask2=np.logical_and(coords[:, 0] < areaMask.shape[1], coords[:, 1] < areaMask.shape[0])
+    mask=np.logical_and(mask1, mask2)
+    inMask[mask]=inMask[mask]+areaMask[coords[:, 1][mask], coords[:, 0][mask]]
+    tab['footprint_%s' % (label)]=inMask
+
+    return tab

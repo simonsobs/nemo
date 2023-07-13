@@ -11,7 +11,7 @@ import numpy
 import versioneer
 
 cmdclass=versioneer.get_cmdclass()
-cmdclass['build_ext']=build_ext
+#cmdclass['build_ext']=build_ext
 
 setup(name='nemo-sz',
       version=versioneer.get_version(),
@@ -31,16 +31,16 @@ setup(name='nemo-sz',
       long_description="""Millimeter-wave map filtering and Sunyaev-Zel'dovich galaxy cluster/source detection package. Originally developed for the Atacama Cosmology Telescope project.""",
       packages=['nemo'],
       package_data={'nemo': ['data/*']},
-      scripts=['bin/nemo', 'bin/nemoMass', 'bin/nemoMock', 'bin/nemoCatalogCheck', 'bin/nemoCosmo', 'bin/nemoModel', 'bin/nemoSpec'],
-      ext_modules=[Extension("nemoCython", ["nemo/nemoCython.pyx"], include_dirs=[numpy.get_include()])],
+      scripts=['bin/nemo', 'bin/nemoMass', 'bin/nemoMock', 'bin/nemoCatalogCheck', 'bin/nemoModel', 'bin/nemoSpec'],
+      #ext_modules=[Extension("nemoCython", ["nemo/nemoCython.pyx"], include_dirs=[numpy.get_include()])],
       install_requires=["astropy >= 4.0",
                         "numpy >= 1.19",
                         "matplotlib >= 2.0",
                         "astLib >= 0.11.8",
-                        "pixell >= 0.13",
+                        "pixell >= 0.17",
                         "scipy >= 1.0",
                         "pillow",
-                        "cython",
+                        #"cython",
                         "PyYAML",
                         #"pyccl >= 2.1",
                         #"mpi4py",

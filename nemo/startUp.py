@@ -38,8 +38,8 @@ def parseConfigFile(parDictFileName, verbose = False):
         # We've moved masks out of the individual map definitions in the config file
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
-        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor']
+        maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -104,6 +104,8 @@ def parseConfigFile(parDictFileName, verbose = False):
             for entry in parDict['tileNameList']:
                 newList.append(entry.upper())
             parDict['tileNameList']=newList
+        if 'reprojectToTan' not in parDict.keys():
+            parDict['reprojectToTan']=False
         # We shouldn't have to give this unless we're using it
         if 'catalogCuts' not in parDict.keys():
             parDict['catalogCuts']=[]
@@ -123,8 +125,13 @@ def parseConfigFile(parDictFileName, verbose = False):
         # We need a better way of giving defaults than this...
         if 'selFnOptions' in parDict.keys() and 'method' not in parDict['selFnOptions'].keys():
             parDict['selFnOptions']['method']='fast'
+        if 'selFnOptions' in parDict.keys() and parDict['selFnOptions']['method'] not in ['fast', 'injection']:
+                raise Exception("Valid completeness estimation methods are 'fast' or 'injection' - edit selFnOptions['method'] in config.")
         if 'selFnOptions' in parDict.keys() and 'QSource' not in parDict['selFnOptions'].keys():
-            parDict['selFnOptions']['QSource']='fit'
+            if parDict['fitQ'] == True:
+                parDict['selFnOptions']['QSource']='fit'
+            else:
+                parDict['selFnOptions']['QSource']='injection'
         # Check of tile definitions
         if 'useTiling' not in list(parDict.keys()):
             parDict['useTiling']=False
@@ -292,8 +299,8 @@ class NemoConfig(object):
             self.parDict['sourceInjectionTest']=True
 
         # Source injection test is now required for calculation of the selection function
-        if 'calcSelFn' in self.parDict.keys() and self.parDict['calcSelFn'] == True:
-            self.parDict['sourceInjectionTest']=True
+        #if 'calcSelFn' in self.parDict.keys() and self.parDict['calcSelFn'] == True:
+        #    self.parDict['sourceInjectionTest']=True
 
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
@@ -516,7 +523,8 @@ class NemoConfig(object):
         if self.parDict['useTiling'] == False:
             clipCoordsDict[ext.name]={'clippedSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']],
                                       'header': wcs.header,
-                                      'areaMaskInClipSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']]}
+                                      'areaMaskInClipSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']],
+                                      'reprojectToTan': self.parDict['reprojectToTan']}
 
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
@@ -560,17 +568,17 @@ class NemoConfig(object):
                 # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
                 # (which happens if image dimensions are both odd)
                 # I _think_ this is related to the interpolation done in signals.fitQ
-                if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
-                    newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
-                    newArr[:clip['data'].shape[0], :]=clip['data']
-                    newWCS=clip['wcs'].copy()
-                    newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
-                    newWCS.updateFromHeader()
-                    testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
-                    # Check if we see the same sky, if not and we trip this, we need to think about this more
-                    assert((testClip['data']-clip['data']).sum() == 0)
-                    clip['data']=newArr
-                    clip['wcs']=newWCS
+                # if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
+                #     newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
+                #     newArr[:clip['data'].shape[0], :]=clip['data']
+                #     newWCS=clip['wcs'].copy()
+                #     newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
+                #     newWCS.updateFromHeader()
+                #     testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
+                #     # Check if we see the same sky, if not and we trip this, we need to think about this more
+                #     assert((testClip['data']-clip['data']).sum() == 0)
+                #     clip['data']=newArr
+                #     clip['wcs']=newWCS
 
                 # Storing clip coords etc. so can stitch together later
                 # areaMaskSection here is used to define the region that would be kept (takes out overlap)
@@ -584,7 +592,8 @@ class NemoConfig(object):
                 clip_y1=int(round(clip_y1))
                 if name not in clipCoordsDict:
                     clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
-                                          'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1]}
+                                          'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1],
+                                          'reprojectToTan': self.parDict['reprojectToTan']}
                     if self.verbose:
                         print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
 
@@ -641,7 +650,7 @@ class NemoConfig(object):
 
     def _checkWCSConsistency(self):
         # Check consistency of WCS across maps
-        mapKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask']
+        mapKeys=['mapFileName', 'weightsFileName', 'pointSourceMask', 'surveyMask', 'flagMask']
         refWCS=None
         for mapDict in self.parDict['unfilteredMaps']:
             for key in mapKeys:
