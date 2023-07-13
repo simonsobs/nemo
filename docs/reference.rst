@@ -46,13 +46,6 @@ MockSurvey
    :members:
 
 
-nemoCython
-----------
-
-.. automodule:: nemoCython
-   :members:
-
-
 photometry
 ----------
 

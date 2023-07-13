@@ -27,7 +27,6 @@ from . import maps
 from . import signals
 from . import completeness
 from . import MockSurvey
-import nemoCython
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
@@ -769,7 +768,7 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             shape=(wcs.header['NAXIS2'], wcs.header['NAXIS1'])
             degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
             RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
             beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
             refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
             matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
@@ -982,9 +981,9 @@ def _extractSpecCAP(config, tab, kernelDict, method = 'CAP', diskRadiusArcmin = 
             tileTab['diskSNR_%s' % (label)]=np.zeros(len(tileTab))
         for row in tileTab:
             degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                           row['RADeg'], row['decDeg'],
-                                                                           maxSizeDeg)
+            degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs,
+                                                                     row['RADeg'], row['decDeg'],
+                                                                     maxSizeDeg)
             innerMask=degreesMap < innerRadiusArcmin/60
             outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
             for mapDict, label in zip(mapDictList, freqLabels):
@@ -1001,9 +1000,9 @@ def _extractSpecCAP(config, tab, kernelDict, method = 'CAP', diskRadiusArcmin = 
                 randTab['diskT_uKArcmin2_%s' % (label)]=np.zeros(len(randTab))
             for row in randTab:
                 degreesMap=np.ones(shape, dtype = float)*1e6 # NOTE: never move this
-                degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                                row['RADeg'], row['decDeg'], 
-                                                                                maxSizeDeg)
+                degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs,
+                                                                         row['RADeg'], row['decDeg'],
+                                                                         maxSizeDeg)
                 innerMask=degreesMap < innerRadiusArcmin/60
                 outerMask=np.logical_and(degreesMap >= innerRadiusArcmin/60, degreesMap < outerRadiusArcmin/60)
                 for mapDict, label in zip(mapDictList, freqLabels):

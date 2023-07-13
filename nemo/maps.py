@@ -20,8 +20,6 @@ import glob
 import os
 import sys
 import math
-import pyximport; pyximport.install()
-import nemoCython
 import time
 import shutil
 import copy
@@ -412,9 +410,9 @@ class MapDict(dict):
                         maskRadiusArcmin=ASizeArcmin/2
                     else:
                         raise Exception("To mask sources in a catalog, need either 'rArcmin' or 'ellipse_A' column to be present.")
-                    rDegMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rDegMap, wcs,
-                                                                                row['RADeg'], row['decDeg'],
-                                                                                maskRadiusArcmin/60)
+                    rDegMap, xBounds, yBounds=makeDegreesDistanceMap(rDegMap, wcs,
+                                                                     row['RADeg'], row['decDeg'],
+                                                                     maskRadiusArcmin/60)
                     surveyMask[rDegMap < maskRadiusArcmin/60.0]=0
                     psMask[rDegMap < maskRadiusArcmin/60.0]=0
                     data[rDegMap < maskRadiusArcmin/60.0]=bckData[rDegMap < maskRadiusArcmin/60.0]
@@ -449,9 +447,9 @@ class MapDict(dict):
                         maskRadiusArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
                     if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
                         maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
-                    rArcminMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(rArcminMap, wcs,
-                                                                                row['RADeg'], row['decDeg'],
-                                                                                maskRadiusArcmin/60)
+                    rArcminMap, xBounds, yBounds=makeDegreesDistanceMap(rArcminMap, wcs,
+                                                                        row['RADeg'], row['decDeg'],
+                                                                        maskRadiusArcmin/60)
                     rArcminMap=rArcminMap*60
                     surveyMask[rArcminMap < maskRadiusArcmin]=0
                     psMask[rArcminMap < maskRadiusArcmin]=0
@@ -1103,9 +1101,9 @@ def maskOutSources(mapData, wcs, catalog, radiusArcmin = 7.0, mask = 0.0, growMa
     for obj in catalog:
         if wcs.coordsAreInImage(obj['RADeg'], obj['decDeg']) == True:
             degreesMap=np.ones(mapData.shape, dtype = float)*1e6
-            rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                       obj['RADeg'], obj['decDeg'], 
-                                                                       20.0/60.0)         
+            rRange, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs,
+                                                            obj['RADeg'], obj['decDeg'],
+                                                            20.0/60.0)
             circleMask=np.less(rRange, radiusArcmin/60.0)
             grownCircleMask=np.less(rRange, (radiusArcmin*growMaskedArea)/60.0)
             maskMap[grownCircleMask]=1.0
@@ -1191,9 +1189,9 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
             RADeg, decDeg=mapWCS.pix2wcs(pos[1], pos[0])
             if np.isnan(RADeg) == False and np.isnan(decDeg) == False:
                 degreesMap=np.ones(mapData.shape, dtype = float)*1e6
-                rRange, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, mapWCS, 
-                                                                           RADeg, decDeg, 
-                                                                           (radiusArcmin*4)/60.0)        
+                rRange, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, mapWCS,
+                                                                RADeg, decDeg,
+                                                                (radiusArcmin*4)/60.0)
                 # Get pedestal level and white noise level from average between radiusArcmin and  2*radiusArcmin
                 annulusMask=np.logical_and(np.greater(rRange, radiusArcmin/60.0), \
                                               np.less(rRange, 2*radiusArcmin/60.0))
@@ -1402,8 +1400,8 @@ def convolveMapWithBeam(data, wcs, beam, maxDistDegrees = 1.0):
         xPad=0
     degreesMap=np.ones([data.shape[0]+yPad, data.shape[1]+xPad], dtype = float)*1e6
     RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2)+1, int(degreesMap.shape[0]/2)+1)
-    degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 
-                                                                   maxDistDegrees)
+    degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg,
+                                                        maxDistDegrees)
     beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
     if (yBounds[1]-yBounds[0]) > beamMap.shape[1] and (yBounds[1]-yBounds[0]) % 2 == 0:
         yBounds[0]=yBounds[0]-1
@@ -1884,22 +1882,12 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
                     continue
             degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-            degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                        row['RADeg'], row['decDeg'], 
-                                                                        maxSizeDeg)
+            degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs,
+                                                                row['RADeg'], row['decDeg'],
+                                                                maxSizeDeg)
             signalMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)*row['deltaT_c']
             modelMap=modelMap+signalMap
-        # Sources - note this is extremely fast, but goes wrong for closely packed sources
-        # So we should just get rid of it
-        #fluxScaleMap=np.zeros(modelMap.shape)
-        #for row in catalog:
-            #degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, 
-                                                                        #row['RADeg'], row['decDeg'], 
-                                                                        #maxSizeDeg)
-            #fluxScaleMap[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]=row['deltaT_c']
-        #modelMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
-        #modelMap=modelMap*fluxScaleMap
-        
+
     # Optional: apply pixel window function - generally this should be True
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
     if applyPixelWindow == True:
@@ -2418,6 +2406,66 @@ def saveFITS(outputFileName, mapData, wcs, compressionType = None):
     newImg.append(hdu)
     newImg.writeto(outputFileName)
     newImg.close()
+
+#---------------------------------------------------------------------------------------------------
+def makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, maxDistDegrees):
+    """Fills (in place) the 2d array degreesMap with distance in degrees from the given position,
+    out to some user-specified maximum distance.
+
+    Args:
+        degreesMap (:obj:`np.ndarray`): Map (2d array) that will be filled with angular distance
+            from the given coordinates. Probably you should feed in an array set to some extreme
+            initial value (e.g., 1e6 everywhere) to make it easy to filter for pixels near the
+            object coords afterwards.
+        wcs (:obj:`astWCS.WCS`): WCS corresponding to degreesMap.
+        RADeg (float): RA in decimal degrees of position of interest (e.g., object location).
+        decDeg (float): Declination in decimal degrees of position of interest (e.g., object
+            location).
+        maxDistDegrees: The maximum radius out to which distance will be calculated.
+
+    Returns:
+        A map (2d array) of distance in degrees from the given position,
+        (min x, max x) pixel coords corresponding to maxDistDegrees box,
+        (min y, max y) pixel coords corresponding to maxDistDegrees box
+
+    Note:
+        This routine measures the pixel scale local to the given position, then assumes that it
+        does not change. So, this routine may only be accurate close to the given position,
+        depending upon the WCS projection used.
+
+    """
+
+    x0, y0=wcs.wcs2pix(RADeg, decDeg)
+    ra0, dec0=RADeg, decDeg
+    ra1, dec1=wcs.pix2wcs(x0+1, y0+1)
+    xPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
+    yPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
+
+    xDistPix=int(round((maxDistDegrees)/xPixScale))
+    yDistPix=int(round((maxDistDegrees)/yPixScale))
+
+    Y=degreesMap.shape[0]
+    X=degreesMap.shape[1]
+
+    minX=int(round(x0))-xDistPix
+    maxX=int(round(x0))+xDistPix
+    minY=int(round(y0))-yDistPix
+    maxY=int(round(y0))+yDistPix
+    if minX < 0:
+        minX=0
+    if maxX > X:
+        maxX=X
+    if minY < 0:
+        minY=0
+    if maxY > Y:
+        maxY=Y
+
+    xDeg=(np.arange(degreesMap.shape[1])-x0)*xPixScale
+    yDeg=(np.arange(degreesMap.shape[0])-y0)*yPixScale
+    for i in range(minY, maxY):
+        degreesMap[i][minX:maxX]=np.sqrt(yDeg[i]**2+xDeg[minX:maxX]**2)
+
+    return degreesMap, [minX, maxX], [minY, maxY]
 
 #---------------------------------------------------------------------------------------------------
 def makeExtendedSourceMask(config, tileName):

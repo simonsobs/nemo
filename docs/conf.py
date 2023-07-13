@@ -26,7 +26,7 @@ autodoc_mock_imports = ["pyccl", "mpi4py"]
 # -- Project information -----------------------------------------------------
 
 project = 'nemo'
-copyright = '2020, Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
+copyright = '2020 - 2023, Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
 author = 'Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
 
 # The short X.Y version
@@ -69,7 +69,7 @@ master_doc = 'index'
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'en'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.

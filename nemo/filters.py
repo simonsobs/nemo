@@ -36,8 +36,6 @@ import copy
 import sys
 import glob
 import itertools
-import pyximport; pyximport.install()
-import nemoCython
 import nemo
 from . import maps
 from . import signals

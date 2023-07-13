@@ -32,8 +32,6 @@ import math
 import pylab as plt
 import pickle
 import operator
-import pyximport; pyximport.install()
-import nemoCython
 import nemo
 import glob
 import shutil
@@ -607,7 +605,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     if type(beam) == str:
         beam=BeamProfile(beamFileName = beam)        
     profile1d=amplitude*beam.profile1d
-    
+
     # Turn 1d profile into 2d
     r2p=interpolate.interp1d(beam.rDeg, profile1d, bounds_error=False, fill_value=0.0)
     signalMap=r2p(degreesMap)
@@ -719,8 +717,8 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
 
     if painter == 'legacy': # Old method
         degreesMap=np.ones(shape, dtype = np.float64)*1e6
-        degreesMap, xBounds, yBounds=nemoCython.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg,
-                                                                    maxSizeDeg)
+        degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg,
+                                                                 maxSizeDeg)
         rDeg=np.linspace(0.0, maxSizeDeg, 5000)
         profile1d=interpolate.splev(rDeg, tckP, ext = 1)
         if amplitude is not None:
