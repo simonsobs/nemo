@@ -553,7 +553,7 @@ class TileDict(dict):
                 if compressionType == 'PLIO_1':
                     dtype=np.uint8
                 else:
-                    dtype=np.float
+                    dtype=np.float32
                 hdu=pyfits.CompImageHDU(np.array(self[tileName], dtype = dtype),
                                         header, name = tileName,
                                         compression_type = compressionType)
@@ -2395,7 +2395,7 @@ def saveFITS(outputFileName, mapData, wcs, compressionType = None):
             if compressionType == 'PLIO_1':
                 dtype=np.uint8
             else:
-                dtype=np.float
+                dtype=np.float32
             hdu=pyfits.CompImageHDU(np.array(mapData, dtype = dtype), wcs.header, 
                                     compression_type = compressionType)
         else:

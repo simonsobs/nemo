@@ -1679,7 +1679,7 @@ def tidyUp(config):
     # Make MEFs
     MEFsToBuild=["RMSMap_%s" % (config.parDict['photFilter'])]
     compressionTypes=["RICE_1"]
-    dtypes=[np.float]
+    dtypes=[np.float32]
     if 'selFnFootprints' in config.parDict.keys():
         for footprintDict in config.parDict['selFnFootprints']:
             MEFsToBuild.append("intersect_%s" % footprintDict['label'])
