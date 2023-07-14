@@ -5,6 +5,12 @@ Here we provide a guide to reproducing the
            found in the `examples/ACT-DR5-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR5-clusters>`_
            directory of the **Nemo** source distribution.
 
+.. note::  The `released ACT DR5 cluster catalog v1.1 <https://lambda.gsfc.nasa.gov/product/act/actpol_dr5_szcluster_catalog_get.html>`_
+           was produced with code that is closest (but not identical) to
+           `Nemo v0.5.0 <https://github.com/simonsobs/nemo/releases/tag/v0.5.0>`_.
+           Later versions of **Nemo** may produce slightly different output as the
+           code is improved and bugs are fixed.
+
 
 Downloading maps and other needed files
 =======================================
