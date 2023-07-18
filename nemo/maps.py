@@ -26,7 +26,6 @@ import copy
 import yaml
 import pickle
 from pixell import enmap, curvedsky, utils, powspec
-import sharp
 import nemo
 try:
     import reproject
@@ -1323,7 +1322,7 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMo
         def _mod_noise_map(ivar, Nl):
             map1 = enmap.rand_gauss(ivar.shape, ivar.wcs)
             lmax = len(Nl)-1
-            ainfo = sharp.alm_info(lmax)
+            ainfo = curvedsky.alm_info(lmax)
             alm = curvedsky.map2alm(map1, ainfo=ainfo)
             map2 = curvedsky.alm2map(alm, np.zeros_like(map1))
             map1 -= map2
