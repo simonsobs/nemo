@@ -77,7 +77,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = 
         
     f=filterParams
     label=f['label']+"#"+tileName
-        
+
     print("... making filtered map %s" % (label))
     filterClass=eval('%s' % (f['class']))
     filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], tileName = tileName,

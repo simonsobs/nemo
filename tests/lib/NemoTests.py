@@ -120,7 +120,7 @@ class NemoTests(object):
         if os.path.exists(self.inMapFileName) == False:
             print(">>> Downloading quickstart files ...")
             os.chdir(self.cacheDir)
-            os.system("wget https://astro.ukzn.ac.za/~mjh/nemo-quickstart-maps.tar.gz")
+            os.system("wget 'https://www.dropbox.com/scl/fi/5sjapfshk8g3kxgy4zc56/nemo-quickstart-maps.tar.gz?rlkey=swpdttpgvkffbgr9pcmebslw2&dl=0' -O nemo-quickstart-maps.tar.gz")
             os.system("tar -zxvf nemo-quickstart-maps.tar.gz")
             os.remove("nemo-quickstart-maps.tar.gz")
             os.chdir(thisDir)
@@ -163,8 +163,11 @@ class NemoTests(object):
         self.mocksDir=configFileName.replace(".yml", "")+os.path.sep+"mocks"
         
         
-    def run_nemo(self):
-        self._run_command(["nemo", self.configFileName])
+    def run_nemo(self, forcedPhotometryCatalog = None):
+        args=['nemo', self.configFileName]
+        if forcedPhotometryCatalog is not None:
+            args=args+['-f', forcedPhotometryCatalog]
+        self._run_command(args)
 
 
     def run_nemo_injection_test(self):
@@ -175,10 +178,12 @@ class NemoTests(object):
         self._run_command(["mpiexec", "-np", "4", "nemo", self.configFileName, "-M"])
 
 
-    def run_nemo_mass(self, catalogFileName = None):
+    def run_nemo_mass(self, catalogFileName = None, forcedPhotometry = False):
         args=['nemoMass', self.configFileName]
-        if catalogFileName != None:
+        if catalogFileName is not None:
             args=args+['-c', catalogFileName]
+        if forcedPhotometry == True:
+            args=args+['-F']
         self._run_command(args)
 
 
