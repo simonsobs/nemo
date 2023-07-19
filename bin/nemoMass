@@ -89,7 +89,7 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
         if mapFilter['label'] == config.parDict['photFilter']:
             trimmedList.append(mapFilter)
     config.parDict['mapFilters']=trimmedList
-    forcedTab=pipelines.filterMapsAndMakeCatalogs(config)
+    forcedTab=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilteredMaps = True)
 
     # Need to graft the redshifts back on
     zMatched, forcedMatched, rDeg=catalogs.crossMatch(zTab, forcedTab)
@@ -322,7 +322,7 @@ if __name__ == '__main__':
             if key not in tab.keys():
                 forcedPhotometry=True
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = False,
-                                  setUpMaps = forcedPhotometry, writeTileDir = False, verbose = False,
+                                  setUpMaps = forcedPhotometry, writeTileInfo = False, verbose = False,
                                   strictMPIExceptions = strictMPIExceptions)
     
     # Remaining set-up

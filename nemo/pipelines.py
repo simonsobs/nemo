@@ -30,8 +30,8 @@ from . import MockSurvey
 
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
-                              measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,\
-                              writeFlagMask = False):
+                              useCachedFilteredMaps = False, measureFluxes = True, invertMap = False, \
+                              verbose = True, writeAreaMask = False, writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -42,6 +42,9 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
             read from disk, rather than re-calculated (used by source injection simulations).
         useCachedRMSMap (:obj:`bool`, optional): If True, use the previously estimated noise map, which has
             been saved to disk. This is only useful for source injection simulations.
+        useCachedFilteredMaps (:obj:`bool`, optional): If True, and previously written maps are found, these
+            will be read from disk, rather than re-made. This is useful for performing forced photometry using
+            external catalogs without having to run nemo again. Otherwise, this should be set to False.
         measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
             detected objects.
         invertMap (bool, optional): If True, multiply all maps by -1; needed by 
@@ -69,6 +72,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
                 writeFlagMask=True
             config.filterSetOptions[setNum]['catalog']=_filterMapsAndMakeCatalogs(config, verbose = True,
                                                                                   useCachedFilters = False,
+                                                                                  useCachedFilteredMaps = False,
                                                                                   writeAreaMask = writeAreaMask,
                                                                                   writeFlagMask = writeFlagMask)
 
@@ -93,6 +97,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     else:
         # Default single pass behaviour (also used by source injection tests)
         catalog=_filterMapsAndMakeCatalogs(config, rootOutDir = rootOutDir, useCachedFilters = useCachedFilters,
+                                           useCachedFilteredMaps = useCachedFilteredMaps,
                                            useCachedRMSMap = useCachedRMSMap, measureFluxes = measureFluxes,
                                            invertMap = invertMap, verbose = verbose,
                                            writeAreaMask = writeAreaMask, writeFlagMask = writeFlagMask)
@@ -104,8 +109,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
 
 #------------------------------------------------------------------------------------------------------------
 def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
-                               measureFluxes = True, invertMap = False, verbose = True, writeAreaMask = False,\
-                               writeFlagMask = False):
+                               useCachedFilteredMaps = False, measureFluxes = True, invertMap = False, \
+                               verbose = True, writeAreaMask = False, writeFlagMask = False):
     """Runs the map filtering and catalog construction steps according to the given configuration.
     
     Args:
@@ -114,6 +119,9 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             output filtered maps and catalogs are written.
         useCachedFilters (:obj:`bool`, optional): If True, and previously made filters are found, they will be
             read from disk, rather than re-calculated (used by source injection simulations).
+        useCachedFilteredMaps (:obj:`bool`, optional): If True, and previously written maps are found, these
+            will be read from disk, rather than re-made. This is useful for performing forced photometry using
+            external catalogs without having to run nemo again. Otherwise, this should be set to False.
         measureFluxes (bool, optional): If True, measure fluxes. If False, just extract S/N values for 
             detected objects.
         invertMap (bool, optional): If True, multiply all maps by -1; needed by 
@@ -181,10 +189,28 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             else:
                 DS9RegionsPath=None
 
-            filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName, 
-                                               diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
-                                               verbose = True, undoPixelWindow = undoPixelWindow,
-                                               useCachedFilter = useCachedFilters)
+            filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
+            SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
+            if useCachedFilteredMaps == True and os.path.exists(filteredMapFileName):
+                print("... loading cached filtered map %s ..." % (filteredMapFileName))
+                filteredMapDict={}
+                with pyfits.open(filteredMapFileName) as img:
+                    filteredMapDict['data']=img[0].data
+                    filteredMapDict['wcs']=astWCS.WCS(img[0].header, mode = 'pyfits')
+                    filteredMapDict['mapUnits']=filteredMapDict['wcs'].header['BUNIT']
+                    if 'BEAMNSR' in filteredMapDict['wcs'].header.keys():
+                        filteredMapDict['beamSolidAngle_nsr']=filteredMapDict['wcs'].header['BEAMNSR']
+                        filteredMapDict['obsFreqGHz']=filteredMapDict['wcs'].header['FREQGHZ']
+                with pyfits.open(SNMapFileName) as img:
+                    filteredMapDict['SNMap']=img[0].data
+                filteredMapDict['surveyMask'], wcs=completeness.loadAreaMask(tileName, config.selFnDir)
+                filteredMapDict['label']=f['label']
+                filteredMapDict['tileName']=tileName
+            else:
+                filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName,
+                                                   diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
+                                                   verbose = True, undoPixelWindow = undoPixelWindow,
+                                                   useCachedFilter = useCachedFilters)
 
             if useCachedRMSMap == True and photFilter is not None: # i.e., only an option for cluster insertion sims
                 # This is messy:
@@ -205,8 +231,6 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
-                filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
-                SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
                 maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
                 maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
 

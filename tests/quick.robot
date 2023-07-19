@@ -9,6 +9,18 @@ Quickstart clusters tutorial runs
 Quickstart sources tutorial runs
     Run quickstart sources
 
+Mass estimation works
+    Run quickstart clusters with Q
+    Run nemo mass
+
+Forced photometry using nemo works
+    Set config              configs/quickstart-clusters-Q.yml
+    Run nemo    DR5_cluster-catalog_v1.1.fits
+
+Forced photometry using nemoMass works
+    Run quickstart clusters with Q
+    Run nemo mass   DR5_cluster-catalog_v1.1.fits   True
+
 Source injection test runs
     Generate simulated source maps
     Set config      configs/sim_ptsrc_f090.yml
@@ -55,6 +67,10 @@ End-to-end B12 cluster modeling and subtraction
 
 Run quickstart clusters
     Set config              ../examples/quickstart/quickstart-clusters.yml
+    Run nemo
+
+Run quickstart clusters with Q
+    Set config              configs/quickstart-clusters-Q.yml
     Run nemo
 
 Run quickstart sources
@@ -115,7 +131,9 @@ Clean up
     Remove directory        testsCache/quickstart-clusters              True
     Remove directory        testsCache/quickstart-sources               True
     Remove directory        testsCache/quickstart-multipass             True
-
+    Remove directory        testsCache/quickstart-multipass-Q           True
+    Remove file             testsCache/*forcedCatalog*
+    Remove file             testsCache/*_mass.fits
 
 *** Settings ***
 #Documentation              To be added here
