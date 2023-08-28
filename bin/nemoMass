@@ -362,8 +362,6 @@ if __name__ == '__main__':
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                      rhoType = massOptions['rhoType'], delta = massOptions['delta'])
         
-    # Seems like multiprocessing doesn't work under slurm...   
-    # So use MPI instead: just divide up catalog among processes
     tab.add_column(atpy.Column(np.arange(len(tab)), "sortIndex"))
     if config.MPIEnabled == True:
         numRowsPerProcess=int(np.ceil(len(tab)/config.size))
@@ -372,7 +370,7 @@ if __name__ == '__main__':
         if config.rank == config.size-1:
             endIndex=len(tab)
         tab=tab[startIndex:endIndex]
-        
+
     tab=calcMass(tab, massOptions, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates)
     
     if config.MPIEnabled == True:
