@@ -63,8 +63,8 @@ if on_rtd is None:
                                     transfer_function=transferFunction)
 
     # For CCL-based mass conversions
-    M200mDef=ccl.halos.MassDef(200, "matter", c_m_relation = 'Bhattacharya13')
-    M200cDef=ccl.halos.MassDef(200, "critical", c_m_relation = 'Bhattacharya13')
+    M200mDef=ccl.halos.MassDef(200, "matter")
+    M200cDef=ccl.halos.MassDef(200, "critical")
     M500cDef=ccl.halos.MassDef(500, "critical")
 else:
     fiducialCosmoModel=None
@@ -1382,9 +1382,9 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         # So, need a mapping between M500c and whatever mass definition used in mockSurvey
         # This only needed for extracting Q, fRel values
         if mockSurvey.delta != 500 or mockSurvey.rhoType != "critical":
-            log10M500c_zk=np.log10(mockSurvey.mdef.translate_mass(mockSurvey.cosmoModel, 
-                                                                  np.power(10, log10Ms),
-                                                                  1/(1+zk), mockSurvey._M500cDef))
+            log10M500c_zk=np.log10(mockSurvey._transToM500c(mockSurvey.cosmoModel,
+                                                            np.power(10, log10Ms),
+                                                            1/(1+zk)))
         else:
             log10M500c_zk=log10Ms
                 
@@ -1501,7 +1501,7 @@ def meanDensity(z):
     return rho_mean  
 
 #------------------------------------------------------------------------------------------------------------
-def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel):
+def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel, c_m_relation = 'Bhattacharya13'):
     """Convert some mass at some z defined using MDef1 into a mass defined according to MDef2.
 
     Args:
@@ -1509,6 +1509,7 @@ def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel):
         z (float): Redshift of the halo.
         MDef1 (`obj`:ccl.halos.MassDef): CCL halo mass definition you want to convert from.
         MDef2 (`obj`:ccl.halos.MassDef): CCL halo mass definition you want to convert to.
+    ,   c_m_relation ('obj':`str`): Name of the concentration -- mass relation to assume, as understood by CCL.
 
     """
 
@@ -1517,10 +1518,12 @@ def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel):
     ratio=1e6
     count=0
     try:
-        massX=MDef1.translate_mass(cosmoModel, mass, 1/(1+z), MDef2)
+        trans1To2=ccl.halos.mass_translator(mass_in = MDef1, mass_out = MDef2, concentration = c_m_relation)
+        massX=trans1To2(cosmoModel, mass, 1/(1+z))
     except:
+        trans2To1=ccl.halos.mass_translator(mass_in = MDef2, mass_out = MDef1, concentration = c_m_relation)
         while abs(1.0-ratio) > tolerance:
-            testMass=MDef2.translate_mass(cosmoModel, scaleFactor*mass, 1/(1+z), MDef1)
+            testMass=trans2To1(cosmoModel, scaleFactor*mass, 1/(1+z))
             ratio=mass/testMass
             scaleFactor=scaleFactor*ratio
             count=count+1
@@ -1531,14 +1534,15 @@ def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel):
     return massX
 
 #------------------------------------------------------------------------------------------------------------
-def M500cToMdef(M500c, z, massDef, cosmoModel):
+def M500cToMdef(M500c, z, massDef, cosmoModel, c_m_relation = 'Bhattacharya13'):
     """Convert M500c to some other mass definition.
     
     massDef (`obj`:ccl.halos.MassDef): CCL halo mass definition
     
     """
 
-    return MDef1ToMDef2(M500c, z, ccl.halos.MassDef(500, "critical"), massDef, cosmoModel)
+    return MDef1ToMDef2(M500c, z, ccl.halos.MassDef(500, "critical"), massDef, cosmoModel,
+                        c_m_relation = c_m_relation)
 
 #------------------------------------------------------------------------------------------------------------
 def convertM200mToM500c(M200m, z):

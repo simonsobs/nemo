@@ -10,7 +10,7 @@ brackets, later versions also probably work):
 * Pillow (5.1.0)
 * astropy (4.0)
 * PyYAML (3.12)
-* `CCL <https://github.com/LSSTDESC/CCL>`_ (2.7.0)
+* `CCL <https://github.com/LSSTDESC/CCL>`_ (3.0.0+)
 * mpi4py (3.0.0)
 * colorcet (1.0.0; https://github.com/bokeh/colorcet/releases)
 

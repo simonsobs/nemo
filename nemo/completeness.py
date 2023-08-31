@@ -473,10 +473,9 @@ class SelFn(object):
             zk=zRange[i]
             k=np.argmin(abs(self.mockSurvey.z-zk))
             if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                log10M500s=np.log10(self.mockSurvey.mdef.translate_mass(self.mockSurvey.cosmoModel,
-                                                                        self.mockSurvey.M,
-                                                                        self.mockSurvey.a[k],
-                                                                        self.mockSurvey._M500cDef))
+                log10M500s=np.log10(self.mockSurvey._transToM500c(self.mockSurvey.cosmoModel,
+                                                                  self.mockSurvey.M,
+                                                                  self.mockSurvey.a[k]))
             else:
                 log10M500s=self.mockSurvey.log10M
             theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
@@ -1357,8 +1356,9 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
             if massOptions['delta'] == 500 and massOptions['rhoType'] == "critical":
                 log10M500cs=mockSurvey.log10M
             else:
-                log10M500cs=np.log10(mockSurvey.mdef.translate_mass(mockSurvey.cosmoModel, np.power(10, mockSurvey.log10M),
-                                                                    1/(1+zk), mockSurvey._M500cDef))
+                log10M500cs=np.log10(mockSurvey._transToM500c(mockSurvey.cosmoModel,
+                                                              np.power(10, mockSurvey.log10M),
+                                                              1/(1+zk)))
 
             theta500s_zk=interpolate.splev(log10M500cs, mockSurvey.theta500Splines[k])
             Qs_zk=QFit.getQ(theta500s_zk, z = zk, tileName = tileName)

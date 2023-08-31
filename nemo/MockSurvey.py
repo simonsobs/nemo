@@ -63,7 +63,8 @@ class MockSurvey(object):
     """
     def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, zStep = 0.01, 
                  enableDrawSample = False, delta = 500, rhoType = 'critical', 
-                 transferFunction = 'boltzmann_camb', massFunction = 'Tinker08'):
+                 transferFunction = 'boltzmann_camb', massFunction = 'Tinker08',
+                 c_m_relation = 'Bhattacharya13'):
         """Create a MockSurvey object, for performing calculations of cluster counts or generating mock
         catalogs. The Tinker et al. (2008) halo mass function is used (hardcoded at present, but in 
         principle this can easily be swapped for any halo mass function supported by CCL).
@@ -89,7 +90,9 @@ class MockSurvey(object):
                 'boltzmann_camb').
             massFunction (:obj:`str`): Name of the mass function to use, currently either 'Tinker08' or
                 'Tinker10'. Mass function calculations are done by CCL.
-                
+            c_m_relation ('obj':`str`): Name of the concentration -- mass relation to assume, as understood by
+                CCL (this may be used internally for conversion between mass definitions, as needed).
+
         """
         
         if areaDeg2 == 0:
@@ -104,11 +107,8 @@ class MockSurvey(object):
         
         self.delta=delta
         self.rhoType=rhoType
-        if self.delta == 200:
-            c_m_relation='Bhattacharya13'
-        else:
-            c_m_relation=None
-        self.mdef=ccl.halos.MassDef(self.delta, self.rhoType, c_m_relation = c_m_relation)
+        self.c_m_relation=c_m_relation
+        self.mdef=ccl.halos.MassDef(self.delta, self.rhoType)
         self.transferFunction=transferFunction
         self.massFuncName=massFunction
         
@@ -129,7 +129,10 @@ class MockSurvey(object):
                                         self.log10M.max()+(self.log10M[1]-self.log10M[0])/2, len(self.log10M)+1)  
 
         # Below is needed for Q calc when not using M500c definition (for now at least)
-        self._M500cDef=ccl.halos.MassDef(500, "critical")
+        if self.delta != 500 and self.rhoType != 'critical':
+            self._M500cDef=ccl.halos.MassDef(500, "critical")
+            self._transToM500c=ccl.halos.mass_translator(mass_in = self.mdef, mass_out = self._M500cDef,
+                                                         concentration = self.c_m_relation)
 
         self.enableDrawSample=enableDrawSample
         self.update(H0, Om0, Ob0, sigma8, ns)
@@ -161,18 +164,16 @@ class MockSurvey(object):
             self.Ob0=Ob0
             self.sigma8=sigma8
             self.ns=ns
-            self.cosmoModel = ccl.Cosmology(Omega_c=Om0-Ob0,
-                                            Omega_b=Ob0,
-                                            h=0.01*H0,
-                                            sigma8=sigma8,
-                                            n_s=ns,
-                                            transfer_function=self.transferFunction)
+            self.cosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0,
+                                          Omega_b=Ob0,
+                                          h=0.01*H0,
+                                          sigma8=sigma8,
+                                          n_s=ns,
+                                          transfer_function=self.transferFunction)
             if self.massFuncName == 'Tinker10':
-                self.mfunc=ccl.halos.MassFuncTinker10(self.cosmoModel,
-                                                      self.mdef)
+                self.mfunc=ccl.halos.MassFuncTinker10(mass_def = self.mdef)
             elif self.massFuncName == 'Tinker08':
-                self.mfunc=ccl.halos.MassFuncTinker08(self.cosmoModel,
-                                                      self.mdef)
+                self.mfunc=ccl.halos.MassFuncTinker08(mass_def = self.mdef)
 
             
     def update(self, H0, Om0, Ob0, sigma8, ns):
@@ -205,11 +206,8 @@ class MockSurvey(object):
                 interpLim_minLog10M500c=self.log10M.min()
                 interpLim_maxLog10M500c=self.log10M.max()
             else:
-                interpLim_minLog10M500c=np.log10(self.mdef.translate_mass(self.cosmoModel, self.M.min(), 
-                                                                          self.a[k], self._M500cDef))
-                interpLim_maxLog10M500c=np.log10(self.mdef.translate_mass(self.cosmoModel, self.M.max(), 
-                                                                          self.a[k], self._M500cDef))
-
+                interpLim_minLog10M500c=np.log10(self._transToM500c(self.cosmoModel, self.M.min(), self.a[k]))
+                interpLim_maxLog10M500c=np.log10(self._transToM500c(self.cosmoModel, self.M.max(), self.a[k]))
             zk=self.z[k]
             interpPoints=100
             fitM500s=np.power(10, np.linspace(interpLim_minLog10M500c, interpLim_maxLog10M500c, interpPoints))
@@ -251,8 +249,7 @@ class MockSurvey(object):
         """
 
         h=self.cosmoModel['h']
-        dndlnM=self.mfunc.get_mass_function(self.cosmoModel,
-                                            self.M, 1/(1+z)) / np.log(10) #/ h**3
+        dndlnM=self.mfunc(self.cosmoModel, self.M, 1/(1+z)) / np.log(10)
         dndM=dndlnM/self.M
         ngtm=integrate.cumtrapz(dndlnM[::-1], np.log(self.M), initial = 0)[::-1]
         
@@ -293,8 +290,7 @@ class MockSurvey(object):
             zShellMin=zRange[i]
             zShellMax=zRange[i+1]
             zShellMid=(zShellMax+zShellMin)/2.
-            dndlnM=self.mfunc.get_mass_function(self.cosmoModel, self.M,
-                                                1./(1+zShellMid)) * norm_mfunc
+            dndlnM=self.mfunc(self.cosmoModel, self.M, 1./(1+zShellMid)) * norm_mfunc
             dndM = dndlnM / self.M
             n=dndM * np.gradient(self.M)
             numberDensity.append(n)
@@ -555,9 +551,7 @@ class MockSurvey(object):
             if self.delta == 500 and self.rhoType == "critical":
                 log10M500cs[mask]=log10Ms[mask]
             else:
-                log10M500cs[mask]=np.log10(self.mdef.translate_mass(self.cosmoModel, np.power(10, log10Ms[mask]),
-                                                                1/(1+zk), self._M500cDef))
-
+                log10M500cs[mask]=np.log10(self._transToM500c(self.cosmoModel, np.power(10, log10Ms[mask]), 1/(1+zk)))
             theta500s=interpolate.splev(log10M500cs[mask], self.theta500Splines[k], ext = 3)
             if QFit is not None:
                 Qs[mask]=QFit.getQ(theta500s, z = zk, tileName = tileName)
