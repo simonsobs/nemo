@@ -105,11 +105,7 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
     
     """
 
-    try:
-        refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'],
-                                     c_m_relation = massOptions['concMassRelation'])
-    except:
-        refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'])
+    refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'])
 
     if 'relativisticCorrection' not in massOptions.keys():
         massOptions['relativisticCorrection']=True
@@ -209,11 +205,9 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
                     if 'concMassRelation' not in massDefDict.keys():
                         massDefDict['concMassRelation']=None
                     thisLabel='M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0])
-                    try:
-                        thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'], c_m_relation = massDefDict['concMassRelation'])
-                    except:
-                        thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'])
-                    thisMass=signals.MDef1ToMDef2(resultDict[label]*1e14, row['redshift'], refMassDef, thisMassDef, mockSurvey.cosmoModel)/1e14
+                    thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'])
+                    thisMass=signals.MDef1ToMDef2(resultDict[label]*1e14, row['redshift'], refMassDef, thisMassDef, mockSurvey.cosmoModel,
+                                                  c_m_relation = massDefDict['concMassRelation'])/1e14
                     row[thisLabel+suffix]=thisMass
                     row[thisLabel+suffix+'_errPlus']=(row[label+suffix+'_errPlus']/row[label+suffix])*row[thisLabel+suffix]
                     row[thisLabel+suffix+'_errMinus']=(row[label+suffix+'_errMinus']/row[label+suffix])*row[thisLabel+suffix]
@@ -362,8 +356,6 @@ if __name__ == '__main__':
     mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                      rhoType = massOptions['rhoType'], delta = massOptions['delta'])
         
-    # Seems like multiprocessing doesn't work under slurm...   
-    # So use MPI instead: just divide up catalog among processes
     tab.add_column(atpy.Column(np.arange(len(tab)), "sortIndex"))
     if config.MPIEnabled == True:
         numRowsPerProcess=int(np.ceil(len(tab)/config.size))
@@ -372,7 +364,7 @@ if __name__ == '__main__':
         if config.rank == config.size-1:
             endIndex=len(tab)
         tab=tab[startIndex:endIndex]
-        
+
     tab=calcMass(tab, massOptions, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates)
     
     if config.MPIEnabled == True:

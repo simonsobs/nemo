@@ -60,7 +60,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     """
     
     # Multi-pass pipeline, enabled with use of filterSets parameter in config file
-    if config.filterSets != [] and useCachedFilters == False:
+    if config.filterSets != [] and useCachedFilters == False and useCachedFilteredMaps == False:
         # If we wanted to save results from each step, could set-up filterSet specific diagnostics dir here
         if rootOutDir is None:
             rootOutDir=config.rootOutDir

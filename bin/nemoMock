@@ -54,7 +54,7 @@ def makeParser():
                         fixed_SNR > this value.", default = 4.0, type = float)
     parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
                         'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
-                        results.", default = 'fit')
+                        results).", default = 'fit')
     #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         #want to use this, run with e.g., mpiexec -np 4 nemoMock selFnDir mocksDir -M""", 
                         #default = False)
