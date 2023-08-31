@@ -135,9 +135,10 @@ class SelFn(object):
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
-                 QSource = 'fit', noiseCut = None):
+                 QSource = 'fit', noiseCut = None, biasModel = None):
         
         self.SNRCut=SNRCut
+        self.biasModel=biasModel
         if footprint == 'full':
             footprint=None
         self.footprint=footprint
@@ -436,9 +437,14 @@ class SelFn(object):
                 log_y0=np.log(y0Grid)
                 compMz=np.zeros(log_y0.shape)
                 for i in range(len(RMSTab)):
+                    if self.biasModel is not None:
+                        trueSNR=y0Grid/RMSTab['y0RMS'][i]
+                        corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
+                    else:
+                        corrFactors=np.ones(y0Grid.shape)
                     # With intrinsic scatter [may not be quite right, but a good approximation]
                     totalLogErr=np.sqrt((RMSTab['y0RMS'][i]/y0Grid)**2 + self.scalingRelationDict['sigma_int']**2)
-                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = totalLogErr*y0Grid)
+                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid*corrFactors, scale = totalLogErr*(y0Grid*corrFactors))
                     compMz=compMz+sfi*areaWeights[i]
                     # No intrinsic scatter, Gaussian noise
                     #sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
@@ -450,6 +456,7 @@ class SelFn(object):
             compMzCube=np.array(compMzCube)
             y0GridCube=np.array(y0GridCube)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+            # self.compMz=np.einsum('ijk,i->jk', np.nan_to_num(compMzCube), self.fracArea) # Equivalent, for noting
             self.y0TildeGrid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
 
 
@@ -613,7 +620,8 @@ class SelFn(object):
                                                applyPoissonScatter = applyPoissonScatter,
                                                applyIntrinsicScatter = True,
                                                applyNoiseScatter = True,
-                                               applyRelativisticCorrection = self.applyRelativisticCorrection)
+                                               applyRelativisticCorrection = self.applyRelativisticCorrection,
+                                               biasModel = self.biasModel)
             if mockTab is not None and len(mockTab) > 0:
                 mockTabsList.append(mockTab)
         tab=atpy.vstack(mockTabsList)
@@ -1362,7 +1370,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
             
         # For some cosmological parameters, we can still get the odd -ve y0
         y0Grid[y0Grid <= 0] = 1e-9
-        
+
         # Calculate completeness using area-weighted average
         # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
         areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()

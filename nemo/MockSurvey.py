@@ -362,7 +362,7 @@ class MockSurvey(object):
                    tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,\
                    areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True,\
                    applyIntrinsicScatter = True, applyNoiseScatter = True,\
-                   applyRelativisticCorrection = True, verbose = False):
+                   applyRelativisticCorrection = True, verbose = False, biasModel = None):
         """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
         Nemo catalogs) by applying the given scaling relation parameters, and then (optionally) applying
         a survey selection function.
@@ -609,8 +609,15 @@ class MockSurvey(object):
             tab.add_column(atpy.Column(true_y0s/1e-4, 'true_fixed_y_c'))
             tab.add_column(atpy.Column(measured_y0s/1e-4, 'fixed_y_c'))
             tab.add_column(atpy.Column(y0Noise/1e-4, 'fixed_err_y_c'))
+            tab['true_fixed_SNR']=tab['true_fixed_y_c']/tab['fixed_err_y_c']  # True truth, but pre-intrinsic and measurement scatter
+            # tab['true_fixed_SNR']=(scattered_y0s/1e-4)/tab['fixed_err_y_c']     # With intrinsic scatter, no measurement scatter
+            # tab['true_fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']         # Like forced photometry case on a real map at true location
+            # Apply optimization bias first, then it'll feed through to SNR automatically
+            if biasModel is not None:
+                corrFactors=biasModel['func'](tab['true_fixed_SNR'], biasModel['params'][0], biasModel['params'][1], biasModel['params'][2])
+                tab['fixed_y_c']=tab['fixed_y_c']*corrFactors
+            tab['fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']
 
-        tab.add_column(atpy.Column(measured_y0s/y0Noise, 'fixed_SNR'))
         tab.add_column(atpy.Column(zs, 'redshift'))
         tab.add_column(atpy.Column(zErrs, 'redshiftErr'))
         if photFilterLabel is not None and tileName is not None:
@@ -619,7 +626,7 @@ class MockSurvey(object):
                 
         # Apply selection?
         if applySNRCut == True:
-            selMask=measured_y0s > y0Noise*SNRLimit
+            selMask=tab['fixed_SNR'] > tab['fixed_err_y_c']*SNRLimit
             tab=tab[selMask]
         t1=time.time()
 
