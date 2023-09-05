@@ -129,7 +129,7 @@ class MockSurvey(object):
                                         self.log10M.max()+(self.log10M[1]-self.log10M[0])/2, len(self.log10M)+1)  
 
         # Below is needed for Q calc when not using M500c definition (for now at least)
-        if self.delta != 500 and self.rhoType != 'critical':
+        if (self.delta == 500 and self.rhoType == 'critical') == False:
             self._M500cDef=ccl.halos.MassDef(500, "critical")
             self._transToM500c=ccl.halos.mass_translator(mass_in = self.mdef, mass_out = self._M500cDef,
                                                          concentration = self.c_m_relation)
