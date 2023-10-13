@@ -1,4 +1,5 @@
 recursive-include examples *
+include setup.cfg
 include README.rst
 include INSTALL.rst
 include versioneer.py
