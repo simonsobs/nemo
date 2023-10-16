@@ -413,7 +413,7 @@ class NemoConfig(object):
         self._identifyFilterSets()
         
         # For debugging...
-        if self.MPIEnabled == True:
+        if self.MPIEnabled == True and verbose == True:
             print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
