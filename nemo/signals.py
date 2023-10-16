@@ -37,7 +37,6 @@ import glob
 import shutil
 import yaml
 import warnings
-#import IPython
 np.random.seed()
 
 #------------------------------------------------------------------------------------------------------------
@@ -1397,24 +1396,28 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         y0pred=y0pred*np.power(1+zk, onePlusRedshift_power)
         if applyRelativisticCorrection == True:
             y0pred=y0pred*fRels
-        if np.less(y0pred, 0).sum() > 0:
+        if np.less_equal(y0pred, 0).sum() > 0:
+            pass
             # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
             # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)
-            raise Exception("Some predicted y0 values are negative.")
-        log_y0pred=np.log(y0pred)
-
-        Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
-        Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
-
-        # Mass function de-bias
-        if applyMFDebiasCorrection == True:
-            PLog10M=mockSurvey.getPLog10M(zk)
-            PLog10M=PLog10M/np.trapz(PLog10M, log10Ms)
+            # Or it can be due to a photo-z with a huge error bar, and only affect some part of the z grid
+            # So... we could write a warning here. Previously we used to trigger an exception
+            # raise Exception("Some predicted y0 values are zero or negative.")
         else:
-            PLog10M=1.0
-        
-        P=Py0GivenM*PLog10M*Pz[k]
-        PArr.append(P)
+            log_y0pred=np.log(y0pred)
+
+            Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
+            Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
+
+            # Mass function de-bias
+            if applyMFDebiasCorrection == True:
+                PLog10M=mockSurvey.getPLog10M(zk)
+                PLog10M=PLog10M/np.trapz(PLog10M, log10Ms)
+            else:
+                PLog10M=1.0
+
+            P=Py0GivenM*PLog10M*Pz[k]
+            PArr.append(P)
         
     # 2D PArr is what we would want to project onto (M, z) grid
     PArr=np.array(PArr)
