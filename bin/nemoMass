@@ -118,7 +118,7 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
     if 'onePlusRedshift_power' not in massOptions.keys():
         massOptions['onePlusRedshift_power']=0.0
     
-    print("massOptions", massOptions)
+    # print("massOptions", massOptions)
 
     # Add all columns for all used mass definitions
     labels=['M%d%s' % (massOptions['delta'], massOptions['rhoType'][0])]
