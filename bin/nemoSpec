@@ -64,7 +64,8 @@ def makeParser():
                         used with the -M switch). If you use this option, you will get the full traceback\
                         when a Python Exception is triggered, but the code may not terminate. This is due\
                         to the Exception handling in mpi4py.", default = False)
-    
+    parser.add_argument("-v", "--version", action = 'version', version = '%(prog)s' + ' %s' % (nemo.__version__))
+
     return parser
 
 #------------------------------------------------------------------------------------------------------------

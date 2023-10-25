@@ -18,6 +18,7 @@ from scipy import stats
 from scipy import interpolate
 from scipy import ndimage
 from scipy import optimize
+import nemo
 from nemo import signals
 from nemo import maps
 from nemo import catalogs
@@ -58,6 +59,7 @@ def makeParser():
     #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         #want to use this, run with e.g., mpiexec -np 4 nemoMock selFnDir mocksDir -M""", 
                         #default = False)
+    parser.add_argument("-v", "--version", action = 'version', version = '%(prog)s' + ' %s' % (nemo.__version__))
     
     return parser
     

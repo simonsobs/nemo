@@ -34,7 +34,8 @@ def makeParser():
                         arcmin.", default = 2.5, type = float)
     parser.add_argument("-S", "--fixed-SNR-cut", dest="fixedSNRCut", help = "Cut in fixed_SNR used to select\
                         nemo cluster candidates.", default = 4.0, type = float)
-    
+    parser.add_argument("-v", "--version", action = 'version', version = '%(prog)s' + ' %s' % (nemo.__version__))
+
     return parser
 
 #------------------------------------------------------------------------------------------------------------
