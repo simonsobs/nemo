@@ -7,7 +7,7 @@ and capable of analyzing maps that will be produced by the
 `Simons Observatory <https://simonsobservatory.org/>`_.
 
 * **Documentation:** https://nemo-sz.readthedocs.io
-* **License:** `BSD 3-Clause <LICENSE>`_
+* **License:** `BSD 3-Clause <https://github.com/simonsobs/nemo/blob/main/LICENSE>`_
 * **Authors:** Matt Hilton, with contributions from Simone Aiola, David Alonso,
   Matthew Hasselfield, Kevin Huffenberger, Toby Marriage, Niall MacCrann,
   Sigurd Naess, and Cristóbal Sifón (not all reflected on GitHub).
