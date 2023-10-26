@@ -449,10 +449,11 @@ class NemoConfig(object):
 
         """
 
-        if cacheFileName is not None and os.path.exists(cacheFileName):
-            with open(cacheFileName, "r") as stream:
-                self.parDict['tileDefinitions']=yaml.safe_load(stream)
-            return None
+        # This is a bad idea if we're doing re-runs with -T to check tiling
+        # if cacheFileName is not None and os.path.exists(cacheFileName):
+        #     with open(cacheFileName, "r") as stream:
+        #         self.parDict['tileDefinitions']=yaml.safe_load(stream)
+        #     return None
 
         if 'tileDefinitions' in self.parDict.keys() and type(self.parDict['tileDefinitions']) == dict:
             # If we're not given a survey mask, we'll make one up from the map image itself
