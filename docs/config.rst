@@ -169,23 +169,6 @@ stitchTiles
        stitchTiles: True
        
 
-makeQuickLookMaps
-^^^^^^^^^^^^^^^^^
-    
-    If True, and :ref:`nemoCommand` is set to break a large map into tiles
-    (see :ref:`Tiling` below), write
-    monolithic, downsampled (by a factor of 4) output filtered maps. These maps
-    have the prefix ``quickLook_``.
-    
-    .. note::  This feature is likely to be removed in the near future.
-
-    *Example:*
-    
-    .. code-block:: yaml
-    
-       makeQuickLookMaps: True
-
-
 .. _Tiling:
 
 Tiling

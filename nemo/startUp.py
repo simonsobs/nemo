@@ -298,10 +298,6 @@ class NemoConfig(object):
         if sourceInjectionTest == True:
             self.parDict['sourceInjectionTest']=True
 
-        # Source injection test is now required for calculation of the selection function
-        #if 'calcSelFn' in self.parDict.keys() and self.parDict['calcSelFn'] == True:
-        #    self.parDict['sourceInjectionTest']=True
-
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
@@ -317,22 +313,17 @@ class NemoConfig(object):
             self.origWCS=None
             self.origShape=None
                 
-        # Downsampled WCS and shape for 'quicklook' stitched images
-        # NOTE: This gets used by default for mass limit maps, so left in even when not used otherwise
-        #self.quicklookScale=0.25
-        #if self.origWCS is not None:
-            #self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
-        #else:
-            #if self.verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
-
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
         self._origParDict=copy.deepcopy(self.parDict)
                                 
         # Output dirs
+        self.rootOutDir=None
         if 'outputDir' in list(self.parDict.keys()):
             self.rootOutDir=os.path.abspath(self.parDict['outputDir'])
-        else:
+            if os.path.exists(self.rootOutDir) == False:
+                self.rootOutDir=None
+        if self.rootOutDir is None:
             if self.configFileName.find(".yml") == -1 and makeOutputDirs == True:
                 raise Exception("File must have .yml extension")
             self.rootOutDir=os.getcwd()+os.path.sep+os.path.split(self.configFileName.replace(".yml", ""))[-1]
