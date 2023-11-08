@@ -26,6 +26,40 @@ from scipy import stats
 from astLib import *
 import time
 
+try:
+    from classy_sz import Class
+except:
+    pass
+
+#------------------------------------------------------------------------------------------------------------
+# Global settings for CLASS-SZ, if used
+CLASS_SZ_SETTINGS={# 'mass function' : 'T08M200c',
+                   'hm_consistency': 0,
+                   # 'concentration parameter' : 'B13',
+                   'B':1.,
+                   'N_ncdm' : 1,
+                   'N_ur' : 2.0328,
+                   'm_ncdm' : 0.0,
+                   'T_ncdm' : 0.71611,
+                   'z_min': 1.e-3,
+                   'z_max': 3.05,
+                   'redshift_epsrel': 1e-6,
+                   'redshift_epsabs': 1e-100,
+                   'M_min': 1e13,
+                   'M_max': 1e17,
+                   'mass_epsrel':1e-6,
+                   'mass_epsabs':1e-100,
+                   'ndim_redshifts' :5000,
+                   'ndim_masses' : 500,
+                   'n_m_dndlnM' : 1000,
+                   'n_z_dndlnM' : 1000,
+                   'HMF_prescription_NCDM': 1,
+                   'no_spline_in_tinker': 1,
+                   'use_m500c_in_ym_relation' : 0,
+                   'use_m200c_in_ym_relation' : 1,
+                   'y_m_relation' : 1,
+                   'output': 'dndlnM,m500c_to_m200c,m200c_to_m500c'}
+
 #------------------------------------------------------------------------------------------------------------
 class MockSurvey(object):
     """An object that provides routines calculating cluster counts (using `CCL <https://ccl.readthedocs.io/en/latest/>`_) 
@@ -61,13 +95,12 @@ class MockSurvey(object):
             minimum mass limit, as a function of redshift.
     
     """
-    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, zStep = 0.01, 
-                 enableDrawSample = False, delta = 500, rhoType = 'critical', 
+    def __init__(self, minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
+                 maxMass = 1e16, zStep = 0.01, numMassBins = 200, delta = 500, rhoType = 'critical',
                  transferFunction = 'boltzmann_camb', massFunction = 'Tinker08',
-                 c_m_relation = 'Bhattacharya13'):
+                 c_m_relation = 'Bhattacharya13', theoryCode = 'CCL'):
         """Create a MockSurvey object, for performing calculations of cluster counts or generating mock
-        catalogs. The Tinker et al. (2008) halo mass function is used (hardcoded at present, but in 
-        principle this can easily be swapped for any halo mass function supported by CCL).
+        catalogs.
         
         Args:
             minMass (:obj:`float`): The minimum mass, in MSun. This should be set considerably lower than
@@ -81,17 +114,18 @@ class MockSurvey(object):
             Ob0 (:obj:`float`): Dimensionless baryon matter density parameter at redshift 0.
             sigma8 (:obj:`float`): Defines the amplitude of the matter power spectrum.
             ns (:obj:`float`): Scalar spectral index of matter power spectrum.  
+            maxMass (:obj:`float`, optional): The maximum mass, in MSun, used in mass function calculations.
             zStep (:obj:`float`, optional): Sets the linear spacing between redshift bins.
-            enableDrawSample (:obj:`bool`, optional): This needs to be set to True to enable use of the
-                :func:`self.drawSample` function. Setting this to False avoids some overhead.
-            delta (:obj:``float`): Overdensity parameter, used for mass definition (e.g., 200, 500).
-            rhoType (:obj:`str`): Density definition, either 'matter' or 'critical', used for mass definition.
-            transferFunction (:obj:`str`): Transfer function to use, as understood by CCL (e.g., 'eisenstein_hu', 
+            numMassBins (:obj:`int`, optional): Number of mass bins to use.
+            delta (:obj:``float`, optional): Overdensity parameter, used for mass definition (e.g., 200, 500).
+            rhoType (:obj:`str`, optional): Density definition, either 'matter' or 'critical', used for mass definition.
+            transferFunction (:obj:`str`, optional): Transfer function to use, as understood by CCL (e.g., 'eisenstein_hu',
                 'boltzmann_camb').
-            massFunction (:obj:`str`): Name of the mass function to use, currently either 'Tinker08' or
+            massFunction (:obj:`str`, optional): Name of the mass function to use, currently either 'Tinker08' or
                 'Tinker10'. Mass function calculations are done by CCL.
-            c_m_relation ('obj':`str`): Name of the concentration -- mass relation to assume, as understood by
+            c_m_relation (:'obj:`str`, optional): Name of the concentration -- mass relation to assume, as understood by
                 CCL (this may be used internally for conversion between mass definitions, as needed).
+            theoryCode (:obj:`str`, optional): Either 'CCL' or 'CLASS-SZ'.
 
         """
         
@@ -104,13 +138,19 @@ class MockSurvey(object):
         self.zBinEdges=zRange
         self.z=(zRange[:-1]+zRange[1:])/2.
         self.a=1./(1+self.z)
-        
+        self.numMassBins=numMassBins
+
         self.delta=delta
         self.rhoType=rhoType
         self.c_m_relation=c_m_relation
         self.mdef=ccl.halos.MassDef(self.delta, self.rhoType)
         self.transferFunction=transferFunction
         self.massFuncName=massFunction
+        self.theoryCode=theoryCode
+        if self.theoryCode not in ['CCL', 'CLASS-SZ']:
+            raise Exception("theoryCode should be either 'CCL' or 'CLASS-SZ' - given %s" % (self.theoryCode))
+        if self.theoryCode == 'CLASS_SZ':
+            CLASS_SZ_SETTINGS['mass function']=self.massFuncName
         
         # Just for convenience when used elsewhere
         self.mdefLabel="M%d%s" % (self.delta, self.rhoType[0])
@@ -123,10 +163,10 @@ class MockSurvey(object):
         self._get_new_cosmo(H0, Om0, Ob0, sigma8, ns)
 
         # NOTE: These are just MSun now (NOT MSun/h); always defined according to mdef
-        self.log10M=np.arange(np.log10(minMass), 16, 0.01)
+        self.log10M=np.linspace(np.log10(minMass), np.log10(maxMass), numMassBins)
         self.M=np.power(10, self.log10M)
-        self.log10MBinEdges=np.linspace(self.log10M.min()-(self.log10M[1]-self.log10M[0])/2, 
-                                        self.log10M.max()+(self.log10M[1]-self.log10M[0])/2, len(self.log10M)+1)  
+        self.log10MBinEdges=np.linspace(self.log10M.min()-(self.log10M[1]-self.log10M[0])/2,
+                                        self.log10M.max()+(self.log10M[1]-self.log10M[0])/2, len(self.log10M)+1)
 
         # Below is needed for Q calc when not using M500c definition (for now at least)
         if (self.delta == 500 and self.rhoType == 'critical') == False:
@@ -134,7 +174,6 @@ class MockSurvey(object):
             self._transToM500c=ccl.halos.mass_translator(mass_in = self.mdef, mass_out = self._M500cDef,
                                                          concentration = self.c_m_relation)
 
-        self.enableDrawSample=enableDrawSample
         self.update(H0, Om0, Ob0, sigma8, ns)
 
 
@@ -159,21 +198,43 @@ class MockSurvey(object):
     def _get_new_cosmo(self, H0, Om0, Ob0, sigma8, ns):
         if ((self.H0 != H0) or (self.Om0 != Om0) or
             (self.Ob0 != Ob0) or (self.sigma8 != sigma8)):
+
             self.H0=H0
             self.Om0=Om0
             self.Ob0=Ob0
             self.sigma8=sigma8
             self.ns=ns
+
+            # CCL cosmology - we may not want to entirely use CLASS-SZ, at least to start
             self.cosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0,
                                           Omega_b=Ob0,
                                           h=0.01*H0,
                                           sigma8=sigma8,
                                           n_s=ns,
                                           transfer_function=self.transferFunction)
-            if self.massFuncName == 'Tinker10':
-                self.mfunc=ccl.halos.MassFuncTinker10(mass_def = self.mdef)
-            elif self.massFuncName == 'Tinker08':
-                self.mfunc=ccl.halos.MassFuncTinker08(mass_def = self.mdef)
+            # elif self.theoryCode == 'CLASS-SZ':
+            ### TESTING
+            classDict={'Omega_b': Ob0, 'Omega_cdm':  Om0-Ob0, 'H0': H0, 'sigma8': sigma8,
+                       'tau_reio':  0.0561, 'n_s': ns} # tau_reio not important but needs to be set
+            self.cosmoCLASS=Class()
+            self.cosmoCLASS.set(CLASS_SZ_SETTINGS) # Not sure if we want to update every time?
+            self.cosmoCLASS.set(classDict)
+            self.cosmoCLASS.compute_class_szfast()
+
+            if self.theoryCode == 'CCL':
+                if self.massFuncName == 'Tinker10':
+                    self.mfunc=ccl.halos.MassFuncTinker10(mass_def = self.mdef)
+                elif self.massFuncName == 'Tinker08':
+                    self.mfunc=ccl.halos.MassFuncTinker08(mass_def = self.mdef)
+
+            elif self.theoryCode == 'CLASS-SZ':
+                classDict={'Omega_b': Ob0, 'Omega_cdm':  Om0-Ob0, 'H0': H0, 'sigma8': sigma8,
+                           'tau_reio':  0.0561, 'n_s': ns} # tau_reio not important but needs to be set
+                self.cosmoCLASS=Class()
+                self.cosmoCLASS.set(CLASS_SZ_SETTINGS) # Not sure if we want to update every time?
+                self.cosmoCLASS.set(classDict)
+                # self.cosmo.set(class_sz_ym_params)
+                self.cosmoCLASS.compute_class_szfast()
 
             
     def update(self, H0, Om0, Ob0, sigma8, ns):
@@ -224,24 +285,6 @@ class MockSurvey(object):
             self.theta500Splines.append(tckLog10MToTheta500)
             self.fRelSplines.append(tckLog10MToFRel)
 
-        # Stuff to enable us to draw mock samples (see drawSample)
-        # Interpolators here need to be updated each time we change cosmology
-        if self.enableDrawSample == True:
-
-            # For drawing from overall z distribution
-            zSum=self.clusterCount.sum(axis = 1)
-            pz=np.cumsum(zSum)/self.numClusters
-            self.zRoller=_spline(pz, self.z, k = 3)
-            
-            # For drawing from each log10M distribution at each point on z grid
-            # And quick fRel, Q calc using interpolation
-            # And we may as well have E(z), DA on the z grid also
-            self.log10MRollers=[]
-            for i in range(len(self.z)):
-                ngtm=self._cumulativeNumberDensity(self.z[i])
-                mask=ngtm > 0
-                self.log10MRollers.append(_spline((ngtm[mask] / ngtm[0])[::-1], np.log10(self.M[mask][::-1]), k=3))
-    
 
     def _cumulativeNumberDensity(self, z):
         """Returns N > M (per cubic Mpc).
@@ -275,36 +318,65 @@ class MockSurvey(object):
         """
 
         assert(self.areaSr == np.radians(np.sqrt(self.areaDeg2))**2)
+        self.fsky=self.areaSr/(4*np.pi) # in case it was updated
 
-        zRange=self.zBinEdges
-        h = self.cosmoModel['h']
-        self.M=np.power(10, self.log10M) # in M_sun
-        norm_mfunc=1. / np.log(10)
+        if self.theoryCode == 'CCL':
+            # Previous way - this agrees with CLASS-SZ method below to 0.1 % or something
+            # zRange=self.zBinEdges
+            # h = self.cosmoModel['h']
+            # self.M=np.power(10, self.log10M) # in M_sun
+            # norm_mfunc=1. / np.log(10)
+            # numberDensity=[]
+            # clusterCount=[]
+            # totalVolumeMpc3=0.
+            # for i in range(len(zRange)-1):
+            #     zShellMin=zRange[i]
+            #     zShellMax=zRange[i+1]
+            #     zShellMid=(zShellMax+zShellMin)/2.
+            #     dndlnM=self.mfunc(self.cosmoModel, self.M, 1./(1+zShellMid)) * norm_mfunc
+            #     dndM = dndlnM / self.M
+            #     n=dndM * np.gradient(self.M)
+            #     numberDensity.append(n)
+            #     shellVolumeMpc3=self._comovingVolume(zShellMax)-self._comovingVolume(zShellMin)
+            #     shellVolumeMpc3=shellVolumeMpc3*(self.areaSr/(4*np.pi))
+            #     totalVolumeMpc3+=shellVolumeMpc3
+            #     clusterCount.append(n*shellVolumeMpc3)
+            # numberDensity=np.array(numberDensity)
+            # clusterCount=np.array(clusterCount)
+            # self.volumeMpc3=totalVolumeMpc3
+            # self.numberDensity=numberDensity
+            # self.clusterCount=clusterCount
+            # self.numClusters=np.sum(clusterCount)
+            # self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
 
-        # Number density by z and total cluster count (in redshift shells)
-        # Can use to make P(m, z) plane
-        numberDensity=[]
-        clusterCount=[]
-        totalVolumeMpc3=0.
-        for i in range(len(zRange)-1):
-            zShellMin=zRange[i]
-            zShellMax=zRange[i+1]
-            zShellMid=(zShellMax+zShellMin)/2.
-            dndlnM=self.mfunc(self.cosmoModel, self.M, 1./(1+zShellMid)) * norm_mfunc
-            dndM = dndlnM / self.M
-            n=dndM * np.gradient(self.M)
-            numberDensity.append(n)
-            shellVolumeMpc3=self._comovingVolume(zShellMax)-self._comovingVolume(zShellMin)
-            shellVolumeMpc3=shellVolumeMpc3*(self.areaSr/(4*np.pi))
-            totalVolumeMpc3+=shellVolumeMpc3
-            clusterCount.append(n*shellVolumeMpc3)
-        numberDensity=np.array(numberDensity)
-        clusterCount=np.array(clusterCount)
-        self.volumeMpc3=totalVolumeMpc3
-        self.numberDensity=numberDensity
-        self.clusterCount=clusterCount
-        self.numClusters=np.sum(clusterCount)
-        self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
+            # New way (same as for CLASS-SZ below)
+            # Missing: self.volumeMpc3, self.numberDensity
+            dndmdz=np.zeros((self.z.shape[0], self.log10M.shape[0]))
+            norm_mfunc=1. / np.log(10)
+            dVdzdOmega=((3e5/self.cosmoModel['H0'])*np.power(1+self.z, 2)*self.cosmoModel.angular_diameter_distance(self.a)**2)/self.cosmoModel.h_over_h0(self.a)
+            for i in range(self.a.shape[0]):
+                dndlnM=self.mfunc(self.cosmoModel, self.M, self.a[i]) * norm_mfunc
+                dndmdz[i]=4.*np.pi*self.fsky*dVdzdOmega[i]*dndlnM
+            dndmdz=dndmdz.transpose()
+            self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
+            dndz=np.trapz(dndmdz, x = np.log(self.M), axis = 0)
+            self.numClusters=np.trapz(dndz, x = self.z)
+            self.numClustersByRedshift=dndz*np.gradient(self.z)
+            norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
+            self.clusterCount=dndmdz.transpose()/norm
+
+        elif self.theoryCode == 'CLASS-SZ':
+            # Still need to implement (maybe): self.volumeMpc3, self.numberDensity
+            lnms=np.log(np.power(10,  self.log10M)*self.cosmoCLASS.h())
+            dndmdz = np.zeros((self.log10M.shape[0], self.z.shape[0]))
+            for (im,mm) in enumerate(lnms):
+                dndmdz[im,:]=4.*np.pi*self.fsky*np.vectorize(self.cosmoCLASS.get_volume_dVdzdOmega_at_z)(self.z)*np.vectorize(self.cosmoCLASS.get_dndlnM_at_z_and_M)(self.z,np.exp(mm))
+            self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
+            dndz=np.trapz(dndmdz,x = lnms,axis = 0)
+            self.numClusters=np.trapz(dndz, x = self.z)
+            self.numClustersByRedshift=dndz*np.gradient(self.z)
+            norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
+            self.clusterCount=dndmdz.transpose()/norm
 
 
     def calcNumClustersExpected(self, MLimit = 1e13, zMin = 0.0, zMax = 2.0, compMz = None):
@@ -426,26 +498,20 @@ class MockSurvey(object):
             # Pick the nearest z on the grid
             zIndex=np.argmin(abs(z-self.z))
             zRange=[self.z[zIndex]]
-        
-        # Add Poisson noise (we do by z to keep things simple on the z grid later)
-        numClustersByRedshift=np.zeros(len(zRange), dtype = int)
-        for k in range(len(zRange)):
-            zk=zRange[k]
-            zIndex=np.argmin(abs(zk-self.z))
-            if applyPoissonScatter == False:
-                numClustersByRedshift[k]=int(round(self.numClustersByRedshift[zIndex]))
-            else:
-                numClustersByRedshift[k]=np.random.poisson(int(round(self.numClustersByRedshift[zIndex])))
+
+        # Add Poisson noise
+        if applyPoissonScatter == True:
+            numClusters=np.random.poisson(lam = self.numClusters)
+        else:
+            numClusters=int(round(self.numClusters))
 
         if areaDeg2 is not None:
-            numClustersByRedshift=np.array(numClustersByRedshift*(areaDeg2/self.areaDeg2), dtype = int)
-        
-        numClusters=numClustersByRedshift.sum()
-            
-        if numDraws is not None:
-            numClusters=numDraws            
+            numClusters=int(round(numClusters*(areaDeg2/self.areaDeg2)))
 
-        tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'], 
+        if numDraws is not None:
+            numClusters=numDraws
+
+        tenToA0, B0, Mpivot, sigma_int=[scalingRelationDict['tenToA0'], scalingRelationDict['B0'],
                                         scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
 
         # If given y0Noise as RMSMap, draw coords (assuming clusters aren't clustered - which they are...)
@@ -496,7 +562,7 @@ class MockSurvey(object):
             y0Noise=np.ones(numClusters)*y0Noise
             RAs=np.zeros(numClusters)
             decs=np.zeros(numClusters)
-        
+
         # Fancy names or not?
         if makeNames == True:
             names=[]
@@ -504,71 +570,57 @@ class MockSurvey(object):
                 names.append(catalogs.makeName(RADeg, decDeg, prefix = 'MOCK-CL'))
         else:
             names=np.arange(numClusters)+1
-                
-        # New way - on the redshift grid
-        t0=time.time()
-        currentIndex=0
-        log10Ms=np.random.random_sample(y0Noise.shape) # These will be converted from random numbers to masses below
-        log10M500cs=np.zeros(y0Noise.shape)
+
+        # Draw zs and masses using rejection sampling (from Inigo Zubeldia)
         zs=np.zeros(y0Noise.shape)
         zErrs=np.zeros(y0Noise.shape)
-        Ez2s=np.zeros(y0Noise.shape)
+        log10Ms=np.zeros(y0Noise.shape)
+        log10M500cs=np.zeros(y0Noise.shape)
         Qs=np.zeros(y0Noise.shape)
         fRels=np.zeros(y0Noise.shape)
-        if verbose:
-            print(">>> Generating mock sample in redshift slices")
-        for k in range(len(zRange)):
-
-            if verbose:
-                print("... z = %.3f [%d/%d]" % (zRange[k], k+1, len(zRange)))
-            
-            t00=time.time()
-            zk=zRange[k]
-            zIndex=np.argmin(abs(zk-self.z))      
-            if numDraws is not None:
-                numClusters_zk=int(round(numDraws/len(zRange)))
-            else:
-                numClusters_zk=numClustersByRedshift[k]
-            if numClusters_zk == 0:
-                continue
-            t11=time.time()
-            
-            # Some fiddling here to avoid rounding issues with array sizes (+/-1 draw here shouldn't make a difference)
-            nextIndex=currentIndex+numClusters_zk
-            if nextIndex >= len(y0Noise):
-                nextIndex=len(y0Noise)
-            mask=np.arange(currentIndex, nextIndex)
-            numClusters_zk=len(mask)
-            if numClusters_zk == 0:
-                continue
-            currentIndex=nextIndex
-            t22=time.time()
-            
-            log10Ms[mask]=self.log10MRollers[k](log10Ms[mask])
-            
-            # We generalised mass definitions, but still need M500c, theta500c for Q, fRel calc
-            # So... we may as well convert and add that to output (below) as well
+        for clusterIndex in range(numClusters):
+            hmfEval=0.
+            hmfSample=1.
+            while hmfSample > hmfEval:
+                ln10MSample=np.random.rand()*(self.log10M[-1]-self.log10M[0])+self.log10M[0]
+                zSample=np.random.rand()*(self.z[-1]-self.z[0])+self.z[0]
+                if self.theoryCode == 'CCL':
+                    aSample=1/(1+zSample)
+                    norm_mfunc=1. / np.log(10)
+                    dVdzdOmega=((3e5/self.cosmoModel['H0'])*np.power(1+zSample, 2)*self.cosmoModel.angular_diameter_distance(aSample)**2)/self.cosmoModel.h_over_h0(aSample)
+                    hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
+                    dndlnM=self.mfunc(self.cosmoModel, np.power(10, ln10MSample), aSample) * norm_mfunc
+                    hmfEval=4.*np.pi*self.fsky*dVdzdOmega*dndlnM
+                elif self.theoryCode == 'CLASS-SZ':
+                    lnMhSample=np.log(10**ln10MSample*self.cosmoCLASS.h())
+                    hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
+                    hmfEval=4.*np.pi*self.fsky*self.cosmoCLASS.get_volume_dVdzdOmega_at_z(zSample)*self.cosmoCLASS.get_dndlnM_at_z_and_M(zSample,np.exp(lnMhSample))
+            log10Ms[clusterIndex]=ln10MSample
+            zs[clusterIndex]=zSample
+            # Add other quantities - where these are interpolated, they are on a z grid
+            zIndex=np.argmin(abs(zs[clusterIndex]-self.z))
+            zk=self.z[zIndex]
             if self.delta == 500 and self.rhoType == "critical":
-                log10M500cs[mask]=log10Ms[mask]
+                log10M500c=log10Ms[clusterIndex]
             else:
-                log10M500cs[mask]=np.log10(self._transToM500c(self.cosmoModel, np.power(10, log10Ms[mask]), 1/(1+zk)))
-            theta500s=interpolate.splev(log10M500cs[mask], self.theta500Splines[k], ext = 3)
+                log10M500c=np.log10(self._transToM500c(self.cosmoModel, np.power(10, log10Ms[clusterIndex]), 1/(1+zk)))
+            log10M500cs[clusterIndex]=log10M500c
+            theta500=interpolate.splev(log10M500c, self.theta500Splines[zIndex], ext = 3)
             if QFit is not None:
-                Qs[mask]=QFit.getQ(theta500s, z = zk, tileName = tileName)
+                Qs[clusterIndex]=QFit.getQ(theta500, z = zk, tileName = tileName)
             else:
-                Qs[mask]=1.0
-            fRels[mask]=interpolate.splev(log10M500cs[mask], self.fRelSplines[k], ext = 3)
-            Ez2s[mask]=self.Ez2[k]
-            zs[mask]=zk
-      
+                Qs[clusterIndex]=1.0
+            fRels[clusterIndex]=interpolate.splev(log10M500c, self.fRelSplines[zIndex], ext = 3)
+
         # For some cosmo parameters, splined masses can end up outside of valid range, so catch this
         log10Ms[log10Ms < self.log10M.min()]=self.log10M.min()
         log10Ms[log10Ms > self.log10M.max()]=self.log10M.max()
-        
+
         # For some cosmo parameters, fRel can wander outside its range for crazy masses
         # So we just cap it at 0.1 here just to avoid -ve in log
         fRels[fRels <= 0]=0.1
         fRels[fRels > 1]=1.0
+        Ez2s=np.power(ccl.h_over_h0(self.cosmoModel, 1/(1+zs)), 2)
         try:
             true_y0s=tenToA0*Ez2s*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
         except:
@@ -585,7 +637,7 @@ class MockSurvey(object):
             measured_y0s=np.random.normal(scattered_y0s, y0Noise)
         else:
             measured_y0s=scattered_y0s
-        
+
         # NOTE: We're now allowing user to specify mass definition rather than hardcoding M500c
         # So, label the output true mass column appropriately
         massColLabel="true_M%d%s" % (self.delta, self.rhoType[0])
@@ -617,7 +669,7 @@ class MockSurvey(object):
         if photFilterLabel is not None and tileName is not None:
             tab.add_column(atpy.Column([photFilterLabel]*len(tab), 'template'))
             tab.add_column(atpy.Column([tileName]*len(tab), 'tileName'))
-                
+
         # Apply selection?
         if applySNRCut == True:
             selMask=tab['fixed_SNR'] > tab['fixed_err_y_c']*SNRLimit
