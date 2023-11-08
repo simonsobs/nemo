@@ -41,6 +41,7 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 # Global constants (we could move others here but then need to give chunky obvious names, not just e.g. h)
 TCMB=2.72548
+CLight=299792458 # m/s
 Mpc_in_cm=constants.pc.value*100*1e6
 MSun_in_g=constants.M_sun.value*1000
 

@@ -568,7 +568,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     delta=massOptions['delta']
     rhoType=massOptions['rhoType']
     mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, 
-                                     delta = delta, rhoType = rhoType, enableDrawSample = True)
+                                     delta = delta, rhoType = rhoType)
     print("... mock survey parameters:")
     print("    QSource = %s" % (QSource))
     for key in defCosmo.keys():

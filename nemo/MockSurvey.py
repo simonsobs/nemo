@@ -353,7 +353,7 @@ class MockSurvey(object):
             # Missing: self.volumeMpc3, self.numberDensity
             dndmdz=np.zeros((self.z.shape[0], self.log10M.shape[0]))
             norm_mfunc=1. / np.log(10)
-            dVdzdOmega=((3e5/self.cosmoModel['H0'])*np.power(1+self.z, 2)*self.cosmoModel.angular_diameter_distance(self.a)**2)/self.cosmoModel.h_over_h0(self.a)
+            dVdzdOmega=(((signals.CLight/1000)/self.cosmoModel['H0'])*np.power(1+self.z, 2)*self.cosmoModel.angular_diameter_distance(self.a)**2)/self.cosmoModel.h_over_h0(self.a)
             for i in range(self.a.shape[0]):
                 dndlnM=self.mfunc(self.cosmoModel, self.M, self.a[i]) * norm_mfunc
                 dndmdz[i]=4.*np.pi*self.fsky*dVdzdOmega[i]*dndlnM
@@ -584,16 +584,15 @@ class MockSurvey(object):
             while hmfSample > hmfEval:
                 ln10MSample=np.random.rand()*(self.log10M[-1]-self.log10M[0])+self.log10M[0]
                 zSample=np.random.rand()*(self.z[-1]-self.z[0])+self.z[0]
+                hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
                 if self.theoryCode == 'CCL':
                     aSample=1/(1+zSample)
                     norm_mfunc=1. / np.log(10)
                     dVdzdOmega=((3e5/self.cosmoModel['H0'])*np.power(1+zSample, 2)*self.cosmoModel.angular_diameter_distance(aSample)**2)/self.cosmoModel.h_over_h0(aSample)
-                    hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
                     dndlnM=self.mfunc(self.cosmoModel, np.power(10, ln10MSample), aSample) * norm_mfunc
                     hmfEval=4.*np.pi*self.fsky*dVdzdOmega*dndlnM
                 elif self.theoryCode == 'CLASS-SZ':
                     lnMhSample=np.log(10**ln10MSample*self.cosmoCLASS.h())
-                    hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
                     hmfEval=4.*np.pi*self.fsky*self.cosmoCLASS.get_volume_dVdzdOmega_at_z(zSample)*self.cosmoCLASS.get_dndlnM_at_z_and_M(zSample,np.exp(lnMhSample))
             log10Ms[clusterIndex]=ln10MSample
             zs[clusterIndex]=zSample
