@@ -212,14 +212,6 @@ class MockSurvey(object):
                                           sigma8=sigma8,
                                           n_s=ns,
                                           transfer_function=self.transferFunction)
-            # elif self.theoryCode == 'CLASS-SZ':
-            ### TESTING
-            classDict={'Omega_b': Ob0, 'Omega_cdm':  Om0-Ob0, 'H0': H0, 'sigma8': sigma8,
-                       'tau_reio':  0.0561, 'n_s': ns} # tau_reio not important but needs to be set
-            self.cosmoCLASS=Class()
-            self.cosmoCLASS.set(CLASS_SZ_SETTINGS) # Not sure if we want to update every time?
-            self.cosmoCLASS.set(classDict)
-            self.cosmoCLASS.compute_class_szfast()
 
             if self.theoryCode == 'CCL':
                 if self.massFuncName == 'Tinker10':
