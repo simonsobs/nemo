@@ -611,10 +611,6 @@ class MockSurvey(object):
                 Qs[clusterIndex]=1.0
             fRels[clusterIndex]=interpolate.splev(log10M500c, self.fRelSplines[zIndex], ext = 3)
 
-        # For some cosmo parameters, splined masses can end up outside of valid range, so catch this
-        log10Ms[log10Ms < self.log10M.min()]=self.log10M.min()
-        log10Ms[log10Ms > self.log10M.max()]=self.log10M.max()
-
         # For some cosmo parameters, fRel can wander outside its range for crazy masses
         # So we just cap it at 0.1 here just to avoid -ve in log
         fRels[fRels <= 0]=0.1
