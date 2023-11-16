@@ -1731,7 +1731,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default',\
                    profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,\
-                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0):
+                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0, reportTimingInfo = False):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1766,6 +1766,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             neither is present, no cuts on the catalog will be performed.
         TCMBAlpha (float, optional): This should always be zero unless you really do want to make a
             cluster model image where CMB temperature evolves as T0*(1+z)^{1-TCMBAlpha}.
+        reportTimingInfo (bool, optional): If True, report how long each step takes.
         
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
@@ -1778,8 +1779,11 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         catalog=atpy.Table().read(catalog)
     
     # This works per-tile, so throw out objects that aren't in it
+    t0=time.time()
     catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
-    
+    t1=time.time()
+    if reportTimingInfo: print("makeModelImage - getting catalog within image - took %.3f sec" % (t1-t0))
+
     # Optional SNR cuts
     if 'SNR' in catalog.keys():
         SNRKey='SNR'
@@ -1793,6 +1797,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # If we want to restrict painting to just area mask within in a tile
     # (avoids double painting of objects in overlap areas)
     if validAreaSection is not None and len(catalog) > 0:
+        t0=time.time()
         x0, x1, y0, y1=validAreaSection
         coords=wcs.wcs2pix(catalog['RADeg'], catalog['decDeg'])
         x=np.array(coords)[:, 0]
@@ -1801,6 +1806,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         yMask=np.logical_and(y >= y0, y < y1)
         cMask=np.logical_and(xMask, yMask)
         catalog=catalog[cMask]
+        t1=time.time()
+        if reportTimingInfo: print("makeModelImage - cutting catalog to area mask - took %.3f sec" % (t1-t0))
 
     if len(catalog) == 0:
         return None
@@ -1809,13 +1816,17 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         cosmoModel=signals.fiducialCosmoModel
 
     # Set initial max size in degrees from beam file (used for sources; clusters adjusted for each object)
+    t0=time.time()
     numFWHM=5.0
     beam=signals.BeamProfile(beamFileName = beamFileName)
     maxSizeDeg=(beam.FWHMArcmin*numFWHM)/60
+    t1=time.time()
+    if reportTimingInfo: print("makeModelImage - set up beam - took %.3f sec" % (t1-t0))
     
     # Map of distance(s) from objects - this will get updated in place (fast)
     degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
-    
+
+    t0=time.time()
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
         # Clusters - insert one at a time (with different scales etc.)
         # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
@@ -1888,12 +1899,17 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                                 maxSizeDeg)
             signalMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)*row['deltaT_c']
             modelMap=modelMap+signalMap
+    t1=time.time()
+    if reportTimingInfo: print("makeModelImage - painting objects - took %.3f sec" % (t1-t0))
 
     # Optional: apply pixel window function - generally this should be True
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
     if applyPixelWindow == True:
+        t0=time.time()
         modelMap=enmap.apply_window(modelMap, pow = 1.0)
-        
+        t1=time.time()
+        if reportTimingInfo: print("makeModelImage - pix win application - took %.3f sec" % (t1-t0))
+
     return modelMap
         
 #------------------------------------------------------------------------------------------------------------

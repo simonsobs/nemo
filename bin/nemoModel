@@ -227,7 +227,8 @@ if __name__ == '__main__':
                                                      obsFreqGHz = args.obsFreqGHz,
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
                                                      TCMBAlpha = args.TCMBAlpha,
-                                                     profile = args.profile, cosmoModel = cosmoModel)
+                                                     profile = args.profile, cosmoModel = cosmoModel,
+                                                     reportTimingInfo = True)
             t1=time.time()
             print("... %s complete (took %.3f sec ; rank = %d)" % (tileName, t1-t0, config.rank))
 
