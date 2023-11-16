@@ -140,8 +140,8 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
                               makeOutputDirs = False, setUpMaps = True, writeTileInfo = False,
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
-    print("... config loaded (rank = %d)" % (config.rank))
-    
+    if config.rank == 0: print(">>> Number of tiles = %d" % (len(config.tileNames)))
+
     baseDir, fileName=os.path.split(args.outputFileName)
     if baseDir != '':
         os.makedirs(baseDir, exist_ok = True)
@@ -202,12 +202,12 @@ if __name__ == '__main__':
         if key in tab.meta.keys():
             keyCount=keyCount+1
     if keyCount == len(keywords):
-        print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
+        if config.rank == 0: print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
         cosmoModel=ccl.Cosmology(Omega_c = tab.meta['OM0']-tab.meta['OB0'], Omega_b = tab.meta['OB0'],
                                  h = 0.01*tab.meta['H0'], sigma8 = tab.meta['SIGMA8'], n_s = tab.meta['NS'],
                                  transfer_function = signals.transferFunction)
     else:
-        print(">>> Using fiducial cosmology")
+        if config.rank == 0: print(">>> Using fiducial cosmology")
         cosmoModel=signals.fiducialCosmoModel
 
     # Optional signal scaling (useful for diff alpha sims)
@@ -215,7 +215,7 @@ if __name__ == '__main__':
         tab['y_c']=tab['y_c']*args.scale
     
     # Build a dictionary containing the model images which we'll stich together at the end
-    print(">>> Building models in tiles ...")
+    if config.rank == 0: print(">>> Building models in tiles ...")
     modelsDict={}
     for tileName in config.tileNames:
         shape=(config.tileCoordsDict[tileName]['clippedSection'][3]-config.tileCoordsDict[tileName]['clippedSection'][2], 
