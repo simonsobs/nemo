@@ -140,6 +140,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
                               makeOutputDirs = False, setUpMaps = True, writeTileInfo = False,
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
+    print("... config loaded (rank = %d)" % (config.rank))
     
     baseDir, fileName=os.path.split(args.outputFileName)
     if baseDir != '':
