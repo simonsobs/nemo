@@ -571,37 +571,38 @@ class MockSurvey(object):
         Qs=np.zeros(y0Noise.shape)
         fRels=np.zeros(y0Noise.shape)
         for clusterIndex in range(numClusters):
-            hmfEval=0.
-            hmfSample=1.
-            while hmfSample > hmfEval:
-                ln10MSample=np.random.rand()*(self.log10M[-1]-self.log10M[0])+self.log10M[0]
-                zSample=np.random.rand()*(self.z[-1]-self.z[0])+self.z[0]
-                hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
-                if self.theoryCode == 'CCL':
-                    aSample=1/(1+zSample)
-                    norm_mfunc=1. / np.log(10)
-                    dVdzdOmega=((3e5/self.cosmoModel['H0'])*np.power(1+zSample, 2)*self.cosmoModel.angular_diameter_distance(aSample)**2)/self.cosmoModel.h_over_h0(aSample)
-                    dndlnM=self.mfunc(self.cosmoModel, np.power(10, ln10MSample), aSample) * norm_mfunc
-                    hmfEval=4.*np.pi*self.fsky*dVdzdOmega*dndlnM
-                elif self.theoryCode == 'CLASS-SZ':
-                    lnMhSample=np.log(10**ln10MSample*self.cosmoCLASS.h())
-                    hmfEval=4.*np.pi*self.fsky*self.cosmoCLASS.get_volume_dVdzdOmega_at_z(zSample)*self.cosmoCLASS.get_dndlnM_at_z_and_M(zSample,np.exp(lnMhSample))
-            log10Ms[clusterIndex]=ln10MSample
-            zs[clusterIndex]=zSample
-            # Add other quantities - where these are interpolated, they are on a z grid
-            zIndex=np.argmin(abs(zs[clusterIndex]-self.z))
-            zk=self.z[zIndex]
-            if self.delta == 500 and self.rhoType == "critical":
-                log10M500c=log10Ms[clusterIndex]
-            else:
-                log10M500c=np.log10(self._transToM500c(self.cosmoModel, np.power(10, log10Ms[clusterIndex]), 1/(1+zk)))
-            log10M500cs[clusterIndex]=log10M500c
-            theta500=interpolate.splev(log10M500c, self.theta500Splines[zIndex], ext = 3)
-            if QFit is not None:
-                Qs[clusterIndex]=QFit.getQ(theta500, z = zk, tileName = tileName)
-            else:
-                Qs[clusterIndex]=1.0
-            fRels[clusterIndex]=interpolate.splev(log10M500c, self.fRelSplines[zIndex], ext = 3)
+            log10Ms[clusterIndex], zs[clusterIndex], log10M500cs[clusterIndex], Qs[clusterIndex], fRels[clusterIndex]=self._drawSampleRow(QFit = QFit)
+            # hmfEval=0.
+            # hmfSample=1.
+            # while hmfSample > hmfEval:
+            #     ln10MSample=np.random.rand()*(self.log10M[-1]-self.log10M[0])+self.log10M[0]
+            #     zSample=np.random.rand()*(self.z[-1]-self.z[0])+self.z[0]
+            #     hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
+            #     if self.theoryCode == 'CCL':
+            #         aSample=1/(1+zSample)
+            #         norm_mfunc=1. / np.log(10)
+            #         dVdzdOmega=((3e5/self.cosmoModel['H0'])*np.power(1+zSample, 2)*self.cosmoModel.angular_diameter_distance(aSample)**2)/self.cosmoModel.h_over_h0(aSample)
+            #         dndlnM=self.mfunc(self.cosmoModel, np.power(10, ln10MSample), aSample) * norm_mfunc
+            #         hmfEval=4.*np.pi*self.fsky*dVdzdOmega*dndlnM
+            #     elif self.theoryCode == 'CLASS-SZ':
+            #         lnMhSample=np.log(10**ln10MSample*self.cosmoCLASS.h())
+            #         hmfEval=4.*np.pi*self.fsky*self.cosmoCLASS.get_volume_dVdzdOmega_at_z(zSample)*self.cosmoCLASS.get_dndlnM_at_z_and_M(zSample,np.exp(lnMhSample))
+            # log10Ms[clusterIndex]=ln10MSample
+            # zs[clusterIndex]=zSample
+            # # Add other quantities - where these are interpolated, they are on a z grid
+            # zIndex=np.argmin(abs(zs[clusterIndex]-self.z))
+            # zk=self.z[zIndex]
+            # if self.delta == 500 and self.rhoType == "critical":
+            #     log10M500c=log10Ms[clusterIndex]
+            # else:
+            #     log10M500c=np.log10(self._transToM500c(self.cosmoModel, np.power(10, log10Ms[clusterIndex]), 1/(1+zk)))
+            # log10M500cs[clusterIndex]=log10M500c
+            # theta500=interpolate.splev(log10M500c, self.theta500Splines[zIndex], ext = 3)
+            # if QFit is not None:
+            #     Qs[clusterIndex]=QFit.getQ(theta500, z = zk, tileName = tileName)
+            # else:
+            #     Qs[clusterIndex]=1.0
+            # fRels[clusterIndex]=interpolate.splev(log10M500c, self.fRelSplines[zIndex], ext = 3)
 
         # For some cosmo parameters, fRel can wander outside its range for crazy masses
         # So we just cap it at 0.1 here just to avoid -ve in log
@@ -664,3 +665,36 @@ class MockSurvey(object):
         t1=time.time()
 
         return tab
+
+    def _drawSampleRow(self, QFit = None):
+        hmfEval=0.
+        hmfSample=1.
+        while hmfSample > hmfEval:
+            ln10MSample=np.random.rand()*(self.log10M[-1]-self.log10M[0])+self.log10M[0]
+            zSample=np.random.rand()*(self.z[-1]-self.z[0])+self.z[0]
+            hmfSample=np.random.rand()*(self.HMFRange[-1]-self.HMFRange[0])+self.HMFRange[0]
+            if self.theoryCode == 'CCL':
+                aSample=1/(1+zSample)
+                norm_mfunc=1. / np.log(10)
+                dVdzdOmega=((3e5/self.cosmoModel['H0'])*np.power(1+zSample, 2)*self.cosmoModel.angular_diameter_distance(aSample)**2)/self.cosmoModel.h_over_h0(aSample)
+                dndlnM=self.mfunc(self.cosmoModel, np.power(10, ln10MSample), aSample) * norm_mfunc
+                hmfEval=4.*np.pi*self.fsky*dVdzdOmega*dndlnM
+            elif self.theoryCode == 'CLASS-SZ':
+                lnMhSample=np.log(10**ln10MSample*self.cosmoCLASS.h())
+                hmfEval=4.*np.pi*self.fsky*self.cosmoCLASS.get_volume_dVdzdOmega_at_z(zSample)*self.cosmoCLASS.get_dndlnM_at_z_and_M(zSample,np.exp(lnMhSample))
+        log10M=ln10MSample
+        z=zSample
+        # Add other quantities - where these are interpolated, they are on a z grid
+        zIndex=np.argmin(abs(z-self.z))
+        zk=self.z[zIndex]
+        if self.delta == 500 and self.rhoType == "critical":
+            log10M500c=log10M
+        else:
+            log10M500c=np.log10(self._transToM500c(self.cosmoModel, np.power(10, log10M), 1/(1+zk)))
+        theta500=interpolate.splev(log10M500c, self.theta500Splines[zIndex], ext = 3)
+        if QFit is not None:
+            Q=QFit.getQ(theta500, z = zk, tileName = tileName)
+        else:
+            Q=1.0
+        fRel=interpolate.splev(log10M500c, self.fRelSplines[zIndex], ext = 3)
+        return log10M, z, log10M500c, Q, fRel

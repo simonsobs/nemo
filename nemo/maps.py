@@ -1270,12 +1270,14 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMo
             usually uK) for generating white noise that is added across the whole map. Alternatively, an array
             with the same dimensions as shape may be used, specifying sigma (in map units) per corresponding
             pixel. Noise will only be added where non-zero values appear in noiseLevel.
-        lKnee (:obj:`float`): If given, 1/f noise will be generated using the power spectrum
+        wcs (:obj:`astWCS.WCS`, optional): WCS corresponding to the map shape.
+        lKnee (:obj:`float`, optional): If given, 1/f noise will be generated using the power spectrum
             N_l = (1 + l/lknee)^-alpha) - see Appendix A of MacCrann et al. 2023.
-        alpha (:obj:`float`): Power-law exponent in the power spectrum used for generating 1/f noise. Has
+        alpha (:obj:`float`, optional): Power-law exponent in the power spectrum used for generating 1/f noise. Has
             no effect unless lKnee is also given.
-        noiseMode(:obj:`str`): Either 'perPixel', or 'perSquareArcmin' - if the latter, constant noise in terms
-            of surface brightness will be added (accounts for varying pixel scale, if present).
+        noiseMode(:obj:`str`, optional): Either 'perPixel', or 'perSquareArcmin' - if the latter, constant noise in terms
+            of surface brightness will be added (accounts for varying pixel scale, if present - which requires
+            `wcs` to be supplied).
 
     Returns:
         A map (:obj:`numpy.ndarray`)
