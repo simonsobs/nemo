@@ -471,17 +471,24 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None, b
         bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
     else:
         raise Exception("'binning' must be 'linear' or 'log' (given '%s')." % (binning))
-    cylPProfile=[]
-    tol=1e-6
-    for i in range(len(bRange)):
-        b=bRange[i]
-        cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
-        if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
-            break
-    cylPProfile=np.array(cylPProfile)
-    bRange=bRange[:i+1]
-    
-    # Normalise to 1 at centre
+
+    # Much slower
+    # cylPProfile=[]
+    # tol=1e-6
+    # for i in range(len(bRange)):
+    #     b=bRange[i]
+    #     cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
+    #     if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
+    #         break
+    # cylPProfile=np.array(cylPProfile)
+    # bRange=bRange[:i+1]
+    # cylPProfile=cylPProfile/cylPProfile.max()
+
+    # Faster - but need to translate A10-style GNFW params into the format pixell uses
+    gamma=-GNFWParams['gamma']
+    beta=gamma-GNFWParams['alpha']*GNFWParams['beta']
+    xc=1/GNFWParams['c500']
+    cylPProfile=utils.tsz_profile_los(bRange, xc = xc, alpha = GNFWParams['alpha'], beta = beta, gamma = gamma)
     cylPProfile=cylPProfile/cylPProfile.max()
 
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
