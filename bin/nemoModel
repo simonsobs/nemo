@@ -228,7 +228,7 @@ if __name__ == '__main__':
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
                                                      TCMBAlpha = args.TCMBAlpha,
                                                      profile = args.profile, cosmoModel = cosmoModel,
-                                                     reportTimingInfo = True)
+                                                     reportTimingInfo = False)
             t1=time.time()
             print("... %s complete (took %.3f sec ; rank = %d)" % (tileName, t1-t0, config.rank))
 
