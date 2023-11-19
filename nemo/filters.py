@@ -756,7 +756,7 @@ class MatchedFilter(MapFilter):
                 
         if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
             RMSFileName=self.selFnDir+os.path.sep+self.tileName+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
-            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressionType = "RICE_1")
+            maps.saveFITS(RMSFileName, RMSMap, self.wcs)#, compressionType = "RICE_1")
 
         if 'savePlots' in self.params and self.params['savePlots'] == True:
             self.saveRealSpaceFilterProfile()
