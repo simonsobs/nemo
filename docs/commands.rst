@@ -36,6 +36,19 @@ nemoMass
    YAML-format configuration file.
 
 
+.. _nemoMaskCommand:
+
+nemoMask
+--------
+
+.. argparse::
+   :filename: ../bin/nemoMask
+   :func: makeParser
+   :prog: nemoMask
+
+   :program:`nemoMask` creates a mask image from a SAOImage DS9 region file.
+
+
 .. _nemoMockCommand:
 
 nemoMock
