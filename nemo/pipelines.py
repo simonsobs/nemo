@@ -338,7 +338,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     if config.MPIEnabled == True:
         config.comm.barrier()
 
-    # Write masks - stitched [done by rank 0 while processesothers move on]
+    # Write masks - stitched [done by rank 0 while other processes move on]
     if config.rank == 0:
         if writeAreaMask == True and config.parDict['stitchTiles'] == True:
             areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
