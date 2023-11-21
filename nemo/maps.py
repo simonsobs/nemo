@@ -2549,3 +2549,38 @@ def makeExtendedSourceMask(config, tileName):
     for mapDict in config.unfilteredMapsDictList:
         mapDict['extendedMask']=config.diagnosticsDir+os.path.sep+"extendedMask"
 
+#------------------------------------------------------------------------------------------------------------
+def makeMaskFromDS9PolyRegionFile(regionFileName, shape, wcs):
+    """Make a mask from a DS9 region file. The region file must have been created with RA, dec coordinates
+    given in decimal degrees, and the shapes defining the mask must consist of polygon regions only.
+
+    Args:
+        regionFileName (:obj:`str`): Path to SAOImage DS9 region file.
+        origShape (:obj:`tuple`): Shape of the output mask.
+        origWCS (:obj:`astWCS.WCS object`): WCS for the output mask.
+
+    Returns:
+        Mask (2d array)
+
+    """
+
+    with open(regionFileName, "r") as inFile:
+        lines=inFile.readlines()
+    polyList=[]
+    for line in lines:
+        if line.find("polygon") != -1:
+            polyPoints=[]
+            coords=line.split("polygon(")[-1].split(") ")[0].split(",")
+            for i in range(0, len(coords), 2):
+                try:
+                    RADeg, decDeg=[float(coords[i]), float(coords[i+1])]
+                except:
+                    raise Exception("failed to parse coords in region file %s - problem at: %s" % (regionFileName, coords))
+                x, y=wcs.wcs2pix(RADeg, decDeg)
+                polyPoints.append((int(round(y)), int(round(x))))
+            polyList.append(polyPoints)
+    surveyMask=np.zeros(shape, dtype = int)
+    for polyPoints in polyList:
+        mahotas.polygon.fill_polygon(polyPoints, surveyMask)
+
+    return surveyMask
