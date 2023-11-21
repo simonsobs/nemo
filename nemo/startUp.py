@@ -393,6 +393,8 @@ class NemoConfig(object):
                 self.tileNames=rankExtNames[self.rank]
             else:
                 self.tileNames=[]
+        if self.rank == 0:
+            print(">>> Total tiles = %d ; total processes = %d" % (len(self.allTileNames), self.size))
 
         # We're now writing maps per tile into their own dir (friendlier for Lustre)
         if makeOutputDirs == True:

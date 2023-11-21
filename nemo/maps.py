@@ -131,6 +131,9 @@ class MapDict(dict):
                     data=img[ext].data[minY:maxY, minX:maxX]
                 else:
                     raise Exception("Map data has %d dimensions - only ndim = 2 or ndim = 3 are currently handled." % (img[ext].data.ndim))
+                # Avoiding potential for read-only weirdness
+                data=data[:]
+                data=data.copy()
 
         # Convert any mask to 8-bit unsigned ints to save memory
         if mapKey in self._maskKeys:
