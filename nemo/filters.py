@@ -754,10 +754,6 @@ class MatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
                 
-        if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.selFnDir+os.path.sep+self.tileName+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
-            maps.saveFITS(RMSFileName, RMSMap, self.wcs)#, compressionType = "RICE_1")
-
         if 'savePlots' in self.params and self.params['savePlots'] == True:
             self.saveRealSpaceFilterProfile()
                 
@@ -774,7 +770,7 @@ class MatchedFilter(MapFilter):
             
         # NOTE: What to do about frequency here? Generalise for non-SZ
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap,
-                'surveyMask': surveyMask, 'flagMask': self.flagMask, 'mapUnits': mapUnits,
+                'RMSMap': RMSMap, 'surveyMask': surveyMask, 'flagMask': self.flagMask, 'mapUnits': mapUnits,
                 'beamSolidAngle_nsr': beamSolidAngle_nsr, 'label': self.label, 'tileName': self.tileName}
 
 
@@ -1157,12 +1153,8 @@ class RealSpaceMatchedFilter(MapFilter):
         SNMap[np.isnan(SNMap)]=0.
         RMSMap=RMSMap*surveyMask
 
-        if 'saveRMSMap' in self.params and self.params['saveRMSMap'] == True:
-            RMSFileName=self.selFnDir+os.path.sep+"RMSMap_%s#%s.fits" % (self.label, self.tileName)
-            maps.saveFITS(RMSFileName, RMSMap, self.wcs, compressionType = 'RICE_1')
-
         return {'data': filteredMap, 'wcs': self.wcs, 'obsFreqGHz': combinedObsFreqGHz, 'SNMap': SNMap, 
-                'surveyMask': surveyMask, 'flagMask': self.flagMask, 'mapUnits': mapUnits,
+                'RMSMap': RMSMap, 'surveyMask': surveyMask, 'flagMask': self.flagMask, 'mapUnits': mapUnits,
                 'beamSolidAngle_nsr': beamSolidAngle_nsr, 'label': self.label, 'tileName': self.tileName}
 
     

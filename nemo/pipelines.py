@@ -175,6 +175,10 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     catalogDict={}
     areaMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     flagMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+    # if config.parDict['stitchTiles'] == True:
+    stitchedFilteredMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+    stitchedSNMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+    stitchedRMSMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
         if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
         # Operations that only need to be done once go here
@@ -207,10 +211,19 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 filteredMapDict['label']=f['label']
                 filteredMapDict['tileName']=tileName
             else:
-                filteredMapDict=filters.filterMaps(config.unfilteredMapsDictList, f, tileName,
-                                                   diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
-                                                   verbose = True, undoPixelWindow = undoPixelWindow,
-                                                   useCachedFilter = useCachedFilters)
+                # We now keep the reference filter in memory to save some I/O
+                if f['label'] == photFilter:
+                    returnFilter=True
+                else:
+                    returnFilter=False
+                filterResults=filters.filterMaps(config.unfilteredMapsDictList, f, tileName,
+                                                 diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
+                                                 verbose = True, undoPixelWindow = undoPixelWindow,
+                                                 useCachedFilter = useCachedFilters, returnFilter = returnFilter)
+                if returnFilter == False:
+                    filteredMapDict=filterResults
+                else:
+                    filteredMapDict, config.cachedFilters[tileName]=filterResults[0], filterResults[1]
 
             if useCachedRMSMap == True and photFilter is not None: # i.e., only an option for cluster insertion sims
                 # This is messy:
@@ -230,9 +243,14 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
                 filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
+            # New behavior - only save stitched tiles [and make stitched maps even if not tiled]
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
-                maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
-                maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
+                stitchedFilteredMapDict[tileName]=filteredMapDict['data']
+                stitchedSNMapDict[tileName]=filteredMapDict['SNMap']
+                stitchedRMSMapDict[tileName]=filteredMapDict['RMSMap']
+                # If needed for debugging new behaviour
+                # maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
+                # maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])
 
             if f['label'] == photFilter:
                 photFilteredMapDict={}
@@ -287,37 +305,9 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     # Merged/optimal catalogs
     optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
     
+    # Gathering catalogs
     if config.MPIEnabled == True:
-        # area mask
-        if writeAreaMask == True:
-            #config.comm.barrier()
-            if config.rank > 0:
-                config.comm.send(areaMaskDict, dest = 0)
-            elif config.rank == 0:
-                gathered_tileDicts=[]
-                gathered_tileDicts.append(areaMaskDict)
-                for source in range(1, config.size):
-                    gathered_tileDicts.append(config.comm.recv(source = source))
-                print("... gathered area mask")
-                for tileDict in gathered_tileDicts:
-                    for tileName in tileDict.keys():
-                        areaMaskDict[tileName]=tileDict[tileName]
-        # flag mask
-        if writeFlagMask == True:
-            #config.comm.barrier()
-            if config.rank > 0:
-                config.comm.send(flagMaskDict, dest = 0)
-            elif config.rank == 0:
-                gathered_tileDicts=[]
-                gathered_tileDicts.append(flagMaskDict)
-                for source in range(1, config.size):
-                    gathered_tileDicts.append(config.comm.recv(source = source))
-                print("... gathered flag mask")
-                for tileDict in gathered_tileDicts:
-                    for tileName in tileDict.keys():
-                        flagMaskDict[tileName]=tileDict[tileName]
-
-        # catalogs - every node now gets the whole catalog, for running in multipass mode
+        # Every process needs the whole catalog, for running in multipass mode
         optimalCatalogList=config.comm.allgather(optimalCatalog)
         if config.rank == 0: print("... gathered catalogs")
         toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
@@ -329,26 +319,49 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
         if len(optimalCatalog) > 0:
             optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
 
-    # Write masks - MEFs [barrier here because needed for next step]
-    if config.rank == 0:
-        if writeAreaMask == True:
-            areaMaskDict.saveMEF(config.selFnDir+os.path.sep+"areaMask.fits", compressionType = 'PLIO_1')
-        if writeFlagMask == True:
-            flagMaskDict.saveMEF(config.selFnDir+os.path.sep+"flagMask.fits", compressionType = 'PLIO_1')
-    if config.MPIEnabled == True:
-        config.comm.barrier()
-
-    # Write masks - stitched [done by rank 0 while other processes move on]
-    if config.rank == 0:
-        if writeAreaMask == True and config.parDict['stitchTiles'] == True:
-            areaMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_areaMask.fits",
-                                          config.origWCS, compressionType = 'PLIO_1')
-
-        if writeFlagMask == True and config.parDict['stitchTiles'] == True:
-            flagMaskDict.saveStitchedFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits",
-                                          config.origWCS, compressionType = 'PLIO_1')
-
-    del areaMaskDict, flagMaskDict, catalogDict
+    # Gathering and stitching tiles
+    labelsList=['area mask', 'flag mask', 'filtered map', 'S/N map', 'RMS map']
+    tileDictsList=[areaMaskDict, flagMaskDict, stitchedFilteredMapDict, stitchedSNMapDict, stitchedRMSMapDict]
+    writeMEFList=[writeAreaMask, writeFlagMask, False, False, True]
+    writeStitchedList=[writeAreaMask, writeFlagMask, True, True, True]
+    MEFPaths=[config.selFnDir+os.path.sep+"areaMask.fits",
+              config.selFnDir+os.path.sep+"flagMask.fits",
+              None, None, config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilter)]
+    stitchedPaths=[config.selFnDir+os.path.sep+"stitched_areaMask.fits",
+                   config.selFnDir+os.path.sep+"stitched_flagMask.fits",
+                   filteredMapsDir+os.path.sep+"stitched_%s_filteredMap.fits" % (photFilter),
+                   filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (photFilter),
+                   config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (photFilter)]
+    compressionTypeList=['PLIO_1', 'PLIO_1', None, None, None]
+    for i in range(len(tileDictsList)):
+        label=labelsList[i]
+        tileDict=tileDictsList[i]
+        writeMEF=writeMEFList[i]
+        writeStitched=writeStitchedList[i]
+        MEFPath=MEFPaths[i]
+        stitchedPath=stitchedPaths[i]
+        compressionType=compressionTypeList[i]
+        # MPI stuff
+        if (writeMEF == True or writeStitched == True) and config.MPIEnabled == True:
+            if config.rank > 0:
+                config.comm.send(tileDict, dest = 0)
+                del tileDict
+            elif config.rank == 0:
+                gathered_tileDicts=[]
+                gathered_tileDicts.append(tileDict)
+                for source in range(1, config.size):
+                    gathered_tileDicts.append(config.comm.recv(source = source))
+                print("... gathered %s" % (label))
+                for t in gathered_tileDicts:
+                    for tileName in t.keys():
+                        tileDict[tileName]=t[tileName]
+        # Write MEFs and stitched versions
+        if config.rank == 0:
+            if writeMEF == True and MEFPath is not None and len(tileDict) > 0:
+                tileDict.saveMEF(MEFPath, compressionType = compressionType)
+            if writeStitched == True and stitchedPath is not None and len(tileDict) > 0:
+                tileDict.saveStitchedFITS(stitchedPath, config.origWCS)
+            del tileDict
 
     return optimalCatalog
 

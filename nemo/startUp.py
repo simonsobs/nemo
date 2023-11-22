@@ -175,6 +175,9 @@ def parseConfigFile(parDictFileName, verbose = False):
             if key not in parDict['massOptions'].keys():
                 parDict['massOptions'][key]=defaults[key]
 
+    # Stuff which is now mandatory... left here until we update everywhere in code + docs
+    parDict['stitchTiles']=True
+
     # This isn't actually being used, but has been left in for now
     parDict['_file_last_modified_ctime']=os.path.getctime(parDictFileName)
     
@@ -402,6 +405,9 @@ class NemoConfig(object):
 
         # Identify filter sets, for enabling new multi-pass filtering and object finding
         self._identifyFilterSets()
+
+        # Cache filters in memory to save some I/O
+        self.cachedFilters={}
         
         # For debugging...
         if self.MPIEnabled == True and verbose == True:

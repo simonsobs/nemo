@@ -123,11 +123,7 @@ if __name__ == '__main__':
 
     # Tidying up etc.
     if config.rank == 0:
-        print("... stitching maps and tidying up [time taken to here = %.3f sec]" % (time.time()-config._timeStarted))
-
-        # Stitch together map tiles - full fat versions (this will only work if 'saveFilteredMaps: True')
-        if 'stitchTiles' in config.parDict.keys() and config.parDict['stitchTiles'] == True:
-            maps.stitchTiles(config)
+        print("... tidying up [time taken to here = %.3f sec]" % (time.time()-config._timeStarted))
 
         # Plot tile-averaged position recovery test
         if sourceInjTable is not None:
@@ -154,4 +150,6 @@ if __name__ == '__main__':
             completeness.completenessByFootprint(config)
             if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
                 completeness.makeMassLimitMapsAndPlots(config)
+
+        print(">>> Finished [time taken = %.3f sec]" % (time.time()-config._timeStarted))
 

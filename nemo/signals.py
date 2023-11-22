@@ -970,19 +970,23 @@ def fitQ(config):
         t0=time.time()
         print("... fitting Q in tile %s" % (tileName))
 
-        # Load reference scale filter
-        foundFilt=False
-        for filt in config.parDict['mapFilters']:
-            if filt['label'] == config.parDict['photFilter']:
-                foundFilt=True
-                break
-        if foundFilt == False:
-            raise Exception("couldn't find filter that matches photFilter")
-        filterClass=eval('filters.%s' % (filt['class']))
-        filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
-                              tileName = tileName, 
-                              diagnosticsDir = config.diagnosticsDir)
-        filterObj.loadFilter()
+        # Load reference scale filter (it may be in memory already)
+        if tileName in config.cachedFilters.keys():
+            filterObj=config.cachedFilters[tileName]
+        else:
+            # Otherwise, can still get from disk
+            foundFilt=False
+            for filt in config.parDict['mapFilters']:
+                if filt['label'] == config.parDict['photFilter']:
+                    foundFilt=True
+                    break
+            if foundFilt == False:
+                raise Exception("couldn't find filter that matches photFilter")
+            filterClass=eval('filters.%s' % (filt['class']))
+            filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
+                                tileName = tileName,
+                                diagnosticsDir = config.diagnosticsDir)
+            filterObj.loadFilter()
         
         # Real space kernel or Fourier space filter?
         if issubclass(filterObj.__class__, filters.RealSpaceMatchedFilter) == True:
@@ -1099,7 +1103,6 @@ def fitQ(config):
         del Q, filterObj #, clipDict
 
     if config.MPIEnabled == True:
-        #config.comm.barrier()
         QTabDictList=config.comm.gather(QTabDict, root = 0)
         if config.rank == 0:
             print("... gathered Q fits")
@@ -1123,10 +1126,6 @@ def fitQ(config):
 
     if config.rank == 0:
         print("... after Q fits completed: time since start = %.3f sec" % (time.time()-config._timeStarted))
-
-    ## Make sure we all leave here together
-    #if config.MPIEnabled == True:
-        #config.comm.barrier()
 
 #------------------------------------------------------------------------------------------------------------
 def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):

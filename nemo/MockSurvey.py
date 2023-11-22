@@ -26,10 +26,13 @@ from scipy import stats
 from astLib import *
 import time
 
-try:
-    from classy_sz import Class
-except:
-    pass
+# CLASS-SZ is quite a big import (tensorflow) if we don't need it
+noCLASS=os.environ.get('NEMO_NOCLASS', None)
+if noCLASS is None:
+    try:
+        from classy_sz import Class
+    except:
+        pass
 
 #------------------------------------------------------------------------------------------------------------
 # Global settings for CLASS-SZ, if used
