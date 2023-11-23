@@ -107,6 +107,7 @@ if __name__ == '__main__':
             signals.fitQ(config)
 
     # Generates the noise versus area tables, and adds 'footprint_label' columns to output catalogs
+    # config.comm.barrier() # Hopefully not needed
     pipelines.makeRMSTables(config)
 
     # Source injection test - one way to calculate completeness ; needed for position recovery tests

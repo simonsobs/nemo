@@ -320,18 +320,21 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
 
     # Gathering and stitching tiles
-    labelsList=['area mask', 'flag mask', 'filtered map', 'S/N map', 'RMS map']
-    tileDictsList=[areaMaskDict, flagMaskDict, stitchedFilteredMapDict, stitchedSNMapDict, stitchedRMSMapDict]
-    writeMEFList=[writeAreaMask, writeFlagMask, False, False, True]
+    # NOTE: Order matters, bumped up RMS map to make sure written before next stage
+    # It doesn't matter if rank 0 then takes its time with the other maps that aren't needed again
+    labelsList=['area mask', 'flag mask', 'RMS map', 'filtered map', 'S/N map']
+    tileDictsList=[areaMaskDict, flagMaskDict, stitchedRMSMapDict, stitchedFilteredMapDict, stitchedSNMapDict]
+    writeMEFList=[writeAreaMask, writeFlagMask, True, False, False]
     writeStitchedList=[writeAreaMask, writeFlagMask, True, True, True]
     MEFPaths=[config.selFnDir+os.path.sep+"areaMask.fits",
               config.selFnDir+os.path.sep+"flagMask.fits",
-              None, None, config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilter)]
+              config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilter),
+              None, None]
     stitchedPaths=[config.selFnDir+os.path.sep+"stitched_areaMask.fits",
                    config.selFnDir+os.path.sep+"stitched_flagMask.fits",
+                   config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (photFilter),
                    filteredMapsDir+os.path.sep+"stitched_%s_filteredMap.fits" % (photFilter),
-                   filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (photFilter),
-                   config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (photFilter)]
+                   filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (photFilter)]
     compressionTypeList=['PLIO_1', 'PLIO_1', None, None, None]
     for i in range(len(tileDictsList)):
         label=labelsList[i]
@@ -343,18 +346,30 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
         compressionType=compressionTypeList[i]
         # MPI stuff
         if (writeMEF == True or writeStitched == True) and config.MPIEnabled == True:
-            if config.rank > 0:
-                config.comm.send(tileDict, dest = 0)
-                del tileDict
-            elif config.rank == 0:
-                gathered_tileDicts=[]
-                gathered_tileDicts.append(tileDict)
-                for source in range(1, config.size):
-                    gathered_tileDicts.append(config.comm.recv(source = source))
+            ###
+            gathered_tileDicts=config.comm.gather(tileDict, root = 0)
+            if config.rank == 0:
                 print("... gathered %s" % (label))
-                for t in gathered_tileDicts:
-                    for tileName in t.keys():
-                        tileDict[tileName]=t[tileName]
+                for rankTileDict in gathered_tileDicts:
+                    for key in rankTileDict:
+                        if key not in tileDict:
+                            tileDict[key]=rankTileDict[key]
+            else:
+                del tileDict
+            ###
+            # if config.rank > 0:
+            #     config.comm.send(tileDict, dest = 0)
+            #     del tileDict
+            # elif config.rank == 0:
+            #     gathered_tileDicts=[]
+            #     gathered_tileDicts.append(tileDict)
+            #     for source in range(1, config.size):
+            #         gathered_tileDicts.append(config.comm.recv(source = source))
+            #     print("... gathered %s" % (label))
+            #     for t in gathered_tileDicts:
+            #         for tileName in t.keys():
+            #             tileDict[tileName]=t[tileName]
+            ###
         # Write MEFs and stitched versions
         if config.rank == 0:
             if writeMEF == True and MEFPath is not None and len(tileDict) > 0:
@@ -413,7 +428,6 @@ def makeRMSTables(config):
                 selFnCollection[footprintDict['label']].append(selFnDict)
 
     if config.MPIEnabled == True:
-        #config.comm.barrier()
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank == 0:
             print("... gathered RMS tables")
