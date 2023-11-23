@@ -375,7 +375,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             if writeMEF == True and MEFPath is not None and len(tileDict) > 0:
                 tileDict.saveMEF(MEFPath, compressionType = compressionType)
             if writeStitched == True and stitchedPath is not None and len(tileDict) > 0:
-                tileDict.saveStitchedFITS(stitchedPath, config.origWCS)
+                tileDict.saveStitchedFITS(stitchedPath, config.origWCS, compressionType = compressionType)
             del tileDict
 
     return optimalCatalog
