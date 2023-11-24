@@ -346,30 +346,28 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
         compressionType=compressionTypeList[i]
         # MPI stuff
         if (writeMEF == True or writeStitched == True) and config.MPIEnabled == True:
-            ###
-            gathered_tileDicts=config.comm.gather(tileDict, root = 0)
-            if config.rank == 0:
-                print("... gathered %s" % (label))
-                for rankTileDict in gathered_tileDicts:
-                    for key in rankTileDict:
-                        if key not in tileDict:
-                            tileDict[key]=rankTileDict[key]
-            else:
-                del tileDict
-            ###
-            # if config.rank > 0:
-            #     config.comm.send(tileDict, dest = 0)
-            #     del tileDict
-            # elif config.rank == 0:
-            #     gathered_tileDicts=[]
-            #     gathered_tileDicts.append(tileDict)
-            #     for source in range(1, config.size):
-            #         gathered_tileDicts.append(config.comm.recv(source = source))
+            # Hmm. This isn't reliable on wits-core at least
+            # gathered_tileDicts=config.comm.gather(tileDict, root = 0)
+            # if config.rank == 0:
             #     print("... gathered %s" % (label))
-            #     for t in gathered_tileDicts:
-            #         for tileName in t.keys():
-            #             tileDict[tileName]=t[tileName]
-            ###
+            #     for rankTileDict in gathered_tileDicts:
+            #         for key in rankTileDict:
+            #             if key not in tileDict:
+            #                 tileDict[key]=rankTileDict[key]
+            # else:
+            #     del tileDict
+            if config.rank > 0:
+                config.comm.send(tileDict, dest = 0)
+                del tileDict
+            elif config.rank == 0:
+                gathered_tileDicts=[]
+                gathered_tileDicts.append(tileDict)
+                for source in range(1, config.size):
+                    gathered_tileDicts.append(config.comm.recv(source = source))
+                print("... gathered %s" % (label))
+                for t in gathered_tileDicts:
+                    for tileName in t.keys():
+                        tileDict[tileName]=t[tileName]
         # Write MEFs and stitched versions
         if config.rank == 0:
             if writeMEF == True and MEFPath is not None and len(tileDict) > 0:
