@@ -140,7 +140,7 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
                               makeOutputDirs = False, setUpMaps = True, writeTileInfo = False,
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
-    if config.rank == 0: print(">>> Number of tiles = %d" % (len(config.tileNames)))
+    # if config.rank == 0: print(">>> Number of tiles = %d" % (len(config.tileNames)))
 
     baseDir, fileName=os.path.split(args.outputFileName)
     if baseDir != '':
@@ -193,7 +193,7 @@ if __name__ == '__main__':
         t0=time.time()
         tab=atpy.Table().read(args.catalog)
         t1=time.time()
-        print("... loaded input catalog (took %.3f sec ; rank = %d)" % (t1-t0, config.rank))
+        # print("... loaded input catalog (took %.3f sec ; rank = %d)" % (t1-t0, config.rank))
 
     # Optionally override the fiducial cosmology (only useful for cluster sims)
     keywords=['OM0', 'OB0', 'H0', 'SIGMA8', 'NS']
@@ -250,10 +250,10 @@ if __name__ == '__main__':
     if config.MPIEnabled == True:
         config.comm.barrier()
         if config.rank > 0:
-            print("... rank = %d sending sky model tiles ..." % (config.rank))
+            print("... rank = %d sending sky model tiles" % (config.rank))
             config.comm.send(modelsDict, dest = 0)
         elif config.rank == 0:
-            print("... gathering sky model tiles ...")
+            print("... gathering sky model tiles")
             gathered_modelsDicts=[]
             gathered_modelsDicts.append(modelsDict)
             for source in range(1, config.size):

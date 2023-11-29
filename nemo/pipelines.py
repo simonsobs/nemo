@@ -245,9 +245,9 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
 
             # New behavior - only save stitched tiles [and make stitched maps even if not tiled]
             if 'saveFilteredMaps' in f['params'] and f['params']['saveFilteredMaps'] == True:
-                stitchedFilteredMapDict[tileName]=filteredMapDict['data']
-                stitchedSNMapDict[tileName]=filteredMapDict['SNMap']
-                stitchedRMSMapDict[tileName]=filteredMapDict['RMSMap']
+                stitchedFilteredMapDict[tileName]=filteredMapDict['data'].astype(np.float32)
+                stitchedSNMapDict[tileName]=filteredMapDict['SNMap'].astype(np.float32)
+                stitchedRMSMapDict[tileName]=filteredMapDict['RMSMap'].astype(np.float32)
                 # If needed for debugging new behaviour
                 # maps.saveFITS(filteredMapFileName, filteredMapDict['data'], filteredMapDict['wcs'])
                 # maps.saveFITS(SNMapFileName, filteredMapDict['SNMap'], filteredMapDict['wcs'])

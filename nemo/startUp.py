@@ -417,7 +417,7 @@ class NemoConfig(object):
                 self.tileNames=rankExtNames[self.rank]
             else:
                 self.tileNames=[]
-            if self.rank == 0:
+            if self.rank == 0 and verbose == True:
                 print(">>> Total tiles = %d ; total processes = %d ; balanced number of processes = %d" % (len(self.allTileNames), self.size, balancedNumProcesses))
 
         # # MPI: just divide up tiles pointed at by tileNames among processes
