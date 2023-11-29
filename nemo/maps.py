@@ -583,7 +583,7 @@ class TileDict(dict):
         """
 
         wcs=stitchedWCS
-        d=np.zeros([stitchedWCS.header['NAXIS2'], stitchedWCS.header['NAXIS1']])
+        d=np.zeros([stitchedWCS.header['NAXIS2'], stitchedWCS.header['NAXIS1']], dtype = np.float32)
         for tileName in self.keys():
             if self.tileCoordsDict[tileName]['reprojectToTan'] == True:
                 carWCS=astWCS.WCS(self.tileCoordsDict[tileName]['header'], mode = 'pyfits')

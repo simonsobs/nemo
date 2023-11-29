@@ -366,7 +366,7 @@ class MapFilter(object):
             except:
                 raise Exception("Need to give numNoiseBins in noiseParams when using noiseGridArcmin = 'smart'")
             binEdges=np.linspace(medWeights.min(), medWeights.max(), numBins)
-            RMSMap=np.zeros(medWeights.shape)
+            RMSMap=np.zeros(medWeights.shape, dtype = np.float32)
             apodMask=np.not_equal(mapData, 0)
             for i in range(len(binEdges)-1):
                 # Find area of similar weight
@@ -418,7 +418,7 @@ class MapFilter(object):
             yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
             xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
             apodMask=np.not_equal(mapData, 0)
-            RMSMap=np.zeros(mapData.shape)
+            RMSMap=np.zeros(mapData.shape, dtype = np.float32)
             # For this mode, interpreted as number of noise bins per cell
             if 'numNoiseBins' in self.params['noiseParams'].keys():
                 numBins=self.params['noiseParams']['numNoiseBins']
@@ -618,7 +618,7 @@ class MatchedFilter(MapFilter):
             fSignalsArr=np.array(fSignalsArr)
                     
             # Build the filter itself
-            self.filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]])
+            self.filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]], dtype = np.float32)
             for y in range(0, self.shape[0]):
                 for x in range(0, self.shape[1]):
                     try:
@@ -716,7 +716,7 @@ class MatchedFilter(MapFilter):
         # Make noise and S/N maps
         RMSMap=self.makeNoiseMap(filteredMap)
         validMask=np.greater(RMSMap, 0)
-        SNMap=np.zeros(filteredMap.shape)+filteredMap
+        SNMap=np.zeros(filteredMap.shape, dtype = np.float32)+filteredMap
         SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
                 
         # Use rank filter to zap edges where RMS will be artificially low - we use a bit of a buffer here
@@ -732,7 +732,7 @@ class MatchedFilter(MapFilter):
             trimSizePix=0.0
         if trimSizePix  > 0:
             edgeCheck=ndimage.rank_filter(abs(filteredMap+(1-psMask)), 0, size = (trimSizePix, trimSizePix))
-            edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = float)
+            edgeCheck=np.array(np.greater(edgeCheck, 0), dtype = np.float32)
         else:
             edgeCheck=np.ones(filteredMap.shape)
         filteredMap=filteredMap*edgeCheck
@@ -782,7 +782,7 @@ class MatchedFilter(MapFilter):
         
         """
         with pyfits.open(self.filterFileName) as img:
-            self.filt=img[0].data
+            self.filt=img[0].data.astype(np.float32)
             self.signalNorm=img[0].header['SIGNORM']
         self.loadFRelWeights()
         
@@ -806,7 +806,7 @@ class MatchedFilter(MapFilter):
         lxOut, lyOut=enmap.laxes([shape[1], shape[2]], self.enwcs)
         xOut=lxToX(lxOut)  
         yOut=lyToY(lyOut)
-        reshapedFilt=np.zeros(shape)
+        reshapedFilt=np.zeros(shape, dtype = np.float32)
         for i in range(self.filt.shape[0]):
             filtInterp=interpolate.interp2d(np.arange(ly.shape[0]), np.arange(lx.shape[0]), self.filt[i])
             reshapedFilt[i]=filtInterp(yOut, xOut)
@@ -841,7 +841,7 @@ class MatchedFilter(MapFilter):
         else:
             fMapsToFilter=enmap.fft(enmap.apod(mapDataToFilter, self.apodPix))
 
-        filteredMap=np.real(enmap.ifft(fMapsToFilter*filt, normalize = False)).sum(axis = 0)
+        filteredMap=np.real(enmap.ifft(fMapsToFilter*filt, normalize = False)).sum(axis = 0).astype(np.float32)
 
         # Optional additional high-pass filter
         if 'bckSub' in self.params.keys() and 'bckSubScaleArcmin' in self.params.keys() and self.params['bckSub'] == True:
@@ -1108,7 +1108,7 @@ class RealSpaceMatchedFilter(MapFilter):
         # Make noise and S/N maps
         RMSMap=self.makeNoiseMap(filteredMap)
         validMask=np.greater(RMSMap, 0)
-        SNMap=np.zeros(filteredMap.shape)+filteredMap
+        SNMap=np.zeros(filteredMap.shape, dtype = np.float32)+filteredMap
         SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
         
         # Units etc.
@@ -1175,7 +1175,7 @@ class RealSpaceMatchedFilter(MapFilter):
         """
         
         # Apply the high pass filter - subtract background on larger scales using difference of Gaussians 
-        filteredMap=np.zeros(mapDataToFilter.shape)
+        filteredMap=np.zeros(mapDataToFilter.shape, dtype = np.float32)
         if self.params['bckSub'] == True and self.bckSubScaleArcmin > 0:
             for i in range(mapDataToFilter.shape[0]):
                 filteredMap[i]=maps.subtractBackground(mapDataToFilter[i], self.wcs, 
@@ -1199,7 +1199,7 @@ class RealSpaceMatchedFilter(MapFilter):
                 fRelWeight=filteredSignalPlane.flatten()[maxIndex]/totalSignal
                 self.fRelWeights[freqGHz]=fRelWeight
                 
-        filteredMap=filteredMap.sum(axis = 0)
+        filteredMap=filteredMap.sum(axis = 0).astype(np.float32)
         
         # Apply the normalisation
         filteredMap=filteredMap*self.signalNorm
