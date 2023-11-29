@@ -10,7 +10,7 @@ and capable of analyzing maps that will be produced by the
 * **License:** `BSD 3-Clause <https://github.com/simonsobs/nemo/blob/main/LICENSE>`_
 * **Authors:** Matt Hilton, with contributions from Simone Aiola, David Alonso,
   Boris Bolliet, Matthew Hasselfield, Kevin Huffenberger, Toby Marriage, Niall MacCrann,
-  Sigurd Naess, and Cristóbal Sifón (not all reflected on GitHub).
+  Sigurd Naess, Cristóbal Sifón, and Íñigo Zubeldia (not all reflected on GitHub).
 * **Installation:** ``pip install nemo-sz``
 * **Support:** Please use the `GitHub issues page <https://github.com/simonsobs/nemo/issues>`_, 
   and/or contact `Matt Hilton <mailto:matt.hilton@mykolab.com>`_.

@@ -175,7 +175,6 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     catalogDict={}
     areaMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     flagMaskDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
-    # if config.parDict['stitchTiles'] == True:
     stitchedFilteredMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     stitchedSNMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     stitchedRMSMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
