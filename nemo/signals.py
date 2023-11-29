@@ -1000,7 +1000,7 @@ def fitQ(config):
         #zRange=[zRange[-3]]
 
         # Actually measuring Q...
-        extMap=np.zeros(filterObj.shape)
+        extMap=np.zeros(filterObj.shape, dtype = np.float32)
         wcs=filterObj.wcs
         nativeNPix=extMap.shape[0]*extMap.shape[1]
         # Uncomment to pad signal maps [but then need to adjust normalization]
@@ -1031,7 +1031,7 @@ def fitQ(config):
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
-        signalMap=np.zeros(shape)
+        signalMap=np.zeros(shape, dtype = np.float32)
         Q=[]
         QTheta500Arcmin=[]
         Qz=[]

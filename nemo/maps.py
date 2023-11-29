@@ -1651,7 +1651,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     """
     
-    modelMap=np.zeros(shape, dtype = float)
+    modelMap=np.zeros(shape, dtype = np.float32)
     
     if type(catalog) == str:
         catalog=atpy.Table().read(catalog)

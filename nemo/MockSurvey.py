@@ -27,7 +27,7 @@ from astLib import *
 import time
 
 # CLASS-SZ is quite a big import (tensorflow) if we don't need it
-noCLASS=os.environ.get('NEMO_NOCLASS', None)
+noCLASS=os.environ.get('NEMO_NOCLASSSZ', None)
 if noCLASS is None:
     try:
         from classy_sz import Class
