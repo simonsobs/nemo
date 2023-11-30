@@ -1233,7 +1233,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
     plt.close()
 
 #------------------------------------------------------------------------------------------------------------
-def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
+def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = None):
     """Given a completeness (log\ :sub:`10` mass, z) grid as made by :meth:`calcCompleteness`, return the
     mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`) as a function of redshift at the given completeness
     level. By default, the same binning as the given `mockSurvey` object is used - this can be overridden by
@@ -1253,7 +1253,7 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
     
     massLimit=np.power(10, mockSurvey.log10M[np.argmin(abs(compMz-completenessFraction), axis = 1)])/1e14
     
-    if zBinEdges != []:
+    if zBinEdges is not None and len(zBinEdges) > 0:
         binnedMassLimit=np.zeros(len(zBinEdges)-1)
         for i in range(len(zBinEdges)-1):
             binnedMassLimit[i]=np.average(massLimit[np.logical_and(mockSurvey.z > zBinEdges[i], mockSurvey.z <= zBinEdges[i+1])])
