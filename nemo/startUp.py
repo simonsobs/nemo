@@ -397,8 +397,8 @@ class NemoConfig(object):
             pixTab['numPix']=tilePix
             pixTab['weight']=pixTab['numPix']/max(pixTab['numPix'])
             pixTab.sort('numPix')
-            # Optimal number - if scaling isn't an issue
-            balancedNumProcesses=int(round((pixTab['weight'] <= 0.5).sum()/2))+(pixTab['weight'] > 0.5).sum()
+            # Optimal number - if scaling isn't an issue [+1 because rank 0 doesn't process tiles]
+            balancedNumProcesses=1+int(round((pixTab['weight'] <= 0.5).sum()/2))+(pixTab['weight'] > 0.5).sum()
             rankExtNames={}
             rankCounter=1
             weightCounter=0
