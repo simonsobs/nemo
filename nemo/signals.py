@@ -512,7 +512,7 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     
     If cosmoModel is None, use default (Om0, Ol0, H0) = (0.3, 0.7, 70 km/s/Mpc) cosmology.
     
-    Used by ArnaudModelFilter
+    Used by BattagliaModelFilter
     
     """
 
@@ -551,20 +551,23 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     GNFWParams['gamma']=0.3
     GNFWParams['alpha']=1.0    
     
-    # Adjust tol for speed vs. range of b covered
-    # bRange=np.linspace(0, 30, 1000) # old
+    # Slower, original code
+    # bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
+    # cylPProfile=[]
+    # tol=1e-6
+    # for i in range(len(bRange)):
+    #     b=bRange[i]
+    #     cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
+    #     if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
+    #         break
+    # cylPProfile=np.array(cylPProfile)
+    # bRange=bRange[:i+1]
+    # cylPProfile=cylPProfile/cylPProfile.max()
+
+    # Much faster, based on routines in pixell but for our A10-style GNFW function
     bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
-    cylPProfile=[]
-    tol=1e-6
-    for i in range(len(bRange)):
-        b=bRange[i]
-        cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
-        if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
-            break
-    cylPProfile=np.array(cylPProfile)
-    bRange=bRange[:i+1]
-    
-    # Normalise to 1 at centre
+    cylPProfile=gnfw.tsz_profile_los(bRange, c = GNFWParams['c500'], alpha = GNFWParams['alpha'],
+                                     beta = GNFWParams['beta'], gamma = GNFWParams['gamma'])
     cylPProfile=cylPProfile/cylPProfile.max()
 
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
