@@ -11,7 +11,6 @@ import astropy
 import astropy.wcs as enwcs
 import astropy.io.fits as pyfits
 import astropy.constants as constants
-#from astropy.cosmology import FlatLambdaCDM
 from astLib import *
 from scipy import ndimage
 from scipy import interpolate
@@ -42,6 +41,7 @@ np.random.seed()
 #------------------------------------------------------------------------------------------------------------
 # Global constants (we could move others here but then need to give chunky obvious names, not just e.g. h)
 TCMB=2.72548
+CLight=299792458 # m/s
 Mpc_in_cm=constants.pc.value*100*1e6
 MSun_in_g=constants.M_sun.value*1000
 
@@ -471,17 +471,19 @@ def makeArnaudModelProfile(z, M500, GNFWParams = 'default', cosmoModel = None, b
         bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
     else:
         raise Exception("'binning' must be 'linear' or 'log' (given '%s')." % (binning))
-    cylPProfile=[]
-    tol=1e-6
-    for i in range(len(bRange)):
-        b=bRange[i]
-        cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
-        if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
-            break
-    cylPProfile=np.array(cylPProfile)
-    bRange=bRange[:i+1]
-    
-    # Normalise to 1 at centre
+
+    # Older, much slower code - can now be removed
+    # cylPProfile=[]
+    # tol=1e-6
+    # for i in range(len(bRange)):
+    #     b=bRange[i]
+    #     cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
+    # cylPProfile=np.array(cylPProfile)
+    # cylPProfile_orig=cylPProfile/cylPProfile.max()
+
+    # Much faster, based on routines in pixell but for our A10-style GNFW function
+    cylPProfile=gnfw.tsz_profile_los(bRange, c = GNFWParams['c500'], alpha = GNFWParams['alpha'],
+                                     beta = GNFWParams['beta'], gamma = GNFWParams['gamma'])
     cylPProfile=cylPProfile/cylPProfile.max()
 
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
@@ -510,7 +512,7 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     
     If cosmoModel is None, use default (Om0, Ol0, H0) = (0.3, 0.7, 70 km/s/Mpc) cosmology.
     
-    Used by ArnaudModelFilter
+    Used by BattagliaModelFilter
     
     """
 
@@ -549,20 +551,23 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     GNFWParams['gamma']=0.3
     GNFWParams['alpha']=1.0    
     
-    # Adjust tol for speed vs. range of b covered
-    # bRange=np.linspace(0, 30, 1000) # old
+    # Slower, original code
+    # bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
+    # cylPProfile=[]
+    # tol=1e-6
+    # for i in range(len(bRange)):
+    #     b=bRange[i]
+    #     cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
+    #     if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
+    #         break
+    # cylPProfile=np.array(cylPProfile)
+    # bRange=bRange[:i+1]
+    # cylPProfile=cylPProfile/cylPProfile.max()
+
+    # Much faster, based on routines in pixell but for our A10-style GNFW function
     bRange=np.logspace(np.log10(1e-6), np.log10(100), 300)
-    cylPProfile=[]
-    tol=1e-6
-    for i in range(len(bRange)):
-        b=bRange[i]
-        cylPProfile.append(gnfw.integrated(b, params = GNFWParams))
-        if i > 0 and abs(cylPProfile[i] - cylPProfile[i-1]) < tol:
-            break
-    cylPProfile=np.array(cylPProfile)
-    bRange=bRange[:i+1]
-    
-    # Normalise to 1 at centre
+    cylPProfile=gnfw.tsz_profile_los(bRange, c = GNFWParams['c500'], alpha = GNFWParams['alpha'],
+                                     beta = GNFWParams['beta'], gamma = GNFWParams['gamma'])
     cylPProfile=cylPProfile/cylPProfile.max()
 
     # Calculate R500Mpc, theta500Arcmin corresponding to given mass and redshift
@@ -963,19 +968,23 @@ def fitQ(config):
         t0=time.time()
         print("... fitting Q in tile %s" % (tileName))
 
-        # Load reference scale filter
-        foundFilt=False
-        for filt in config.parDict['mapFilters']:
-            if filt['label'] == config.parDict['photFilter']:
-                foundFilt=True
-                break
-        if foundFilt == False:
-            raise Exception("couldn't find filter that matches photFilter")
-        filterClass=eval('filters.%s' % (filt['class']))
-        filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
-                              tileName = tileName, 
-                              diagnosticsDir = config.diagnosticsDir)
-        filterObj.loadFilter()
+        # Load reference scale filter (it may be in memory already)
+        if tileName in config.cachedFilters.keys():
+            filterObj=config.cachedFilters[tileName]
+        else:
+            # Otherwise, can still get from disk
+            foundFilt=False
+            for filt in config.parDict['mapFilters']:
+                if filt['label'] == config.parDict['photFilter']:
+                    foundFilt=True
+                    break
+            if foundFilt == False:
+                raise Exception("couldn't find filter that matches photFilter")
+            filterClass=eval('filters.%s' % (filt['class']))
+            filterObj=filterClass(filt['label'], config.unfilteredMapsDictList, filt['params'], \
+                                tileName = tileName,
+                                diagnosticsDir = config.diagnosticsDir)
+            filterObj.loadFilter()
         
         # Real space kernel or Fourier space filter?
         if issubclass(filterObj.__class__, filters.RealSpaceMatchedFilter) == True:
@@ -994,7 +1003,7 @@ def fitQ(config):
         #zRange=[zRange[-3]]
 
         # Actually measuring Q...
-        extMap=np.zeros(filterObj.shape)
+        extMap=np.zeros(filterObj.shape, dtype = np.float32)
         wcs=filterObj.wcs
         nativeNPix=extMap.shape[0]*extMap.shape[1]
         # Uncomment to pad signal maps [but then need to adjust normalization]
@@ -1025,7 +1034,7 @@ def fitQ(config):
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
         theta500ArcminDict={}
-        signalMap=np.zeros(shape)
+        signalMap=np.zeros(shape, dtype = np.float32)
         Q=[]
         QTheta500Arcmin=[]
         Qz=[]
@@ -1092,7 +1101,6 @@ def fitQ(config):
         del Q, filterObj #, clipDict
 
     if config.MPIEnabled == True:
-        #config.comm.barrier()
         QTabDictList=config.comm.gather(QTabDict, root = 0)
         if config.rank == 0:
             print("... gathered Q fits")
@@ -1116,10 +1124,6 @@ def fitQ(config):
 
     if config.rank == 0:
         print("... after Q fits completed: time since start = %.3f sec" % (time.time()-config._timeStarted))
-
-    ## Make sure we all leave here together
-    #if config.MPIEnabled == True:
-        #config.comm.barrier()
 
 #------------------------------------------------------------------------------------------------------------
 def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):
@@ -1474,61 +1478,6 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         return P
 
 #------------------------------------------------------------------------------------------------------------
-# Mass conversion routines
-
-# For getting x(f) - see Hu & Kravtsov
-x=np.linspace(1e-3, 10, 1000)
-fx=(x**3)*(np.log(1+1./x)-np.power(1+x, -1))
-XF_TCK=interpolate.splrep(fx, x)
-FX_TCK=interpolate.splrep(x, fx)
-
-#------------------------------------------------------------------------------------------------------------
-def gz(zIn, zMax = 1000, dz = 0.1):
-    """Calculates linear growth factor at redshift z. Use Dz if you want normalised to D(z) = 1.0 at z = 0.
-    
-    See http://www.astronomy.ohio-state.edu/~dhw/A873/notes8.pdf for some notes on this.
-    
-    """
-    
-    zRange=np.arange(zIn, zMax, dz)
-    HzPrime=[]
-    for zPrime in zRange:
-        HzPrime.append(astCalc.Ez(zPrime)*astCalc.H0)
-    HzPrime=np.array(HzPrime)
-    gz=astCalc.Ez(zIn)*np.trapz((np.gradient(zRange)*(1+zRange)) / np.power(HzPrime, 3), zRange)
-    
-    return gz
-
-#------------------------------------------------------------------------------------------------------------
-def calcDz(zIn):
-    """Calculate linear growth factor, normalised to D(z) = 1.0 at z = 0.
-    
-    """
-    return gz(zIn)/gz(0.0)
-
-#------------------------------------------------------------------------------------------------------------
-def criticalDensity(z):
-    """Returns the critical density at the given z.
-    
-    """
-    
-    G=4.301e-9  # in MSun-1 km2 s-2 Mpc, see Robotham GAMA groups paper
-    Hz=astCalc.H0*astCalc.Ez(z)
-    rho_crit=((3*np.power(Hz, 2))/(8*np.pi*G))
-    
-    return rho_crit
-
-#------------------------------------------------------------------------------------------------------------
-def meanDensity(z):
-    """Returns the mean density at the given z.
-    
-    """
-    
-    rho_mean=astCalc.OmegaMz(z)*criticalDensity(z)
-    
-    return rho_mean  
-
-#------------------------------------------------------------------------------------------------------------
 def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel, c_m_relation = 'Bhattacharya13'):
     """Convert some mass at some z defined using MDef1 into a mass defined according to MDef2.
 
@@ -1571,53 +1520,3 @@ def M500cToMdef(M500c, z, massDef, cosmoModel, c_m_relation = 'Bhattacharya13'):
 
     return MDef1ToMDef2(M500c, z, ccl.halos.MassDef(500, "critical"), massDef, cosmoModel,
                         c_m_relation = c_m_relation)
-
-#------------------------------------------------------------------------------------------------------------
-def convertM200mToM500c(M200m, z):
-    """Returns M500c (MSun), R500c (Mpc) for given M200m and redshift. Uses the Bhattacharya et al. c-M
-    relation: http://adsabs.harvard.edu/abs/2013ApJ...766...32B
-
-    See also Hu & Kravtsov: http://iopscience.iop.org/article/10.1086/345846/pdf
-    
-    """
-        
-    # c-M relation for full cluster sample
-    Dz=calcDz(z)    # <--- this is the slow part. 3 seconds!
-    nu200m=(1./Dz)*(1.12*np.power(M200m / (5e13 * np.power(astCalc.H0/100., -1)), 0.3)+0.53)
-    c200m=np.power(Dz, 1.15)*9.0*np.power(nu200m, -0.29)
-    
-    rho_crit=criticalDensity(z)
-    rho_mean=meanDensity(z)
-    R200m=np.power((3*M200m)/(4*np.pi*200*rho_mean), 1/3.)
-
-    rs=R200m/c200m
-    
-    f_rsOverR500c=((500*rho_crit) / (200*rho_mean)) * interpolate.splev(1./c200m, FX_TCK)
-    x_rsOverR500c=interpolate.splev(f_rsOverR500c, XF_TCK)
-    R500c=rs/x_rsOverR500c
-
-    M500c=(4/3.0)*np.pi*R500c**3*(500*rho_crit)
-        
-    return M500c, R500c
-
-#------------------------------------------------------------------------------------------------------------
-def convertM500cToM200m(M500c, z):
-    """Returns M200m given M500c
-    
-    """
-    
-    tolerance=1e-5
-    scaleFactor=3.0
-    ratio=1e6
-    count=0
-    while abs(1.0-ratio) > tolerance:
-        testM500c, testR500c=convertM200mToM500c(scaleFactor*M500c, z)
-        ratio=M500c/testM500c
-        scaleFactor=scaleFactor*ratio
-        count=count+1
-        if count > 10:
-            raise Exception("M500c -> M200m conversion didn't converge quickly enough")
-        
-    M200m=scaleFactor*M500c
-    
-    return M200m

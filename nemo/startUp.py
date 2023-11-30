@@ -10,6 +10,7 @@ import sys
 import yaml
 import copy
 import astropy.io.fits as pyfits
+import astropy.table as atpy
 from astLib import astWCS, astImages
 from nemo import signals
 import numpy as np
@@ -175,6 +176,9 @@ def parseConfigFile(parDictFileName, verbose = False):
             if key not in parDict['massOptions'].keys():
                 parDict['massOptions'][key]=defaults[key]
 
+    # Stuff which is now mandatory... left here until we update everywhere in code + docs
+    parDict['stitchTiles']=True
+
     # This isn't actually being used, but has been left in for now
     parDict['_file_last_modified_ctime']=os.path.getctime(parDictFileName)
     
@@ -298,10 +302,6 @@ class NemoConfig(object):
         if sourceInjectionTest == True:
             self.parDict['sourceInjectionTest']=True
 
-        # Source injection test is now required for calculation of the selection function
-        #if 'calcSelFn' in self.parDict.keys() and self.parDict['calcSelFn'] == True:
-        #    self.parDict['sourceInjectionTest']=True
-
         # We want the original map WCS and shape (for using stitchMaps later)
         try:
             with pyfits.open(self.parDict['unfilteredMaps'][0]['mapFileName']) as img:
@@ -317,22 +317,17 @@ class NemoConfig(object):
             self.origWCS=None
             self.origShape=None
                 
-        # Downsampled WCS and shape for 'quicklook' stitched images
-        # NOTE: This gets used by default for mass limit maps, so left in even when not used otherwise
-        #self.quicklookScale=0.25
-        #if self.origWCS is not None:
-            #self.quicklookShape, self.quicklookWCS=maps.shrinkWCS(self.origShape, self.origWCS, self.quicklookScale)
-        #else:
-            #if self.verbose: print("... WARNING: couldn't read map to get WCS - making quick look maps will fail")
-
         # We keep a copy of the original parameters dictionary in case they are overridden later and we want to
         # restore them (e.g., if running source-free sims).
         self._origParDict=copy.deepcopy(self.parDict)
                                 
         # Output dirs
+        self.rootOutDir=None
         if 'outputDir' in list(self.parDict.keys()):
             self.rootOutDir=os.path.abspath(self.parDict['outputDir'])
-        else:
+            # if os.path.exists(self.rootOutDir) == False: This isn't helpful really
+            #     self.rootOutDir=None
+        if self.rootOutDir is None:
             if self.configFileName.find(".yml") == -1 and makeOutputDirs == True:
                 raise Exception("File must have .yml extension")
             self.rootOutDir=os.getcwd()+os.path.sep+os.path.split(self.configFileName.replace(".yml", ""))[-1]
@@ -386,31 +381,76 @@ class NemoConfig(object):
         # (for when we don't need to be running in parallel - see, e.g., signals.getFRelWeights)
         self.allTileNames=self.tileNames.copy()
 
-        # MPI: just divide up tiles pointed at by tileNames among processes
+        # MPI: Divide up number of pixels to process as evenly as we can
+        # For stuff with weight < 0.5: assign two tiles per process, otherwise one
         if self.MPIEnabled == True and divideTilesByProcesses == True:
-            # New - bit clunky but distributes more evenly
+            totalPix=0
+            tilePix=np.zeros(len(self.tileNames))
+            index=0
+            for key in self.tileNames:
+                tilePix[index]=self.tileCoordsDict[key]['numPix']
+                totalPix=totalPix+tilePix[index]
+                index=index+1
+            targetPixPerProcess=totalPix/self.size
+            pixTab=atpy.Table()
+            pixTab['tileName']=self.tileNames
+            pixTab['numPix']=tilePix
+            pixTab['weight']=pixTab['numPix']/max(pixTab['numPix'])
+            pixTab.sort('numPix')
+            # Optimal number - if scaling isn't an issue [+1 because rank 0 doesn't process tiles]
+            balancedNumProcesses=1+int(round((pixTab['weight'] <= 0.5).sum()/2))+(pixTab['weight'] > 0.5).sum()
             rankExtNames={}
             rankCounter=1
+            weightCounter=0
+            weightLimit=0.51
             for e in self.tileNames:
                 if rankCounter not in rankExtNames:
                     rankExtNames[rankCounter]=[]
                 rankExtNames[rankCounter].append(e)
-                rankCounter=rankCounter+1
+                weightCounter=weightCounter+pixTab['weight'][pixTab['tileName'] == e]
+                if weightCounter > weightLimit:
+                    rankCounter=rankCounter+1
+                    weightCounter=0
                 if rankCounter > self.size-1:
                     rankCounter=1
             if self.rank in rankExtNames.keys():
                 self.tileNames=rankExtNames[self.rank]
             else:
                 self.tileNames=[]
+            if self.rank == 0 and verbose == True:
+                print(">>> Total tiles = %d ; total processes = %d ; balanced number of processes = %d" % (len(self.allTileNames), self.size, balancedNumProcesses))
 
-        # We're now writing maps per tile into their own dir (friendlier for Lustre)
+        # # MPI: just divide up tiles pointed at by tileNames among processes
+        # if self.MPIEnabled == True and divideTilesByProcesses == True:
+        #     # New - bit clunky but distributes more evenly
+        #     rankExtNames={}
+        #     rankCounter=1
+        #     for e in self.tileNames:
+        #         if rankCounter not in rankExtNames:
+        #             rankExtNames[rankCounter]=[]
+        #         rankExtNames[rankCounter].append(e)
+        #         rankCounter=rankCounter+1
+        #         if rankCounter > self.size-1:
+        #             rankCounter=1
+        #     if self.rank in rankExtNames.keys():
+        #         self.tileNames=rankExtNames[self.rank]
+        #     else:
+        #         self.tileNames=[]
+        # if self.rank == 0:
+        #     print(">>> Total tiles = %d ; total processes = %d" % (len(self.allTileNames), self.size))
+
+        # We're now writing items per tile into their own dir (friendlier for Lustre)
+        # NOTE: No longer writing individual tile filtered maps - only stitched versions
         if makeOutputDirs == True:
             for tileName in self.tileNames:
-                for d in [self.diagnosticsDir, self.filteredMapsDir, self.selFnDir]:
+                for d in [self.diagnosticsDir, self.selFnDir]:
                     os.makedirs(d+os.path.sep+tileName, exist_ok = True)
 
         # Identify filter sets, for enabling new multi-pass filtering and object finding
         self._identifyFilterSets()
+
+        # Cache filters in memory to save some I/O
+        self.cachedFilters={}
         
         # For debugging...
         if self.MPIEnabled == True and verbose == True:
@@ -449,10 +489,11 @@ class NemoConfig(object):
 
         """
 
-        if cacheFileName is not None and os.path.exists(cacheFileName):
-            with open(cacheFileName, "r") as stream:
-                self.parDict['tileDefinitions']=yaml.safe_load(stream)
-            return None
+        # This is a bad idea if we're doing re-runs with -T to check tiling
+        # if cacheFileName is not None and os.path.exists(cacheFileName):
+        #     with open(cacheFileName, "r") as stream:
+        #         self.parDict['tileDefinitions']=yaml.safe_load(stream)
+        #     return None
 
         if 'tileDefinitions' in self.parDict.keys() and type(self.parDict['tileDefinitions']) == dict:
             # If we're not given a survey mask, we'll make one up from the map image itself
@@ -565,21 +606,6 @@ class NemoConfig(object):
                     ra1=-(360-ra1)
                 clip=astImages.clipUsingRADecCoords(mapData, wcs, ra1, ra0, dec0, dec1)
 
-                # This bit is necessary to avoid Q -> 0.2 ish problem with Fourier filter
-                # (which happens if image dimensions are both odd)
-                # I _think_ this is related to the interpolation done in signals.fitQ
-                # if (clip['data'].shape[0] % 2 != 0 and clip['data'].shape[1] % 2 != 0) == True:
-                #     newArr=np.zeros([clip['data'].shape[0]+1, clip['data'].shape[1]])
-                #     newArr[:clip['data'].shape[0], :]=clip['data']
-                #     newWCS=clip['wcs'].copy()
-                #     newWCS.header['NAXIS1']=newWCS.header['NAXIS1']+1
-                #     newWCS.updateFromHeader()
-                #     testClip=astImages.clipUsingRADecCoords(newArr, newWCS, ra1, ra0, dec0, dec1)
-                #     # Check if we see the same sky, if not and we trip this, we need to think about this more
-                #     assert((testClip['data']-clip['data']).sum() == 0)
-                #     clip['data']=newArr
-                #     clip['wcs']=newWCS
-
                 # Storing clip coords etc. so can stitch together later
                 # areaMaskSection here is used to define the region that would be kept (takes out overlap)
                 ra0, dec0=wcs.pix2wcs(x0, y0)
@@ -593,7 +619,8 @@ class NemoConfig(object):
                 if name not in clipCoordsDict:
                     clipCoordsDict[name]={'clippedSection': clip['clippedSection'], 'header': clip['wcs'].header,
                                           'areaMaskInClipSection': [clip_x0, clip_x1, clip_y0, clip_y1],
-                                          'reprojectToTan': self.parDict['reprojectToTan']}
+                                          'reprojectToTan': self.parDict['reprojectToTan'],
+                                          'numPix': int(abs(clip_x1-clip_x0)*abs(clip_y1-clip_y0))}
                     if self.verbose:
                         print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
 

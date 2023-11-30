@@ -66,8 +66,6 @@ class SelFn(object):
             calculations.
         tileNames (:obj:`list`, optional): If given, restrict the :class:`SelFn` object to use only these
             tiles.
-        enableDrawSample (:obj:`bool`, optional): This only needs to be set to `True` for generating mock
-            catalogs.
         mockOversampleFactor (:obj:`float`, optional): Used only by :func:`generateMockSample`. Sets
             the oversampling level for the generated mock sample.
         downsampleRMS (:obj:`float`, optional): Downsample the resolution of the RMS (noise) tables by
@@ -131,7 +129,7 @@ class SelFn(object):
     """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprint = None, zStep = 0.01,
-                 zMax = 3.0, tileNames = None, enableDrawSample = False, mockOversampleFactor = 1.0,
+                 zMax = 3.0, tileNames = None, mockOversampleFactor = 1.0,
                  downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
@@ -282,7 +280,7 @@ class SelFn(object):
             sigma8=self.scalingRelationDict['sigma8']
             ns=self.scalingRelationDict['ns']
             self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
-                                                  zStep = self.zStep, enableDrawSample = enableDrawSample,
+                                                  zStep = self.zStep,
                                                   delta = delta, rhoType = rhoType, massFunction = massFunction)
             self.update(H0, Om0, Ob0, sigma8, ns)
 
@@ -1095,7 +1093,7 @@ def completenessByFootprint(config):
         try:
             selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                         footprint = footprintLabel, zStep = 0.1,
-                        enableDrawSample = False, downsampleRMS = False,
+                        downsampleRMS = False,
                         applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
                         delta = config.parDict['massOptions']['delta'],
                         rhoType = config.parDict['massOptions']['rhoType'],
@@ -1235,7 +1233,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
     plt.close()
 
 #------------------------------------------------------------------------------------------------------------
-def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
+def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = None):
     """Given a completeness (log\ :sub:`10` mass, z) grid as made by :meth:`calcCompleteness`, return the
     mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`) as a function of redshift at the given completeness
     level. By default, the same binning as the given `mockSurvey` object is used - this can be overridden by
@@ -1255,7 +1253,7 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = []):
     
     massLimit=np.power(10, mockSurvey.log10M[np.argmin(abs(compMz-completenessFraction), axis = 1)])/1e14
     
-    if zBinEdges != []:
+    if zBinEdges is not None and len(zBinEdges) > 0:
         binnedMassLimit=np.zeros(len(zBinEdges)-1)
         for i in range(len(zBinEdges)-1):
             binnedMassLimit[i]=np.average(massLimit[np.logical_and(mockSurvey.z > zBinEdges[i], mockSurvey.z <= zBinEdges[i+1])])
@@ -1434,7 +1432,7 @@ def makeMassLimitMapsAndPlots(config):
 
     selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                 footprint = None, zStep = 0.1, setUpAreaMask = True,
-                enableDrawSample = False, downsampleRMS = False,
+                downsampleRMS = False,
                 applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
                 delta = config.parDict['massOptions']['delta'],
                 rhoType = config.parDict['massOptions']['rhoType'],

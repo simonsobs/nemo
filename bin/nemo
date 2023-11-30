@@ -107,6 +107,7 @@ if __name__ == '__main__':
             signals.fitQ(config)
 
     # Generates the noise versus area tables, and adds 'footprint_label' columns to output catalogs
+    # config.comm.barrier() # Hopefully not needed
     pipelines.makeRMSTables(config)
 
     # Source injection test - one way to calculate completeness ; needed for position recovery tests
@@ -123,11 +124,7 @@ if __name__ == '__main__':
 
     # Tidying up etc.
     if config.rank == 0:
-        print("... stitching maps and tidying up [time taken to here = %.3f sec]" % (time.time()-config._timeStarted))
-
-        # Stitch together map tiles - full fat versions (this will only work if 'saveFilteredMaps: True')
-        if 'stitchTiles' in config.parDict.keys() and config.parDict['stitchTiles'] == True:
-            maps.stitchTiles(config)
+        print("... tidying up [time taken to here = %.3f sec]" % (time.time()-config._timeStarted))
 
         # Plot tile-averaged position recovery test
         if sourceInjTable is not None:
@@ -154,4 +151,6 @@ if __name__ == '__main__':
             completeness.completenessByFootprint(config)
             if 'massLimitMaps' in config.parDict['selFnOptions'].keys():
                 completeness.makeMassLimitMapsAndPlots(config)
+
+        print(">>> Finished [time taken = %.3f sec]" % (time.time()-config._timeStarted))
 

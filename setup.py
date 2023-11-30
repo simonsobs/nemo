@@ -19,5 +19,5 @@ setup(name='nemo-sz',
       author_email='matt.hilton@wits.ac.za',
       packages=['nemo'],
       package_data={'nemo': ['data/*']},
-      scripts=['bin/nemo', 'bin/nemoMass', 'bin/nemoMock', 'bin/nemoCatalogCheck', 'bin/nemoModel', 'bin/nemoSpec'],
+      scripts=['bin/nemo', 'bin/nemoMass', 'bin/nemoMock', 'bin/nemoCatalogCheck', 'bin/nemoMask', 'bin/nemoModel', 'bin/nemoSpec'],
 )

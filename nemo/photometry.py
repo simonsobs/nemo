@@ -53,7 +53,6 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
         data=data*-1
         
     # Thresholding to identify significant pixels
-    # NOTE: We're now going to detection S/N=3 to find any rings
     # Objects in rings will be discarded; we update the survey area mask accordingly in-place here
     objIDs, objPositions, objNumPix, segMap=getObjectPositions(data, threshold, 
                                                                findCenterOfMass = findCenterOfMass)

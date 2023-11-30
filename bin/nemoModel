@@ -16,6 +16,7 @@ import nemo
 from nemo import startUp, maps, catalogs, signals
 import argparse
 import astropy.io.fits as pyfits
+import time
 on_rtd=os.environ.get('READTHEDOCS', None)
 if on_rtd is None:
     import pyccl as ccl
@@ -121,7 +122,6 @@ if __name__ == '__main__':
         assert(os.path.exists(args.addMap) == True)
 
     # Create a stub config (then we can use existing start-up stuff to dish out the tiles)
-    print(">>> Setting up ...")
     parDict={}
     mapDict={}
     mapDict['mapFileName']=args.maskFileName
@@ -140,7 +140,8 @@ if __name__ == '__main__':
     config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
                               makeOutputDirs = False, setUpMaps = True, writeTileInfo = False,
                               verbose = False, strictMPIExceptions = strictMPIExceptions)
-    
+    # if config.rank == 0: print(">>> Number of tiles = %d" % (len(config.tileNames)))
+
     baseDir, fileName=os.path.split(args.outputFileName)
     if baseDir != '':
         os.makedirs(baseDir, exist_ok = True)
@@ -189,7 +190,10 @@ if __name__ == '__main__':
             else:
                 tab=atpy.Table(names = ('RADeg', 'decDeg'))
     else:
+        t0=time.time()
         tab=atpy.Table().read(args.catalog)
+        t1=time.time()
+        # print("... loaded input catalog (took %.3f sec ; rank = %d)" % (t1-t0, config.rank))
 
     # Optionally override the fiducial cosmology (only useful for cluster sims)
     keywords=['OM0', 'OB0', 'H0', 'SIGMA8', 'NS']
@@ -198,12 +202,12 @@ if __name__ == '__main__':
         if key in tab.meta.keys():
             keyCount=keyCount+1
     if keyCount == len(keywords):
-        print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
+        if config.rank == 0: print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
         cosmoModel=ccl.Cosmology(Omega_c = tab.meta['OM0']-tab.meta['OB0'], Omega_b = tab.meta['OB0'],
                                  h = 0.01*tab.meta['H0'], sigma8 = tab.meta['SIGMA8'], n_s = tab.meta['NS'],
                                  transfer_function = signals.transferFunction)
     else:
-        print(">>> Using fiducial cosmology")
+        if config.rank == 0: print(">>> Using fiducial cosmology")
         cosmoModel=signals.fiducialCosmoModel
 
     # Optional signal scaling (useful for diff alpha sims)
@@ -211,19 +215,23 @@ if __name__ == '__main__':
         tab['y_c']=tab['y_c']*args.scale
     
     # Build a dictionary containing the model images which we'll stich together at the end
-    print(">>> Building models in tiles ...")
+    if config.rank == 0: print(">>> Building models in tiles ...")
     modelsDict={}
     for tileName in config.tileNames:
-        print("... %s ..." % (tileName))
         shape=(config.tileCoordsDict[tileName]['clippedSection'][3]-config.tileCoordsDict[tileName]['clippedSection'][2], 
                config.tileCoordsDict[tileName]['clippedSection'][1]-config.tileCoordsDict[tileName]['clippedSection'][0])
         wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
         try:
+            t0=time.time()
             modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName,
                                                      obsFreqGHz = args.obsFreqGHz,
                                                      validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
                                                      TCMBAlpha = args.TCMBAlpha,
-                                                     profile = args.profile, cosmoModel = cosmoModel)
+                                                     profile = args.profile, cosmoModel = cosmoModel,
+                                                     reportTimingInfo = False)
+            t1=time.time()
+            print("... %s complete (took %.3f sec ; rank = %d)" % (tileName, t1-t0, config.rank))
+
         except:
             raise Exception("makeModelImage failed on tile '%s'" % (tileName))
 
@@ -242,10 +250,10 @@ if __name__ == '__main__':
     if config.MPIEnabled == True:
         config.comm.barrier()
         if config.rank > 0:
-            print("... rank = %d sending sky model tiles ..." % (config.rank))
+            print("... rank = %d sending sky model tiles" % (config.rank))
             config.comm.send(modelsDict, dest = 0)
         elif config.rank == 0:
-            print("... gathering sky model tiles ...")
+            print("... gathering sky model tiles")
             gathered_modelsDicts=[]
             gathered_modelsDicts.append(modelsDict)
             for source in range(1, config.size):
