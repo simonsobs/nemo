@@ -105,6 +105,7 @@ class BeamProfile(object):
                 Bell=beamData[1]
                 if len(np.unique(np.diff(ell))) != 1:
                     raise Exception("If using a beam transform file, need delta ell = 1 between all ell values.")
+                Bell=Bell/Bell[0]
                 rDeg=np.linspace(0.0, 0.5, 1800) # This may need adjusting
                 prof=curvedsky.harm2profile(Bell, np.radians(rDeg))
                 prof=prof/prof[0]
