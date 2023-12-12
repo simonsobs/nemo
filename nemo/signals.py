@@ -619,7 +619,7 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
 
 #------------------------------------------------------------------------------------------------------------
 def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
-                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12):
+                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12, omap = None):
     """Use Sigurd's fast object painter to paint given signal into map.
 
     Notes:
@@ -663,7 +663,8 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
         amps=np.array([amp], dtype = dtype)
 
     signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
-                                    rmax = np.radians(maxSizeDeg), prof_equi = False)
+                                    rmax = np.radians(maxSizeDeg), prof_equi = False,
+                                    omap = omap)
 
     if rprof[0] < 0:
         signalMap=signalMap*-1
@@ -673,7 +674,8 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                              GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
-                             convolveWithBeam = True, cosmoModel = None, painter = 'pixell'):
+                             convolveWithBeam = True, cosmoModel = None, painter = 'pixell',
+                             omap = None):
     """Makes a 2d signal only map containing an Arnaud model cluster.
     
     Args:
@@ -735,7 +737,7 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     elif painter == 'pixell': # New method - using Sigurd's object painter
         signalMap=_paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
                                   amplitude = amplitude, maxSizeDeg = maxSizeDeg,
-                                  convolveWithBeam = convolveWithBeam)
+                                  convolveWithBeam = convolveWithBeam, omap = omap)
     else:
         raise Exception("'painter' must be 'legacy' or 'pixell' (given '%s')." % (painter))
 

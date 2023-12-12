@@ -1651,7 +1651,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     
     """
 
-    modelMap=np.zeros(shape, dtype = np.float32)
+    modelMap=enmap.zeros(shape, dtype = np.float32) #np.zeros(shape, dtype = np.float32)
 
     if type(catalog) == str:
         catalog=atpy.Table().read(catalog)
@@ -1751,12 +1751,13 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
                 theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
-                signalMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                # Updated in place
+                modelMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
                                                 decDeg = row['decDeg'], beam = beam,
                                                 GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                 maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                                cosmoModel = cosmoModel)
-                modelMap=modelMap+signalMap
+                                                cosmoModel = cosmoModel, omap = modelMap)
+                # modelMap=modelMap+signalMap
             if obsFreqGHz is not None:
                 modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
                                          TCMBAlpha = TCMBAlpha, z = z)
