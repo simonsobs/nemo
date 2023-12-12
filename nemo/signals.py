@@ -662,9 +662,22 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
     else:
         amps=np.array([amp], dtype = dtype)
 
-    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
-                                    rmax = np.radians(maxSizeDeg), prof_equi = False,
-                                    omap = omap)
+    if omap is not None:
+        ra1=RADeg-(maxSizeDeg/2)/np.cos(np.radians(decDeg))
+        ra0=RADeg+(maxSizeDeg/2)/np.cos(np.radians(decDeg))
+        dec1=decDeg-maxSizeDeg/2
+        dec0=decDeg+maxSizeDeg/2
+        clip=astImages.clipUsingRADecCoords(omap, wcs, ra1, ra0, dec0, dec1)
+        modelClip=pointsrcs.sim_objects(clip['data'].shape, clip['wcs'].AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
+                                        rmax = np.radians(maxSizeDeg), #prof_equi = False,
+                                        pixwin = False)
+        xMin, xMax, yMin, yMax=clip['clippedSection']
+        omap[yMin:yMax, xMin:xMax]=omap[yMin:yMax, xMin:xMax]+modelClip
+        signalMap=omap
+    else:
+        signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
+                                        rmax = np.radians(maxSizeDeg), #prof_equi = False,
+                                        pixwin = False)
 
     if rprof[0] < 0:
         signalMap=signalMap*-1

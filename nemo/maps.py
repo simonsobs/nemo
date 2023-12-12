@@ -1752,11 +1752,11 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
                 # Updated in place
-                modelMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
-                                                decDeg = row['decDeg'], beam = beam,
-                                                GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                                maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                                cosmoModel = cosmoModel, omap = modelMap)
+                makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                                     decDeg = row['decDeg'], beam = beam,
+                                     GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                     maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                     cosmoModel = cosmoModel, omap = modelMap)
                 # modelMap=modelMap+signalMap
             if obsFreqGHz is not None:
                 modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
