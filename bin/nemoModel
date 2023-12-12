@@ -116,6 +116,7 @@ if __name__ == '__main__':
 
     areaMask, wcs=maps.chunkLoadMask(args.maskFileName)
     shape=areaMask.shape
+    del areaMask
 
     baseDir, fileName=os.path.split(args.outputFileName)
     if baseDir != '':

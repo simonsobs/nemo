@@ -668,7 +668,7 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
     if rprof[0] < 0:
         signalMap=signalMap*-1
 
-    return np.array(signalMap)
+    return signalMap
 
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\

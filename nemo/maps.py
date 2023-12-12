@@ -1650,9 +1650,9 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         Map containing injected sources, or None if there are no objects within the map dimensions.
     
     """
-    
+
     modelMap=np.zeros(shape, dtype = np.float32)
-    
+
     if type(catalog) == str:
         catalog=atpy.Table().read(catalog)
     
@@ -1701,9 +1701,6 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     t1=time.time()
     if reportTimingInfo: print("makeModelImage - set up beam - took %.3f sec" % (t1-t0))
     
-    # Map of distance(s) from objects - this will get updated in place (fast)
-    degreesMap=np.ones(modelMap.shape, dtype = float)*1e6
-
     t0=time.time()
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
         # Clusters - insert one at a time (with different scales etc.)
@@ -1759,10 +1756,10 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                                 GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                                 maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
                                                 cosmoModel = cosmoModel)
-                if obsFreqGHz is not None:
-                    signalMap=convertToDeltaT(signalMap, obsFrequencyGHz = obsFreqGHz,
-                                                TCMBAlpha = TCMBAlpha, z = z)
                 modelMap=modelMap+signalMap
+            if obsFreqGHz is not None:
+                modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
+                                         TCMBAlpha = TCMBAlpha, z = z)
     else:
         # Sources - slower but more accurate way
         for row in catalog:
@@ -1771,8 +1768,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                 if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
                     continue
-            degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-            degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs,
+            # degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
+            degreesMap, xBounds, yBounds=makeDegreesDistanceMap(modelMap, wcs,
                                                                 row['RADeg'], row['decDeg'],
                                                                 maxSizeDeg)
             signalMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)*row['deltaT_c']
