@@ -619,7 +619,8 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
 
 #------------------------------------------------------------------------------------------------------------
 def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
-                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12, omap = None):
+                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12, omap = None,
+                    obsFrequencyGHz = None, TCMBAlpha = 0, z = None):
     """Use Sigurd's fast object painter to paint given signal into map.
 
     Notes:
@@ -671,6 +672,9 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
         modelClip=pointsrcs.sim_objects(clip['data'].shape, clip['wcs'].AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
                                         rmax = np.radians(maxSizeDeg), #prof_equi = False,
                                         pixwin = False)
+        if obsFrequencyGHz is not None:
+            modelClip=maps.convertToDeltaT(modelClip, obsFrequencyGHz = obsFrequencyGHz,
+                                           TCMBAlpha = TCMBAlpha, z = z)
         xMin, xMax, yMin, yMax=clip['clippedSection']
         omap[yMin:yMax, xMin:xMax]=omap[yMin:yMax, xMin:xMax]+modelClip
         signalMap=omap
@@ -678,6 +682,9 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
         signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
                                         rmax = np.radians(maxSizeDeg), #prof_equi = False,
                                         pixwin = False)
+        if obsFrequencyGHz is not None:
+            signalMap=maps.convertToDeltaT(signalMap, obsFrequencyGHz = obsFrequencyGHz,
+                                           TCMBAlpha = TCMBAlpha, z = z)
 
     if rprof[0] < 0:
         signalMap=signalMap*-1
@@ -688,7 +695,7 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
 def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                              GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
                              convolveWithBeam = True, cosmoModel = None, painter = 'pixell',
-                             omap = None):
+                             omap = None, obsFrequencyGHz = None, TCMBAlpha = 0):
     """Makes a 2d signal only map containing an Arnaud model cluster.
     
     Args:
@@ -759,7 +766,8 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
 #------------------------------------------------------------------------------------------------------------
 def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                                 GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
-                                convolveWithBeam = True, cosmoModel = None):
+                                convolveWithBeam = True, cosmoModel = None,\
+                                obsFrequencyGHz = None, TCMBAlpha = 0):
     """Makes a 2d signal only map containing a Battaglia+2012 model cluster (taking into account the redshift
     evolution described in Table 1 and equation 11 there).
 
