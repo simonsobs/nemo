@@ -83,19 +83,12 @@ def makeParser():
                         can be modified with the --add-map-scaling parameter.")
     parser.add_argument("--add-map-scaling", dest = "addMapScaling", default = 1.0,
                         help = "If given, multiply the map pointed to by --add-map by this factor.")
-    parser.add_argument("--split-noise-test", dest = "splitNoiseTest", action = "store_true",
-                        help = "If set, and -N and -C switches are used, split the map into two\
-                        sections, with the white noise level doubled in one half of the map.")
-    parser.add_argument("-T", "--break-map-into-tiles", dest = "breakIntoTiles", action = "store_true",
-                        help = "Break large maps into tiles using the autotiler function in Nemo.\
-                        This will be turned on automatically if MPI is enabled (using -M).", 
-                        default = False)
     parser.add_argument("-a", "--tcmb-alpha", dest = "TCMBAlpha", type = float, default = 0.0,
                         help = "Only applies to cluster models. Set this to a non-zero value to generate\
                         a model where the CMB temperature varies as T(z) = T0 * (1+z)^{1-TCMBAlpha}.\
                         Requires a 'redshift' column to be present in the input catalog.")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If used,\
-                        the image will be broken into a number of tiles, with one tile per process. If you\
+                        the catalog to be painted will be divided amongst processes. If you\
                         want to use this, run with e.g., mpiexec -np 4 nemoModel args -M", 
                         default = False)
     parser.add_argument("-n", "--no-strict-errors", dest="noStrictMPIExceptions", action="store_true",
@@ -121,36 +114,41 @@ if __name__ == '__main__':
     if args.addMap is not None:
         assert(os.path.exists(args.addMap) == True)
 
-    # Create a stub config (then we can use existing start-up stuff to dish out the tiles)
-    parDict={}
-    mapDict={}
-    mapDict['mapFileName']=args.maskFileName
-    mapDict['obsFreqGHz']=args.obsFreqGHz
-    mapDict['beamFileName']=args.beamFileName
-    parDict['unfilteredMaps']=[mapDict]
-    parDict['mapFilters']=[]
-    parDict['useTiling']=False
-    parDict['reprojectToTan']=False
-    if args.MPIEnabled == True or args.breakIntoTiles == True:
-        parDict['useTiling']=True
-        parDict['tileOverlapDeg']=1.0
-        parDict['tileDefinitions']={'mask': args.maskFileName,
-                                    'targetTileWidthDeg': 10.0, 'targetTileHeightDeg': 5.0}
-
-    config=startUp.NemoConfig(parDict, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = True,
-                              makeOutputDirs = False, setUpMaps = True, writeTileInfo = False,
-                              verbose = False, strictMPIExceptions = strictMPIExceptions)
-    # if config.rank == 0: print(">>> Number of tiles = %d" % (len(config.tileNames)))
+    areaMask, wcs=maps.chunkLoadMask(args.maskFileName)
+    shape=areaMask.shape
+    del areaMask
 
     baseDir, fileName=os.path.split(args.outputFileName)
     if baseDir != '':
         os.makedirs(baseDir, exist_ok = True)
 
+    if args.MPIEnabled == True:
+        from mpi4py import MPI
+        # This is needed to get MPI to abort if one process crashes (due to mpi4py error handling)
+        # If this part is disabled, we get nice exceptions, but the program will never finish if a process dies
+        # Here we get the error message at least but not the traceback before MPI Aborts
+        if strictMPIExceptions == True:
+            sys_excepthook=sys.excepthook
+            def mpi_excepthook(v, t, tb):
+                sys_excepthook(v, t, tb)
+                print("Exception: %s" % (t.args[0]))
+                MPI.COMM_WORLD.Abort(1)
+            sys.excepthook=mpi_excepthook
+        comm=MPI.COMM_WORLD
+        size=comm.Get_size()
+        rank=comm.Get_rank()
+        if size == 1:
+            raise Exception("If you want to use MPI, run with e.g., mpiexec -np 4 nemoModel ... -M")
+    else:
+        rank=0
+        comm=None
+        size=1
+
     # Noise:
     # - if number, uniform white noise level per pixel
     # - if number with sb suffix, uniform white noise level per square arcmin
     # - if string, a path to ivar map
-    if config.rank == 0:
+    if rank == 0:
         if type(args.addNoise) == str and args.addNoise[-2:] == 'sb':
             addNoise=float(args.addNoise.split('sb')[0])
             noiseMode='perSquareArcmin'
@@ -202,76 +200,60 @@ if __name__ == '__main__':
         if key in tab.meta.keys():
             keyCount=keyCount+1
     if keyCount == len(keywords):
-        if config.rank == 0: print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
+        if rank == 0: print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
         cosmoModel=ccl.Cosmology(Omega_c = tab.meta['OM0']-tab.meta['OB0'], Omega_b = tab.meta['OB0'],
                                  h = 0.01*tab.meta['H0'], sigma8 = tab.meta['SIGMA8'], n_s = tab.meta['NS'],
                                  transfer_function = signals.transferFunction)
     else:
-        if config.rank == 0: print(">>> Using fiducial cosmology")
+        if rank == 0: print(">>> Using fiducial cosmology")
         cosmoModel=signals.fiducialCosmoModel
 
     # Optional signal scaling (useful for diff alpha sims)
     if 'y_c' in tab.keys():
         tab['y_c']=tab['y_c']*args.scale
-    
+
+    # Divide models to be painted among processes
+    tab=catalogs.getCatalogWithinImage(tab, shape, wcs)
+    if args.MPIEnabled == True:
+        numRowsPerProcess=int(np.ceil(len(tab)/size))
+        startIndex=rank*numRowsPerProcess
+        endIndex=startIndex+numRowsPerProcess
+        if rank == size-1:
+            endIndex=len(tab)
+        tab=tab[startIndex:endIndex]
+
     # Build a dictionary containing the model images which we'll stich together at the end
-    if config.rank == 0: print(">>> Building models in tiles ...")
-    modelsDict={}
-    for tileName in config.tileNames:
-        shape=(config.tileCoordsDict[tileName]['clippedSection'][3]-config.tileCoordsDict[tileName]['clippedSection'][2], 
-               config.tileCoordsDict[tileName]['clippedSection'][1]-config.tileCoordsDict[tileName]['clippedSection'][0])
-        wcs=astWCS.WCS(config.tileCoordsDict[tileName]['header'], mode = 'pyfits')
-        try:
-            t0=time.time()
-            modelsDict[tileName]=maps.makeModelImage(shape, wcs, tab, args.beamFileName,
-                                                     obsFreqGHz = args.obsFreqGHz,
-                                                     validAreaSection = config.tileCoordsDict[tileName]['areaMaskInClipSection'],
-                                                     TCMBAlpha = args.TCMBAlpha,
-                                                     profile = args.profile, cosmoModel = cosmoModel,
-                                                     reportTimingInfo = False)
-            t1=time.time()
-            print("... %s complete (took %.3f sec ; rank = %d)" % (tileName, t1-t0, config.rank))
+    if rank == 0: print(">>> Building models ...")
+    t0=time.time()
+    modelImage=maps.makeModelImage(shape, wcs, tab, args.beamFileName,
+                                   obsFreqGHz = args.obsFreqGHz,
+                                   TCMBAlpha = args.TCMBAlpha,
+                                   profile = args.profile, cosmoModel = cosmoModel,
+                                   reportTimingInfo = False)
+    t1=time.time()
+    print("... rank %d image complete (took %.3f sec)" % (rank, t1-t0))
 
-        except:
-            raise Exception("makeModelImage failed on tile '%s'" % (tileName))
+    if args.MPIEnabled == True:
+        # comm.barrier()
+        if rank > 0:
+            print("... rank = %d sending sky model image" % (rank))
+            comm.send(modelImage, dest = 0)
+            del modelImage
+        elif rank == 0:
+            print("... gathering sky model images")
+            for source in range(1, size):
+                recModelImage=comm.recv(source = source)
+                if recModelImage is not None:
+                    modelImage=modelImage+recModelImage
+            del recModelImage
 
-    # Gathering
-    #if config.MPIEnabled == True:
-        #config.comm.barrier()
-        #gathered_modelsDicts=config.comm.gather(modelsDict, root = 0)
-        #if config.rank == 0:
-            #print("... gathered sky model tiles ...")
-            #for tileModelDict in gathered_modelsDicts:
-                #for tileName in tileModelDict.keys():
-                    #modelsDict[tileName]=tileModelDict[tileName]
-    
-    # We can't just gather as that triggers a 32-bit overflow (?)
-    # So, sending one object at a time
-    if config.MPIEnabled == True:
-        config.comm.barrier()
-        if config.rank > 0:
-            print("... rank = %d sending sky model tiles" % (config.rank))
-            config.comm.send(modelsDict, dest = 0)
-        elif config.rank == 0:
-            print("... gathering sky model tiles")
-            gathered_modelsDicts=[]
-            gathered_modelsDicts.append(modelsDict)
-            for source in range(1, config.size):
-                gathered_modelsDicts.append(config.comm.recv(source = source))
-            for tileModelDict in gathered_modelsDicts:
-                for tileName in tileModelDict.keys():
-                    modelsDict[tileName]=tileModelDict[tileName]
-
-    # Stitching
-    print(">>> Stitching tiles ...")
-    if config.rank == 0:
-        d=np.zeros([config.origWCS.header['NAXIS2'], config.origWCS.header['NAXIS1']])
-        wcs=config.origWCS
-        for tileName in modelsDict.keys():
-            print("... %s ..." % (tileName))
-            minX, maxX, minY, maxY=config.tileCoordsDict[tileName]['clippedSection']
-            if modelsDict[tileName] is not None:
-                d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+np.array(modelsDict[tileName])
+    # Assembly with optional CMB and noise
+    if rank == 0:
+        print(">>> Assembling final model image ...")
+        if modelImage is None:  # e.g., if we run with pointsources-0 to just get CMB and noise
+            d=np.zeros(shape)
+        else:
+            d=modelImage
         # Optionally add CMB
         if args.addCMB == True:
             # Save tSZ-only map for debugging
@@ -309,16 +291,9 @@ if __name__ == '__main__':
                 addNoise=clip['data'][:d.shape[0], :d.shape[1]]
                 # raise Exception("Given inv var map does not have the same dimensions as the output sim map - should match the given mask")
             d=d+maps.simNoiseMap(shape, addNoise, wcs = wcs, lKnee = args.lKnee, noiseMode = noiseMode)
-            # For testing abrupt noise changes
-            if args.splitNoiseTest == True:
-                d[:int(d.shape[0]/2)]=d[:int(d.shape[0]/2)]+np.random.normal(0, 2*args.addNoise, [int(d.shape[0]/2), d.shape[1]])
-                # Doesn't really matter about absolute scaling of this
-                weights=np.ones(d.shape)*args.addNoise
-                weights[:int(d.shape[0]/2)]=weights[:int(d.shape[0]/2)]*2
-                weights=np.power(weights, -2)
-                astImages.saveFITS(args.outputFileName.replace(".fits", ".ivar.fits"), weights, wcs)
         # Optionally add another component (e.g., large scale noise, to start with)
         if args.addMap is not None:
             with pyfits.open(args.addMap) as img:
                 d=d+float(args.addMapScaling)*img[0].data
         astImages.saveFITS(args.outputFileName, d, wcs)
+        print("... finished")

@@ -619,7 +619,8 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
 
 #------------------------------------------------------------------------------------------------------------
 def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
-                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12):
+                    maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12, omap = None,
+                    obsFrequencyGHz = None, TCMBAlpha = 0, z = None):
     """Use Sigurd's fast object painter to paint given signal into map.
 
     Notes:
@@ -662,18 +663,39 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
     else:
         amps=np.array([amp], dtype = dtype)
 
-    signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
-                                    rmax = np.radians(maxSizeDeg), prof_equi = False)
+    if omap is not None:
+        ra1=RADeg-(maxSizeDeg/2)/np.cos(np.radians(decDeg))
+        ra0=RADeg+(maxSizeDeg/2)/np.cos(np.radians(decDeg))
+        dec1=decDeg-maxSizeDeg/2
+        dec0=decDeg+maxSizeDeg/2
+        clip=astImages.clipUsingRADecCoords(omap, wcs, ra1, ra0, dec0, dec1)
+        modelClip=pointsrcs.sim_objects(clip['data'].shape, clip['wcs'].AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
+                                        rmax = np.radians(maxSizeDeg), #prof_equi = False,
+                                        pixwin = False)
+        if obsFrequencyGHz is not None:
+            modelClip=maps.convertToDeltaT(modelClip, obsFrequencyGHz = obsFrequencyGHz,
+                                           TCMBAlpha = TCMBAlpha, z = z)
+        xMin, xMax, yMin, yMax=clip['clippedSection']
+        omap[yMin:yMax, xMin:xMax]=omap[yMin:yMax, xMin:xMax]+modelClip
+        signalMap=omap
+    else:
+        signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
+                                        rmax = np.radians(maxSizeDeg), #prof_equi = False,
+                                        pixwin = False)
+        if obsFrequencyGHz is not None:
+            signalMap=maps.convertToDeltaT(signalMap, obsFrequencyGHz = obsFrequencyGHz,
+                                           TCMBAlpha = TCMBAlpha, z = z)
 
     if rprof[0] < 0:
         signalMap=signalMap*-1
 
-    return np.array(signalMap)
+    return signalMap
 
 #------------------------------------------------------------------------------------------------------------
 def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                              GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
-                             convolveWithBeam = True, cosmoModel = None, painter = 'pixell'):
+                             convolveWithBeam = True, cosmoModel = None, painter = 'pixell',
+                             omap = None, obsFrequencyGHz = None, TCMBAlpha = 0):
     """Makes a 2d signal only map containing an Arnaud model cluster.
     
     Args:
@@ -735,7 +757,8 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     elif painter == 'pixell': # New method - using Sigurd's object painter
         signalMap=_paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
                                   amplitude = amplitude, maxSizeDeg = maxSizeDeg,
-                                  convolveWithBeam = convolveWithBeam)
+                                  convolveWithBeam = convolveWithBeam, omap = omap,
+                                  obsFrequencyGHz = obsFrequencyGHz, TCMBAlpha = TCMBAlpha, z = z)
     else:
         raise Exception("'painter' must be 'legacy' or 'pixell' (given '%s')." % (painter))
 
@@ -744,7 +767,8 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
 #------------------------------------------------------------------------------------------------------------
 def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                                 GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
-                                convolveWithBeam = True, cosmoModel = None):
+                                convolveWithBeam = True, cosmoModel = None, omap = None,\
+                                obsFrequencyGHz = None, TCMBAlpha = 0):
     """Makes a 2d signal only map containing a Battaglia+2012 model cluster (taking into account the redshift
     evolution described in Table 1 and equation 11 there).
 
@@ -806,7 +830,8 @@ def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, 
     tckP=signalDict['tckP']
     return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
                            amplitude = amplitude, maxSizeDeg = maxSizeDeg,
-                           convolveWithBeam = convolveWithBeam)
+                           convolveWithBeam = convolveWithBeam, omap = omap,
+                           obsFrequencyGHz = obsFrequencyGHz, TCMBAlpha = TCMBAlpha, z = z)
     
     return signalMap
 
