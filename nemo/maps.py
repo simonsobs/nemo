@@ -1756,11 +1756,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                      decDeg = row['decDeg'], beam = beam,
                                      GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                      maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                     cosmoModel = cosmoModel, omap = modelMap)
-                # modelMap=modelMap+signalMap
-            if obsFreqGHz is not None:
-                modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
-                                         TCMBAlpha = TCMBAlpha, z = z)
+                                     cosmoModel = cosmoModel, omap = modelMap,
+                                     obsFrequencyGHz = obsFreqGHz, TCMBAlpha = TCMBAlpha)
     else:
         # Sources - slower but more accurate way
         for row in catalog:
@@ -1769,8 +1766,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                 if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
                     continue
-            # degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-            degreesMap, xBounds, yBounds=makeDegreesDistanceMap(modelMap, wcs,
+            degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
+            degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs,
                                                                 row['RADeg'], row['decDeg'],
                                                                 maxSizeDeg)
             signalMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)*row['deltaT_c']

@@ -757,7 +757,8 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
     elif painter == 'pixell': # New method - using Sigurd's object painter
         signalMap=_paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
                                   amplitude = amplitude, maxSizeDeg = maxSizeDeg,
-                                  convolveWithBeam = convolveWithBeam, omap = omap)
+                                  convolveWithBeam = convolveWithBeam, omap = omap,
+                                  obsFrequencyGHz = obsFrequencyGHz, TCMBAlpha = TCMBAlpha, z = z)
     else:
         raise Exception("'painter' must be 'legacy' or 'pixell' (given '%s')." % (painter))
 
@@ -766,7 +767,7 @@ def makeArnaudModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, dec
 #------------------------------------------------------------------------------------------------------------
 def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, decDeg = None,\
                                 GNFWParams = 'default', amplitude = None, maxSizeDeg = 15.0,\
-                                convolveWithBeam = True, cosmoModel = None,\
+                                convolveWithBeam = True, cosmoModel = None, omap = None,\
                                 obsFrequencyGHz = None, TCMBAlpha = 0):
     """Makes a 2d signal only map containing a Battaglia+2012 model cluster (taking into account the redshift
     evolution described in Table 1 and equation 11 there).
@@ -829,7 +830,8 @@ def makeBattagliaModelSignalMap(z, M500, shape, wcs, beam = None, RADeg = None, 
     tckP=signalDict['tckP']
     return _paintSignalMap(shape, wcs, tckP, beam = beam, RADeg = RADeg, decDeg = decDeg,
                            amplitude = amplitude, maxSizeDeg = maxSizeDeg,
-                           convolveWithBeam = convolveWithBeam)
+                           convolveWithBeam = convolveWithBeam, omap = omap,
+                           obsFrequencyGHz = obsFrequencyGHz, TCMBAlpha = TCMBAlpha, z = z)
     
     return signalMap
 
