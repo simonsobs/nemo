@@ -600,7 +600,10 @@ class TileDict(dict):
             else:
                 carData=self[tileName]
             minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
-            d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+carData
+            try:
+                d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+carData.data
+            except:
+                raise Exception("Stitching error on tile %s" % (tileName))
         saveFITS(outFileName, d, wcs, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
