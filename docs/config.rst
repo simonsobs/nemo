@@ -48,6 +48,14 @@ unfilteredMaps
             for :ref:`nemoCommand` to be able to output source flux densities in Jy.
             (e.g., the ACT beam profile files contain lines such as
             ``# solid angle = 188.17 +/- 4.84 nsr`` as part of the header).
+
+    There are some optional keys that may also be supplied:
+
+        :calibFactor (float):
+
+            If given, the map pixel values are multiplied by this number at the start of
+            processing. This can be used re-scale/re-calibrate the maps without modifying
+            the map files themselves.
     
     *Example:*
     
