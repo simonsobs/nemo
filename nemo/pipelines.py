@@ -475,7 +475,8 @@ def makeRMSTables(config):
 
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True,\
-                           writeInfo = True, verbose = True, QSource = 'fit'):
+                           writeInfo = True, verbose = True, QSource = 'fit', biasModelParams = None,
+                           theoryCode = 'CCL', zStep = 0.0005, numMassBins = 20000):
     """Generate a mock cluster catalog using the given nemo config.
     
     Returns:
@@ -501,8 +502,13 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     else:
         applyNoiseScatter=True
     if verbose: print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
-    
+
     Q=signals.QFit(QSource = QSource, selFnDir = config.selFnDir, tileNames = config.allTileNames)
+
+    if biasModelParams is None:
+        biasModel=None
+    else:
+        biasModel={'func': catalogs._posRecFitFunc, 'params': biasModelParams}
 
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -517,7 +523,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     scalingRelationDict=config.parDict['massOptions']
     
     if verbose: print(">>> Setting up mock survey ...")
-    # NOTE: Sanity check is possible here: area in RMSTab should equal area from areaMask.fits
+    # NOTE: Consistency check is possible here: area in RMSTab should equal area from areaMask.fits
     # If it isn't, there is a problem...
     # Also, we're skipping the individual tile-loading routines here for speed
     checkAreaConsistency=False
@@ -591,17 +597,28 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     ns=massOptions['ns']
     delta=massOptions['delta']
     rhoType=massOptions['rhoType']
+    relCorr=massOptions['relativisticCorrection']
+    # Only Tinker08 for now but this could be set by the user
+    if theoryCode == 'CLASS-SZ':
+        massFunction='T08M%d%s' % (delta, rhoType[0])
+    elif theoryCode == 'CCL':
+        massFunction='Tinker08'
     mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, 
-                                     delta = delta, rhoType = rhoType)
+                                     delta = delta, rhoType = rhoType, theoryCode = theoryCode,
+                                     massFunction = massFunction, zStep = zStep, numMassBins = numMassBins)
     print("... mock survey parameters:")
+    print("    theoryCode = %s" % (theoryCode))
+    print("    massFunction = %s" % (massFunction))
     print("    QSource = %s" % (QSource))
+    print("    optimization bias model parameters = %s" % (str(biasModelParams)))
+    print("    applyRelativisticCorrection = %s" % (str(relCorr)))
     for key in defCosmo.keys():
         print("    %s = %s" % (key, str(massOptions[key])))
     for key in ['tenToA0', 'B0', 'Mpivot', 'sigma_int']:
         print("    %s = %s" % (key, str(scalingRelationDict[key])))
     print("    total area = %.1f square degrees" % (totalAreaDeg2))
     print("    random seed = %s" % (str(seed)))
-    
+
     if verbose: print(">>> Making mock catalogs ...")
     catList=[]
     for i in range(numMocksToMake):       
@@ -618,7 +635,9 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                                           areaDeg2 = areaDeg2Dict[tileName],
                                           applyPoissonScatter = applyPoissonScatter, 
                                           applyIntrinsicScatter = applyIntrinsicScatter,
-                                          applyNoiseScatter = applyNoiseScatter)
+                                          applyNoiseScatter = applyNoiseScatter,
+                                          applyRelativisticCorrection = relCorr,
+                                          biasModel = biasModel)
             if mockTab is not None:
                 mockTabsList.append(mockTab)
         tab=atpy.vstack(mockTabsList)
