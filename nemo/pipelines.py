@@ -663,13 +663,14 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
         for i in range(numMocksToMake):
             mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.fits" % (i+1)
             stackTab=atpy.Table().read(mockCatalogFileName)
-            if tab == None:
+            if tab is None:
                 tab=stackTab
             else:
                 tab=atpy.vstack([tab, stackTab])
         outFileName=config.mocksDir+os.path.sep+"mockCatalog_combined.fits"
         tab.meta['NEMOVER']=nemo.__version__
         tab.meta['QSOURCE']=QSource
+        tab.meta['OPTBIAS']=str(biasModelParams)
         tab.write(outFileName, overwrite = True)
     
     # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)
