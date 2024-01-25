@@ -123,8 +123,8 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
 
     # Extra columns for other inferred quantities
     if inferSZProperties == True:
-        extraCols=['Q', 'y0', 'theta500Arcmin', 'Y500Arcmin2']
-        extraDivs=[1, 1e-4, 1, 1e-4] # Divide quantities by this (e.g, inferred y0 in output table will be * 1e-4)
+        extraCols=['Q', 'theta500Arcmin', 'inferred_y_c', 'inferred_Y500Arcmin2']
+        extraDivs=[1, 1, 1e-4, 1e-4] # Divide quantities by this (e.g, inferred_y_c in output table will be * 1e-4)
     else:
         extraCols=[]
         extraDivs=[]
@@ -263,9 +263,9 @@ def makeParser():
                         map).", default = False, action="store_true")
     parser.add_argument("-I", "--infer-sz-properties", dest = "inferSZProperties", default = False,
                         action="store_true", help = "Infer (model-dependent) SZ observables and related\
-                        quantities such as angular size (theta500Arcmin), Q, central Comptonization parameter (y0),\
-                        and Y500 (Y500Arcmin2). Y500 values assume the Arnaud+2010 Universal Pressure Profile\
-                        even if alternative GNFW parameters are given in the config file.")
+                        quantities such as angular size (theta500Arcmin), Q, central Comptonization parameter\
+                        (inferred_y_c), and Y500 (inferred_Y500Arcmin2). Y500 values currently assume the Arnaud+2010\
+                        Universal Pressure Profile, even if alternative GNFW parameters are given in the config file.")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
                         want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M", 
                         default = False)
