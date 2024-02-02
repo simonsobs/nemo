@@ -1334,15 +1334,20 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         theta500, theta500_errMinus, theta500_errPlus=getMLValueFromP(Ptheta500, theta500s)
 
         # Q
+        Q=float(QFit.getQ(theta500, z, tileName = tileName))
+        Q_errMinus=abs(Q-QFit.getQ(theta500-theta500_errMinus, z, tileName = tileName))
+        Q_errPlus=abs(Q-QFit.getQ(theta500+theta500_errPlus, z, tileName = tileName))
         Qs=QFit.getQ(theta500s, z, tileName = tileName)
-        # Qs=QFit(theta500s)
-        PQ=P/np.trapz(P, Qs)
-        try:
-            Q, Q_errMinus, Q_errPlus=getMLValueFromP(PQ, Qs)
-        except:
-            print("hmm")
-            IPython.embed()
-            sys.exit()
+        # # Qs=QFit(theta500s)
+        # Below can blow up at low-z
+        # PQ=P/np.trapz(P, Qs)
+        # try:
+        #     Q, Q_errMinus, Q_errPlus=getMLValueFromP(PQ, Qs)
+        # except:
+        #     print("hmm")
+        #     import IPython
+        #     IPython.embed()
+        #     sys.exit()
 
         # y0
         fRels=interpolate.splev(log10M500c, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)
