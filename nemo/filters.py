@@ -765,7 +765,9 @@ class MatchedFilter(MapFilter):
                 count=count+1
                 img.header['RW%d_GHZ' % (count)]=key
                 img.header['RW%d' % (count)]=self.fRelWeights[key]
-            img.data=self.filt                                                                                                                                                                      
+            img.data=self.filt
+            # Just in case... saves having to fix this up elsewhere
+            os.makedirs(os.path.split(self.filterFileName)[0], exist_ok = True)
             img.writeto(self.filterFileName, overwrite = True) 
             
         # NOTE: What to do about frequency here? Generalise for non-SZ
@@ -910,8 +912,8 @@ class RealSpaceMatchedFilter(MapFilter):
         # Apply the same difference of Gaussians high pass filter here
         # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
         #mapDict['bckSubScaleArcmin']=maxArcmin
-        keysWanted=['mapFileName', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise', 
-                    'pointSourceRemoval', 'weightsType', 'tileName']
+        keysWanted=['mapFileName', 'weights', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise',
+                    'pointSourceRemoval', 'weightsType', 'tileName', 'reprojectToTan']
         kernelUnfilteredMapsDictList=[]
         for mapDict in self.unfilteredMapsDictList:
             for key in list(mapDict.keys()):
@@ -1065,7 +1067,7 @@ class RealSpaceMatchedFilter(MapFilter):
         plt.close()
 
             
-    def buildAndApply(self):
+    def buildAndApply(self, useCachedFilter = False):
 
         surveyMask=self.unfilteredMapsDictList[0]['surveyMask']
         psMask=self.unfilteredMapsDictList[0]['pointSourceMask']
