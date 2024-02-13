@@ -55,7 +55,14 @@ def makeParser():
                         fixed_SNR > this value.", default = 4.0, type = float)
     parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
                         'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
-                        results).", default = 'fit')
+                        results).", default = 'fit', choices = ['fit', 'injection'])
+    parser.add_argument("-p", "--bias-model-parameters", dest = "biasModelParams", default = None,
+                        help = "If given, apply optimization bias model to the mock catalog.\
+                        Three parameters are needed (e-folding, pedestal, normalization), delimited by commas\
+                        (e.g., 2.26,1.00,0.22)")
+    parser.add_argument("-t", "--theory-code", dest = 'theoryCode', choices = ['CCL', 'CLASS-SZ'], default = 'CCL',
+                        help = "Code to use for mass function calculations. CLASS-SZ is currently much\
+                        faster for generating mock cluster samples than CCL.")
     #parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="""Enable MPI. If you 
                         #want to use this, run with e.g., mpiexec -np 4 nemoMock selFnDir mocksDir -M""", 
                         #default = False)
@@ -79,8 +86,10 @@ if __name__ == '__main__':
     #zStep=args.zStep
     #footprintLabel=args.footprint
     QSource=args.QSource
-    if QSource not in ['fit', 'injection']:
-        raise Exception("QSource must be either 'fit' or 'injection'")
+    biasModelParams=args.biasModelParams
+    if biasModelParams is not None:
+        biasModelParams=np.array(biasModelParams.split(","), dtype = float)
+        assert(biasModelParams.shape[0] == 3)
 
     if configFileName is None:
         configFileName=args.selFnDir+os.path.sep+"config.yml"
@@ -100,4 +109,5 @@ if __name__ == '__main__':
         raise Exception("NemoMock needs to be adapted for MPI if making multiple mocks - not done yet.")
 
     pipelines.makeMockClusterCatalog(config, numMocksToMake = numMocksToMake, combineMocks = combineMocks,
-                                     writeCatalogs = True, verbose = True, QSource = QSource)
+                                     writeCatalogs = True, verbose = True, QSource = QSource,
+                                     biasModelParams = biasModelParams, theoryCode = args.theoryCode)

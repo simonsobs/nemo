@@ -58,8 +58,6 @@ massOptions: {tenToA0: 4.95e-5,
 calcSelFn: False
 selFnOptions: {fixedSNRCut: 5.0, 
                method: "fast",
-               numDraws: 2000000,
-               numIterations: 1000,
                massLimitMaps: [{z: 0.5}]}
 
 #selFnFootprints: 

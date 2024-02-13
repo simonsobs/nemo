@@ -1227,9 +1227,9 @@ def calcFRel(z, M500, Ez, obsFreqGHz = 148.0):
     return fRel
 
 #------------------------------------------------------------------------------------------------------------
-def getM500FromP(P, log10M, calcErrors = True):
-    """Returns M500 as the maximum likelihood value from given P(log10M) distribution, together with 
-    1-sigma error bars (M500, -M500Err, +M500 err).
+def getMassFromP(P, log10M, calcErrors = True):
+    """Returns MDelta as the maximum likelihood value from given P(log10M) distribution, together with
+    1-sigma error bars (MDelta, -MDeltaErr, +MDelta err).
     
     """
 
@@ -1268,117 +1268,145 @@ def getM500FromP(P, log10M, calcErrors = True):
     return clusterM500, clusterM500MinusErr, clusterM500PlusErr
 
 #------------------------------------------------------------------------------------------------------------
-def y0FromLogM500(log10M500, z, tckQFit, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, sigma_int = 0.2,
-                  cosmoModel = None, applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}):
-    """Predict y0~ given logM500 (in MSun) and redshift. Default scaling relation parameters are A10 (as in
-    H13).
-    
-    Use cosmoModel (:obj:`pyccl.Cosmology`) to change/specify cosmological parameters.
-    
-    fRelWeightsDict is used to account for the relativistic correction when y0~ has been constructed
-    from multi-frequency maps. Weights should sum to 1.0; keys are observed frequency in GHz.
-    
-    Returns y0~, theta500Arcmin, Q
-    
-    NOTE: Depreciated? Nothing we have uses this.
-    
-    """
-
-    if type(Mpivot) == str:
-        raise Exception("Mpivot is a string - check Mpivot in your .yml config file: use, e.g., 3.0e+14 (not 3e14 or 3e+14)")
-        
-    # Filtering/detection was performed with a fixed fiducial cosmology... so we don't need to recalculate Q
-    # We just need to recalculate theta500Arcmin and E(z) only
-    M500=np.power(10, log10M500)
-    theta500Arcmin=calcTheta500Arcmin(z, M500, cosmoModel)
-    Q=calcQ(theta500Arcmin, tckQFit)
-    
-    # Relativistic correction: now a little more complicated, to account for fact y0~ maps are weighted sum
-    # of individual frequency maps, and relativistic correction size varies with frequency
-    if applyRelativisticCorrection == True:
-        fRels=[]
-        freqWeights=[]
-        for obsFreqGHz in fRelWeightsDict.keys():
-            fRels.append(calcFRel(z, M500, cosmoModel, obsFreqGHz = obsFreqGHz))
-            freqWeights.append(fRelWeightsDict[obsFreqGHz])
-        fRel=np.average(np.array(fRels), axis = 0, weights = freqWeights)
-    else:
-        fRel=1.0
-    
-    # UPP relation according to H13
-    # NOTE: m in H13 is M/Mpivot
-    # NOTE: this goes negative for crazy masses where the Q polynomial fit goes -ve, so ignore those
-    y0pred=tenToA0*np.power(cosmoModel.efunc(z), 2)*np.power(M500/Mpivot, 1+B0)*Q*fRel
-    
-    return y0pred, theta500Arcmin, Q
-            
-#------------------------------------------------------------------------------------------------------------
-def calcMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
-             sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
-             calcErrors = True, fRelWeightsDict = {148.0: 1.0}, tileName = None):
+def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14,
+                          sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0,
+                          applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
+                          calcErrors = True, fRelWeightsDict = {148.0: 1.0}, tileName = None,
+                          inferSZProperties = False):
     """Returns M500 +/- errors in units of 10^14 MSun, calculated assuming a y0 - M relation (default values
     assume UPP scaling relation from Arnaud et al. 2010), taking into account the steepness of the mass
     function. The approach followed is described in H13, Section 3.2.
-    
+
     Here, mockSurvey is a MockSurvey object. We're using this to handle the halo mass function calculations
-    (in turn using the Colossus module). Supplying mockSurvey is no longer optional (and handles setting the 
+    (in turn using the Colossus module). Supplying mockSurvey is no longer optional (and handles setting the
     cosmology anyway when initialised or updated).
-    
+
     tckQFit is a set of spline knots, as returned by fitQ.
-    
+
     If applyMFDebiasCorrection == True, apply correction that accounts for steepness of mass function.
-    
+
     If applyRelativisticCorrection == True, apply relativistic correction (weighted by frequency using the
     contents of fRelWeightsDict).
-    
+
     If calcErrors == False, error bars are not calculated, they are just set to zero.
-    
+
     fRelWeightsDict is used to account for the relativistic correction when y0~ has been constructed
     from multi-frequency maps. Weights should sum to 1.0; keys are observed frequency in GHz.
-        
+
     Returns dictionary with keys M500, M500_errPlus, M500_errMinus
-    
+
     """
-    
+
     if y0 < 0:
         raise Exception('y0 cannot be negative')
     if y0 > 1e-2:
         raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
-            
-    P, bestQ=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot,
-                       sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power,
-                       applyMFDebiasCorrection = applyMFDebiasCorrection,
-                       applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
-                       tileName = tileName, returnQ = True)
-    
-    M500, errM500Minus, errM500Plus=getM500FromP(P, mockSurvey.log10M, calcErrors = calcErrors)
-    
+
+    P=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot,
+                sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power,
+                applyMFDebiasCorrection = applyMFDebiasCorrection,
+                applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
+                tileName = tileName)
+
+    MDelta, errMDeltaMinus, errMDeltaPlus=getMassFromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     label=mockSurvey.mdefLabel
-    
-    return {'%s' % (label): M500, '%s_errPlus' % (label): errM500Plus, '%s_errMinus' % (label): errM500Minus,
-            'Q': bestQ}
+
+    resultDict={'%s' % (label): MDelta, '%s_errPlus' % (label): errMDeltaPlus, '%s_errMinus' % (label): errMDeltaMinus}
+
+    if inferSZProperties == True:
+        log10Ms=mockSurvey.log10M
+        if mockSurvey.delta != 500 or mockSurvey.rhoType != "critical":
+            log10M500c=np.log10(mockSurvey._transToM500c(mockSurvey.cosmoModel, np.power(10, log10Ms), 1/(1+z)))
+        else:
+            log10M500c=log10Ms
+
+        # Extract values + errors for other quantities, using P above which has taken into account z error
+        # (this is a bit clunky but easier)
+
+        # M500c in 1e14 MSun
+        Plog10M500c=P/np.trapz(P, log10M500c)
+        M500c, M500c_errMinus, M500c_errPlus=getMassFromP(Plog10M500c, log10M500c, calcErrors = calcErrors)
+
+        # theta500
+        mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-z))
+        theta500s=interpolate.splev(log10M500c, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
+        Ptheta500=P/np.trapz(P, theta500s)
+        theta500, theta500_errMinus, theta500_errPlus=getMLValueFromP(Ptheta500, theta500s)
+
+        # Q
+        Q=float(QFit.getQ(theta500, z, tileName = tileName))
+        Q_errMinus=abs(Q-QFit.getQ(theta500-theta500_errMinus, z, tileName = tileName))
+        Q_errPlus=abs(Q-QFit.getQ(theta500+theta500_errPlus, z, tileName = tileName))
+        Qs=QFit.getQ(theta500s, z, tileName = tileName)
+        # # Qs=QFit(theta500s)
+        # Below can blow up at low-z
+        # PQ=P/np.trapz(P, Qs)
+        # try:
+        #     Q, Q_errMinus, Q_errPlus=getMLValueFromP(PQ, Qs)
+        # except:
+        #     print("hmm")
+        #     import IPython
+        #     IPython.embed()
+        #     sys.exit()
+
+        # y0
+        fRels=interpolate.splev(log10M500c, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)
+        fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
+        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
+        y0pred=y0pred*np.power(1+z, onePlusRedshift_power)
+        if applyRelativisticCorrection == True:
+            y0pred=y0pred*fRels
+        true_y0pred=y0pred/Qs
+        Ptrue_y0=P/np.trapz(P, true_y0pred)
+        true_y0, true_y0_errMinus, true_y0_errPlus=getMLValueFromP(Ptrue_y0, true_y0pred)
+
+        # Y500
+        # NOTE: This needs to be able to take B12 profile routine as well, and GNFWParams
+        # NOTE: This is cylindrical version - integrating the projected profile - people often use spherically integrated
+        Y500s=[]
+        for mval in [M500c, M500c-M500c_errMinus, M500c+M500c_errPlus]:
+            profDict=makeArnaudModelProfile(z, mval*1e14, GNFWParams = 'default', cosmoModel = mockSurvey.cosmoModel)
+            # rarcmin=np.logspace(-8, np.log10(theta500), 10000000)
+            rarcmin=np.linspace(0, theta500, 100000)
+            prof=true_y0*interpolate.splev(rarcmin/60, profDict['tckP'])
+            # np.sum(2*np.pi*rarcmin*np.gradient(rarcmin)) # area check of accuracy
+            Y500s.append(np.sum(prof*2*np.pi*rarcmin*np.gradient(rarcmin))) # Y500 in arcmin2
+        Y500Arcmin2=Y500s[0]
+        Y500Arcmin2_errMinus=Y500s[0]-Y500s[1]
+        Y500Arcmin2_errPlus=Y500s[2]-Y500s[0]
+
+        resultDict['Q']=Q
+        resultDict['Q_err']=(Q_errMinus+Q_errPlus)/2
+        resultDict['inferred_y_c']=true_y0
+        resultDict['inferred_y_c_err']=(true_y0_errMinus+true_y0_errPlus)/2
+        resultDict['theta500Arcmin']=theta500
+        resultDict['theta500Arcmin_err']=(theta500_errMinus+theta500_errPlus)/2
+        resultDict['inferred_Y500Arcmin2']=Y500Arcmin2
+        resultDict['inferred_Y500Arcmin2_err']=(Y500Arcmin2_errMinus+Y500Arcmin2_errPlus)/2
+
+    return resultDict
 
 #------------------------------------------------------------------------------------------------------------
-def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14, 
-              sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True, 
+def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08, Mpivot = 3e14,
+              sigma_int = 0.2, Ez_gamma = 2, onePlusRedshift_power = 0.0, applyMFDebiasCorrection = True,
               applyRelativisticCorrection = True, fRelWeightsDict = {148.0: 1.0}, return2D = False,
               returnQ = False, tileName = None):
-    """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud 
-    et al. 2010), taking into account the steepness of the mass function. The approach followed is described 
+    """Calculates P(M500) assuming a y0 - M relation (default values assume UPP scaling relation from Arnaud
+    et al. 2010), taking into account the steepness of the mass function. The approach followed is described
     in H13, Section 3.2. The binning for P(M500) is set according to the given mockSurvey, as are the assumed
     cosmological parameters.
-    
+
     This routine is used by calcMass.
-    
+
     Ez_gamma is E(z)^gamma factor (we assumed E(z)^2 previously)
-    
+
     onePlusRedshift_power: added multiplication by (1+z)**onePlusRedshift_power (for checking evolution)
-    
+
     If return2D == True, returns a grid of same dimensions / binning as mockSurvey.z, mockSurvey.log10M,
     normalised such that the sum of the values is 1.
-    
+
     """
-    
+
     # For marginalising over photo-z errors (we assume +/-5 sigma is accurate enough)
     if zErr > 0:
         zMin=z-zErr*5
@@ -1396,17 +1424,17 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
 
     log_y0=np.log(y0)
     log_y0Err=y0Err/y0
-        
+
     # NOTE: Swap below if want to use bigger log10M range...
     log10Ms=mockSurvey.log10M
     #log10MStep=mockSurvey.log10M[1]-mockSurvey.log10M[0]
     #log10Ms=np.arange(-100.0, 100.0, log10MStep)
-            
+
     PArr=[]
     for k in range(len(zRange)):
-        
+
         zk=zRange[k]
-        
+
         # We've generalised mockSurvey to be able to use e.g. M200m, but Q defined for theta500c
         # So, need a mapping between M500c and whatever mass definition used in mockSurvey
         # This only needed for extracting Q, fRel values
@@ -1416,11 +1444,12 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
                                                             1/(1+zk)))
         else:
             log10M500c_zk=log10Ms
-                
+
         mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-zk))
         theta500s=interpolate.splev(log10M500c_zk, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
         Qs=QFit.getQ(theta500s, zk, tileName = tileName)
-        fRels=interpolate.splev(log10M500c_zk, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)   
+        # Qs=QFit(theta500s)
+        fRels=interpolate.splev(log10M500c_zk, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
         y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
         y0pred=y0pred*np.power(1+zk, onePlusRedshift_power)
@@ -1477,18 +1506,15 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
 
     # 2D PArr is what we would want to project onto (M, z) grid
     PArr=np.array(PArr)
-        
+
     # Marginalised over z uncertainty
     P=np.sum(PArr, axis = 0)
     P=P/np.trapz(P, log10Ms)
-    # If we want Q corresponding to mass (need more work to add errors if we really want them)
-    PQ=P/np.trapz(P, Qs)
-    fittedQ=Qs[np.argmax(PQ)]
 
     # Reshape to (M, z) grid - use this if use different log10M range to mockSurvey
     #tck=interpolate.splrep(log10Ms, P)
     #P=interpolate.splev(mockSurvey.log10M, tck, ext = 1)
-        
+
     if return2D == True:
         P2D=np.zeros(mockSurvey.clusterCount.shape)
         if zErr == 0:
@@ -1498,10 +1524,54 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         P=P2D/P2D.sum()
         #astImages.saveFITS("test.fits", P.transpose(), None)
 
-    if returnQ == True:
-        return P, fittedQ
+    # if returnQ == True:
+        # return P, fittedQ
+    # else:
+    return P
+
+#------------------------------------------------------------------------------------------------------------
+def getMLValueFromP(P, x, calcErrors = True):
+    """Returns the maximum likelihood value from the given P(x) distribution, together with
+    1-sigma error bars (value, -err, + err).
+
+    """
+
+    finex=x
+    fineP=P
+    # # Find max likelihood and integrate to get error bars
+    # try:
+    #     tckP=interpolate.splrep(x, P)
+    # except:
+    #     print("er")
+    #     IPython.embed()
+    #     sys.exit()
+    # finex=np.linspace(x.min(), x.max(), 10000)
+    # fineP=interpolate.splev(finex, tckP)
+    # fineP=fineP/np.trapz(fineP, finex)
+
+    index=np.argmax(fineP)
+    MLValue=finex[index]
+
+    if calcErrors == True:
+        for n in range(fineP.shape[0]):
+            minIndex=index-n
+            maxIndex=index+n
+            if minIndex < 0 or maxIndex > fineP.shape[0]:
+                minusErr=0.
+                plusErr=0.
+                break
+            p=np.trapz(fineP[minIndex:maxIndex], finex[minIndex:maxIndex])
+            if p >= 0.6827:
+                xMin=finex[minIndex]
+                xMax=finex[maxIndex]
+                minusErr=MLValue-xMin
+                plusErr=xMax-MLValue
+                break
     else:
-        return P
+        minusErr=0.
+        plusErr=0.
+
+    return MLValue, minusErr, plusErr
 
 #------------------------------------------------------------------------------------------------------------
 def MDef1ToMDef2(mass, z, MDef1, MDef2, cosmoModel, c_m_relation = 'Bhattacharya13'):

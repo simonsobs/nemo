@@ -600,7 +600,10 @@ class TileDict(dict):
             else:
                 carData=self[tileName]
             minX, maxX, minY, maxY=self.tileCoordsDict[tileName]['clippedSection']
-            d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+carData
+            try:
+                d[minY:maxY, minX:maxX]=d[minY:maxY, minX:maxX]+carData.data
+            except:
+                raise Exception("Stitching error on tile %s" % (tileName))
         saveFITS(outFileName, d, wcs, compressionType = compressionType)
 
 #-------------------------------------------------------------------------------------------------------------
@@ -743,10 +746,11 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             RAc, decMax=wcs.pix2wcs(xc, yMax-deltaY)
             deltaY=deltaY+0.01
 
+        # Adjusted post-nemo v0.7.3 - closer to actual size of supplied mask without going over the edge
         numRows=int((decMax-decMin)/targetTileHeight)
         if numRows == 0:
             raise Exception("targetTileHeight is larger than the height of the map - edit your config file accordingly.")
-        tileHeight=np.ceil(((decMax-decMin)/numRows)*100)/100
+        tileHeight=np.round(((decMax-decMin)/numRows)*1000)/1000 # This rounds the height at 3 decimal places (was ceil at 2dp)
 
         for i in range(numRows):
             decBottom=decMin+i*tileHeight

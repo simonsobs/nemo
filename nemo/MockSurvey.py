@@ -576,7 +576,7 @@ class MockSurvey(object):
         fRels=np.zeros(y0Noise.shape)
         t0=time.time()
         for clusterIndex in range(numClusters):
-            log10Ms[clusterIndex], zs[clusterIndex], log10M500cs[clusterIndex], Qs[clusterIndex], fRels[clusterIndex]=self._drawSampleRow(QFit = QFit)
+            log10Ms[clusterIndex], zs[clusterIndex], log10M500cs[clusterIndex], Qs[clusterIndex], fRels[clusterIndex]=self._drawSampleRow(QFit = QFit, tileName = tileName)
         t1=time.time()
 
         # For some cosmo parameters, fRel can wander outside its range for crazy masses
@@ -641,7 +641,7 @@ class MockSurvey(object):
 
         return tab
 
-    def _drawSampleRow(self, QFit = None):
+    def _drawSampleRow(self, QFit = None, tileName = None):
         hmfEval=0.
         hmfSample=1.
         while hmfSample > hmfEval:
