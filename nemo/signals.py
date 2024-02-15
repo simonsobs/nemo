@@ -1402,12 +1402,16 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
 
     onePlusRedshift_power: added multiplication by (1+z)**onePlusRedshift_power (for checking evolution)
 
+    If zErr is < 0.01 it will be treated as if zErr == 0.
+
     If return2D == True, returns a grid of same dimensions / binning as mockSurvey.z, mockSurvey.log10M,
     normalised such that the sum of the values is 1.
 
     """
 
     # For marginalising over photo-z errors (we assume +/-5 sigma is accurate enough)
+    if zErr < 0.01:
+        zErr=0.0    # Ignore tiny z errors, unless we really want to use very fine z binning
     if zErr > 0:
         zMin=z-zErr*5
         zMax=z+zErr*5

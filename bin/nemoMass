@@ -136,8 +136,12 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
     for l in labels:
         colNames=['%s' % (l), '%sUncorr' % (l)]
         if 'rescaleFactor' in massOptions.keys():
-            colNames.append('%sCal' % (l))
-        colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
+            if 'rescaleLabel' not in massOptions.keys():
+                rescaleLabel='Cal'
+            else:
+                rescaleLabel=massOptions['rescaleLabel']
+            colNames.append('%s%s' % (l, rescaleLabel))
+        # colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
         for c in colNames:
             tab['%s' % (c)]=np.zeros(len(tab))
             tab['%s_errPlus' % (c)]=np.zeros(len(tab))
@@ -200,21 +204,21 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
             row['%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
             # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
             if 'rescaleFactor' in massOptions.keys():
-                row['%sCal' % (label)]=massDict['%s' % (label)]/massOptions['rescaleFactor']
-                row['%sCal_errPlus' % (label)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
-                                                       np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
-                row['%sCal_errMinus' % (label)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
-                                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
-                calMassDict={label: row['%sCal' % (label)],
-                             label+'_errPlus': row['%sCal_errPlus' % (label)],
-                             label+'_errMinus': row['%sCal_errMinus' % (label)]}
+                row['%s%s' % (label, rescaleLabel)]=massDict['%s' % (label)]/massOptions['rescaleFactor']
+                row['%s%s_errPlus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
+                                                       np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
+                row['%s%s_errMinus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
+                                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
+                calMassDict={label: row['%s%s' % (label, rescaleLabel)],
+                             label+'_errPlus': row['%s%s_errPlus' % (label, rescaleLabel)],
+                             label+'_errMinus': row['%s%s_errMinus' % (label, rescaleLabel)]}
 
             # CCL-based mass conversions
             resultsList=[massDict, unCorrMassDict]
             suffixList=['', 'Uncorr']
             if 'rescaleFactor' in massOptions.keys():
                 resultsList.append(calMassDict)
-                suffixList.append('Cal')
+                suffixList.append(rescaleLabel)
             for resultDict, suffix in zip(resultsList, suffixList):
                 for massDefDict in otherMassEstimates:
                     if 'concMassRelation' not in massDefDict.keys():
