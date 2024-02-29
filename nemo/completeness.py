@@ -129,11 +129,11 @@ class SelFn(object):
     """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprint = None, zStep = 0.01,
-                 zMax = 3.0, tileNames = None, mockOversampleFactor = 1.0,
-                 downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
+                 zMax = 3.0, numMassBins = 200, tileNames = None, mockOversampleFactor = 1.0,
+                 downsampleRMS = 2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
-                 QSource = 'fit', noiseCut = None, biasModel = None):
+                 QSource = 'fit', theoryCode = 'CCL', noiseCut = None, biasModel = None):
         
         self.SNRCut=SNRCut
         self.biasModel=biasModel
@@ -145,6 +145,7 @@ class SelFn(object):
         self.applyRelativisticCorrection=applyRelativisticCorrection
         self.selFnDir=selFnDir
         self.zStep=zStep
+        self.numMassBins=numMassBins
         self.maxTheta500Arcmin=maxTheta500Arcmin
 
         if configFileName is None:
@@ -162,7 +163,7 @@ class SelFn(object):
         
         deprecatedMethods=['montecarlo']
         if method in deprecatedMethods:
-            raise Exception("Selection function completeness calculation method '%s' is deprecated - use a valid method (e.g., 'injection')" % (method))
+            raise Exception("Selection function completeness calculation method '%s' is deprecated - use a valid method (e.g., 'fast')" % (method))
         self.method=method
 
         # Needed for generating mock samples directly
@@ -214,8 +215,8 @@ class SelFn(object):
             totalAreaDeg2=0.0 # Doing it this way so that tileNames can be chosen and fed into selFn
             for tileName in self.tileNames:
                 tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
-                if downsampleRMS == True and len(tileTab) > 0:
-                    tileTab=downsampleRMSTab(tileTab) 
+                if downsampleRMS > 1 and len(tileTab) > 0:
+                    tileTab=downsampleRMSTab(tileTab, downsampleRMS)
                 if len(tileTab) > 0:    # We may have some blank tiles...
                     self.RMSDict[tileName]=tileTab
                     tileNames.append(tileName)
@@ -280,8 +281,9 @@ class SelFn(object):
             sigma8=self.scalingRelationDict['sigma8']
             ns=self.scalingRelationDict['ns']
             self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
-                                                  zStep = self.zStep,
-                                                  delta = delta, rhoType = rhoType, massFunction = massFunction)
+                                                  zStep = self.zStep, numMassBins = self.numMassBins,
+                                                  delta = delta, rhoType = rhoType, massFunction = massFunction,
+                                                  theoryCode = theoryCode)
             self.update(H0, Om0, Ob0, sigma8, ns)
 
 
@@ -387,6 +389,7 @@ class SelFn(object):
             self.scalingRelationDict=scalingRelationDict
         
         self.mockSurvey.update(H0, Om0, Ob0, sigma8, ns)
+
         zRange=self.mockSurvey.z
         if self.method == 'injection':
 
@@ -1003,19 +1006,23 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
-def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
+def downsampleRMSTab(RMSTab, downsampleFactor = 2):
     """Downsamples `RMSTab` (see :meth:`getRMSTab`) in terms of noise resolution, binning by `stepSize`.
     
     Args:
         RMSTab (:obj:`astropy.table.Table`): An RMS table, as produced by :meth:`getRMSTab`.
-        stepSize (:obj:`float`, optional): Sets the re-binning in terms of y0.
+        downsampleFactor (:obj:`float`, optional): Downsample the number of y0 bins by this factor.
+            (e.g., downsample = 2 gives half the number of bins compared to the original table).
         
     Returns:
         A table of RMS (noise level) values versus area in square degrees (:obj:`astropy.table.Table`).        
     
     """
     
-    binEdges=np.arange(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max()+stepSize, stepSize)
+    if downsampleFactor < 1:
+        raise Exception("downsampleFactor must be >= 1 - given %.1f" % (downsampleFactor))
+    numBinEdges=int(len(RMSTab)/downsampleFactor)
+    binEdges=np.linspace(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max(), numBinEdges+1)
     y0Binned=[]
     tileAreaBinned=[]
     binMins=[]
