@@ -199,6 +199,7 @@ class MockSurvey(object):
 
 
     def _get_new_cosmo(self, H0, Om0, Ob0, sigma8, ns):
+        self._cosmoUpdated=False
         if ((self.H0 != H0) or (self.Om0 != Om0) or
             (self.Ob0 != Ob0) or (self.sigma8 != sigma8)):
 
@@ -207,6 +208,7 @@ class MockSurvey(object):
             self.Ob0=Ob0
             self.sigma8=sigma8
             self.ns=ns
+            self._cosmoUpdated=True
 
             # CCL cosmology - we may not want to entirely use CLASS-SZ, at least to start
             self.cosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0,
@@ -354,11 +356,38 @@ class MockSurvey(object):
                 dndmdz[i]=4.*np.pi*self.fsky*dVdzdOmega[i]*dndlnM
             dndmdz=dndmdz.transpose()
             self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
-            dndz=np.trapz(dndmdz, x = np.log(self.M), axis = 0)
-            self.numClusters=np.trapz(dndz, x = self.z)
-            self.numClustersByRedshift=dndz*np.gradient(self.z)
-            norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
-            self.clusterCount=dndmdz.transpose()/norm
+            ####
+            # Old
+            # dndz=np.trapz(dndmdz, x = np.log(self.M), axis = 0)
+            # self.numClusters=np.trapz(dndz, x = self.z)
+            # self.numClustersByRedshift=dndz*np.gradient(self.z)
+            # norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
+            # self.clusterCount=dndmdz.transpose()/norm
+            ####
+            # New - very slightly different, but also consistent across total by z
+            # dndz=integrate.simpson(dndmdz, x = np.log(self.M), axis = 0)
+            # dndm=integrate.simpson(dndmdz, x = self.z, axis = 1)
+            # numClusters_from_dndz=integrate.simpson(dndz, x = self.z)
+            # numClusters_from_dndm=integrate.simpson(dndm, x = np.log(self.M))
+            # self.numClusters=numClusters_from_dndz # Above two are/should be consistent
+            # norm_dz=dndz.sum()/self.numClusters
+            # norm_dm=dndm.sum()/self.numClusters
+            # norm_counts=dndmdz.sum()/self.numClusters
+            # self.numClustersByRedshift=dndz/norm_dz
+            # self.clusterCount=dndmdz.transpose()/norm_counts
+            ####
+            # Newest - using interpolator
+            # We only calculate total number counts here, using the high-res model
+            # Cluster counts grid is now moved into the SelFn class
+            self.dndmdzInterpolator=interpolate.RectBivariateSpline(np.log(self.M),
+                                                                    self.z,
+                                                                    dndmdz, kx = 3, ky = 3)
+            dndz_full=integrate.simpson(dndmdz, x = np.log(self.M), axis = 0)
+            numClusters_full=integrate.simpson(dndz_full, x = self.z)
+            # dndz_full_via_interp=integrate.simpson(dndmdz_interpolator(np.log(self.M), self.z), x = np.log(self.M), axis = 0)
+            # numClusters_full_via_interp=integrate.simpson(dndz_full_via_interp, x = self.z)
+            self.numClusters=numClusters_full
+            ####
 
         elif self.theoryCode == 'CLASS-SZ':
             # Still need to implement (maybe): self.volumeMpc3, self.numberDensity
@@ -369,9 +398,9 @@ class MockSurvey(object):
             self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
             dndz=np.trapz(dndmdz,x = lnms,axis = 0)
             self.numClusters=np.trapz(dndz, x = self.z)
-            self.numClustersByRedshift=dndz*np.gradient(self.z)
-            norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
-            self.clusterCount=dndmdz.transpose()/norm
+            # self.numClustersByRedshift=dndz*np.gradient(self.z)
+            # norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
+            # self.clusterCount=dndmdz.transpose()/norm
 
 
     def calcNumClustersExpected(self, MLimit = 1e13, zMin = 0.0, zMax = 2.0, compMz = None):

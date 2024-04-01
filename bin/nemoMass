@@ -343,6 +343,9 @@ if __name__ == '__main__':
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = False,
                                   setUpMaps = forcedPhotometry, writeTileInfo = False, verbose = False,
                                   strictMPIExceptions = strictMPIExceptions)
+
+    # Clean out any z = 0 things that have crept through because these blow things up
+    tab=tab[tab['redshift'] > 0]
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
