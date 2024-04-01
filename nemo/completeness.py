@@ -671,7 +671,8 @@ class SelFn(object):
             y0Grid=np.zeros([zRange.shape[0], self.clusterCount.shape[1]])
             for i in range(len(zRange)):
                 zk=zRange[i]
-                k=np.argmin(abs(self.z-zk))
+                # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
+                k=np.argmin(abs(self.mockSurvey.z-zk))
                 Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
                 #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
                 true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.log10M)/Mpivot,
