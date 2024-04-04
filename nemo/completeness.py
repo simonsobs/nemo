@@ -19,6 +19,7 @@ from scipy import ndimage
 from scipy import optimize
 from scipy import integrate
 from scipy import special
+import pyccl as ccl
 import nemo
 from . import signals
 from . import maps
@@ -133,12 +134,12 @@ class SelFn(object):
     """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprint = None, zStep = 0.01,
-                 zMax = 3.0, minMass = 5e13, numMassBins = 200, tileNames = None, mockOversampleFactor = 1.0,
+                 zMin = 0.0, zMax = 3.0, minMass = 5e13, numMassBins = 200, tileNames = None, mockOversampleFactor = 1.0,
                  downsampleRMS = 2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
                  QSource = 'fit', useAverageQ = False, theoryCode = 'CCL', noiseCut = None, biasModel = None,
-                 overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001):#, noiseFudge = 1.0):
+                 overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001):
         
         self.SNRCut=SNRCut
         self.biasModel=biasModel
@@ -235,7 +236,6 @@ class SelFn(object):
             totalAreaDeg2=0.0 # Doing it this way so that tileNames can be chosen and fed into selFn
             for tileName in self.tileNames:
                 tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
-                # tileTab['y0RMS']=tileTab['y0RMS']*noiseFudge
                 if downsampleRMS > 1 and len(tileTab) > 0:
                     tileTab=downsampleRMSTab(tileTab, downsampleRMS)
                 if len(tileTab) > 0:    # We may have some blank tiles...
@@ -294,7 +294,6 @@ class SelFn(object):
             self.Q=signals.QFit(QSource = QSource, selFnDir = self.selFnDir, tileNames = tileNames)
 
             # Initial cosmology set-up
-            zMin=0.0
             H0=self.scalingRelationDict['H0']
             Om0=self.scalingRelationDict['Om0']
             Ob0=self.scalingRelationDict['Ob0']
@@ -306,7 +305,9 @@ class SelFn(object):
                                                   theoryCode = theoryCode)
             # This will usually be a coarser gridding than used in the MockSurvey object
             # NOTE: binning mass in log(M) rather than log10(M) here
-            self.zBinEdges=np.arange(zMin, zMax+zStep, zStep)
+            numRedshiftBins=int(round((zMax-zMin)/zStep))
+            self.zBinEdges=np.linspace(zMin, zMax, numRedshiftBins+1)
+            # self.zBinEdges=np.arange(zMin, zMax+zStep, zStep)
             self.logMBinEdges=np.linspace(np.log(self.mockSurvey.M).min(), np.log(self.mockSurvey.M).max(), self.numMassBins)
             self.clusterCount=np.zeros([self.zBinEdges.shape[0]-1, self.logMBinEdges.shape[0]-1])
             self.z=(self.zBinEdges[1:]+self.zBinEdges[:-1])/2
@@ -433,8 +434,9 @@ class SelFn(object):
                 # numClusters_from_dndm=integrate.simpson(dndm, x = mPoints)
                 summedOverBins=summedOverBins+numClusters_from_dndz
                 self.clusterCount[zi, mi]=numClusters_from_dndz
-        if abs(1-(summedOverBins/self.mockSurvey.numClusters)) > 1e-5:
-            raise Exception("Coarse (mass, z) binning used in SelFn does not accurately reproduce total theory cluster count.")
+        res=abs(1-(summedOverBins/self.mockSurvey.numClusters))
+        if res > 1e-2:
+            raise Exception("Coarse (mass, z) binning used in SelFn does not accurately reproduce total theory cluster count (res = %.3e)." % (res))
         # t1=time.time()
 
 
@@ -472,16 +474,19 @@ class SelFn(object):
         # theta500s for Q calc
         if self.mockSurvey._cosmoUpdated is True or self._theta500Grid.sum() == 0:
             zRange=self.z
+            Ez=ccl.h_over_h0(self.mockSurvey.cosmoModel, self.a)
+            Ez2=np.power(Ez, 2)
+            DAz=ccl.angular_diameter_distance(self.mockSurvey.cosmoModel, self.a)
+            criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*self.mockSurvey.cosmoModel['h'])**2
             for i in range(len(zRange)):
-                zk=zRange[i]
-                k=np.argmin(abs(self.mockSurvey.z-zk))
                 if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                    self._log10M500s=np.log10(self.mockSurvey._transToM500c(self.mockSurvey.cosmoModel,
-                                                                            self.M,
-                                                                            self.mockSurvey.a[k]))
+                    M500s=self.mockSurvey._transToM500c(self.mockSurvey.cosmoModel, self.M, self.a[i])
+                    self._log10M500s=np.log10(M500s)
                 else:
+                    M500s=self.M
                     self._log10M500s=self.log10M
-                self._theta500Grid[i]=interpolate.splev(self._log10M500s, self.mockSurvey.theta500Splines[k])
+                R500Mpc=np.power((3*M500s)/(4*np.pi*500*criticalDensity[i]), 1.0/3.0)
+                self._theta500Grid[i]=np.degrees(np.arctan(R500Mpc/DAz[i]))*60.0
 
         zRange=self.mockSurvey.z
         if self.method == 'injection':
@@ -669,14 +674,14 @@ class SelFn(object):
             tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
                                             self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
             y0Grid=np.zeros([zRange.shape[0], self.clusterCount.shape[1]])
+            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), 2)
             for i in range(len(zRange)):
                 zk=zRange[i]
                 # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
                 k=np.argmin(abs(self.mockSurvey.z-zk))
                 Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
                 #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-                true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.log10M)/Mpivot,
-                                                                                1+B0)
+                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)
                 if applyQ == True:
                     true_y0s_zk=true_y0s_zk*Qs_zk
                 if self.applyRelativisticCorrection == True:

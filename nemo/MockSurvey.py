@@ -401,6 +401,14 @@ class MockSurvey(object):
             # self.numClustersByRedshift=dndz*np.gradient(self.z)
             # norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
             # self.clusterCount=dndmdz.transpose()/norm
+            self.dndmdzInterpolator=interpolate.RectBivariateSpline(np.log(self.M),
+                                                                    self.z,
+                                                                    dndmdz, kx = 3, ky = 3)
+            dndz_full=integrate.simpson(dndmdz, x = np.log(self.M), axis = 0)
+            numClusters_full=integrate.simpson(dndz_full, x = self.z)
+            # dndz_full_via_interp=integrate.simpson(dndmdz_interpolator(np.log(self.M), self.z), x = np.log(self.M), axis = 0)
+            # numClusters_full_via_interp=integrate.simpson(dndz_full_via_interp, x = self.z)
+            self.numClusters=numClusters_full
 
 
     def calcNumClustersExpected(self, MLimit = 1e13, zMin = 0.0, zMax = 2.0, compMz = None):
