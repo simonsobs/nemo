@@ -562,9 +562,13 @@ class MockSurvey(object):
                 count=count+1
                 if count > maxCount:
                     raise Exception("Failed to generate enough random coords in %d iterations" % (maxCount))
-                theta=np.degrees(np.pi*2*np.random.uniform(0, 1, numClusters))
-                phi=np.degrees(np.arccos(2*np.random.uniform(0, 1, numClusters)-1))-90
-                xyCoords=np.array(wcs.wcs2pix(theta, phi))
+                u=np.random.uniform(0, 1, numClusters)
+                v=np.random.uniform(0, 1, numClusters)
+                thetaRad=2*np.pi*u
+                phiRad=np.arccos(2*v-1)
+                RADeg=np.degrees(thetaRad)
+                decDeg=90-np.degrees(phiRad)
+                xyCoords=np.array(wcs.wcs2pix(RADeg, decDeg))
                 xs=np.array(np.round(xyCoords[:, 0]), dtype = int)
                 ys=np.array(np.round(xyCoords[:, 1]), dtype = int)
                 mask=np.logical_and(np.logical_and(xs >= 0, xs < RMSMap.shape[1]), np.logical_and(ys >= 0, ys < RMSMap.shape[0]))
@@ -573,6 +577,22 @@ class MockSurvey(object):
                 mask=RMSMap[ys, xs] > 0
                 xsList=xsList+xs[mask].tolist()
                 ysList=ysList+ys[mask].tolist()
+                ####
+                # Old
+                # count=count+1
+                # if count > maxCount:
+                #     raise Exception("Failed to generate enough random coords in %d iterations" % (maxCount))
+                # theta=np.degrees(np.pi*2*np.random.uniform(0, 1, numClusters))
+                # phi=np.degrees(np.arccos(2*np.random.uniform(0, 1, numClusters)-1))-90
+                # xyCoords=np.array(wcs.wcs2pix(theta, phi))
+                # xs=np.array(np.round(xyCoords[:, 0]), dtype = int)
+                # ys=np.array(np.round(xyCoords[:, 1]), dtype = int)
+                # mask=np.logical_and(np.logical_and(xs >= 0, xs < RMSMap.shape[1]), np.logical_and(ys >= 0, ys < RMSMap.shape[0]))
+                # xs=xs[mask]
+                # ys=ys[mask]
+                # mask=RMSMap[ys, xs] > 0
+                # xsList=xsList+xs[mask].tolist()
+                # ysList=ysList+ys[mask].tolist()
             xs=np.array(xsList)[:numClusters]
             ys=np.array(ysList)[:numClusters]
             del xsList, ysList
@@ -581,6 +601,7 @@ class MockSurvey(object):
             RAs=RADecCoords[:, 0]
             decs=RADecCoords[:, 1]
             y0Noise=RMSMap[ys, xs]
+            ####
         elif type(y0Noise) == atpy.Table:
             noisetck=interpolate.splrep(np.cumsum(y0Noise['areaDeg2']/y0Noise['areaDeg2'].sum()), y0Noise['y0RMS'], k = 1)
             rnd=np.random.uniform(0, 1, numClusters)

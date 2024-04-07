@@ -522,6 +522,7 @@ class SelFn(object):
                                                                                   mode = mode, truncate = truncate)
 
         elif self.method == 'fast' or self.method == 'faster':
+            # self.predObsCounts=np.zeros(self.clusterCount.shape)
             compMzCube=np.zeros([len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
             t0=time.time()
             if self.useAverageQ == True:
@@ -557,6 +558,20 @@ class SelFn(object):
                 #     y0Cube=y0Cube*self.biasModel['func'](trueSNRCube, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
                 # compMzCube[tileIndex]=np.sum(self._get_erf_diff(y0Grid[..., None]/RMSTab['y0RMS'][None, None, :], self.SNRCut, 1e5, self.SNRCut)*areaWeights, axis = -1)
                 ####
+                # New completeness method - calc predicted counts in here
+                # This is consistent with the previous method as expected
+                # RMSTab=self.RMSDict[tileName]
+                # areaWeights=RMSTab['areaDeg2']/self.totalAreaDeg2
+                # for i in range(len(RMSTab)):
+                #     if self.biasModel is not None:
+                #         trueSNR=y0Grid/RMSTab['y0RMS'][i]
+                #         corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
+                #     else:
+                #         corrFactors=np.ones(y0Grid.shape)
+                #     compMz=self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
+                #     obsCounts=self.clusterCount*compMz*areaWeights[i]
+                #     self.predObsCounts=self.predObsCounts+obsCounts
+                ####
                 # Zero scatter case - SOLikeT style - faster than array functions
                 for i in range(len(RMSTab)):
                     if self.biasModel is not None:
@@ -580,7 +595,6 @@ class SelFn(object):
                 #     SNRGrid=SNRGrid+((y0Grid*corrFactors)/RMSTab['y0RMS'][i])*areaWeights[i]
                 # test_compMzCube=self._compSNRLimInterp(SNRGrid)
                 #     # compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
-
                 # End SOLikeT style
                 ####
                 # Old style
@@ -605,7 +619,9 @@ class SelFn(object):
                 # print("tile loop:", t33-t00, t33-t22, t22-t11, t11-t00)
                 # y0GridCube.append(y0Grid)
             t1=time.time()
+            ####
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+            ####
             # self.compMz=np.average(compMzCube, axis = 2, weights = self.fracArea).transpose()
             # self.compMz=np.einsum('ijk,i->jk', np.nan_to_num(compMzCube), self.fracArea) # Equivalent, for noting
             # y0GridCube=np.array(y0GridCube)
@@ -615,6 +631,8 @@ class SelFn(object):
             # import IPython
             # IPython.embed()
             # sys.exit()
+
+        self.predObsCount=self.compMz*self.clusterCount
 
         # For caching/update checks
         self._last_scalingRelationDict=self.scalingRelationDict
