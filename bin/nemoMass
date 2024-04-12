@@ -270,6 +270,10 @@ def makeParser():
                         quantities such as angular size (theta500Arcmin), Q, central Comptonization parameter\
                         (inferred_y_c), and Y500 (inferred_Y500Arcmin2). Y500 values currently assume the Arnaud+2010\
                         Universal Pressure Profile, even if alternative GNFW parameters are given in the config file.")
+    parser.add_argument("-m", "--make-model-maps", dest = "makeModelMaps", default = False,
+                        action = "store_true", help = "Make model maps of the SZ signal corresponding to\
+                        the maps given in the config file by running the nemoModel script. Output will\
+                        be written to the clusterModelMaps directory under the Nemo output directory.")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
                         want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M", 
                         default = False)
@@ -414,44 +418,32 @@ if __name__ == '__main__':
         os.makedirs(outDir, exist_ok = True)
     tab.meta['NEMOVER']=nemo.__version__
     tab.meta['QSOURCE']=QSource
+    # Cosmo params useful for when running with nemo-sim-kit
+    tab.meta['OM0']=massOptions['Om0']
+    tab.meta['OB0']=massOptions['Ob0']
+    tab.meta['H0']=massOptions['H0']
+    tab.meta['SIGMA8']=massOptions['sigma8']
+    tab.meta['NS']=massOptions['ns']
+    tab.meta['TENTOA0']=massOptions['tenToA0']
+    tab.meta['B0']=massOptions['B0']
+    tab.meta['SIGMA']=massOptions['sigma_int']
+    tab.meta['MPIVOT']=massOptions['Mpivot']/1e14
+    tab.meta['RHOTYPE']=massOptions['rhoType']
+    tab.meta['DELTA']=massOptions['delta']
     tab.write(outFileName, overwrite = True)
-    
-    # Detect if testing a mock catalog, and write some stats on recovered masses
-    if 'true_M500' in tab.keys():
-        # Noise sources in mocks
-        if 'applyPoissonScatter' in config.parDict.keys():
-            applyPoissonScatter=config.parDict['applyPoissonScatter']
-        else:
-            applyPoissonScatter=True
-        if 'applyIntrinsicScatter' in config.parDict.keys():
-            applyIntrinsicScatter=config.parDict['applyIntrinsicScatter']
-        else:
-            applyIntrinsicScatter=True
-        if 'applyNoiseScatter' in config.parDict.keys():
-            applyNoiseScatter=config.parDict['applyNoiseScatter']
-        else:
-            applyNoiseScatter=True
-        print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
-        if applyNoiseScatter == True and applyIntrinsicScatter == True:
-            print("... for these options, median M500 / true_M500 = 1.000 if mass recovery is unbiased ...")
-        elif applyNoiseScatter == False and applyIntrinsicScatter == False:
-            print("... for these options, median M500Unc / true_M500 = 1.000 if mass recovery is unbiased ...")
-        else:
-            print("... for these options, both median M500 / true_M500 and median M500Unc / true_M500 will be biased ...")
-        ratio=tab['M500']/tab['true_M500']
-        ratioUnc=tab['M500Uncorr']/tab['true_M500']
-        print(">>> Mock catalog mass recovery stats:")
-        SNRCuts=[4, 5, 7, 10]
-        for s in SNRCuts:
-            mask=np.greater(tab['fixed_SNR'], s)
-            print("--> SNR > %.1f (N = %d):" % (s, np.sum(mask))) 
-            print("... mean M500 / true_M500 = %.3f +/- %.3f (stdev) +/- %.3f (sterr)" % (np.mean(ratio[mask]), 
-                                                                                          np.std(ratio[mask]), 
-                                                                                          np.std(ratio[mask])/np.sqrt(np.sum(mask))))
-            print("... median M500 / true_M500 = %.3f" % (np.median(ratio[mask])))
-            print("... mean M500Unc / true_M500 = %.3f +/- %.3f (stdev) +/- %.3f (sterr)" % (np.mean(ratioUnc[mask]), 
-                                                                                          np.std(ratioUnc[mask]), 
-                                                                                          np.std(ratioUnc[mask])/np.sqrt(np.sum(mask))))
-            print("... median M500Unc / true_M500 = %.3f" % (np.median(ratioUnc[mask])))
 
-
+    # Optionally making model images
+    # These take ~2 min per map for ~7000 clusters in an ACT DR5/DR6 scale map on a single core
+    if args.makeModelMaps == True:
+        print(">>> Making model cluster SZ signal maps")
+        t0=time.time()
+        os.makedirs(outDir+os.path.sep+"clusterModelMaps", exist_ok = True)
+        catFileName=outFileName
+        for mapDict in config.parDict['unfilteredMaps']:
+            print("... %s ..." % (mapDict['label']))
+            outModelFileName=outDir+os.path.sep+"clusterModelMaps"+os.path.sep+"clusterModelMap_%s.fits" % (mapDict['label'])
+            cmd="nemoModel %s %s %s %s -f %.1f" % (catFileName, mapDict['surveyMask'], mapDict['beamFileName'],
+                                                   outModelFileName, mapDict['obsFreqGHz'])
+            os.system(cmd)
+        t1=time.time()
+        print("... time taken to generate model cluster SZ signal maps = %.1f sec" % (t1-t0))
