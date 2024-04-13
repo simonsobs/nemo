@@ -254,11 +254,12 @@ if __name__ == '__main__':
             d=np.zeros(shape)
         else:
             d=modelImage
+        shape=(d.shape)
+        # We only want the signal only image in certain circumstances
+        if args.addCMB == True or args.addMap is not None
+            astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
         # Optionally add CMB
         if args.addCMB == True:
-            # Save tSZ-only map for debugging
-            astImages.saveFITS(args.outputFileName.replace(".fits", "_signalOnly.fits"), d, wcs)
-            shape=(d.shape)
             # Split adding CMB and noise to enable more tests
             d=d+maps.simCMBMap(shape, wcs, noiseLevel = None, beam = args.beamFileName,
                                seed = args.seed)
