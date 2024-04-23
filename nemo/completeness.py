@@ -555,28 +555,23 @@ class SelFn(object):
                     if self.scalingRelationDict['sigma_int'] == 0:
                         compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
                     else:
-                        # Old [actually general, i.e., scatter or not] - slower than above
-                        # totalLogErr=np.sqrt((RMSTab['y0RMS'][i]/y0Grid)**2 + self.scalingRelationDict['sigma_int']**2)
-                        # sfi=stats.norm.sf((self.SNRCut*RMSTab['y0RMS'])[i], loc = y0Grid*corrFactors, scale = totalLogErr*(y0Grid*corrFactors))
-                        # SOLikeT style [currently v slow and wasteful the way we have it now]
+                        # SOLikeT style
                         scatter=self.scalingRelationDict['sigma_int']
-                        y0Cube=np.array([y0Grid]*len(RMSTab))
                         lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
-                        yy0 = np.exp(lnyy)
-                        mu = np.float32(np.log(y0Cube))#)*corrFactors)) # WARNING: We need to get corrFactors back in
-                        fac = np.float32(1./np.sqrt(2.*np.pi*scatter**2))
-                        arg = self._get_erf_diff(yy0/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
-                        cc = np.float32(arg * areaWeights[i])
-                        arg0 = np.float32((lnyy[:, None,None] - mu[i])/(np.sqrt(2.)*scatter))
-                        args = fac * np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
-                        compMzCube[tileIndex] += np.trapz(np.float32(args), x=lnyy, axis=0)
+                        yy0=np.exp(lnyy)
+                        mu=np.float32(np.log(y0Grid*corrFactors))
+                        fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
+                        arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
+                        cc=np.float32(arg*areaWeights[i])
+                        arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
+                        args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
+                        compMzCube[tileIndex]+=np.trapz(np.float32(args), x=lnyy, axis=0)
                 if self.maxTheta500Arcmin is not None:
                     compMzCube[tileIndex]=compMzCube[tileIndex]*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
             t1=time.time()
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
             # self.compMz[self.compMz > 1]=1
             # self.compMz[self.compMz < 0]=0
-
         self.predObsCount=self.compMz*self.clusterCount
 
         # For caching/update checks

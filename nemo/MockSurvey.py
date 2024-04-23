@@ -411,36 +411,6 @@ class MockSurvey(object):
             self.numClusters=numClusters_full
 
 
-    def calcNumClustersExpected(self, MLimit = 1e13, zMin = 0.0, zMax = 2.0, compMz = None):
-        """Calculate the number of clusters expected above a given mass limit, for the
-        mass definition set when the MockSurvey object was constructed.
-        
-        Args:
-            MLimit (:obj:`float`, optional): Mass limit above which to count clusters, in MSun.
-            zMin (:obj:`float`, optional): Count clusters above this minimum redshift.
-            zMax (:obj:`float`, optional): Count clusters below this maximum redshift.
-            compMz (:obj:`np.ndarray`, optional): If given, a 2d array with the same dimensions
-                and binning as the (z, log10M) grid, as calculated by the
-                :class:`nemo.completeness.SelFn` class, that describes the completeness as
-                a function of mass and redshift.
-        
-        Returns:
-            The number of clusters in the survey area, according to the chose sample selection
-            cuts.
-        
-        """
-        
-        if type(compMz) == np.ndarray:
-            numClusters=compMz*self.clusterCount
-        else:
-            numClusters=self.clusterCount
-        
-        zMask=np.logical_and(np.greater(self.z, zMin), np.less(self.z, zMax))
-        mMask=np.greater(self.M, MLimit)
-        
-        return numClusters[:, mMask][zMask].sum()
-        
-
     def getPLog10M(self, z):
         """Returns the log10(mass) probability distribution at the given z, for the logarithmic mass
         binning and mass definition set when the MockSurvey object was constructed.
