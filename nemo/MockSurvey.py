@@ -517,9 +517,9 @@ class MockSurvey(object):
             names=np.arange(numClusters)+1
 
         # Tilenames, needed in the case where we're trying to sim a whole survey map at once
+        tileNamesCol=np.array(["            "]*numClusters)
         if tileCoordsDict is not None:
             pixCoords=np.array(wcs.wcs2pix(RAs, decs))
-            tileNamesCol=np.array(["            "]*numClusters)
             for tileName in tileCoordsDict.keys():
                 minX, maxX, minY, maxY=tileCoordsDict[tileName]['clippedSection']
                 xMask=np.logical_and(pixCoords[:, 0] >= minX, pixCoords[:, 0] < maxX)
