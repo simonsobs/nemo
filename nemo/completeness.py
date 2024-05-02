@@ -770,7 +770,7 @@ class SelFn(object):
                                                self.Q, wcs = None, 
                                                photFilterLabel = self.photFilterLabel, tileName = tileName, 
                                                makeNames = False,
-                                               SNRLimit = self.SNRCut, applySNRCut = True,
+                                               SNRLimit = self.SNRCut,
                                                areaDeg2 = areaDeg2*mockOversampleFactor,
                                                applyPoissonScatter = applyPoissonScatter,
                                                applyIntrinsicScatter = True,
@@ -1488,7 +1488,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
             detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
             for i in range(numIterations):
                 tab=mockSurvey.drawSample(y0Noise, massOptions, QFit, tileName = tileName,
-                                          SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws,
+                                          SNRLimit = SNRCut, z = z, numDraws = numDraws,
                                           applyRelativisticCorrection = massOptions['relativisticCorrection'])
                 allMz=allMz+np.histogram2d(np.log10(tab[trueMassCol]*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
                 detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
