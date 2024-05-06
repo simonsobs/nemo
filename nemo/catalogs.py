@@ -912,7 +912,11 @@ def addFootprintColumnToCatalog(tab, label, areaMask, wcs):
 
     """
 
-    inMask=np.zeros(len(tab['RADeg'].data), dtype = bool)
+    # We have to allow multiple masks per footprint, e.g., for KiDS
+    if 'footprint_%s' % (label) in tab.keys():
+        inMask=tab['footprint_%s' % (label)]
+    else:
+        inMask=np.zeros(len(tab['RADeg'].data), dtype = bool)
     coords=wcs.wcs2pix(tab['RADeg'].data, tab['decDeg'].data)
     coords=np.array(np.round(coords), dtype = int)
     mask1=np.logical_and(coords[:, 0] >= 0, coords[:, 1] >= 0)

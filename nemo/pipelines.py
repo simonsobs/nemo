@@ -399,12 +399,24 @@ def makeRMSTables(config):
     if 'selFnFootprints' in config.parDict.keys():
         footprintsList=footprintsList+config.parDict['selFnFootprints']
         
-    # Run the selection function calculation on each tile in turn
+    # Let's only update files that need updating...
     selFnCollection={'full': []}
+    footprintsToUpdate=[]
     for footprintDict in footprintsList:
         if footprintDict['label'] not in selFnCollection.keys():
-            selFnCollection[footprintDict['label']]=[]
+            if footprintDict['label'] == "full":
+                label=""
+            else:
+                label="_"+footprintDict['label']
+            outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
+            if os.path.exists(outFileName) == True:
+                print("... intersection mask and RMS table already exist for %s footprint - skipping" % (footprintDict['label']))
+                continue
+            else:
+                selFnCollection[footprintDict['label']]=[]
+                footprintsToUpdate.append(footprintDict)
 
+    # Run the selection function calculation on each tile in turn
     for tileName in config.tileNames:
         RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
         selFnDict={'tileName': tileName,
@@ -414,7 +426,7 @@ def makeRMSTables(config):
 
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
-        for footprintDict in footprintsList:
+        for footprintDict in footprintsToUpdate:
             completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
             tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
