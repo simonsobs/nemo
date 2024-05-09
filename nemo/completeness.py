@@ -60,7 +60,7 @@ class SelFn(object):
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection
             cut (labelled as `fixed_SNR` in the catalogs produced by :ref:`nemoCommand`).
         configFileName (:obj:`str`, optional): Path to a Nemo configuration file. If not given, this
-            will be read from ``selFnDir/config.yml``, which is the config file for the 
+            will be read from ``selFnDir/config.yml``, which is the config file for the
             :ref:`nemoCommand` run that produced the ``selFn`` directory.
         footprint (:obj:`str`, optional): Use this to specify a footprint, if any are defined in the
             Nemo config used to produce the ``selFn`` dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default
@@ -94,6 +94,8 @@ class SelFn(object):
             from source injection simulations).
         overrideNoise (:obj:`float`, optional): If given, overwrite the contents of all noise maps with
             the given value (used for testing).
+        maxFlags (:obj:`int`, optional): If given, apply the flags mask, cutting areas where the flags
+            value is greater than this value.
 
     Attributes:
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection cut
@@ -139,7 +141,8 @@ class SelFn(object):
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
                  QSource = 'fit', useAverageQ = False, theoryCode = 'CCL', noiseCut = None, biasModel = None,
-                 overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001):
+                 overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001,
+                 maxFlags = None):
         
         self.SNRCut=SNRCut
         self.biasModel=biasModel
@@ -222,6 +225,8 @@ class SelFn(object):
             RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
             if footprint is not None:
                 RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprint))
+            if maxFlags is not None:
+                RMSTabFileName=RMSTabFileName.replace(".fits", "_maxFlags%d.fits" % (maxFlags))
             if os.path.exists(RMSTabFileName) == False:
                 raise FootprintError
             self.RMSTab=atpy.Table().read(RMSTabFileName)
@@ -570,8 +575,13 @@ class SelFn(object):
                     compMzCube[tileIndex]=compMzCube[tileIndex]*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
             t1=time.time()
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
-            # self.compMz[self.compMz > 1]=1
-            # self.compMz[self.compMz < 0]=0
+            # Deals with corner at high S/N, high-z sometimes weirdly having lower than 1 completeness
+            for i in range(self.compMz.shape[0]):
+                minIndex=np.where(self.compMz[i] >= 1)[0]
+                if len(minIndex) > 0:
+                    minIndex=minIndex[0]
+                    self.compMz[i][minIndex:]=1
+            self.compMz[self.compMz < 0]=0
         self.predObsCount=self.compMz*self.clusterCount
 
         # For caching/update checks
@@ -800,10 +810,16 @@ class SelFn(object):
         """
         
         if zBinEdges is None:
-            zBinEdges=self.mockSurvey.zBinEdges
-            
-        return calcMassLimit(completenessFraction, self.compMz, self.mockSurvey, zBinEdges)
+            zBinEdges=self.zBinEdges
 
+        massLimit=np.power(10, self.log10M[np.argmin(abs(self.compMz-completenessFraction), axis = 1)])/1e14
+        if len(zBinEdges) > 0:
+            binnedMassLimit=np.zeros(len(zBinEdges)-1)
+            for i in range(len(zBinEdges)-1):
+                binnedMassLimit[i]=np.average(massLimit[np.logical_and(self.z > zBinEdges[i], self.z <= zBinEdges[i+1])])
+            massLimit=binnedMassLimit
+
+        return massLimit
     
 #------------------------------------------------------------------------------------------------------------
 def _parseSourceInjectionData(injTab, inputTab, SNRCut):
@@ -1095,14 +1111,14 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         xOut=np.arange(intersectMask.shape[1])
         yOut=np.arange(intersectMask.shape[0])
         for i in yOut[yMask]:
-            intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
+            intersectMask[i][xMask]=intersectMask[i][xMask]+maskData[yIn[i], xIn[xMask]]
     intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
     maps.saveFITS(intersectFileName, intersectMask*areaMap, wcs, compressionType = 'PLIO_1')
 
     return intersectMask
 
 #------------------------------------------------------------------------------------------------------------
-def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
+def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None, maxFlags = None):
     """Makes a table containing map area in the tile refered to by `tileName` against RMS (noise level)
     values, compressing the information in the RMS maps. Results are cached under `selFnDir`, and read from
     disk if found.
@@ -1127,14 +1143,19 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
     RMSTabFileName=selFnDir+os.path.sep+"RMSTab.fits"
     if footprintLabel is not None:
         RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+    if maxFlags is not None:
+        RMSTabFileName=RMSTabFileName.replace(".fits", "_maxFlags%d.fits" % (maxFlags))
     if os.path.exists(RMSTabFileName):
         tab=atpy.Table().read(RMSTabFileName)
         return tab[np.where(tab['tileName'] == tileName)]
 
     # Table doesn't exist, so make it...
-    print(("... making RMS table for tile = %s, footprint = %s" % (tileName, footprintLabel)))
+    print(("... making RMS table for tile = %s, footprint = %s, maxFlags = %s" % (tileName, footprintLabel, str(maxFlags))))
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
+    if maxFlags is not None:
+        flagMask, wcs=loadFlagMask(tileName, selFnDir)
+        areaMap[flagMask > maxFlags]=0
     areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)
 
     if footprintLabel != None:  
@@ -1198,7 +1219,8 @@ def downsampleRMSTab(RMSTab, downsampleFactor = 2):
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
-def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintLabel = None):
+def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintLabel = None,
+                                 maxFlags = None):
     """Returns the area weighted average ỹ\ :sub:`0` noise value in the tile.
     
     Args:
@@ -1217,7 +1239,8 @@ def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintL
         
     """
 
-    RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = footprintLabel)
+    RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = footprintLabel,
+                     maxFlags = maxFlags)
     RMSValues=np.array(RMSTab['y0RMS'])
     tileArea=np.array(RMSTab['areaDeg2'])
     tileRMSValue=np.average(RMSValues, weights = tileArea)
@@ -1255,13 +1278,15 @@ def completenessByFootprint(config):
 
         try:
             selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
-                        footprint = footprintLabel, zStep = 0.1,
+                        footprint = footprintLabel, zStep = 0.02,
+                        massBinsTheory = 200, zStepTheory = 0.01,
                         downsampleRMS = False,
                         applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
                         delta = config.parDict['massOptions']['delta'],
                         rhoType = config.parDict['massOptions']['rhoType'],
                         method = config.parDict['selFnOptions']['method'],
-                        QSource = config.parDict['selFnOptions']['QSource'])
+                        QSource = config.parDict['selFnOptions']['QSource'],
+                        maxFlags = config.parDict['selFnOptions']['maxFlags'])
         except FootprintError:
             continue
             #print("... no overlapping area with footprint %s" % (footprintLabel))
@@ -1271,17 +1296,17 @@ def completenessByFootprint(config):
         if footprintLabel is None:
             footprintLabel="full"
 
-        massLimit_90Complete=calcMassLimit(0.9, selFn.compMz, selFn.mockSurvey, zBinEdges = zBinEdges)
         outFileName=config.diagnosticsDir+os.path.sep+"MzCompleteness_%s_%s.npz" % (selFn.method, footprintLabel)
-        np.savez(outFileName, z = selFn.mockSurvey.z, log10M = selFn.mockSurvey.log10M, completeness = selFn.compMz)
-        makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, footprintLabel, massLabel,
+        np.savez(outFileName, z = selFn.z, log10M = selFn.log10M, completeness = selFn.compMz)
+        makeMzCompletenessPlot(selFn.compMz, selFn.log10M, selFn.z, footprintLabel, massLabel,
                                config.diagnosticsDir+os.path.sep+"MzCompleteness_%s_%s.pdf" % (selFn.method, footprintLabel))
 
         # 90% mass completeness limit and plots
-        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres,
+        massLimit_90Complete=selFn.getMassLimit(0.9)
+        makeMassLimitVRedshiftPlot(massLimit_90Complete, selFn.z,
                                    config.diagnosticsDir+os.path.sep+"completeness90Percent_%s_%s.pdf" % (selFn.method, footprintLabel),
                                    title = "footprint: %s" % (footprintLabel))
-        zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
+        zMask=np.logical_and(selFn.z >= 0.2, selFn.z < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
         print(">>> Survey-averaged results inside footprint %s:" % (footprintLabel))
         print("... total survey area (after masking) = %.1f sq deg" % (selFn.totalAreaDeg2))
@@ -1414,6 +1439,11 @@ def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = None):
     
     """
     
+    print("fix up for new API")
+    import IPython
+    IPython.embed()
+    sys.exit()
+
     massLimit=np.power(10, mockSurvey.log10M[np.argmin(abs(compMz-completenessFraction), axis = 1)])/1e14
     
     if zBinEdges is not None and len(zBinEdges) > 0:
@@ -1570,7 +1600,7 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
         # Calculate 90% completeness as function of z
         zBinEdges=np.arange(0.05, 2.1, 0.1)
         zBinCentres=(zBinEdges[:-1]+zBinEdges[1:])/2.
-        massLimit_90Complete=calcMassLimit(0.9, compMz, mockSurvey, zBinEdges = zBinEdges)
+        massLimit_90Complete=selFn.getMassLimit(0.9, zBinEdges = zBinEdges)
         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
         makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, plotFileName, 
@@ -1610,6 +1640,11 @@ def makeMassLimitMapsAndPlots(config):
     d, wcs=maps.chunkLoadMask(inFileName, dtype = np.float32)
     noiseLevels=np.unique(d)
     noiseLevels=noiseLevels[noiseLevels > 0]
+
+    print("mass lim map")
+    import IPython
+    IPython.embed()
+    sys.exit()
 
     y0Grid, theta500Grid=selFn._makeSignalGrids()
 

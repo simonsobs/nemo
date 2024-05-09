@@ -408,9 +408,11 @@ def makeRMSTables(config):
                 label=""
             else:
                 label="_"+footprintDict['label']
+            if config.parDict['selFnOptions']['maxFlags'] is not None:
+                label=label+"_maxFlags%d" % (config.parDict['selFnOptions']['maxFlags'])
             outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
             if os.path.exists(outFileName) == True:
-                print("... intersection mask and RMS table already exist for %s footprint - skipping" % (footprintDict['label']))
+                print("... intersection mask and RMS table already exist for %s footprint with maxFlags = %s - skipping" % (footprintDict['label'], config.parDict['selFnOptions']['maxFlags']))
                 continue
             else:
                 selFnCollection[footprintDict['label']]=[]
@@ -418,7 +420,8 @@ def makeRMSTables(config):
 
     # Run the selection function calculation on each tile in turn
     for tileName in config.tileNames:
-        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
+        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
+                                      maxFlags = config.parDict['selFnOptions']['maxFlags'])
         selFnDict={'tileName': tileName,
                    'RMSTab': RMSTab,
                    'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
@@ -431,7 +434,8 @@ def makeRMSTables(config):
             tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
             if tileAreaDeg2 > 0:
                 RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
-                                              footprintLabel = footprintDict['label'])
+                                              footprintLabel = footprintDict['label'],
+                                              maxFlags = config.parDict['selFnOptions']['maxFlags'])
                 selFnDict={'tileName': tileName,
                            'RMSTab': RMSTab,
                            'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
@@ -462,6 +466,8 @@ def makeRMSTables(config):
                 label=""
             else:
                 label="_"+footprint
+            if config.parDict['selFnOptions']['maxFlags'] is not None:
+                label=label+"_maxFlags%d" % (config.parDict['selFnOptions']['maxFlags'])
             outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
             tabList=[]
             for selFnDict in selFnCollection[footprint]:
