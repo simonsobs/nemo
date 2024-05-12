@@ -528,52 +528,11 @@ class SelFn(object):
                                                                                   mode = mode, truncate = truncate)
 
         elif self.method == 'fast' or self.method == 'faster':
-            # self.predObsCounts=np.zeros(self.clusterCount.shape)
             compMzCube=np.zeros([len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
             t0=time.time()
-            if self.useAverageQ == True:
-                y0Grid=self._makeSignalGrid(tileName = None)
             for tileIndex in range(len(self.tileNames)):
                 tileName=self.tileNames[tileIndex]
-                t00=time.time()
-                # NOTE: y0Grid, theta500 grid are cached and only re-calculated if parameters change
-                if self.useAverageQ == False:
-                    y0Grid=self._makeSignalGrid(tileName = tileName)
-                t11=time.time()
-                # Calculate completeness using area-weighted average
-                # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
-                RMSTab=self.RMSDict[tileName]
-                areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-                t22=time.time()
-                # SOLikeT style - tiny loops are faster than doing this with array functions
-                for i in range(len(RMSTab)):
-                    if self.biasModel is not None:
-                        trueSNR=y0Grid/RMSTab['y0RMS'][i]
-                        corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
-                    else:
-                        corrFactors=np.ones(y0Grid.shape)
-                    # If we decide to bring back the 'faster' method, see below
-                    # if self._compSNRLimInterp is not None:
-                    #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._compSNRLimInterp((y0Grid*corrFactors)/RMSTab['y0RMS'][i])*areaWeights[i]
-                    # else:
-                    #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
-                    if self.scalingRelationDict['sigma_int'] == 0:
-                        compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
-                    else:
-                        # SOLikeT style
-                        scatter=self.scalingRelationDict['sigma_int']
-                        lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
-                        yy0=np.exp(lnyy)
-                        mu=np.float32(np.log(y0Grid*corrFactors))
-                        fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
-                        arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
-                        cc=np.float32(arg*areaWeights[i])
-                        arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
-                        args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
-                        compMzCube[tileIndex]+=np.trapz(np.float32(args), x=lnyy, axis=0)
-                if self.maxTheta500Arcmin is not None:
-                    compMzCube[tileIndex]=compMzCube[tileIndex]*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
-            t1=time.time()
+                compMzCube[tileIndex]=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
             # Deals with corner at high S/N, high-z sometimes weirdly having lower than 1 completeness
             for i in range(self.compMz.shape[0]):
@@ -582,6 +541,7 @@ class SelFn(object):
                     minIndex=minIndex[0]
                     self.compMz[i][minIndex:]=1
             self.compMz[self.compMz < 0]=0
+
         self.predObsCount=self.compMz*self.clusterCount
 
         # For caching/update checks
@@ -591,6 +551,71 @@ class SelFn(object):
         self._last_Ob0=self.mockSurvey.Ob0
         self._last_sigma8=self.mockSurvey.sigma8
         self._last_ns=self.mockSurvey.ns
+
+
+    def calcFastCompletenessInTile(self, tileName, return_y0Grid = False, RMSTab = None):
+        """Calculate completeness on the (M, z) grid for the given tile using the fast method.
+
+        Args:
+            tileName (str): Name of the tile
+            return_y0Grid (bool, optional): If given, return the ``fixed_y_c`` signal calculated
+                on the (M, z) grid
+            RMSTab (:obj:`astropy.table.Table`, optional): If given, this is used instead of the
+                RMS noise information held by the ``SelFn`` object.
+
+        Returns:
+            2d array (completeness on the M,z grid for the tile with same dimensions as
+            ``self.clusterCount``)
+
+        """
+
+        t00=time.time()
+        # NOTE: y0Grid, theta500 grid are cached and only re-calculated if parameters change
+        if self.useAverageQ == False:
+            y0Grid=self._makeSignalGrid(tileName = tileName)
+        else:
+            y0Grid=self._makeSignalGrid(tileName = None)
+        compMzTile=np.zeros(y0Grid.shape)
+        # Calculate completeness using area-weighted average
+        # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
+        if RMSTab is None:
+            RMSTab=self.RMSDict[tileName]
+        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+        t22=time.time()
+        # SOLikeT style - tiny loops are faster than doing this with array functions
+        for i in range(len(RMSTab)):
+            if self.biasModel is not None:
+                trueSNR=y0Grid/RMSTab['y0RMS'][i]
+                corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
+            else:
+                corrFactors=np.ones(y0Grid.shape)
+            # If we decide to bring back the 'faster' method, see below
+            # if self._compSNRLimInterp is not None:
+            #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._compSNRLimInterp((y0Grid*corrFactors)/RMSTab['y0RMS'][i])*areaWeights[i]
+            # else:
+            #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
+            if self.scalingRelationDict['sigma_int'] == 0:
+                compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
+            else:
+                # SOLikeT style
+                scatter=self.scalingRelationDict['sigma_int']
+                lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
+                yy0=np.exp(lnyy)
+                mu=np.float32(np.log(y0Grid*corrFactors))
+                fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
+                arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
+                cc=np.float32(arg*areaWeights[i])
+                arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
+                args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
+                compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
+
+        if self.maxTheta500Arcmin is not None:
+            compMzTile=compMzTile*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
+
+        if return_y0Grid is True:
+            return compMzTile, y0Grid
+        else:
+            return compMzTile
 
 
     def _get_erf_diff(self, qin, qmin, qmax, qcut):
@@ -1301,14 +1326,14 @@ def completenessByFootprint(config):
         makeMzCompletenessPlot(selFn.compMz, selFn.log10M, selFn.z, footprintLabel, massLabel,
                                config.diagnosticsDir+os.path.sep+"MzCompleteness_%s_%s.pdf" % (selFn.method, footprintLabel))
 
-        # 90% mass completeness limit and plots
+        # 90% mass completeness limit [we don't really need the plots any more - can use the Mz ones above]
         massLimit_90Complete=selFn.getMassLimit(0.9)
-        makeMassLimitVRedshiftPlot(massLimit_90Complete, selFn.z,
-                                   config.diagnosticsDir+os.path.sep+"completeness90Percent_%s_%s.pdf" % (selFn.method, footprintLabel),
-                                   title = "footprint: %s" % (footprintLabel))
+        # makeMassLimitVRedshiftPlot(massLimit_90Complete, selFn.z,
+        #                            config.diagnosticsDir+os.path.sep+"completeness90Percent_%s_%s.pdf" % (selFn.method, footprintLabel),
+        #                            title = "footprint: %s" % (footprintLabel))
         zMask=np.logical_and(selFn.z >= 0.2, selFn.z < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-        print(">>> Survey-averaged results inside footprint %s:" % (footprintLabel))
+        print(">>> Survey-averaged results inside footprint %s [maxFlags = %s]:" % (footprintLabel, config.parDict['selFnOptions']['maxFlags']))
         print("... total survey area (after masking) = %.1f sq deg" % (selFn.totalAreaDeg2))
         print("... survey-averaged 90%% mass (%s) completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLabel, massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
         print("... survey-averaged 90%% mass (%s) completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (massLabel, averageMassLimit_90Complete))
@@ -1611,9 +1636,9 @@ def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, pl
       
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMapsAndPlots(config):
-    """Makes maps of mass completeness and associated plots. Output is written to the the `diagnosticsDir`
-    directory). The maps to make are controlled by the ``massLimitMaps`` parameter in the ``selFnOptions``
-    dictionary in the Nemo config file.
+    """Makes maps of approximate mass completeness and associated plots. Output is written to the
+    `diagnosticsDir` directory. The maps to make are controlled by the ``massLimitMaps`` parameter in the
+    selFnOptions`` dictionary in the Nemo config file.
     
     Args:
         config (:class:`nemo.startUp.NemoConfig`): A NemoConfig object.
@@ -1632,66 +1657,47 @@ def makeMassLimitMapsAndPlots(config):
                 method = config.parDict['selFnOptions']['method'],
                 QSource = config.parDict['selFnOptions']['QSource'])
 
-    if config.parDict['stitchTiles'] == True:
-        inFileName=config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (config.parDict['photFilter'])
-    else:
-        inFileName=config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (config.parDict['photFilter'])
-
-    d, wcs=maps.chunkLoadMask(inFileName, dtype = np.float32)
-    noiseLevels=np.unique(d)
-    noiseLevels=noiseLevels[noiseLevels > 0]
-
-    print("mass lim map")
-    import IPython
-    IPython.embed()
-    sys.exit()
-
-    y0Grid, theta500Grid=selFn._makeSignalGrids()
-
-    # Fill in blocks in map for each RMS value
+    # Load in tiles RMS map and fill a mass limit tiled map, then stitch at the end
     for massLimDict in config.parDict['selFnOptions']['massLimitMaps']:
         t0=time.time()
-        # Need re-bin here to make this run in sensible amount of time
-        if 'numBins' not in massLimDict.keys():
-            numBins=50
-        else:
-            numBins=massLimDict['numBins']
         if 'completenessFraction' not in massLimDict.keys():
             completenessFraction=0.9
         else:
             completenessFraction=massLimDict['completenessFraction']
-        binEdges=np.linspace(noiseLevels.min(), noiseLevels.max(), numBins+1)
-        binCentres=(binEdges[1:]+binEdges[:-1])/2
-        zIndex=np.argmin(abs(selFn.mockSurvey.z-massLimDict['z']))
-        z=selFn.mockSurvey.z[zIndex]
+        zIndex=np.argmin(abs(selFn.z-massLimDict['z']))
+        z=selFn.z[zIndex]
         outFileName=config.diagnosticsDir+os.path.sep+"massLimitMap_z%.2f_comp%.2f.fits" % (z, completenessFraction)
-        if os.path.exists(outFileName) == True:
-            print("... already made mass limit map %s" % (outFileName))
-            massLimMap, wcs=maps.chunkLoadMask(outFileName, dtype = np.float32)
-        else:
-            massLimMap=np.zeros(d.shape)
+        inFileName=config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (config.parDict['photFilter'])
+        stitchedMapLimDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+        with pyfits.open(inFileName) as img:
             count=0
-            t0=time.time()
-            for i in range(len(binEdges)-1):
-                binMin=binEdges[i]
-                binMax=binEdges[i+1]
-                mask=np.logical_and(d > binMin, d <= binMax)
-                print("... %d/%d" % (i+1, len(binCentres)))
-                # No intrinsic scatter
-                #sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = binCentres[i])
-                # With intrinsic scatter [see fast method in selFn.update]
-                totalLogErr=np.sqrt((binCentres[i]/y0Grid)**2 + selFn.scalingRelationDict['sigma_int']**2)
-                sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = totalLogErr*y0Grid)
-                massLimMap[mask]=selFn.mockSurvey.log10M[np.argmin(abs(sfi[zIndex]-0.9))]
-            t1=time.time()
-            mask=np.not_equal(massLimMap, 0)
-            massLimMap[mask]=np.power(10, massLimMap[mask])/1e14
-            maps.saveFITS(outFileName, massLimMap, wcs, compressionType = "RICE_1")
-            print("... made mass limit map '%s' (time taken = %.3f sec)" % (outFileName, t1-t0))
-        del d, y0Grid, theta500Grid, noiseLevels
+            for tileName in config.tileNames:
+                count=count+1
+                d=img[tileName].data
+                noiseLevels=np.unique(d)
+                noiseLevels=noiseLevels[noiseLevels > 0]
+                for n in noiseLevels:
+                    RMSTab=atpy.Table()
+                    RMSTab['y0RMS']=[n]
+                    RMSTab['areaDeg2']=[100] # doesn't matter, just for weighting
+                    compMzTile, y0Grid=selFn.calcFastCompletenessInTile(tileName = tileName, return_y0Grid = True,
+                                                                        RMSTab = RMSTab)
+                    massLim=selFn.log10M[np.where(compMzTile[zIndex] > completenessFraction)[0][0]]
+                    massLim=np.power(10, massLim)/1e14
+                    d[d == n]=massLim
+                stitchedMapLimDict[tileName]=d
+        stitchedMapLimDict.saveStitchedFITS(outFileName, config.origWCS, compressionType = "RICE_1")
+        t1=time.time()
+        print("... made mass limit map '%s' (time taken = %.3f sec)" % (outFileName, t1-t0))
 
         # Plots
         plotSettings.update_rcParams()
+        del stitchedMapLimDict, d, compMzTile, y0Grid
+        with pyfits.open(outFileName) as img:
+            for ext in img:
+                if ext.data is not None:
+                    massLimMap=np.float16(ext.data)
+                    wcs=astWCS.WCS(ext.header, mode = 'pyfits')
 
         # Map plot [this is only set-up really for large area maps]
         massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap)
@@ -1699,7 +1705,7 @@ def makeMassLimitMapsAndPlots(config):
         figSize=(16, 5.7)
         axesLabels="sexagesimal"
         axes=[0.08,0.15,0.91,0.88]
-        cutLevels=[2, int(np.median(massLimMap[np.nonzero(massLimMap)]))+2]
+        cutLevels=[massLimMap[massLimMap > 0].min(), massLimMap.max()]
         colorMapName=colorcet.m_rainbow
         fig=plt.figure(figsize = figSize)
         p=astPlots.ImagePlot(massLimMap, wcs, cutLevels = cutLevels, title = None, axes = axes,
@@ -1718,21 +1724,22 @@ def makeMassLimitMapsAndPlots(config):
         del p
 
         # Cumulative area info [note, compression drives up number of 'mass limits', so we rebin]
-        pixAreaMap=maps.getPixelAreaArcmin2Map(massLimMap.shape, wcs)
+        pixAreaMap=np.float16(maps.getPixelAreaArcmin2Map(massLimMap.shape, wcs))
+        pixAreaMap=pixAreaMap/(60**2) # Have to do this here to avoid overflow if 16 bit
         limits=np.unique(massLimMap)
         limits=limits[limits > 0]
-        binEdges=np.linspace(limits.min(), limits.max(), 50)
+        binEdges=np.linspace(limits.min(), limits.max(), 30)
         binCentres=(binEdges[1:]+binEdges[:-1])/2
-        areas=[]
+        areas=np.zeros(len(binCentres))
         for i in range(len(binEdges)-1):
             binMin=binEdges[i]
             binMax=binEdges[i+1]
             mask=np.logical_and(massLimMap > binMin, massLimMap <= binMax)
-            areas.append(pixAreaMap[mask].sum())
+            if mask.sum() > 0:
+                areas[i]=pixAreaMap[mask].sum()
         tab=atpy.Table()
         tab['MLim']=binCentres
         tab['areaDeg2']=areas
-        tab['areaDeg2']=tab['areaDeg2']/(60**2)
         tab.sort('MLim')
         del pixAreaMap, massLimMap, limits
 
