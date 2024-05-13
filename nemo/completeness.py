@@ -1683,7 +1683,7 @@ def makeMassLimitMapsAndPlots(config):
 
         # Plots
         plotSettings.update_rcParams()
-        del stitchedMapLimDict, d, compMzTile, y0Grid
+        del stitchedMapLimDict, compMzTile, y0Grid
         with pyfits.open(outFileName) as img:
             for ext in img:
                 if ext.data is not None:
