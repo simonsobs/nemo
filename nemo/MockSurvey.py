@@ -586,7 +586,7 @@ class MockSurvey(object):
         if biasModel is not None:
             corrFactors=biasModel['func'](tab['true_fixed_SNR'], biasModel['params'][0], biasModel['params'][1], biasModel['params'][2])
             tab['fixed_y_c']=tab['fixed_y_c']*corrFactors
-            tab['fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']
+        tab['fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']
 
         # Apply selection?
         if SNRLimit is not None:
