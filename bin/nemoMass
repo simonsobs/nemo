@@ -271,9 +271,10 @@ def makeParser():
                         (inferred_y_c), and Y500 (inferred_Y500Arcmin2). Y500 values currently assume the Arnaud+2010\
                         Universal Pressure Profile, even if alternative GNFW parameters are given in the config file.")
     parser.add_argument("-m", "--make-model-maps", dest = "makeModelMaps", default = False,
-                        action = "store_true", help = "Make model maps of the SZ signal corresponding to\
-                        the maps given in the config file by running the nemoModel script. Output will\
-                        be written to the clusterModelMaps directory under the Nemo output directory.")
+                        action = "store_true", help = "Make model maps and masks for the SZ signal\
+                        corresponding to the maps given in the config file by running the nemoModel script.\
+                        Output will be written to the clusterModelMaps directory under the Nemo output\
+                        directory.")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
                         want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M", 
                         default = False)
@@ -442,8 +443,8 @@ if __name__ == '__main__':
         for mapDict in config.parDict['unfilteredMaps']:
             print("... %s ..." % (mapDict['label']))
             outModelFileName=outDir+os.path.sep+"clusterModelMaps"+os.path.sep+"clusterModelMap_%s.fits" % (mapDict['label'])
-            cmd="nemoModel %s %s %s %s -f %.1f" % (catFileName, mapDict['surveyMask'], mapDict['beamFileName'],
-                                                   outModelFileName, mapDict['obsFreqGHz'])
+            cmd="nemoModel %s %s %s %s -f %.1f -m" % (catFileName, mapDict['surveyMask'], mapDict['beamFileName'],
+                                                      outModelFileName, mapDict['obsFreqGHz'])
             os.system(cmd)
         t1=time.time()
         print("... time taken to generate model cluster SZ signal maps = %.1f sec" % (t1-t0))
