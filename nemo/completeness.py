@@ -506,8 +506,6 @@ class SelFn(object):
                     # If above fails, it's because relativistic correction is on, and y0 doesn't always increase
                     for j in range(y0Grid[i].shape[0]):
                         compMz[i][j]=self.compThetaInterpolator(self._theta500Grid[i][j], y0Grid[i][j]/1e-04)
-            compMz[compMz < 0]=0
-            compMz[compMz > 1]=1
             self.compMz=compMz
             self.y0TildeGrid=self.Q.getQ(self._theta500Grid)*y0Grid
             if self.scalingRelationDict['sigma_int'] > 0:
@@ -530,13 +528,14 @@ class SelFn(object):
                 tileName=self.tileNames[tileIndex]
                 compMzCube[tileIndex]=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
-            # Deals with corner at high S/N, high-z sometimes weirdly having lower than 1 completeness
-            for i in range(self.compMz.shape[0]):
-                minIndex=np.where(self.compMz[i] >= 1)[0]
-                if len(minIndex) > 0:
-                    minIndex=minIndex[0]
-                    self.compMz[i][minIndex:]=1
-            self.compMz[self.compMz < 0]=0
+
+        # Deals with corner at high S/N, high-z sometimes weirdly having lower than 1 completeness
+        for i in range(self.compMz.shape[0]):
+            minIndex=np.where(self.compMz[i] >= 1)[0]
+            if len(minIndex) > 0:
+                minIndex=minIndex[0]
+                self.compMz[i][minIndex:]=1
+        self.compMz[self.compMz < 0]=0
 
         self.predObsCount=self.compMz*self.clusterCount
 
@@ -676,7 +675,7 @@ class SelFn(object):
                 if self.applyRelativisticCorrection == True:
                     fRels_zk=interpolate.splev(self._log10M500s, self.mockSurvey.fRelSplines[k])
                     true_y0s_zk=true_y0s_zk*fRels_zk
-                y0Grid[i]=true_y0s_zk #*0.95
+                y0Grid[i]=true_y0s_zk
             # For some cosmological parameters, we can still get the odd -ve y0
             y0Grid[y0Grid <= 0] = 1e-9
             self._y0GridCache[tileName]=y0Grid
@@ -848,7 +847,7 @@ def _parseSourceInjectionData(injTab, inputTab, SNRCut):
 
     Args:
         injTab (:obj:`astropy.table.Table`): Output catalog produced by the source injection test.
-        inputTab (:obj:`astropy.table.Table`): Input catalog produced by the source injectio test.
+        inputTab (:obj:`astropy.table.Table`): Input catalog produced by the source injection test.
         SNRCut (:obj:`float`): Selection threshold in S/N to apply.
 
     Returns:
