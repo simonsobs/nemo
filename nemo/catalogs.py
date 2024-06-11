@@ -146,7 +146,7 @@ def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 
         return False
 
 #------------------------------------------------------------------------------------------------------------
-def makeOptimalCatalog(catalogDict, constraintsList = []):
+def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None):
     """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a 
     master catalog with one entry per object, keeping only the details of the highest signal-to-noise 
     detection.
@@ -155,38 +155,55 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
         catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
         constraintsList (:obj:`list`, optional): A list of constraints (for the format, see 
             :func:`selectFromCatalog`).
+        photFilter (:obj:`str`, optional): Name of the reference filter. If given, columns with prefix
+            `fixed_` will be added corresponding to this filter.
         
     Returns:
-        None - an ``optimalCatalog`` key is added to ``catalogDict`` in place.
+        Optimal catalog (`astropy.table.Table` object)
     
     """
     
-    allCatalogs=[]
+    # Revised June 2024 - unlike the previous algorithm this puts the refScaleCatalog first
+    # i.e., guarantees SNR >= fixed_SNR always [weird issues a tiny fraction of the time otherwise]
+    # and that coords == coords at the ref scale detection, where available
+    # BUT this now drops objects that are not detected at the reference scale
+    # instead of assigning e.g. fixed_SNR < SNRCut
+    refScaleCatalog=[]
+    mergedCatalog=[]
     for key in catalogDict.keys():
         if len(catalogDict[key]['catalog']) > 0:
-            allCatalogs.append(catalogDict[key]['catalog'])
-    if len(allCatalogs) > 0:
-        allCatalogs=atpy.vstack(allCatalogs)
-        mergedCatalog=allCatalogs.copy()
-        mergedCatalog.add_column(atpy.Column(np.zeros(len(mergedCatalog)), 'toRemove'))
-        for row in allCatalogs:
-            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data, 
-                                         allCatalogs['decDeg'].data) 
+            if key.split("#")[0] == photFilter:
+                refScaleCatalog.append(catalogDict[key]['catalog'])
+            else:
+                mergedCatalog.append(catalogDict[key]['catalog'])
+    if len(refScaleCatalog) > 0:
+        refScaleCatalog=atpy.vstack(refScaleCatalog)
+    else:
+        refScaleCatalog=None
+    if len(mergedCatalog) > 0:
+        mergedCatalog=atpy.vstack(mergedCatalog)
+    if refScaleCatalog is None: # This is the case for e.g. point sources
+        refScaleCatalog=mergedCatalog
+
+    # Add in optimal SNR columns info
+    colsToRewrite=['SNR', 'template', 'y_c', 'err_y_c', 'deltaT_c', 'err_deltaT_c']
+    if len(refScaleCatalog) > 0:
+        for row in refScaleCatalog:
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], mergedCatalog['RADeg'].data,
+                                         mergedCatalog['decDeg'].data)
             xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
             if len(xIndices) > 1:
-                xMatches=allCatalogs[xIndices]
-                xMatchIndex=np.argmax(xMatches['SNR'])
-                for index in xIndices:
-                    if index != xIndices[xMatchIndex]:
-                        mergedCatalog['toRemove'][index]=1
-        mergedCatalog=mergedCatalog[mergedCatalog['toRemove'] == 0]
-        mergedCatalog.remove_column('toRemove')
-        mergedCatalog.sort(['RADeg', 'decDeg'])
-        mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
+                bestSNRIndex=xIndices[np.argmax(mergedCatalog[xIndices]['SNR'])]
+                if mergedCatalog['SNR'][bestSNRIndex] > row['SNR']:
+                    for c in colsToRewrite:
+                        if c in refScaleCatalog.keys():
+                            row[c]=mergedCatalog[c][bestSNRIndex]
+        refScaleCatalog.sort(['RADeg', 'decDeg'])
+        refScaleCatalog=selectFromCatalog(refScaleCatalog, constraintsList)
     else:
-        mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
+        refScaleCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
     
-    return mergedCatalog
+    return refScaleCatalog
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 

@@ -303,7 +303,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             catalogDict[label]['catalog']=catalog
 
     # Merged/optimal catalogs
-    optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
+    optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'],
+                                               photFilter = photFilter)
     
     # Gathering catalogs
     if config.MPIEnabled == True:
