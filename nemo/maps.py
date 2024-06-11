@@ -1613,7 +1613,8 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default',\
                    profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,\
-                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0, reportTimingInfo = False):
+                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0, reportTimingInfo = False,
+                   saveMemory = True):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1783,6 +1784,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
     if applyPixelWindow == True:
         t0=time.time()
+        if saveMemory is True: # We _should_ be able to get away with this
+            modelMap=np.float16(modelMap)
         modelMap=enmap.apply_window(modelMap, pow = 1.0)
         t1=time.time()
         if reportTimingInfo: print("makeModelImage - pix win application - took %.3f sec" % (t1-t0))
