@@ -187,7 +187,7 @@ def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None):
 
     # Add in optimal SNR columns info
     colsToRewrite=['SNR', 'template', 'y_c', 'err_y_c', 'deltaT_c', 'err_deltaT_c']
-    if len(refScaleCatalog) > 0:
+    if len(refScaleCatalog) > 0 and len(mergedCatalog) > 0:
         for row in refScaleCatalog:
             rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], mergedCatalog['RADeg'].data,
                                          mergedCatalog['decDeg'].data)
@@ -200,7 +200,7 @@ def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None):
                             row[c]=mergedCatalog[c][bestSNRIndex]
         refScaleCatalog.sort(['RADeg', 'decDeg'])
         refScaleCatalog=selectFromCatalog(refScaleCatalog, constraintsList)
-    else:
+    if len(refScaleCatalog) == 0:
         refScaleCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
     
     return refScaleCatalog
