@@ -141,7 +141,7 @@ class SelFn(object):
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
                  QSource = 'fit', useAverageQ = False, theoryCode = 'CCL', noiseCut = None, biasModel = None,
-                 overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001,
+                 truncateDeltaSNR = 3.0, overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001,
                  maxFlags = None):
         
         self.SNRCut=SNRCut
@@ -159,6 +159,7 @@ class SelFn(object):
         self.useAverageQ=useAverageQ
         self.massBinsTheory=massBinsTheory
         self.zStepTheory=zStepTheory
+        self.truncateDeltaSNR=truncateDeltaSNR
 
         if configFileName is None:
             configFileName=self.selFnDir+os.path.sep+"config.yml"
@@ -581,7 +582,13 @@ class SelFn(object):
         for i in range(len(RMSTab)):
             if self.biasModel is not None:
                 trueSNR=y0Grid/RMSTab['y0RMS'][i]
-                corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
+                # Old model
+                # corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
+                # New model [if we do want the old model, should call it like this anyway]
+                corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
+                # Some models may give unphysically large correction factors when extrapolated S/N -> 0
+                # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
+                corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
             else:
                 corrFactors=np.ones(y0Grid.shape)
             # If we decide to bring back the 'faster' method, see below
@@ -840,7 +847,30 @@ class SelFn(object):
             massLimit=binnedMassLimit
 
         return massLimit
-    
+
+#------------------------------------------------------------------------------------------------------------
+def optBiasModelFunc(snr, params):
+    """Optimization bias model function, of the form ``corrFactor = 1 + p1/x + p2/x**2 + ... + pn/x**n``
+    where p1...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
+    method of the ``SelFn`` class.
+
+    Args:
+        snr (:obj:`np.ndarray`): Array of true signal-to-noise ratio values
+        params (:obj:`np.ndarray`): Fit coefficients.
+
+    Returns:
+        Array of correction factors.
+
+    """
+
+    model=np.ones(snr.shape)
+    index=1
+    for p in params:
+        model=model+p/(snr**index)
+        index=index+1
+
+    return model
+
 #------------------------------------------------------------------------------------------------------------
 def _parseSourceInjectionData(injTab, inputTab, SNRCut):
     """Produce arrays for constructing interpolator objects from source injection test data.
