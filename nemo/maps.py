@@ -1142,7 +1142,7 @@ def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None):
     return randMap
 
 #-------------------------------------------------------------------------------------------------------------
-def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMode = 'perPixel'):
+def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMode = 'perPixel', lmin = 100):
     """Generate a simulated noise map. This may contain just white noise, or optionally a 1/f noise component
     can be generated.
 
@@ -1160,6 +1160,8 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMo
         noiseMode(:obj:`str`, optional): Either 'perPixel', or 'perSquareArcmin' - if the latter, constant noise in terms
             of surface brightness will be added (accounts for varying pixel scale, if present - which requires
             `wcs` to be supplied).
+        lmin (:obj:`float`, optional): If given, 1/f noise will be zeroed out below this multipole to avoid pathologically
+            high noise. Defaults to 100. Use None if you do not want to zero out the 1/f noise on large scales.
 
     Returns:
         A map (:obj:`numpy.ndarray`)
@@ -1225,6 +1227,7 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMo
         ells = np.arange(mlmax+1)
         Nl_atm = (lKnee/ells)**-alpha + 1
         Nl_atm[~np.isfinite(Nl_atm)] = 0.
+        if not(lmin is None): Nl_atm[ells<lmin] = 0.
         assert np.all(np.isfinite(Nl_atm))
         randMap = _mod_noise_map(ivarMap, Nl_atm)
         assert np.all(np.isfinite(randMap))
