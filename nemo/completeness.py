@@ -588,7 +588,8 @@ class SelFn(object):
                 corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
                 # Some models may give unphysically large correction factors when extrapolated S/N -> 0
                 # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
-                corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
+                if self.truncateDeltaSNR is not None:
+                    corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
             else:
                 corrFactors=np.ones(y0Grid.shape)
             # If we decide to bring back the 'faster' method, see below
