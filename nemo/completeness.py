@@ -229,7 +229,7 @@ class SelFn(object):
             if maxFlags is not None:
                 RMSTabFileName=RMSTabFileName.replace(".fits", "_maxFlags%d.fits" % (maxFlags))
             if os.path.exists(RMSTabFileName) == False:
-                raise FootprintError
+                raise Exception("File %s not found - perhaps check maxFlags value given?" % (RMSTabFileName))
             self.RMSTab=atpy.Table().read(RMSTabFileName)
             if overrideNoise is not None:
                 self.RMSTab['y0RMS']=overrideNoise
@@ -1676,7 +1676,8 @@ def makeMassLimitMapsAndPlots(config):
                 delta = config.parDict['massOptions']['delta'],
                 rhoType = config.parDict['massOptions']['rhoType'],
                 method = config.parDict['selFnOptions']['method'],
-                QSource = config.parDict['selFnOptions']['QSource'])
+                QSource = config.parDict['selFnOptions']['QSource'],
+                maxFlags = config.parDict['selFnOptions']['maxFlags'])
 
     # Load in tiles RMS map and fill a mass limit tiled map, then stitch at the end
     for massLimDict in config.parDict['selFnOptions']['massLimitMaps']:
