@@ -146,7 +146,41 @@ def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 
         return False
 
 #------------------------------------------------------------------------------------------------------------
-def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None):
+def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None, method = 'ref-first'):
+    """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a
+    master catalog with one entry per object, keeping only the details of the highest signal-to-noise
+    detection.
+
+    Args:
+        catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
+        constraintsList (:obj:`list`, optional): A list of constraints (for the format, see
+            :func:`selectFromCatalog`).
+        photFilter (:obj:`str`, optional): Name of the reference filter. If given, columns with prefix
+            `fixed_` will be added corresponding to this filter. This is only needed when using a config
+            that uses multiple filters such as cluster searches.
+        method (:obj:`str`, optional): Either 'ref-first' (coords are those of the detection in the
+            ``photFilter`` catalog ; ACT DR6+ behaviour), or 'ref-forced' (coords are those of the optimal
+            SNR detection and quantities at the ``photFilter`` scale are extracted by forced photometry at
+            these coords ; behaviour prior to ACT DR6). This only affects configs that use multiple filters
+            such as cluster searches.
+
+    Returns:
+        Optimal catalog (`astropy.table.Table` object)
+
+    """
+
+    if method == 'ref-first':
+        cat=_makeOptimalCatalogRefFirst(catalogDict, constraintsList = constraintsList,
+                                        photFilter = photFilter)
+    elif method == 'ref-forced':
+        cat=_makeOptimalCatalogForcedRef(catalogDict, constraintsList = constraintsList)
+    else:
+        raise Exception("There is no '%s' method - use either 'ref-first' or 'ref-forced'" % (method))
+
+    return cat
+
+#------------------------------------------------------------------------------------------------------------
+def _makeOptimalCatalogRefFirst(catalogDict, constraintsList = [], photFilter = None):
     """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a 
     master catalog with one entry per object, keeping only the details of the highest signal-to-noise 
     detection.
@@ -160,6 +194,9 @@ def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None):
         
     Returns:
         Optimal catalog (`astropy.table.Table` object)
+
+    Note:
+        This provides the 'ref-first' method of ``makeOptimalCatalog``.
     
     """
     
@@ -204,6 +241,52 @@ def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None):
         refScaleCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
     
     return refScaleCatalog
+
+#------------------------------------------------------------------------------------------------------------
+def _makeOptimalCatalogForcedRef(catalogDict, constraintsList = []):
+    """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a
+    master catalog with one entry per object, keeping only the details of the highest signal-to-noise
+    detection.
+
+    Args:
+        catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
+        constraintsList (:obj:`list`, optional): A list of constraints (for the format, see
+            :func:`selectFromCatalog`).
+
+    Returns:
+        None - an ``optimalCatalog`` key is added to ``catalogDict`` in place.
+
+    Note:
+        This routine is the one used for ACT DR5 and earlier
+
+    """
+
+    allCatalogs=[]
+    for key in catalogDict.keys():
+        if len(catalogDict[key]['catalog']) > 0:
+            allCatalogs.append(catalogDict[key]['catalog'])
+    if len(allCatalogs) > 0:
+        allCatalogs=atpy.vstack(allCatalogs)
+        mergedCatalog=allCatalogs.copy()
+        mergedCatalog.add_column(atpy.Column(np.zeros(len(mergedCatalog)), 'toRemove'))
+        for row in allCatalogs:
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data,
+                                         allCatalogs['decDeg'].data)
+            xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
+            if len(xIndices) > 1:
+                xMatches=allCatalogs[xIndices]
+                xMatchIndex=np.argmax(xMatches['SNR'])
+                for index in xIndices:
+                    if index != xIndices[xMatchIndex]:
+                        mergedCatalog['toRemove'][index]=1
+        mergedCatalog=mergedCatalog[mergedCatalog['toRemove'] == 0]
+        mergedCatalog.remove_column('toRemove')
+        mergedCatalog.sort(['RADeg', 'decDeg'])
+        mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
+    else:
+        mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
+
+    return mergedCatalog
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 

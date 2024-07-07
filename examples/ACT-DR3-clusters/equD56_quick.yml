@@ -22,6 +22,7 @@ thresholdSigma: 4.0
 minObjPix: 1
 rejectBorder: 0
 useInterpolator: False
+optimalCatalogMethod: 'ref-forced'
 findCenterOfMass: True
 objIdent: 'ACT-CL'
 longNames: False
