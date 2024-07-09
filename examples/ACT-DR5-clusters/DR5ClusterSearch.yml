@@ -26,7 +26,7 @@ maskPointSourcesFromCatalog:
 # Detection/catalog options
 # Set useInterpolator; True for sub-pixel flux and SNR measurements
 thresholdSigma: 4.0
-minObjPix: 1
+minObjPix: 1 # NOTE: This was effectively 2 for the ACT-DR5 cluster catalog paper due to a daft bug
 findCenterOfMass: True
 useInterpolator: True
 optimalCatalogMethod: 'ref-forced'
