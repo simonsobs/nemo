@@ -873,6 +873,28 @@ def optBiasModelFunc(snr, params):
     return model
 
 #------------------------------------------------------------------------------------------------------------
+def optBiasSeriesOffsetModelFunc(snr, params):
+    """Optimization bias model function, of the form ``corrFactor = p0 + p1/x + p2/x**2 + ... + pn/x**n``
+    where p0...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
+    method of the ``SelFn`` class.
+
+    Args:
+        snr (:obj:`np.ndarray`): Array of true signal-to-noise ratio values
+        params (:obj:`np.ndarray`): Fit coefficients.
+
+    Returns:
+        Array of correction factors.
+
+    """
+
+    model=np.ones(snr.shape)*params[0]
+    index=1
+    for p in params[1:]:
+        model=model+p/(snr**index)
+        index=index+1
+    return model
+
+#------------------------------------------------------------------------------------------------------------
 def _parseSourceInjectionData(injTab, inputTab, SNRCut):
     """Produce arrays for constructing interpolator objects from source injection test data.
 

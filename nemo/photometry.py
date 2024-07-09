@@ -97,7 +97,7 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
     catalog=[]
     idNumCount=1
     for i in range(len(objIDs)):
-        if type(objNumPix) != float and objNumPix[i] > minObjPix:
+        if type(objNumPix) != float and objNumPix[i] >= minObjPix:
             objDict={}
             objDict['id']=idNumCount
             objDict['x']=objPositions[i][1]
