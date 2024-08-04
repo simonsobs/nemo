@@ -57,7 +57,7 @@ class NemoTests(object):
         if os.path.exists(self.inMapFileName) == False:
             print(">>> Downloading E-D56 map ...")
             os.chdir(self.cacheDir)
-            os.system("wget https://astro.ukzn.ac.za/~mjh/equD56Maps.tar.gz")
+            os.system("curl https://astro.ukzn.ac.za/~mjh/equD56Maps.tar.gz -o equD56Maps.tar.gz")
             os.system("tar -zxvf equD56Maps.tar.gz")
             os.remove("equD56Maps.tar.gz")
             os.chdir(thisDir)
@@ -65,7 +65,7 @@ class NemoTests(object):
         # This one is actually in the distribution as it stands but anyway...
         if os.path.exists(self.cacheDir+os.path.sep+"E-D56Clusters.fits") == False:
             os.chdir(self.cacheDir)
-            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/actpol_2016_lensing/E-D56Clusters.fits")
+            os.system("curl https://lambda.gsfc.nasa.gov/data/suborbital/ACT/actpol_2016_lensing/E-D56Clusters.fits -o E-D56Clusters.fits")
             os.chdir(thisDir)
             
         # Copy files that are in the git/source distribution (saves re-organising)
@@ -90,10 +90,10 @@ class NemoTests(object):
         if os.path.exists(self.inMapFileName) == False:
             print(">>> Downloading South 2008 data ...")
             os.chdir(self.cacheDir)
-            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Maps/AR1/South/ACT_148_south_season_2_1way_v3_summed.fits")
-            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Weights/AR1/South/ACT_148_south_season_2_1way_hits_v3.fits")
-            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Beams/profiles/profile_AR1_2008_pixwin_130224.txt")
-            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/Cluster_src/Ptsrc_cat/act_source_catalog_AR1_2008.txt")
+            os.system("curl https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Maps/AR1/South/ACT_148_south_season_2_1way_v3_summed.fits -o ACT_148_south_season_2_1way_v3_summed.fits")
+            os.system("curl https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Weights/AR1/South/ACT_148_south_season_2_1way_hits_v3.fits -o ACT_148_south_season_2_1way_hits_v3.fits")
+            os.system("curl https://lambda.gsfc.nasa.gov/data/suborbital/ACT/data2013/Beams/profiles/profile_AR1_2008_pixwin_130224.txt -o profile_AR1_2008_pixwin_130224.txt")
+            os.system("curl https://lambda.gsfc.nasa.gov/data/suborbital/ACT/Cluster_src/Ptsrc_cat/act_source_catalog_AR1_2008.txt -o act_source_catalog_AR1_2008.txt")
             os.chdir(thisDir)
             
         # Need to convert published catalog such that comparison routines work
@@ -120,7 +120,7 @@ class NemoTests(object):
         if os.path.exists(self.inMapFileName) == False:
             print(">>> Downloading quickstart files ...")
             os.chdir(self.cacheDir)
-            os.system("wget 'https://www.dropbox.com/scl/fi/5sjapfshk8g3kxgy4zc56/nemo-quickstart-maps.tar.gz?rlkey=swpdttpgvkffbgr9pcmebslw2&dl=0' -O nemo-quickstart-maps.tar.gz")
+            os.system("curl 'https://www.dropbox.com/scl/fi/5sjapfshk8g3kxgy4zc56/nemo-quickstart-maps.tar.gz?rlkey=swpdttpgvkffbgr9pcmebslw2&dl=0' -o nemo-quickstart-maps.tar.gz -L")
             os.system("tar -zxvf nemo-quickstart-maps.tar.gz")
             os.remove("nemo-quickstart-maps.tar.gz")
             os.chdir(thisDir)
@@ -129,7 +129,7 @@ class NemoTests(object):
         comparisonCatalog=self.cacheDir+os.path.sep+"DR5_cluster-catalog_v1.1.fits"
         if os.path.exists(comparisonCatalog) == False:
             os.chdir(self.cacheDir)
-            os.system("wget https://lambda.gsfc.nasa.gov/data/suborbital/ACT/ACT_dr5/DR5_cluster-catalog_v1.1.fits")
+            os.system("curl https://lambda.gsfc.nasa.gov/data/suborbital/ACT/ACT_dr5/DR5_cluster-catalog_v1.1.fits -o DR5_cluster-catalog_v1.1.fits")
             os.chdir(thisDir)
         
         # Generate mask file(s) for simming
