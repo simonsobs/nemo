@@ -1350,14 +1350,16 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         #     sys.exit()
 
         # y0
+        # NOTE: To avoid issues where we might stray out of valid Q range, at low z, we truncate a bit
         fRels=interpolate.splev(log10M500c, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
         y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
         y0pred=y0pred*np.power(1+z, onePlusRedshift_power)
         if applyRelativisticCorrection == True:
             y0pred=y0pred*fRels
-        true_y0pred=y0pred/Qs
-        Ptrue_y0=P/np.trapz(P, true_y0pred)
+        valid=Qs > 0
+        true_y0pred=y0pred[valid]/Qs[valid]
+        Ptrue_y0=P[valid]/np.trapz(P[valid], true_y0pred)
         true_y0, true_y0_errMinus, true_y0_errPlus=getMLValueFromP(Ptrue_y0, true_y0pred)
 
         # Y500
