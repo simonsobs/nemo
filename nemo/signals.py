@@ -216,7 +216,7 @@ class QFit(object):
             refTheta=None
 
         # Inspect file and get tile names if MEF
-        if tileNames is None:
+        if tileNames is None or tileNames == []:
             tileNames=[]
             with pyfits.open(QFitFileName) as QTab:
                 for ext in QTab:

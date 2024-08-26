@@ -250,6 +250,8 @@ class SelFn(object):
                     totalAreaDeg2=totalAreaDeg2+tileTab['areaDeg2'].sum()
             self.tileNames=tileNames
             self.totalAreaDeg2=totalAreaDeg2
+            if totalAreaDeg2 == 0:
+                raise FootprintError
             # If want a plot of noise distribution
             # plt.hist(self.RMSTab['y0RMS'], weights = self.RMSTab['areaDeg2'], bins  = 100, density=True)
 

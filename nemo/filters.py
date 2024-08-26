@@ -724,10 +724,11 @@ class MatchedFilter(MapFilter):
         # NOTE: This all works on maps which have a zero border. If they don't, edgeTrimArcmin has no effect
         if 'edgeTrimArcmin' in self.params.keys() and self.params['edgeTrimArcmin'] > 0:
             trimSizePix=int(round((self.params['edgeTrimArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-        elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart"\
-                and self.params['noiseParams']['noiseGridArcmin'] is not None:
-            gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
-            trimSizePix=int(round(gridSize*3.0))
+        # NOTE: Disabled below as it sometimes does unexpected things when using large grid sizes (80 arcmin)
+        # elif 'noiseGridArcmin' in self.params['noiseParams'] and self.params['noiseParams']['noiseGridArcmin'] != "smart"\
+        #         and self.params['noiseParams']['noiseGridArcmin'] is not None:
+        #     gridSize=int(round((self.params['noiseParams']['noiseGridArcmin']/60.)/self.wcs.getPixelSizeDeg()))
+        #     trimSizePix=int(round(gridSize*3.0))
         else:
             trimSizePix=0.0
         if trimSizePix  > 0:

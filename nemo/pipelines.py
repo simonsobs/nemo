@@ -433,14 +433,15 @@ def makeRMSTables(config):
         for footprintDict in footprintsToUpdate:
             completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
             tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
-            if tileAreaDeg2 > 0:
-                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
-                                              footprintLabel = footprintDict['label'],
-                                              maxFlags = config.parDict['selFnOptions']['maxFlags'])
-                selFnDict={'tileName': tileName,
-                           'RMSTab': RMSTab,
-                           'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
-                selFnCollection[footprintDict['label']].append(selFnDict)
+            # Life is easier if we just generate empty tables when there is no intersection
+            # if tileAreaDeg2 > 0:
+            RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
+                                            footprintLabel = footprintDict['label'],
+                                            maxFlags = config.parDict['selFnOptions']['maxFlags'])
+            selFnDict={'tileName': tileName,
+                        'RMSTab': RMSTab,
+                        'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
+            selFnCollection[footprintDict['label']].append(selFnDict)
 
     if config.MPIEnabled == True:
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
