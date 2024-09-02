@@ -85,10 +85,10 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
 
             if config.rank == 0:
                 if config.filterSetOptions[setNum]['saveCatalog'] == True:
-                    if 'label' not in config.filterSetOptions[setNum].keys():
+                    if 'fileLabel' not in config.filterSetOptions[setNum].keys():
                         label="filterSet%d" % (setNum)
                     else:
-                        label=config.filterSetOptions[setNum]['label']
+                        label=config.filterSetOptions[setNum]['fileLabel']
                     outFileName=rootOutDir+os.path.sep+label+"_catalog.fits"
                     catalogs.writeCatalog(config.filterSetOptions[setNum]['catalog'], outFileName)
                     catalogs.catalog2DS9(config.filterSetOptions[setNum]['catalog'], outFileName.replace(".fits", ".reg"))
@@ -323,19 +323,23 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     # Gathering and stitching tiles
     # NOTE: Order matters, bumped up RMS map to make sure written before next stage
     # It doesn't matter if rank 0 then takes its time with the other maps that aren't needed again
+    # First deal with the potential case of wanting to write out output from a filterSet other than the last one
+    fileLabel=''
+    if config.currentFilterSet is not None and fileLabel in config.filterSetOptions[config.currentFilterSet].keys():
+        fileLabel=config.filterSetOptions[config.currentFilterSet]['fileLabel']+'-'
     labelsList=['area mask', 'flag mask', 'RMS map', 'filtered map', 'S/N map']
     tileDictsList=[areaMaskDict, flagMaskDict, stitchedRMSMapDict, stitchedFilteredMapDict, stitchedSNMapDict]
     writeMEFList=[writeAreaMask, writeFlagMask, True, False, False]
     writeStitchedList=[writeAreaMask, writeFlagMask, True, True, True]
     MEFPaths=[config.selFnDir+os.path.sep+"areaMask.fits",
               config.selFnDir+os.path.sep+"flagMask.fits",
-              config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilter),
+              config.selFnDir+os.path.sep+"RMSMap_%s%s.fits" % (fileLabel, photFilter),
               None, None]
     stitchedPaths=[config.selFnDir+os.path.sep+"stitched_areaMask.fits",
                    config.selFnDir+os.path.sep+"stitched_flagMask.fits",
-                   config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (photFilter),
-                   filteredMapsDir+os.path.sep+"stitched_%s_filteredMap.fits" % (photFilter),
-                   filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (photFilter)]
+                   config.selFnDir+os.path.sep+"stitched_RMSMap_%s%s.fits" % (fileLabel, photFilter),
+                   filteredMapsDir+os.path.sep+"stitched_%s%s_filteredMap.fits" % (fileLabel, photFilter),
+                   filteredMapsDir+os.path.sep+"stitched_%s%s_SNMap.fits" % (fileLabel, photFilter)]
     compressionTypeList=['PLIO_1', 'PLIO_1', None, None, None]
     for i in range(len(tileDictsList)):
         label=labelsList[i]

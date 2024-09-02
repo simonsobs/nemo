@@ -453,6 +453,7 @@ class NemoConfig(object):
 
         # Identify filter sets, for enabling new multi-pass filtering and object finding
         self._identifyFilterSets()
+        self.currentFilterSet=None
 
         # Cache filters in memory to save some I/O
         self.cachedFilters={}
@@ -479,7 +480,9 @@ class NemoConfig(object):
             self.filterSetLabels={}
             for setNum in self.filterSetOptions.keys():
                 if 'label' in self.filterSetOptions[setNum].keys():
-                    self.filterSetLabels[setNum]=self.filterSetOptions[setNum]['label']
+                    raise Exception("Use 'fileLabel' instead of 'label' in 'filterSetOptions' dictionaries ('fileLabel' only needs to be included if you wish to write out catalogs or filtered maps for a filterSet other than the final one).")
+                if 'fileLabel' in self.filterSetOptions[setNum].keys():
+                    self.filterSetLabels[setNum]=self.filterSetOptions[setNum]['fileLabel']
                 else:
                     self.filterSetLabels[setNum]=None
 
@@ -729,6 +732,7 @@ class NemoConfig(object):
         options=None
         if setNum in self.filterSetOptions.keys():
             options=self.filterSetOptions[setNum]
+            self.currentFilterSet=setNum
             if 'saveCatalog' not in options.keys():
                 options['saveCatalog']=False
             #if 'maskSubtractedRegions' not in options.keys():

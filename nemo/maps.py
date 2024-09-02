@@ -439,14 +439,17 @@ class MapDict(dict):
                 if type(tab) != atpy.Table:
                     tab=atpy.Table().read(catalogPath)
                 tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-                if len(tab) > 0 and 'ellipse_A' not in tab.keys():
-                    raise Exception("Need to set measureShapes: True to use maskAndFillFromCatalog")
+                if len(tab) > 0:
+                    if 'ellipse_A' not in tab.keys() and 'maskHoleRadiusArcmin' not in self.keys():
+                        raise Exception("Need to set measureShapes: True or set maskHoleRadiusArcmin to use maskAndFillFromCatalog")
                 for row in tab:
                     x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                     rArcminMap=np.ones(data.shape, dtype = float)*1e6
                     if 'ellipse_A' and 'ellipse_B' in tab.keys():
                         xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
                         maskRadiusArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
+                    if 'maskHoleRadiusArcmin' in self.keys() and self['maskHoleRadiusArcmin'] is not None:
+                        maskRadiusArcmin=self['maskHoleRadiusArcmin']
                     if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
                         maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
                     rArcminMap, xBounds, yBounds=makeDegreesDistanceMap(rArcminMap, wcs,
