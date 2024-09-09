@@ -1386,7 +1386,6 @@ def completenessByFootprint(config):
         print(">>> Survey-averaged results inside footprint %s [maxFlags = %s]:" % (footprintLabel, config.parDict['selFnOptions']['maxFlags']))
         print("... total survey area (after masking) = %.1f sq deg" % (selFn.totalAreaDeg2))
         print("... survey-averaged 90%% mass (%s) completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLabel, massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
-        print("... survey-averaged 90%% mass (%s) completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (massLabel, averageMassLimit_90Complete))
 
 #------------------------------------------------------------------------------------------------------------
 def calcCompletenessContour(compMz, log10M, z, level = 0.90):
@@ -1738,6 +1737,8 @@ def makeMassLimitMapsAndPlots(config):
 
         # Plots
         plotSettings.update_rcParams()
+        for key in list(stitchedMapLimDict.keys()):
+            del stitchedMapLimDict[key]
         del stitchedMapLimDict
         with pyfits.open(outFileName) as img:
             for ext in img:
@@ -1746,33 +1747,41 @@ def makeMassLimitMapsAndPlots(config):
                     wcs=astWCS.WCS(ext.header, mode = 'pyfits')
 
         # Map plot [this is only set-up really for large area maps]
-        massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap)
-        fontSize=20.0
-        figSize=(16, 5.7)
+        colorBarPos='vertical'
         axesLabels="sexagesimal"
-        axes=[0.08,0.15,0.91,0.88]
-        cutLevels=[massLimMap[massLimMap > 0].min(), massLimMap.max()]
+        fontSize=20.0
+        figSize=(15.5, 4)
+        axes=[0.08,0.07,0.88,0.96]
+        cbShrink=0.8
+        cbAspect=10
+        fraction=0.05
+        pad=0.01
+        rotation=90
+        labelpad=5
+        # massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap) # We run out of memory with this
+        massLimMap[massLimMap < 1e-6]=np.nan
+        cutLevels=[massLimMap[massLimMap > 0].min(), massLimMap[massLimMap > 0].max()]
         colorMapName=colorcet.m_rainbow
         fig=plt.figure(figsize = figSize)
         p=astPlots.ImagePlot(massLimMap, wcs, cutLevels = cutLevels, title = None, axes = axes,
                              axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif',
                              RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
                              axesFontSize = fontSize)
-        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
-        cbShrink=0.7
-        cbAspect=40
-        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18,
-                        shrink = cbShrink, aspect = cbAspect)
-        plt.figtext(0.53, 0.04, cbLabel, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
+        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)\n[%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
+        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation = colorBarPos, fraction = fraction, pad = pad,
+                shrink = cbShrink, aspect = cbAspect)
+        cb.ax.get_yaxis().labelpad=labelpad
+        cb.ax.set_ylabel(cbLabel, rotation = rotation)
         plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
         plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
         plt.close()
         del p
+        del selFn
 
         # Cumulative area info [note, compression drives up number of 'mass limits', so we rebin]
-        pixAreaMap=np.float16(maps.getPixelAreaArcmin2Map(massLimMap.shape, wcs))
+        pixAreaMap=maps.getPixelAreaArcmin2Map(massLimMap.shape, wcs)
         pixAreaMap=pixAreaMap/(60**2) # Have to do this here to avoid overflow if 16 bit
-        limits=np.unique(massLimMap)
+        limits=np.unique(massLimMap[massLimMap > 0])
         limits=limits[limits > 0]
         binEdges=np.linspace(limits.min(), limits.max(), 30)
         binCentres=(binEdges[1:]+binEdges[:-1])/2
@@ -1795,8 +1804,11 @@ def makeMassLimitMapsAndPlots(config):
         plt.minorticks_on()
         plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
         #plt.plot(plotMRange, plotCumArea, 'k-')
-        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0]))
-        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction)))
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (config.parDict['massOptions']['delta'],
+                                                                      config.parDict['massOptions']['rhoType'][0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (config.parDict['massOptions']['delta'],
+                                                                                config.parDict['massOptions']['rhoType'][0],
+                                                                                int(100*completenessFraction)))
         labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
         plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
         plt.xlim(tab['MLim'].min(), tab['MLim'].max())
@@ -1812,8 +1824,11 @@ def makeMassLimitMapsAndPlots(config):
         ax=plt.axes([0.155, 0.12, 0.82, 0.86])
         plt.minorticks_on()
         plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
-        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0]))
-        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction)))
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (config.parDict['massOptions']['delta'],
+                                                                      config.parDict['massOptions']['rhoType'][0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (config.parDict['massOptions']['delta'],
+                                                                                config.parDict['massOptions']['rhoType'][0],
+                                                                                int(100*completenessFraction)))
         labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
         plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
         plt.xlim(deepTab['MLim'].min(), deepTab['MLim'].max())

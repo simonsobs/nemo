@@ -1361,7 +1361,7 @@ def getPixelAreaArcmin2Map(shape, wcs):
         xPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
         yPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
         pixAreasDeg2.append(xPixScale*yPixScale)
-    pixAreasDeg2=np.array(pixAreasDeg2)
+    pixAreasDeg2=np.array(pixAreasDeg2, dtype = np.float16)
     pixAreasArcmin2=pixAreasDeg2*(60**2)
     pixAreasArcmin2Map=np.array([pixAreasArcmin2]*shape[1]).transpose()
     
