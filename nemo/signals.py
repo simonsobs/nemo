@@ -321,7 +321,7 @@ class QFit(object):
         if z is not None:
             if type(z) == np.ndarray and z.shape == (1,):
                 z=float(z)
-            if type(z) is not float and type(z) is not np.float64:
+            if type(z) is not float and type(z) is not np.float64 and type(z) is not np.float32:
                 raise Exception("z must be a float, and not, e.g., an array")
         
         if self.zDependent == True:
