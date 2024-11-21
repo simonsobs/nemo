@@ -292,12 +292,12 @@ class MockSurvey(object):
         h=self.cosmoModel['h']
         dndlnM=self.mfunc(self.cosmoModel, self.M, 1/(1+z)) / np.log(10)
         dndM=dndlnM/self.M
-        ngtm=integrate.cumtrapz(dndlnM[::-1], np.log(self.M), initial = 0)[::-1]
+        ngtm=integrate.cumulative_trapezoid(dndlnM[::-1], np.log(self.M), initial = 0)[::-1]
         
         MUpper=np.arange(np.log(self.M[-1]), np.log(10**18), np.log(self.M[1])-np.log(self.M[0]))
         extrapolator=_spline(np.log(self.M), np.log(dndlnM), k=1)
         MF_extr=extrapolator(MUpper)
-        intUpper=integrate.simps(np.exp(MF_extr), dx=MUpper[2] - MUpper[1], even='first')
+        intUpper=integrate.simpson(np.exp(MF_extr), dx=MUpper[2] - MUpper[1])#, even='first')
         ngtm=ngtm+intUpper
     
         return ngtm

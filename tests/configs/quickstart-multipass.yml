@@ -78,8 +78,8 @@ selFnOptions: {fixedSNRCut: 5.0,
 # If using filterSets, specify some options here,
 # e.g., maps to use - if not given, default is to use all maps in unfilteredMaps
 # If we wanted to override S/N thresholds for detection etc., we'd implement it in this thing
-filterSetOptions: {1: {mapToUse: 'f090', thresholdSigma: 5.0, objIdent: 'ACT-S', saveCatalog: True, label: 'ptsrc_f090'},
-                   2: {mapToUse: 'f150', thresholdSigma: 5.0, objIdent: 'ACT-S', saveCatalog: True, label: 'ptsrc_f150'},
+filterSetOptions: {1: {mapToUse: 'f090', thresholdSigma: 5.0, objIdent: 'ACT-S', saveCatalog: True, fileLabel: 'ptsrc_f090'},
+                   2: {mapToUse: 'f150', thresholdSigma: 5.0, objIdent: 'ACT-S', saveCatalog: True, fileLabel: 'ptsrc_f150'},
                    3: {subtractModelFromSets: [1, 2]},
                    4: {subtractModelFromSets: [1, 2], noiseModelCatalogFromSets: [3]}
                   }
