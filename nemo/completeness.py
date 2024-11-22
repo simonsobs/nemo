@@ -1716,7 +1716,7 @@ def makeMassLimitMapsAndPlots(config):
         stitchedMapLimDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
         with pyfits.open(inFileName) as img:
             count=0
-            for tileName in config.tileNames:
+            for tileName in config.allTileNames:
                 count=count+1
                 d=img[tileName].data
                 noiseLevels=np.unique(d)
