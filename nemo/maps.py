@@ -2097,8 +2097,12 @@ def sourceInjectionTest(config):
 
 #------------------------------------------------------------------------------------------------------------
 def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
-                             sourceInjectionModel = None, plotRawData = True, rawDataAlpha = 1,
-                             pickleFileName = None, selFnDir = None):
+                             sourceInjectionModel = None, theta500ArcminRange = None,
+                             maxCrossMatchRadiusArcmin = None,
+                             fluxRatioRange = None,
+                             plotRawData = True,
+                             rawDataAlpha = 1, pickleFileName = None, selFnDir = None,
+                             plotDR5Model = True):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using
     the contents of posRecTable (see positionRecoveryTest).
     
@@ -2111,6 +2115,13 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         sourceInjectionModel (str, optional): If given, select only objects matching the given source
             injection model name from the input table. This can be used to get results for individual
             cluster scales, for example.
+        theta500ArcminRange (list, optional): If given, include only objects with scales within the range
+            [minTheta500ArcminRange, maxThetaArcminRange]. This will only work for cluster injection
+            simulations.
+        fluxRatioRange (list, optional): If given, include only objects with inFlux/outFlux within the range
+            [minFluxRatio, maxFluxRatio].
+        maxCrossMatchRadiusArcmin (float, optional): If given, throw out objects further than this distance
+            from the input position (for testing / post processing).
         plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background.
         pickleFileName (string, optional): Saves the percentile contours data as a pickle file if not None.
             This is saved as a dictionary with top-level keys named according to percentilesToPlot.
@@ -2142,7 +2153,31 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
     # Optional cut on injected signal model
     if sourceInjectionModel is not None:
         tab=tab[tab['sourceInjectionModel'] == str(sourceInjectionModel)]
+
+    # Optional cut on injected cluster angular sizes
+    if theta500ArcminRange is not None:
+        if 'theta500Arcmin' not in tab.keys():
+            raise Exception("No theta500Arcmin column - you can only use theta500ArcminRange if this column is present (i.e., for cluster injection sims)")
+        mask=np.logical_and(tab['theta500Arcmin'] > theta500ArcminRange[0], tab['theta500Arcmin'] < theta500ArcminRange[1])
+        tab=tab[mask]
+
+    # Optional cut on flux ratio
+    if fluxRatioRange is not None:
+        fluxRatio=tab['inFlux']/tab['outFlux']
+        mask=np.logical_and(fluxRatio > fluxRatioRange[0], fluxRatio < fluxRatioRange[1])
+        tab=tab[mask]
+
+    # Optional cut on cross match distance
+    # We shouldn't have to do this... this is for testing
+    if maxCrossMatchRadiusArcmin is not None:
+        tab=tab[tab['rArcmin'] < maxCrossMatchRadiusArcmin]
+
+    # HACK: Try throwing out some %-age
+    # print("WARNING - Throwing out 0.1 per cent of largest offsets")
+    # tab=tab[tab['rArcmin'] < np.percentile(tab['rArcmin'], 99.9)]
     
+    ####
+    # Old
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
     SNREdges=np.linspace(3.0, 10.0, 36)#np.linspace(0, 10, 101)
@@ -2159,14 +2194,35 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             withinRGrid[j, i]=withinR
             if total > 0:
                 grid[j, i]=withinR/total
-    
+
     # What we want are contours of constant prob - easiest to get this via matplotlib
     levelsList=np.array(percentiles)/100.
     contours=plt.contour(SNRCentres, rArcminThreshold, grid, levels = levelsList)
     minSNR=SNRCentres[np.sum(grid, axis = 0) > 0].min()
     maxSNR=SNRCentres[np.sum(grid, axis = 0) > 0].max()
     plt.close()
-    
+    # ####
+    # # New
+    # SNREdges=np.linspace(3.0, 10.0, 36)#np.linspace(0, 10, 101)
+    # SNRCentres=(SNREdges[1:]+SNREdges[:-1])/2.
+    # percentiles=[50]
+    # prange=np.linspace(0, 100, 101)
+    # for p in percentiles:
+    #     pval_rArcmin=np.zeros(SNRCentres.shape[0])
+    #     numPerBin=np.zeros(SNRCentres.shape[0])
+    #     for i in range(SNREdges.shape[0]-1):
+    #         binMin=SNREdges[i]
+    #         binMax=SNREdges[i+1]
+    #         SNRMask=np.logical_and(tab[SNRCol] >= binMin, tab[SNRCol] < binMax)
+    #         numPerBin[i]=SNRMask.sum()
+    #         ##
+    #         pdist=np.percentile(tab['rArcmin'][SNRMask], prange)
+    #         ##
+    #         if SNRMask.sum() > 0:
+    #             pval_rArcmin[i]=np.percentile(tab['rArcmin'][SNRMask], p)
+    # # print("New
+    # ####
+
     # We make our own plot so we use consistent colours, style (haven't fiddled with contour rc settings)
     plotSettings.update_rcParams()
     plt.figure(figsize=(9,6.5))
@@ -2216,6 +2272,28 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             valid=np.where(a[SNRCol] >= 4.1)
             snr=a[SNRCol][valid]
             rArcmin=a['rArcmin'][valid]
+            ####
+            # # # Series model
+            # def _posRecFitSeries(snr, p0, p1):
+            #     model=0
+            #     index=1
+            #     for p in [p0, p1]:
+            #         model=model+p/(snr**index)
+            #         index=index+1
+            #     return model
+            # try:
+            #     results=optimize.curve_fit(_posRecFitSeries, snr, rArcmin)
+            # except:
+            #     print("... WARNING: curve_fit failed for key = %s ..." % (key))
+            #     continue
+            # best_p0, best_p1=results[0]
+            # fitParamsDict[key]=np.array([best_p0, best_p1])
+            # fitSNRs=np.linspace(4, 10, 100)
+            # plt.plot(fitSNRs,
+            #          _posRecFitSeries(fitSNRs, best_p0, best_p1)*plotUnitsMultiplier,
+            #          '-', label = key)
+            ###
+            # DR5 exponential model
             try:
                 results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
             except:
@@ -2224,9 +2302,15 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             bestFitSNRFold, bestFitPedestal, bestFitNorm=results[0]
             fitParamsDict[key]=np.array([bestFitSNRFold, bestFitPedestal, bestFitNorm])
             fitSNRs=np.linspace(4, 10, 100)
-            plt.plot(fitSNRs, 
-                     catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm)*plotUnitsMultiplier, 
+            plt.plot(fitSNRs,
+                     catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm)*plotUnitsMultiplier,
                      '-', label = key)
+            ###
+        # Cross match model used for ACT DR5
+        if plotDR5Model is True:
+            plt.plot(fitSNRs,
+                     catalogs._posRecFitFunc(fitSNRs, 1.164, 0.685, 38.097)*plotUnitsMultiplier,
+                     '-', label = 'ACT DR5')
         #plt.ylim(0, 3)
         plt.legend(loc = 'upper right')
         plt.xlim(snr.min(), snr.max())

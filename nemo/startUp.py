@@ -116,9 +116,9 @@ def parseConfigFile(parDictFileName, verbose = False):
         # Don't reject objects in map border areas by default
         if 'rejectBorder' not in parDict.keys():
             parDict['rejectBorder']=0
-        # Default to new method for assembling optimal catalog if not given
+        # Default to old method for assembling optimal catalog if not given
         if 'optimalCatalogMethod' not in parDict.keys():
-            parDict['optimalCatalogMethod']='ref-forced'
+            parDict['optimalCatalogMethod']='ref-forced' # 'ref-first' is the new method
         # By default, undo the pixel window function
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True

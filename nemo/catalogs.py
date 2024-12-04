@@ -15,6 +15,7 @@ from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
 import astropy.io.fits as pyfits
 from scipy import ndimage
+from scipy import stats as sstats
 from . import maps
 
 # For adding meta data to output
@@ -102,6 +103,56 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     """
     return norm*np.exp(-snr/snrFold)+pedestal
     
+#------------------------------------------------------------------------------------------------------------
+def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1.480, B = -0.013,
+                            maxCDF = 0.997):
+    """Checks the cross match offset between a cluster detection and an external catalog using a model derived
+    from source injection sims. In this case, we use a Rayleigh distribution with the scale set according to
+    the model sigmaR = A*(1/fixedSNR)+B. We then evaluate the Rayleigh CDF at the given arcmin offset and
+    accept the object as a match if the value is < maxCDF.
+
+    The position recovery test itself only accounts for the effect of noise fluctuations in the maps on the
+    recovered SZ cluster positions. The addRMpc and z parameters can be used to account for additional
+    uncertainty on the position in the cross match catalog. This is subtracted in quadrature before the test
+    against the Rayleigh CDF is applied.
+
+    Args:
+        distArcmin (:obj:`bool`): Distance of the potential cross match from the ACT position in arcmin.
+        fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
+        z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift, and then added
+            in quadrature to the cross matching radius from the position recovery model.
+        addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown)
+            in the external cross match catalog. This will be accounted for in quadrature.
+        A (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
+        B (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
+        maxCDF (:obj:`float`, optional): The maximum value of the Rayleigh CDF below which an object is flagged
+            as a match. For example, 0.997 corresponds to using a match radius that contains 99.7% of
+
+    Returns:
+        True if distArcmin < model offset (+ optional addRMpc in arcmin at z), False if not.
+
+    Note:
+        Experimental!
+
+        Statement about the default values needs to be added here.
+
+    """
+
+    sigmaR=A*(1/fixedSNR) + B
+
+    # Subtract excess RMpc in quadrature before evaluating the match using the Rayleigh CDF
+    addArcmin=0.0
+    if z is not None and z > 0:
+        addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
+    quadDiff2=distArcmin**2 - addArcmin**2
+    if quadDiff2 > 0:
+        maxRadiusArcmin=np.sqrt(distArcmin**2 - addArcmin**2)
+    else:
+        maxRadiusArcmin=0.0
+    cdf=sstats.rayleigh.cdf(maxRadiusArcmin, loc=0, scale = sigmaR)
+
+    return cdf < maxCDF
+
 #------------------------------------------------------------------------------------------------------------
 def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
                     fitNorm = 38.097):
