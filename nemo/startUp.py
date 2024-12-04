@@ -161,10 +161,15 @@ def parseConfigFile(parDictFileName, verbose = False):
         if 'forcedPhotometryCatalog' not in parDict.keys():
             parDict['forcedPhotometryCatalog']=None
         # Used for finding and removing rings around bright sources
-        if 'removeRings' not in parDict.keys():
-            parDict['removeRings']=True
+        if 'flagRings' not in parDict.keys():
+            parDict['flagRings']=False
+        # Defaults chosen for ACT DR6 like cluster searches - these only applied if abobve is true
+        if 'ringFlagDistArcmin' not in parDict.keys():
+            parDict['ringFlagDistArcmin']=12.0
+        if 'ringFlagMinRingerSNR' not in parDict.keys():
+            parDict['ringFlagMinRingerSNR']=20.0
         if 'ringThresholdSigma' not in parDict.keys():
-            parDict['ringThresholdSigma']=3
+            parDict['ringThresholdSigma']=0.5
         # Applies to source injection recover sims only (whether print message or trigger exception)
         if 'haltOnPositionRecoveryProblem' not in parDict.keys():
             parDict['haltOnPositionRecoveryProblem']=False

@@ -23,7 +23,9 @@ import sys
 
 #------------------------------------------------------------------------------------------------------------
 def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                findCenterOfMass = True, removeRings = True, ringThresholdSigma = 0, invertMap = False, 
+                findCenterOfMass = True, flagRings = True, ringThresholdSigma = 0,
+                ringFlagDistArcmin = 12.0, ringFlagMinRingerSNR = 20,
+                invertMap = False,
                 objIdent = 'ACT-CL', longNames = False, verbose = True, useInterpolator = True, 
                 measureShapes = False, DS9RegionsPath = None):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
@@ -51,12 +53,12 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
     # This is for checking contamination
     if invertMap == True:
         data=data*-1
-        
+
     # Thresholding to identify significant pixels
     # Objects in rings will be discarded; we update the survey area mask accordingly in-place here
-    objIDs, objPositions, objNumPix, segMap=getObjectPositions(data, threshold, 
+    objIDs, objPositions, objNumPix, segMap=getObjectPositions(data, threshold,
                                                                findCenterOfMass = findCenterOfMass)
-    if removeRings == True:
+    if flagRings == True:
         minRingPix=30
         ringIDs, ringPositions, ringNumPix, ringSegMap=getObjectPositions(data, ringThresholdSigma, 
                                                                           findCenterOfMass = True)    
@@ -102,9 +104,10 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
             objDict['id']=idNumCount
             objDict['x']=objPositions[i][1]
             objDict['y']=objPositions[i][0]
+            objDict['ringFlag']=False
             if ringMask is not None:
                 if ringMask[int(objDict['y']), int(objDict['x'])] > 0:
-                    continue
+                    objDict['ringFlag']=True
             objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
             if objDict['RADeg'] < 0:
                 objDict['RADeg']=360.0+objDict['RADeg']
@@ -185,6 +188,16 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
         catalog=catalogs.catalogListToTab(catalog)
         if DS9RegionsPath is not None:
             catalogs.catalog2DS9(catalog, DS9RegionsPath)
+
+    # Ring flagging should only be applied around high S/N objects
+    flagged=catalog[catalog['ringFlag'] == True]
+    highSNR=catalog[catalog['SNR'] > ringFlagMinRingerSNR]
+    for row in catalog:
+        if row['ringFlag'] == True:
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], highSNR['RADeg'], highSNR['decDeg'])
+            # Second condition here because we don't want to flag if we have picked the central object
+            if np.logical_and((rDeg*60) < ringFlagDistArcmin, rDeg > 0).sum() == 0:
+                row['ringFlag']=False
 
     return catalog
 
