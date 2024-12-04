@@ -189,19 +189,19 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
         if DS9RegionsPath is not None:
             catalogs.catalog2DS9(catalog, DS9RegionsPath)
 
-    # Ring flagging should only be applied around high S/N objects
-    flagged=catalog[catalog['ringFlag'] == True]
-    highSNR=catalog[catalog['SNR'] > ringFlagMinRingerSNR]
-    for row in catalog:
-        if row['ringFlag'] == True:
-            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], highSNR['RADeg'], highSNR['decDeg'])
-            # Second condition here because we don't want to flag if we have picked the central object
-            if np.logical_and((rDeg*60) < ringFlagDistArcmin, rDeg > 0).sum() == 0:
-                row['ringFlag']=False
+        # Ring flagging should only be applied around high S/N objects
+        flagged=catalog[catalog['ringFlag'] == True]
+        highSNR=catalog[catalog['SNR'] > ringFlagMinRingerSNR]
+        for row in catalog:
+            if row['ringFlag'] == True:
+                rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], highSNR['RADeg'], highSNR['decDeg'])
+                # Second condition here because we don't want to flag if we have picked the central object
+                if np.logical_and((rDeg*60) < ringFlagDistArcmin, rDeg > 0).sum() == 0:
+                    row['ringFlag']=False
 
-    # Add to ringFlag to flags column (but doesn't affect flagMask area calc)
-    # This allows us to continue cleaning catalogs based on flags column value alone
-    catalog['flags']=catalog['flags']+catalog['ringFlag']
+        # Add to ringFlag to flags column (but doesn't affect flagMask area calc)
+        # This allows us to continue cleaning catalogs based on flags column value alone
+        catalog['flags']=catalog['flags']+catalog['ringFlag']
 
     return catalog
 
