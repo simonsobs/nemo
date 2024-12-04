@@ -199,6 +199,10 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
             if np.logical_and((rDeg*60) < ringFlagDistArcmin, rDeg > 0).sum() == 0:
                 row['ringFlag']=False
 
+    # Add to ringFlag to flags column (but doesn't affect flagMask area calc)
+    # This allows us to continue cleaning catalogs based on flags column value alone
+    catalog['flags']=catalog['flags']+catalog['ringFlag']
+
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
