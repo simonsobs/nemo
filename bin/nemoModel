@@ -76,6 +76,9 @@ def makeParser():
                         1/f noise with power spectrum N_l = (1 + l/lknee)^-3) will be generated and added\
                         to the map (see Appendix A of MacCrann et al. 2023). Reasonable values to use\
                         are 2000 for ACT f090, and 3000 for ACT f150.")
+    parser.add_argument("-r", "--noise-rescaling-factor", dest = "noiseRescalingFactor", default = 1.0,
+                        type = float, help = "Multiply the noise added to the map by this factor\
+                        (default: 1.0, i.e., no rescaling).")
     parser.add_argument("-A", "--add-map", dest = "addMap", default = None,
                         help = "Path to a FITS map (same pixelization as the input mask) that will be\
                         added to the output sim map. Useful if you want to add extra pre-computed signals\
@@ -306,7 +309,7 @@ if __name__ == '__main__':
                     raise Exception("Clipping ivar map to suitable size failed to converge quickly enough.")
             addNoise=clip['data'][:d.shape[0], :d.shape[1]]
             # raise Exception("Given inv var map does not have the same dimensions as the output sim map - should match the given mask")
-        d=d+maps.simNoiseMap(shape, addNoise, wcs = wcs, lKnee = args.lKnee, noiseMode = noiseMode)
+        d=d+args.noiseRescalingFactor*maps.simNoiseMap(shape, addNoise, wcs = wcs, lKnee = args.lKnee, noiseMode = noiseMode)
         # Optionally add another component (e.g., large scale noise, to start with)
         if args.addMap is not None:
             with pyfits.open(args.addMap) as img:
