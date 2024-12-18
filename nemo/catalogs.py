@@ -117,16 +117,16 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1
 
     The position recovery test itself only accounts for the effect of noise fluctuations in the maps on the
     recovered SZ cluster positions. The addRMpc and z parameters can be used to account for additional
-    uncertainty on the position in the cross match catalog. This is subtracted in quadrature before the test
-    against the Rayleigh CDF is applied.
+    uncertainty on the position in the cross match catalog. If an object is located within a projected
+    distance less than addRMpc, it is accepted as a match.
 
     Args:
-        distArcmin (:obj:`bool`): Distance of the potential cross match from the ACT position in arcmin.
+        distArcmin (:obj:`float`): Distance of the potential cross match from the ACT position in arcmin.
         fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
-        z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift, and then added
-            in quadrature to the cross matching radius from the position recovery model.
+        z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift.
         addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown)
-            in the external cross match catalog. This will be accounted for in quadrature.
+            in the external cross match catalog. Cross matches located within less than this distance will be
+            regarded as a match, regardless of the value of fixed_SNR. Requires z to be given.
         A (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         B (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         maxCDF (:obj:`float`, optional): The maximum value of the Rayleigh CDF below which an object is flagged
@@ -144,18 +144,28 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1
 
     sigmaR=A*(1/fixedSNR) + B
 
-    # Subtract excess RMpc in quadrature before evaluating the match using the Rayleigh CDF
-    addArcmin=0.0
-    if z is not None and z > 0:
-        addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
-    quadDiff2=distArcmin**2 - addArcmin**2
-    if quadDiff2 > 0:
-        maxRadiusArcmin=np.sqrt(distArcmin**2 - addArcmin**2)
-    else:
-        maxRadiusArcmin=0.0
-    cdf=sstats.rayleigh.cdf(maxRadiusArcmin, loc=0, scale = sigmaR)
+    # # Subtract excess RMpc in quadrature before evaluating the match using the Rayleigh CDF
+    # addArcmin=0.0
+    # if z is not None and z > 0:
+    #     addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
+    # quadDiff2=distArcmin**2 - addArcmin**2
+    # if quadDiff2 > 0:
+    #     maxRadiusArcmin=np.sqrt(distArcmin**2 - addArcmin**2)
+    # else:
+    #     maxRadiusArcmin=0.0
+    # cdf=sstats.rayleigh.cdf(maxRadiusArcmin, loc=0, scale = sigmaR)
+    #
+    # return cdf < maxCDF
 
-    return cdf < maxCDF
+    # Objects within projected distance < addRMpc are accepted as matches
+    # Otherwise, we use the Rayleigh CDF
+    cdf=sstats.rayleigh.cdf(distArcmin, loc=0, scale = sigmaR)
+    matched=cdf < maxCDF
+    if z is not None and z > 0 and matched == False:
+        addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
+        matched=distArcmin < addArcmin
+
+    return matched
 
 #------------------------------------------------------------------------------------------------------------
 def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
@@ -166,7 +176,7 @@ def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 
     positions.
     
     Args:
-        distArcmin (:obj:`bool`): Distance of the potential cross match from the ACT position in arcmin.
+        distArcmin (:obj:`float`): Distance of the potential cross match from the ACT position in arcmin.
         fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
         z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift, and then added
             in quadrature to the cross matching radius from the position recovery model.
