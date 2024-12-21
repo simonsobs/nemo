@@ -40,66 +40,6 @@ import time
 import yaml
 
 #------------------------------------------------------------------------------------------------------------
-def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnName = None):
-    """Given the path to a catalog that contains minimal columns name, RADeg, decDeg, redshift, 
-    add forced photometry columns so we can estimate SZ masses.
-    
-    """
-    
-    print(">>> Doing forced photometry ...")
-    
-    zTab=atpy.Table().read(pathToCatalog)
-    if zColumnName is not None:
-        if 'redshift' in zTab.keys():
-            zTab.remove_column('redshift')
-        zTab.rename_column(zColumnName, 'redshift')
-    if zErrColumnName is not None:
-        if 'redshiftErr' in zTab.keys():
-            zTab.remove_column('redshiftErr')
-        zTab.rename_column(zErrColumnName, 'redshiftErr')
-    if 'redshift' not in zTab.keys():
-        foundRedshiftCol=False
-        possZCols=['z', 'Z', 'REDSHIFT', 'Redshift', 'z_cl', 'Photz']
-        for p in possZCols:
-            if p in zTab.keys():
-                print("... assuming %s is the redshift column ..." % (p))
-                foundRedshiftCol=True
-                zTab.rename_column(p, 'redshift')
-        if foundRedshiftCol == False:
-            raise Exception("Couldn't find a redshift column in %s" % (pathToCatalog))
-    if 'redshiftErr' not in zTab.keys():
-        possZErrCols=['zErr', 'dz']
-        for p in possZErrCols:
-            if p in zTab.keys():
-                print("... assuming %s is the redshiftErr column ..." % (p))
-                zTab.rename_column(p, 'redshiftErr')
-    if 'redshiftErr' not in zTab.keys():
-        print("... assuming redshiftErr = 0 for all objects (no suitable redshiftErr column found) ...")
-        zTab.add_column(atpy.Column(np.zeros(len(zTab)), 'redshiftErr'))
-        
-    config.parDict['forcedPhotometryCatalog']=pathToCatalog
-    
-    # We need to disable any cut in SNR, otherwise we're not doing truly forced photometry
-    # This will allow -ve fixed_y_c, but we'll still only get the +ve masses though
-    config.parDict['thresholdSigma']=-100
-    
-    # Trim all filters except the reference one, then make catalog
-    trimmedList=[]
-    for mapFilter in config.parDict['mapFilters']:
-        if mapFilter['label'] == config.parDict['photFilter']:
-            trimmedList.append(mapFilter)
-    config.parDict['mapFilters']=trimmedList
-    forcedTab=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilteredMaps = True)
-
-    # Need to graft the redshifts back on
-    zMatched, forcedMatched, rDeg=catalogs.crossMatch(zTab, forcedTab)
-    tab=forcedMatched
-    tab.add_column(zMatched['redshift'])
-    tab.add_column(zMatched['redshiftErr'])
-    
-    return tab
-
-#------------------------------------------------------------------------------------------------------------
 def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstimates = [],
              inferSZProperties = False):
     """Calculates masses for cluster data in table.
@@ -163,7 +103,8 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
         tileName=row['tileName']
         
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
-        if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
+        # Added cut on z here to avoid blow-ups for extreme low-z
+        if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False and row['redshift'] > 0.01:
             # Corrected for mass function steepness
             massDict=signals.inferClusterProperties(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4,
                                             row['redshift'], row['redshiftErr'],
@@ -298,6 +239,9 @@ if __name__ == '__main__':
     catFileName=args.catFileName
     outFileName=args.outFileName
     forcedPhotometry=args.forcedPhotometry
+    if forcedPhotometry == True and args.MPIEnabled == True:
+        print("Aborted - cannot use forced photometry mode with MPI currently")
+        sys.exit()
     QSource=args.QSource
     if QSource not in ['fit', 'injection', 'hybrid']:
         raise Exception("QSource must be either 'fit', 'injection', or 'hybrid'")
@@ -346,7 +290,7 @@ if __name__ == '__main__':
             if key not in tab.keys():
                 forcedPhotometry=True
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = False,
-                                  setUpMaps = forcedPhotometry, writeTileInfo = False, verbose = False,
+                                  setUpMaps = False, writeTileInfo = False, verbose = False,
                                   strictMPIExceptions = strictMPIExceptions)
 
     # Clean out any z = 0 things that have crept through because these blow things up
@@ -366,7 +310,7 @@ if __name__ == '__main__':
     # Forced photometry (if enabled) - modifying table in place
     # NOTE: Move this up if/when we make it run under MPI
     if forcedPhotometry == True:
-        tab=addForcedPhotometry(catFileName, config, args.zColumnName, args.zErrColumnName)
+        tab=photometry.addForcedPhotometry(catFileName, config, args.zColumnName, args.zErrColumnName)
     
     # Set cosmological parameters for e.g. E(z) calc if these are set in .par file
     # We set them after the Q calc, because the Q calc needs to be for the fiducial cosmology
@@ -432,6 +376,7 @@ if __name__ == '__main__':
     tab.meta['RHOTYPE']=massOptions['rhoType']
     tab.meta['DELTA']=massOptions['delta']
     tab.write(outFileName, overwrite = True)
+    print("... mass table written to %s ..." % (outFileName))
 
     # Optionally making model images
     # These take ~2 min per map for ~7000 clusters in an ACT DR5/DR6 scale map on a single core
