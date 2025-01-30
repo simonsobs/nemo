@@ -596,7 +596,7 @@ def selectFromCatalog(catalog, constraintsList):
         An astropy Table object.
     
     """
-            
+
     passedConstraint=catalog
     for constraintString in constraintsList:
         key, op, value=constraintString.split()

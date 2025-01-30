@@ -749,6 +749,11 @@ class NemoConfig(object):
             if 'ignoreSurveyMask' not in options.keys():
                 options['ignoreSurveyMask']=False
 
+        # Config options that we _only_ want to apply to the final output catalog
+        # We're ok to do this for Python 3.7+ as dictionaries are ordered by default
+        if setNum != list(self.filterSetOptions.keys())[-1]:
+            self.parDict['catalogCuts']=[]
+
         # We could add some checks here for options that don't make sense
         # e.g., if addSiphonedFromSets is present, better have subtractModelFromSets present
 

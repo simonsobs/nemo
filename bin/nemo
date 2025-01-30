@@ -93,8 +93,9 @@ if __name__ == '__main__':
         if config.rank == 0:
             optimalCatalog=catalogs.flagTileBoundarySplits(optimalCatalog)
             optimalCatalog.sort('name')
-            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName)
-            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"))
+            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName, constraintsList = config.parDict['catalogCuts'])
+            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"),
+                                  constraintsList = config.parDict['catalogCuts'])
             addInfo=[{'key': 'SNR', 'fmt': '%.1f'}]
             catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                                  addInfo = addInfo, color = "cyan")
