@@ -40,7 +40,8 @@ def parseConfigFile(parDictFileName, verbose = False):
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
         maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan']
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan',
+                  'flagFromCatalog']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():

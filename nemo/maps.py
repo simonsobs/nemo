@@ -419,6 +419,26 @@ class MapDict(dict):
                     psMask[rDegMap < maskRadiusArcmin/60.0]=0
                     data[rDegMap < maskRadiusArcmin/60.0]=bckData[rDegMap < maskRadiusArcmin/60.0]
 
+        # Optional flagging of circular regions from external catalog
+        # Useful for extended sources like big galaxies
+        # NOTE: Yes, this can be tidied up by merging into the above / refactoring - but left for now
+        if 'flagFromCatalog' in list(self.keys()) and self['flagFromCatalog'] is not None:
+            if type(self['flagFromCatalog']) is not list:
+                self['flagFromCatalog']=[self['flagFromCatalog']]
+            rDegMap=np.ones(data.shape, dtype = float)*1e6
+            for catalogPath in self['flagFromCatalog']:
+                tab=atpy.Table().read(catalogPath)
+                tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+                if 'rArcmin' not in tab.keys():
+                    raise Exception("Did not find 'rArcmin' column - this is needed when using 'flagFromCatalog'")
+                for row in tab:
+                    maskRadiusArcmin=row['rArcmin']
+                    rDegMap, xBounds, yBounds=makeDegreesDistanceMap(rDegMap, wcs,
+                                                                     row['RADeg'], row['decDeg'],
+                                                                     maskRadiusArcmin/60)
+                    selection=rDegMap < maskRadiusArcmin/60.0
+                    flagMask[selection]=flagMask[selection]+1
+
         if 'subtractModelFromCatalog' in list(self.keys()) and self['subtractModelFromCatalog'] is not None:
             if type(self['subtractModelFromCatalog']) is not list:
                 self['subtractModelFromCatalog']=[self['subtractModelFromCatalog']]
