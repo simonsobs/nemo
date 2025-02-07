@@ -26,6 +26,7 @@ import copy
 import yaml
 import pickle
 from pixell import enmap, curvedsky, utils, powspec
+import pyccl as ccl
 import nemo
 try:
     import reproject
@@ -1763,6 +1764,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         else:
             for row in catalog:
                 count=count+1
+                theta500Arcmin=None # If using inferred properties, we will get this below
                 if 'true_M500c' in catalog.keys():
                     # This case is for when we're running from nemoMock output
                     # Since the idea of this is to create noise-free model images, we must use true values here
@@ -1770,6 +1772,16 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     M500=row['true_M500c']*1e14
                     z=row['redshift']
                     y0ToInsert=row['true_y_c']*1e-4
+                elif 'inferred_y_c' in catalog.keys():
+                    # NOTE: This is what we have if we run nemoMass with -I switch
+                    # This is a bit tortuous, but we used M500c in defining cluster signal maps interface below
+                    y0ToInsert=row['inferred_y_c']*1e-4
+                    theta500Arcmin=row['theta500Arcmin']
+                    z=row['redshift']
+                    R500Mpc=np.tan(np.radians(theta500Arcmin/60))*cosmoModel.angular_diameter_distance(1/(1+z))
+                    Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
+                    wrtDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
+                    M500=(4/3)*np.pi*500*wrtDensity*R500Mpc**3
                 else:
                     # NOTE: This case is for running from nemo output
                     # We need to adapt this for when the template names are not in this format
@@ -1779,7 +1791,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     M500=float(bits[1][1:].replace("p", "."))
                     z=float(bits[2][1:].replace("p", "."))
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
-                theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+                if theta500Arcmin is None:
+                    theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
                 # Updated in place
                 makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
