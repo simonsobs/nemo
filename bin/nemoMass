@@ -104,7 +104,10 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
         
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
         # Added cut on z here to avoid blow-ups for extreme low-z
-        if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False and row['redshift'] > 0.01:
+        if row['redshift'] < 0.025:
+            print("... skipping %s - redshift < 0.025 ..." % (row['name']))
+            continue
+        if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
             # Corrected for mass function steepness
             massDict=signals.inferClusterProperties(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4,
                                             row['redshift'], row['redshiftErr'],
