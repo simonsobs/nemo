@@ -356,7 +356,8 @@ def _makeOptimalCatalogForcedRef(catalogDict, constraintsList = []):
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
                 RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
-                writeNemoInfo = True, coordSys = 'fk5', regionShape = 'point', width = 1):
+                writeNemoInfo = True, coordSys = 'fk5', regionShape = 'point', width = 1,
+                radiusArcsec = 360):
     """Writes a DS9 region file corresponding to the given catalog. 
     
     Args:
@@ -377,6 +378,8 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
             generated at the top of the DS9 .reg file.
         coordSys (:obj:`str`, optional): A string defining the coordinate system used for RA, dec, as 
             understood by DS9.
+        radiusArcsec (:obj:`float`, optional): Radius of the circular region in arcsec. Used only if
+            ``regionShape = `circle```.
         
     Returns:
         None
@@ -417,8 +420,9 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                 outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
                             % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
             elif regionShape == 'circle':
-                outFile.write('%s;circle(%.6f,%.6f,360") # color={%s} text={%s}\n' \
-                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))                
+                outFile.write('%s;circle(%.6f,%.6f,%.1f") # color={%s} text={%s}\n' \
+                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], radiusArcsec, colorString,
+                               infoString))
 
 #------------------------------------------------------------------------------------------------------------
 def makeName(RADeg, decDeg, prefix = 'ACT-CL'):
