@@ -108,7 +108,7 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     return norm*np.exp(-snr/snrFold)+pedestal
     
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1.480, B = -0.013,
+def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1.428, B = 0.0,
                             maxCDF = 0.997):
     """Checks the cross match offset between a cluster detection and an external catalog using a model derived
     from source injection sims. In this case, we use a Rayleigh distribution with the scale set according to
@@ -168,10 +168,10 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1
     return matched
 
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
-                    fitNorm = 38.097):
+def checkCrossMatchDR5(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
+                       fitNorm = 38.097):
     """Checks the cross match offset between a cluster detection and an external catalog using a model derived
-    from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysis`). The position recovery test
+    from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysisDR5`). The position recovery test
     itself only accounts for the effect of noise fluctuations in the maps on the recovered SZ cluster
     positions.
     

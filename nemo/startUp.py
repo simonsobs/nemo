@@ -174,6 +174,13 @@ def parseConfigFile(parDictFileName, verbose = False):
         # Applies to source injection recover sims only (whether print message or trigger exception)
         if 'haltOnPositionRecoveryProblem' not in parDict.keys():
             parDict['haltOnPositionRecoveryProblem']=False
+        # Position recovery analysis stuff
+        if 'positionRecoveryAnalysisMethod' not in parDict.keys():
+            parDict['positionRecoveryAnalysisMethod']='Rayleigh'
+        if parDict['positionRecoveryAnalysisMethod'] not in ['DR5', 'Rayleigh']:
+            raise Exception("positionRecoveryAnalysisMethod must be 'DR5' or 'Rayleigh'")
+        if 'positionRecoveryNumParams' not in parDict.keys():
+            parDict['positionRecoveryNumParams']=2 # Only applies for Rayleigh model
         # Mass/scaling relation/cosmology options - set fiducial values here if not chosen in config
         # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
         # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation

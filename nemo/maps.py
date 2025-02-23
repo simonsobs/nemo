@@ -9,6 +9,7 @@ from scipy import ndimage
 from scipy import interpolate
 from scipy.signal import convolve as scipy_convolve
 from scipy import optimize
+from scipy import stats as sstats
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 import astropy.stats as apyStats
@@ -2129,15 +2130,102 @@ def sourceInjectionTest(config):
     return resultsTable
 
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
-                             sourceInjectionModel = None, theta500ArcminRange = None,
-                             maxCrossMatchRadiusArcmin = None,
-                             fluxRatioRange = None,
-                             plotRawData = True,
-                             rawDataAlpha = 1, pickleFileName = None, selFnDir = None,
-                             plotDR5Model = True):
+def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel = 2, selFnDir = None):
+    """Fit a model for the &sigma;:sub:`R` parameter of a Rayleigh distribution in bins of fixed filter scale
+    S/N (fixed_SNR), using the contents of posRecTable (see positionRecoveryTest).
+
+    Args:
+        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus SNR
+            or fixed_SNR for various cluster/source models (produced by sourceInjectionTest).
+        plotFileName (str): Path where the plot file will be written.
+        numParamsModel (int): Number of parameters in the model for predicting &sigma;:sub:`R` from
+            ``fixed_SNR``. Either 1 or 2.
+        selFnDir (string, optional): If given, model fit parameters will be written to a file named
+            posRecModelParameters.txt under the given selFn directory path.
+
+    """
+
+    # The code in here comes from Mat M. originally
+    rArcmin=posRecTable['rArcmin']
+    SNR=posRecTable['SNR'] # This is actually fixed_SNR if a cluster catalog, despite the key name
+
+    SNEdges=np.linspace(4, 15.2, 29)
+    sigs=[]
+
+    # See scipy docs: x == rArcmin (applying the scale parameter is equivalent to pdf(y)/scale with y = x/scale
+    bins=np.geomspace(0.01,3,100)
+    cents=(bins[1:] + bins[:-1])/2.
+    for sl,sr in zip(SNEdges[:-1], SNEdges[1:]):
+        # Rayleigh PDF, simple fit to histogram
+        frdata=rArcmin[np.logical_and(SNR >= sl, SNR < sr)]
+        hist, _=np.histogram(frdata, bins = bins, density = True)
+        pfunc=lambda cents, scale: sstats.rayleigh.pdf(cents, loc = 0, scale = scale)
+        popt, _=optimize.curve_fit(pfunc,cents,hist,p0=[0.2])
+        pfitted=sstats.rayleigh.pdf(cents,  loc=0, scale=popt[0])
+        sigs.append(popt[0])
+        # Plot the histogram against the Rayleigh fit; this uses orphics, replace with matplotlib
+        #pl = io.Plotter(xyscale='loglin')
+        #pl._ax.hist(frdata,bins=np.geomspace(0.01,3,100),density=True,color=f'C{i}')
+        ## pl.add(cents,hist)
+        #pl.add(cents,pfitted,ls='--')
+        #pl.done(f'phist_{sl}_{sr}.png')
+
+    # Fit the Rayleigh_scale(SNR) to a simple a*(1/x) + b model [x == rArcmin]
+    sncents=(SNEdges[1:]+SNEdges[:-1])/2.
+    plotSNRs=np.linspace(3, 20, 100)
+    if numParamsModel == 2:
+        pfunc=lambda sncents,a,b: a*(1/sncents) + b   # Used in DR5
+        popt, _=optimize.curve_fit(pfunc, sncents, sigs, p0=[1,0.1])
+        A, B=popt
+        sigmaR=A*(1/plotSNRs) + B
+        # print("A = %.3f" % (A))
+        # print("B = %.3f" % (B))
+        fitLabel="$\\sigma_R$ = (%.3f / $\\tilde{q}$) + %.3f" % (A, B)
+    elif numParamsModel == 1:
+        pfunc=lambda sncents,a: a*(1/sncents)
+        popt, _=optimize.curve_fit(pfunc, sncents, sigs, p0=[1])
+        A=popt
+        sigmaR=A*(1/plotSNRs)
+        # print("A = %.3f" % (A))
+        fitLabel="$\\sigma_R$ = %.3f / $\\tilde{q}$" % (A)
+    else:
+        raise Exception("numParamsModel must be 1 or 2, not %s" % (str(numParamsModel)))
+
+    # Write fit results to a text file
+    if selFnDir is not None:
+        with open(selFnDir+os.path.sep+"positionRecoveryFitParams.txt", 'w', encoding = 'utf8') as outFile:
+            outFile.write("routine: positionRecoveryAnalysisRayleigh\n")
+            outFile.write("numParamsModel: %d\n" % (numParamsModel))
+            outFile.write("fitParams: %s\n" % (str(popt)))
+
+    # Plot
+    sns = np.arange(3.5,22,0.01)
+    sfunc = pfunc(sns,*popt)
+    plotSettings.update_rcParams()
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.11, 0.11, 0.88, 0.87])
+    plt.plot(plotSNRs, sigmaR, 'k--', label = fitLabel)
+    plt.plot(sncents, sigs, 'D')
+    plt.xlim(4, 15)
+    plt.ylim(0, 0.5)
+    plt.legend(loc = 'upper right')
+    plt.xlabel("$\\tilde{q}$")
+    plt.ylabel("$\\sigma_R$ ($^\\prime$)")
+    plt.savefig(plotFileName)
+    plt.savefig(plotFileName.replace(".png", ".pdf"))
+    plt.close()
+
+#------------------------------------------------------------------------------------------------------------
+def positionRecoveryAnalysisDR5(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
+                                sourceInjectionModel = None, theta500ArcminRange = None,
+                                maxCrossMatchRadiusArcmin = None,
+                                fluxRatioRange = None,
+                                plotRawData = True,
+                                rawDataAlpha = 1, pickleFileName = None, selFnDir = None,
+                                plotDR5Model = True):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using
-    the contents of posRecTable (see positionRecoveryTest).
+    the contents of posRecTable (see positionRecoveryTest), with the method described in the
+    `ACT DR5 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2021ApJS..253....3H/abstract>`_.
     
     Args:
         posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus SNR
@@ -2209,7 +2297,6 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
     # print("WARNING - Throwing out 0.1 per cent of largest offsets")
     # tab=tab[tab['rArcmin'] < np.percentile(tab['rArcmin'], 99.9)]
     
-    ####
     # Old
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
@@ -2234,27 +2321,6 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
     minSNR=SNRCentres[np.sum(grid, axis = 0) > 0].min()
     maxSNR=SNRCentres[np.sum(grid, axis = 0) > 0].max()
     plt.close()
-    # ####
-    # # New
-    # SNREdges=np.linspace(3.0, 10.0, 36)#np.linspace(0, 10, 101)
-    # SNRCentres=(SNREdges[1:]+SNREdges[:-1])/2.
-    # percentiles=[50]
-    # prange=np.linspace(0, 100, 101)
-    # for p in percentiles:
-    #     pval_rArcmin=np.zeros(SNRCentres.shape[0])
-    #     numPerBin=np.zeros(SNRCentres.shape[0])
-    #     for i in range(SNREdges.shape[0]-1):
-    #         binMin=SNREdges[i]
-    #         binMax=SNREdges[i+1]
-    #         SNRMask=np.logical_and(tab[SNRCol] >= binMin, tab[SNRCol] < binMax)
-    #         numPerBin[i]=SNRMask.sum()
-    #         ##
-    #         pdist=np.percentile(tab['rArcmin'][SNRMask], prange)
-    #         ##
-    #         if SNRMask.sum() > 0:
-    #             pval_rArcmin[i]=np.percentile(tab['rArcmin'][SNRMask], p)
-    # # print("New
-    # ####
 
     # We make our own plot so we use consistent colours, style (haven't fiddled with contour rc settings)
     plotSettings.update_rcParams()
@@ -2305,27 +2371,6 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             valid=np.where(a[SNRCol] >= 4.1)
             snr=a[SNRCol][valid]
             rArcmin=a['rArcmin'][valid]
-            ####
-            # # # Series model
-            # def _posRecFitSeries(snr, p0, p1):
-            #     model=0
-            #     index=1
-            #     for p in [p0, p1]:
-            #         model=model+p/(snr**index)
-            #         index=index+1
-            #     return model
-            # try:
-            #     results=optimize.curve_fit(_posRecFitSeries, snr, rArcmin)
-            # except:
-            #     print("... WARNING: curve_fit failed for key = %s ..." % (key))
-            #     continue
-            # best_p0, best_p1=results[0]
-            # fitParamsDict[key]=np.array([best_p0, best_p1])
-            # fitSNRs=np.linspace(4, 10, 100)
-            # plt.plot(fitSNRs,
-            #          _posRecFitSeries(fitSNRs, best_p0, best_p1)*plotUnitsMultiplier,
-            #          '-', label = key)
-            ###
             # DR5 exponential model
             try:
                 results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
@@ -2338,7 +2383,7 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             plt.plot(fitSNRs,
                      catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm)*plotUnitsMultiplier,
                      '-', label = key)
-            ###
+
         # Cross match model used for ACT DR5
         if plotDR5Model is True:
             plt.plot(fitSNRs,

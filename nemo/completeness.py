@@ -160,6 +160,7 @@ class SelFn(object):
         self.massBinsTheory=massBinsTheory
         self.zStepTheory=zStepTheory
         self.truncateDeltaSNR=truncateDeltaSNR
+        self.maxFlags=maxFlags
 
         if configFileName is None:
             configFileName=self.selFnDir+os.path.sep+"config.yml"
@@ -331,6 +332,9 @@ class SelFn(object):
     def _setUpAreaMask(self):
         """Sets-up WCS info and loads area masks (taking into account the footprint, if specified)
         - needed for quick position checks etc.
+
+        Note:
+            This takes into account the maxFlags property.
         
         """
         
@@ -350,6 +354,9 @@ class SelFn(object):
                 areaMap, wcs=loadAreaMask(row['tileName'], self.selFnDir)
             else:
                 areaMap, wcs=loadIntersectionMask(row['tileName'], self.selFnDir, self.footprint)
+            if self.maxFlags is not None:
+                flagMap, wcs=loadFlagMask(row['tileName'], self.selFnDir)
+                areaMap[flagMap > self.maxFlags]=0
             self.WCSDict[row['tileName']]=wcs.copy()
             self.areaMaskDict[row['tileName']]=areaMap
             ra0, dec0=self.WCSDict[row['tileName']].pix2wcs(0, 0)
