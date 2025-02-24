@@ -108,8 +108,8 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     return norm*np.exp(-snr/snrFold)+pedestal
     
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1.428, B = 0.0,
-                            maxCDF = 0.997):
+def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, zMinForAddRMpc = 0.2,
+                            A = 1.428, B = 0.0, maxCDF = 0.997):
     """Checks the cross match offset between a cluster detection and an external catalog using a model derived
     from source injection sims. In this case, we use a Rayleigh distribution with the scale set according to
     the model sigmaR = A*(1/fixedSNR)+B. We then evaluate the Rayleigh CDF at the given arcmin offset and
@@ -126,7 +126,11 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1
         z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift.
         addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown)
             in the external cross match catalog. Cross matches located within less than this distance will be
-            regarded as a match, regardless of the value of fixed_SNR. Requires z to be given.
+            regarded as a match, regardless of the value of fixed_SNR, provided z > zMinForAddRMpc.
+            Requires z to be given.
+        zMinForAddRMpc (:obj:`float`, optional): Minimum redshift above which addRMpc is applied. This avoids
+            very low-z objects being automatically matched well beyond a reasonable positional uncertainty.
+            (e.g., 0.5 Mpc at z = 0.1 is 8.5 arcmin, which is much larger than any SZ positional uncertainty).
         A (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         B (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         maxCDF (:obj:`float`, optional): The maximum value of the Rayleigh CDF below which an object is flagged
@@ -161,7 +165,7 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, A = 1
     # Otherwise, we use the Rayleigh CDF
     cdf=sstats.rayleigh.cdf(distArcmin, loc=0, scale = sigmaR)
     matched=cdf < maxCDF
-    if z is not None and z > 0 and matched == False:
+    if z is not None and z > zMin and matched == False:
         addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
         matched=distArcmin < addArcmin
 
