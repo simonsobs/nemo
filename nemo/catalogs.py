@@ -165,7 +165,7 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, zMinF
     # Otherwise, we use the Rayleigh CDF
     cdf=sstats.rayleigh.cdf(distArcmin, loc=0, scale = sigmaR)
     matched=cdf < maxCDF
-    if z is not None and z > zMin and matched == False:
+    if z is not None and z > zMinForAddRMpc and matched == False:
         addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
         matched=distArcmin < addArcmin
 
