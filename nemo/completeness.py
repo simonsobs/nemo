@@ -204,13 +204,14 @@ class SelFn(object):
                 
         if enableCompletenessCalc == True:
             
-            self.scalingRelationDict=parDict['massOptions']
+            # We can now specify multiple scaling relations in the config - but we only use the first one here
+            self.scalingRelationDict=parDict['massOptions']['scalingRelations'][0]
 
             # If the config didn't give cosmological parameters, put in defaults
             defaults={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.8, 'ns': 0.95}
             for key in defaults:
-                if key not in self.scalingRelationDict.keys():
-                    self.scalingRelationDict[key]=defaults[key]
+                if key not in parDict['massOptions'].keys():
+                    parDict['massOptions'][key]=defaults[key]
 
             # For caching / faster updating
             self._last_H0=None
@@ -303,11 +304,11 @@ class SelFn(object):
             self.Q=signals.QFit(QSource = QSource, selFnDir = self.selFnDir, tileNames = tileNames)
 
             # Initial cosmology set-up
-            H0=self.scalingRelationDict['H0']
-            Om0=self.scalingRelationDict['Om0']
-            Ob0=self.scalingRelationDict['Ob0']
-            sigma8=self.scalingRelationDict['sigma8']
-            ns=self.scalingRelationDict['ns']
+            H0=parDict['massOptions']['H0']
+            Om0=parDict['massOptions']['Om0']
+            Ob0=parDict['massOptions']['Ob0']
+            sigma8=parDict['massOptions']['sigma8']
+            ns=parDict['massOptions']['ns']
             self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                                   zStep = self.zStepTheory, numMassBins = self.massBinsTheory,
                                                   delta = delta, rhoType = rhoType, massFunction = massFunction,
@@ -1358,14 +1359,16 @@ def completenessByFootprint(config):
 
     for footprintLabel in footprintLabels:
 
+        # We now support multiple relations, but here we take only the first entry
+        scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
         try:
             selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                         footprint = footprintLabel, zStep = 0.02,
                         massBinsTheory = 200, zStepTheory = 0.01,
                         downsampleRMS = False,
-                        applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
-                        delta = config.parDict['massOptions']['delta'],
-                        rhoType = config.parDict['massOptions']['rhoType'],
+                        applyRelativisticCorrection = scalingRelationDict['relativisticCorrection'],
+                        delta = scalingRelationDict['delta'],
+                        rhoType = scalingRelationDict['rhoType'],
                         method = config.parDict['selFnOptions']['method'],
                         QSource = config.parDict['selFnOptions']['QSource'],
                         maxFlags = config.parDict['selFnOptions']['maxFlags'])
@@ -1500,190 +1503,6 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
         plt.title(title)    
     plt.savefig(outFileName)
     plt.close()
-
-#------------------------------------------------------------------------------------------------------------
-# def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = None):
-#     """Given a completeness (log\ :sub:`10` mass, z) grid as made by :meth:`calcCompleteness`, return the
-#     mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`) as a function of redshift at the given completeness
-#     level. By default, the same binning as the given `mockSurvey` object is used - this can be overridden by
-#     giving `zBinEdges`.
-#
-#     Args:
-#         completenessFraction (:obj:`float`): Fractional completeness level (e.g., 0.90 is 90% completeness).
-#         compMz (:obj:`np.ndarray`): Map (2d array) of completeness on the (log\ :sub:`10` mass, z) plane.
-#         mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
-#             function calculations and generating mock catalogs.
-#         zBinEdges (:obj:`np.ndarray`, optional): Redshifts at which the mass limit is evaluated.
-#
-#     Returns:
-#         The mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`, 1d array) at each requested redshift.
-#
-#     """
-#
-#     massLimit=np.power(10, mockSurvey.log10M[np.argmin(abs(compMz-completenessFraction), axis = 1)])/1e14
-#
-#     if zBinEdges is not None and len(zBinEdges) > 0:
-#         binnedMassLimit=np.zeros(len(zBinEdges)-1)
-#         for i in range(len(zBinEdges)-1):
-#             binnedMassLimit[i]=np.average(massLimit[np.logical_and(mockSurvey.z > zBinEdges[i], mockSurvey.z <= zBinEdges[i+1])])
-#         massLimit=binnedMassLimit
-#
-#     return massLimit
-    
-#------------------------------------------------------------------------------------------------------------
-# def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, plotFileName = None, z = None,
-#                      method = "fast", numDraws = 2000000, numIterations = 100, verbose = False):
-#     """Calculate completeness as a function of (log\ :sub:`10` mass, z) on the mockSurvey grid at the given
-#     `SNRCut`. Intrinsic scatter in the scaling relation is taken into account.
-#
-#     Args:
-#         RMSTab (:obj:`astropy.table.Table`): Table containing noise level by area, as returned by
-#             :meth:`getRMSTab`.
-#         SNRCut (:obj:`float`): Completeness will be calculated for objects relative to this cut in
-#             ``fixed_SNR``.
-#         tileName (:obj:`str`): Name of the map tile.
-#         mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
-#             function calculations and generating mock catalogs.
-#         massOptions (:obj:`dict`): A dictionary of scaling relation, cosmological, and mass definition
-#             parameters (see example Nemo config files for the format).
-#         QFit (:class:`nemo.signals.QFit`): An object for calculating the filter mismatch function, referred
-#             to as `Q` in the ACT papers from `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_
-#             onwards.
-#         plotFileName (:obj:`str`, optional): If given, write a plot showing 90% completness limit to this
-#             path.
-#         z (:obj:`float`, optional): Redshift at which the completeness calculation will be performed.
-#             If None, the redshift range will be taken from the :class:`MockSurvey` object.
-#         method (:obj:`str`, optional): Two methods for doing the calculation are available: "fast" (applies
-#             the measurement errors and scatter to 'true' ỹ\ :sub:`0` values on a grid) and "montecarlo" (uses
-#             samples drawn from a mock catalog, generated on the fly, to estimate the completeness). Both
-#             methods should give consistent results.
-#         numDraws (:obj:`int`, optional): Used by the "montecarlo" method - sets the number of draws from the
-#             halo mass function on each iteration.
-#         numIterations (:obj:`int`, optional): Used by the "montecarlo" method - sets the number of iterations,
-#             i.e., the number of mock catalogs from which the completeness is estimated.
-#
-#     Returns:
-#         A 2d array of (log\ :sub:`10` mass, z) completeness.
-#
-#     """
-#
-#     if z is not None:
-#         zIndex=np.argmin(abs(mockSurvey.z-z))
-#         zRange=mockSurvey.z[zIndex:zIndex+1]
-#     else:
-#         zRange=mockSurvey.z
-#
-#     trueMassCol="true_M%d%s" % (mockSurvey.delta, mockSurvey.rhoType[0])
-#
-#     if verbose == True:
-#         print("... calcuating completeness in tile %s using '%s' method" % (tileName, method))
-#
-#     if method == "montecarlo":
-#
-#         #t0=time.time()
-#         # Need area-weighted average noise in the tile - we could change this to use entire RMS map instead
-#         areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
-#         if areaWeights.sum() > 0:
-#             y0Noise=np.average(RMSTab['y0RMS'].data, weights = areaWeights)
-#             # Monte-carlo sims approach: slow - but can use to verify the other approach below
-#             halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
-#             binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
-#             halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
-#             binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
-#             allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-#             detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-#             for i in range(numIterations):
-#                 tab=mockSurvey.drawSample(y0Noise, massOptions, QFit, tileName = tileName,
-#                                           SNRLimit = SNRCut, z = z, numDraws = numDraws,
-#                                           applyRelativisticCorrection = massOptions['relativisticCorrection'])
-#                 allMz=allMz+np.histogram2d(np.log10(tab[trueMassCol]*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
-#                 detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
-#                 detMz=detMz+np.histogram2d(np.log10(tab[trueMassCol][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
-#             mask=np.not_equal(allMz, 0)
-#             compMz=np.ones(detMz.shape)
-#             compMz[mask]=detMz[mask]/allMz[mask]
-#             compMz=compMz.transpose()
-#         else:
-#             compMz=np.zeros([mockSurvey.clusterCount.shape[0], mockSurvey.clusterCount.shape[1]])
-#         #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
-#         #t1=time.time()
-#
-#     elif method == "fast":
-#
-#         # Using full noise distribution, weighted by fraction of area
-#         # NOTE: removed recMassBias and div parameters
-#         tenToA0, B0, Mpivot, sigma_int=[massOptions['tenToA0'], massOptions['B0'],
-#                                         massOptions['Mpivot'], massOptions['sigma_int']]
-#         y0Grid=np.zeros([zRange.shape[0], mockSurvey.clusterCount.shape[1]])
-#         for i in range(len(zRange)):
-#             zk=zRange[i]
-#             k=np.argmin(abs(mockSurvey.z-zk))
-#             # WARNING: the interpolates for theta500, fRel in MockSurvey work in terms of M500c
-#             # mockSurvey.log10M is NOT necessarily M500c any more
-#             if massOptions['delta'] == 500 and massOptions['rhoType'] == "critical":
-#                 log10M500cs=mockSurvey.log10M
-#             else:
-#                 log10M500cs=np.log10(mockSurvey._transToM500c(mockSurvey.cosmoModel,
-#                                                               np.power(10, mockSurvey.log10M),
-#                                                               1/(1+zk)))
-#
-#             theta500s_zk=interpolate.splev(log10M500cs, mockSurvey.theta500Splines[k])
-#             Qs_zk=QFit.getQ(theta500s_zk, z = zk, tileName = tileName)
-#             true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk
-#             if massOptions['relativisticCorrection'] == True:
-#                 fRels_zk=interpolate.splev(log10M500cs, mockSurvey.fRelSplines[k])
-#                 true_y0s_zk=true_y0s_zk*fRels_zk
-#             y0Grid[i]=true_y0s_zk
-#
-#         # For some cosmological parameters, we can still get the odd -ve y0
-#         y0Grid[y0Grid <= 0] = 1e-9
-#
-#         # Calculate completeness using area-weighted average
-#         # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
-#         areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-#         log_y0Lim=np.log(SNRCut*RMSTab['y0RMS'])
-#         log_y0=np.log(y0Grid)
-#         compMz=np.zeros(log_y0.shape)
-#         for i in range(len(RMSTab)):
-#             SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-#             SNRGrid=SNRGrid
-#             log_y0Err=1/SNRGrid
-#             log_y0Err[SNRGrid < SNRCut]=1/SNRCut
-#             log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-#             compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
-#
-#         #t1=time.time()
-#
-#         # For checking figure-of-merit
-#         #predMz=compMz*mockSurvey.clusterCount
-#         #predMz=predMz/predMz.sum()
-#         #astImages.saveFITS("predMz.fits", predMz.transpose(), None)
-#         #projImg=pyfits.open("projMz_SNR%.2f.fits" % (SNRCut))
-#         #projMz=projImg[0].data.transpose()
-#         #projImg.close()
-#         #merit=np.sum(np.sqrt(np.power(projMz-predMz, 2)))
-#         #print(merit)
-#         #IPython.embed()
-#         #sys.exit()
-#
-#     elif method is None:
-#         return None
-#
-#     else:
-#         raise Exception("calcCompleteness only has 'fast', and 'Monte Carlo' methods available")
-#
-#     if plotFileName is not None:
-#         # Calculate 90% completeness as function of z
-#         zBinEdges=np.arange(0.05, 2.1, 0.1)
-#         zBinCentres=(zBinEdges[:-1]+zBinEdges[1:])/2.
-#         massLimit_90Complete=selFn.getMassLimit(0.9, zBinEdges = zBinEdges)
-#         zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
-#         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-#         makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, plotFileName,
-#                                    title = "%s: $M_{\\rm %d%s}$ / $10^{14}$ M$_{\odot}$ > %.2f (0.2 < $z$ < 1)" % (tileName,
-#                                    mockSurvey.delta, mockSurvey.rhoType[0], averageMassLimit_90Complete))
-#
-#     return compMz
       
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMapsAndPlots(config):
@@ -1699,12 +1518,15 @@ def makeMassLimitMapsAndPlots(config):
     
     """
 
+
+    # We now support multiple relations, but here we take only the first entry
+    scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
     selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                 footprint = None, zStep = 0.1, setUpAreaMask = True,
                 downsampleRMS = False,
-                applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
-                delta = config.parDict['massOptions']['delta'],
-                rhoType = config.parDict['massOptions']['rhoType'],
+                applyRelativisticCorrection = scalingRelationDict['relativisticCorrection'],
+                delta = scalingRelationDict['delta'],
+                rhoType = scalingRelationDict['rhoType'],
                 method = config.parDict['selFnOptions']['method'],
                 QSource = config.parDict['selFnOptions']['QSource'],
                 maxFlags = config.parDict['selFnOptions']['maxFlags'])
@@ -1811,10 +1633,10 @@ def makeMassLimitMapsAndPlots(config):
         plt.minorticks_on()
         plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
         #plt.plot(plotMRange, plotCumArea, 'k-')
-        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (config.parDict['massOptions']['delta'],
-                                                                      config.parDict['massOptions']['rhoType'][0]))
-        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (config.parDict['massOptions']['delta'],
-                                                                                config.parDict['massOptions']['rhoType'][0],
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (scalingRelationDict['delta'],
+                                                                      scalingRelationDict['rhoType'][0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (scalingRelationDict['delta'],
+                                                                                scalingRelationDict['rhoType'][0],
                                                                                 int(100*completenessFraction)))
         labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
         plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
@@ -1831,10 +1653,10 @@ def makeMassLimitMapsAndPlots(config):
         ax=plt.axes([0.155, 0.12, 0.82, 0.86])
         plt.minorticks_on()
         plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
-        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (config.parDict['massOptions']['delta'],
-                                                                      config.parDict['massOptions']['rhoType'][0]))
-        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (config.parDict['massOptions']['delta'],
-                                                                                config.parDict['massOptions']['rhoType'][0],
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (scalingRelationDict['delta'],
+                                                                      scalingRelationDict['rhoType'][0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (scalingRelationDict['delta'],
+                                                                                scalingRelationDict['rhoType'][0],
                                                                                 int(100*completenessFraction)))
         labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
         plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
