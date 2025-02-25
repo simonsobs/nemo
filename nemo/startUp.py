@@ -185,14 +185,18 @@ def parseConfigFile(parDictFileName, verbose = False):
         # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
         # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation
         if 'massOptions' not in parDict.keys():
-            parDict['massOptions']={}
-        defaults={'tenToA0': 4.95e-5, 'B0': 0.08, 'Mpivot': 3.0e+14, 'sigma_int': 0.2,
-                  'relativisticCorrection': True, 'rhoType': 'critical', 'delta': 500,
-                  'H0': 70.0, 'Om0': 0.3, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95,
-                  'concMassRelation': 'Bhattacharya13'}
-        for key in defaults:
+            parDict['massOptions']={'scalingRelations': []}
+        cosmoDefaults={'H0': 70.0, 'Om0': 0.3, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95,
+                       'concMassRelation': 'Bhattacharya13'}
+        scalingDefaults={'tenToA0': 4.95e-5, 'B0': 0.08, 'Mpivot': 3.0e+14, 'sigma_int': 0.2,
+                         'relativisticCorrection': True, 'rhoType': 'critical', 'delta': 500}
+        for key in cosmoDefaults:
             if key not in parDict['massOptions'].keys():
-                parDict['massOptions'][key]=defaults[key]
+                parDict['massOptions'][key]=cosmoDefaults[key]
+        for scalingRelation in parDict['massOptions']['scalingRelations']:
+            for key in scalingDefaults:
+                if key not in scalingRelation.keys():
+                    scalingRelation[key]=scalingDefaults[key]
 
     # Stuff which is now mandatory... left here until we update everywhere in code + docs
     parDict['stitchTiles']=True

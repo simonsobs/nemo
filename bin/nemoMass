@@ -40,26 +40,26 @@ import time
 import yaml
 
 #------------------------------------------------------------------------------------------------------------
-def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstimates = [],
+def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassEstimates = [],
              inferSZProperties = False):
     """Calculates masses for cluster data in table.
     
     """
 
-    refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'])
+    refMassDef=ccl.halos.MassDef(scalingRelation['delta'], scalingRelation['rhoType'])
 
-    if 'relativisticCorrection' not in massOptions.keys():
-        massOptions['relativisticCorrection']=True
+    if 'relativisticCorrection' not in scalingRelation.keys():
+        scalingRelation['relativisticCorrection']=True
         
     # Experimenting with E(z)^gamma instead of E(z)^2
-    if 'Ez_gamma' not in massOptions.keys():
-        massOptions['Ez_gamma']=2
+    if 'Ez_gamma' not in scalingRelation.keys():
+        scalingRelation['Ez_gamma']=2
 
     # Experimenting with arbitrary (1+z)^something
-    if 'onePlusRedshift_power' not in massOptions.keys():
-        massOptions['onePlusRedshift_power']=0.0
+    if 'onePlusRedshift_power' not in scalingRelation.keys():
+        scalingRelation['onePlusRedshift_power']=0.0
     
-    # print("massOptions", massOptions)
+    # print("scalingRelation", scalingRelation)
 
     # Extra columns for other inferred quantities
     if inferSZProperties == True:
@@ -70,19 +70,25 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
         extraDivs=[]
 
     # Add all columns for all used mass definitions
-    labels=['M%d%s' % (massOptions['delta'], massOptions['rhoType'][0])]
+    if 'label' not in scalingRelation.keys():
+        prefix=''
+    else:
+        prefix=scalingRelation['label']+"_"
+    labels=['M%d%s' % (scalingRelation['delta'], scalingRelation['rhoType'][0])]
     for massDefDict in otherMassEstimates:
         labels.append('M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0]))
     for l in labels:
-        colNames=['%s' % (l), '%sUncorr' % (l)]
-        if 'rescaleFactor' in massOptions.keys():
-            if 'rescaleLabel' not in massOptions.keys():
+        colNames=[prefix+'%s' % (l), prefix+'%sUncorr' % (l)]
+        if 'rescaleFactor' in scalingRelation.keys():
+            if 'rescaleLabel' not in scalingRelation.keys():
                 rescaleLabel='Cal'
             else:
-                rescaleLabel=massOptions['rescaleLabel']
-            colNames.append('%s%s' % (l, rescaleLabel))
+                rescaleLabel=scalingRelation['rescaleLabel']
+            colNames.append(prefix+'%s%s' % (l, rescaleLabel))
         # colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
         for c in colNames:
+            if c in tab.keys():
+                raise Exception("Already found column named '%s' - add 'label' keys to scalingRelation dictionaries in massOptions?" % (c))
             tab['%s' % (c)]=np.zeros(len(tab))
             tab['%s_errPlus' % (c)]=np.zeros(len(tab))
             tab['%s_errMinus' % (c)]=np.zeros(len(tab))
@@ -111,63 +117,63 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
             # Corrected for mass function steepness
             massDict=signals.inferClusterProperties(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4,
                                             row['redshift'], row['redshiftErr'],
-                                            tenToA0 = massOptions['tenToA0'],
-                                            B0 = massOptions['B0'], 
-                                            Mpivot = massOptions['Mpivot'], 
-                                            sigma_int = massOptions['sigma_int'],
-                                            Ez_gamma = massOptions['Ez_gamma'],
-                                            onePlusRedshift_power = massOptions['onePlusRedshift_power'],
+                                            tenToA0 = scalingRelation['tenToA0'],
+                                            B0 = scalingRelation['B0'],
+                                            Mpivot = scalingRelation['Mpivot'],
+                                            sigma_int = scalingRelation['sigma_int'],
+                                            Ez_gamma = scalingRelation['Ez_gamma'],
+                                            onePlusRedshift_power = scalingRelation['onePlusRedshift_power'],
                                             QFit = QFit, mockSurvey = mockSurvey, 
                                             applyMFDebiasCorrection = True,
-                                            applyRelativisticCorrection = massOptions['relativisticCorrection'],
+                                            applyRelativisticCorrection = scalingRelation['relativisticCorrection'],
                                             fRelWeightsDict = fRelWeightsDict[tileName],
                                             tileName = tileName,
                                             inferSZProperties = inferSZProperties)
-            row['%s' % (label)]=massDict['%s' % (label)]
-            row['%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
-            row['%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
+            row[prefix+'%s' % (label)]=massDict['%s' % (label)]
+            row[prefix+'%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
+            row[prefix+'%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
             for mc, div in zip(extraCols, extraDivs):
                 row[mc]=massDict[mc]/div
                 row[mc+"_err"]=massDict[mc+"_err"]/div
             # Uncorrected for mass function steepness
             unCorrMassDict=signals.inferClusterProperties(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4,
                                                     row['redshift'], row['redshiftErr'],
-                                                    tenToA0 = massOptions['tenToA0'],
-                                                    B0 = massOptions['B0'], 
-                                                    Mpivot = massOptions['Mpivot'], 
-                                                    sigma_int = massOptions['sigma_int'],
-                                                    Ez_gamma = massOptions['Ez_gamma'],
-                                                    onePlusRedshift_power = massOptions['onePlusRedshift_power'],
+                                                    tenToA0 = scalingRelation['tenToA0'],
+                                                    B0 = scalingRelation['B0'],
+                                                    Mpivot = scalingRelation['Mpivot'],
+                                                    sigma_int = scalingRelation['sigma_int'],
+                                                    Ez_gamma = scalingRelation['Ez_gamma'],
+                                                    onePlusRedshift_power = scalingRelation['onePlusRedshift_power'],
                                                     QFit = QFit, mockSurvey = mockSurvey, 
                                                     applyMFDebiasCorrection = False,
-                                                    applyRelativisticCorrection = massOptions['relativisticCorrection'],
+                                                    applyRelativisticCorrection = scalingRelation['relativisticCorrection'],
                                                     fRelWeightsDict = fRelWeightsDict,
                                                     tileName = tileName)
-            row['%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
-            row['%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
-            row['%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
+            row[prefix+'%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
+            row[prefix+'%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
+            row[prefix+'%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
             # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
-            if 'rescaleFactor' in massOptions.keys():
-                row['%s%s' % (label, rescaleLabel)]=massDict['%s' % (label)]/massOptions['rescaleFactor']
-                row['%s%s_errPlus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
-                                                       np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
-                row['%s%s_errMinus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
-                                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
-                calMassDict={label: row['%s%s' % (label, rescaleLabel)],
-                             label+'_errPlus': row['%s%s_errPlus' % (label, rescaleLabel)],
-                             label+'_errMinus': row['%s%s_errMinus' % (label, rescaleLabel)]}
+            if 'rescaleFactor' in scalingRelation.keys():
+                row[prefix+'%s%s' % (label, rescaleLabel)]=massDict['%s' % (label)]/scalingRelation['rescaleFactor']
+                row[prefix+'%s%s_errPlus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
+                                                       np.power(scalingRelation['rescaleFactorErr']/scalingRelation['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
+                row[prefix+'%s%s_errMinus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
+                                                        np.power(scalingRelation['rescaleFactorErr']/scalingRelation['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
+                calMassDict={label: row[prefix+'%s%s' % (label, rescaleLabel)],
+                             label+'_errPlus': row[prefix+'%s%s_errPlus' % (label, rescaleLabel)],
+                             label+'_errMinus': row[prefix+'%s%s_errMinus' % (label, rescaleLabel)]}
 
             # CCL-based mass conversions
             resultsList=[massDict, unCorrMassDict]
             suffixList=['', 'Uncorr']
-            if 'rescaleFactor' in massOptions.keys():
+            if 'rescaleFactor' in scalingRelation.keys():
                 resultsList.append(calMassDict)
                 suffixList.append(rescaleLabel)
             for resultDict, suffix in zip(resultsList, suffixList):
                 for massDefDict in otherMassEstimates:
                     if 'concMassRelation' not in massDefDict.keys():
                         massDefDict['concMassRelation']=None
-                    thisLabel='M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0])
+                    thisLabel=prefix+'M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0])
                     thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'])
                     thisMass=signals.MDef1ToMDef2(resultDict[label]*1e14, row['redshift'], refMassDef, thisMassDef, mockSurvey.cosmoModel,
                                                   c_m_relation = massDefDict['concMassRelation'])/1e14
@@ -298,6 +304,7 @@ if __name__ == '__main__':
 
     # Clean out any z = 0 things that have crept through because these blow things up
     tab=tab[tab['redshift'] > 0]
+    # tab=tab[:10] # For testing
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
@@ -333,9 +340,7 @@ if __name__ == '__main__':
     Ob0=massOptions['Ob0']
     sigma8=massOptions['sigma8']
     ns=massOptions['ns']
-    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
-                                     rhoType = massOptions['rhoType'], delta = massOptions['delta'])
-        
+
     tab.add_column(atpy.Column(np.arange(len(tab)), "sortIndex"))
     if config.MPIEnabled == True:
         numRowsPerProcess=int(np.ceil(len(tab)/config.size))
@@ -345,8 +350,20 @@ if __name__ == '__main__':
             endIndex=len(tab)
         tab=tab[startIndex:endIndex]
 
-    tab=calcMass(tab, massOptions, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates,
-                 inferSZProperties = args.inferSZProperties)
+    # Multiple scaling relations now supported in one run
+    # BUT will only infer SZ properties for the first scaling relation in the list
+    count=0
+    for scalingRelation in massOptions['scalingRelations']:
+        if scalingRelation == massOptions['scalingRelations'][0]:
+            inferSZProperties=args.inferSZProperties
+        else:
+            inferSZProperties=False
+        count=count+1
+        print(">>> Scaling relation %d/%d" % (count, len(massOptions['scalingRelations'])))
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
+                                     rhoType = scalingRelation['rhoType'], delta = scalingRelation['delta'])
+        tab=calcMass(tab, scalingRelation, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates,
+                     inferSZProperties = inferSZProperties)
     
     if config.MPIEnabled == True:
         tabList=config.comm.gather(tab, root = 0)
@@ -372,12 +389,13 @@ if __name__ == '__main__':
     tab.meta['H0']=massOptions['H0']
     tab.meta['SIGMA8']=massOptions['sigma8']
     tab.meta['NS']=massOptions['ns']
-    tab.meta['TENTOA0']=massOptions['tenToA0']
-    tab.meta['B0']=massOptions['B0']
-    tab.meta['SIGMA']=massOptions['sigma_int']
-    tab.meta['MPIVOT']=massOptions['Mpivot']/1e14
-    tab.meta['RHOTYPE']=massOptions['rhoType']
-    tab.meta['DELTA']=massOptions['delta']
+    # We don't need scaling params any more because we may have multiple scaling relations
+    # tab.meta['TENTOA0']=massOptions['tenToA0']
+    # tab.meta['B0']=massOptions['B0']
+    # tab.meta['SIGMA']=massOptions['sigma_int']
+    # tab.meta['MPIVOT']=massOptions['Mpivot']/1e14
+    # tab.meta['RHOTYPE']=massOptions['rhoType']
+    # tab.meta['DELTA']=massOptions['delta']
     tab.write(outFileName, overwrite = True)
     print("... mass table written to %s ..." % (outFileName))
 
