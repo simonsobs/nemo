@@ -1361,6 +1361,24 @@ def completenessByFootprint(config):
 
         # We now support multiple relations, but here we take only the first entry
         scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
+
+        # Optimization bias can now be applied here
+        biasModelDict=None
+        if 'biasModel' in config.parDict['selFnOptions'].keys():
+            if config.parDict['selFnOptions']['biasModel'] == 'series':
+                biasModel=optBiasModelFunc
+            elif config.parDict['selFnOptions']['biasModel'] == 'exp':
+                biasModel=optBiasFuncExpModel
+            else:
+                raise Exception("biasModel must be 'series' or 'exp' - check selFnOptions in your config")
+            try:
+                biasModelParams=config.parDict['selFnOptions']['biasModelParams']
+            except:
+                raise Exception("If you specify biasModel, you must also give biasModelParams - check selFnOptions in your config")
+            biasModelDict={'func': biasModel, 'params': biasModelParams}
+            if footprintLabel == footprintLabels[0]:
+                print(">>> Optimization bias model will be applied")
+
         try:
             selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                         footprint = footprintLabel, zStep = 0.02,
@@ -1371,7 +1389,8 @@ def completenessByFootprint(config):
                         rhoType = scalingRelationDict['rhoType'],
                         method = config.parDict['selFnOptions']['method'],
                         QSource = config.parDict['selFnOptions']['QSource'],
-                        maxFlags = config.parDict['selFnOptions']['maxFlags'])
+                        maxFlags = config.parDict['selFnOptions']['maxFlags'],
+                        biasModel = biasModelDict)
         except FootprintError:
             continue
             #print("... no overlapping area with footprint %s" % (footprintLabel))
@@ -1521,6 +1540,23 @@ def makeMassLimitMapsAndPlots(config):
 
     # We now support multiple relations, but here we take only the first entry
     scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
+
+    # Optimization bias can now be applied here
+    biasModelDict=None
+    if 'biasModel' in config.parDict['selFnOptions'].keys():
+        if config.parDict['selFnOptions']['biasModel'] == 'series':
+            biasModel=optBiasModelFunc
+        elif config.parDict['selFnOptions']['biasModel'] == 'exp':
+            biasModel=optBiasFuncExpModel
+        else:
+            raise Exception("biasModel must be 'series' or 'exp' - check selFnOptions in your config")
+        try:
+            biasModelParams=config.parDict['selFnOptions']['biasModelParams']
+        except:
+            raise Exception("If you specify biasModel, you must also give biasModelParams - check selFnOptions in your config")
+        biasModelDict={'func': biasModel, 'params': biasModelParams}
+        # print(">>> Optimization bias model will be applied")
+
     selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                 footprint = None, zStep = 0.1, setUpAreaMask = True,
                 downsampleRMS = False,
@@ -1529,7 +1565,8 @@ def makeMassLimitMapsAndPlots(config):
                 rhoType = scalingRelationDict['rhoType'],
                 method = config.parDict['selFnOptions']['method'],
                 QSource = config.parDict['selFnOptions']['QSource'],
-                maxFlags = config.parDict['selFnOptions']['maxFlags'])
+                maxFlags = config.parDict['selFnOptions']['maxFlags'],
+                biasModel = biasModelDict)
 
     # Load in tiles RMS map and fill a mass limit tiled map, then stitch at the end
     for massLimDict in config.parDict['selFnOptions']['massLimitMaps']:
