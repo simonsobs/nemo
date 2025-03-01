@@ -584,7 +584,9 @@ class MockSurvey(object):
 
         # Apply optimization bias first, then it'll feed through to SNR automatically
         if biasModel is not None:
-            corrFactors=biasModel['func'](tab['true_fixed_SNR'], biasModel['params'][0], biasModel['params'][1], biasModel['params'][2])
+            biasFunc=biasModel['func']
+            corrFactors=biasFunc(tab['true_fixed_SNR'], biasModel['params'])
+            corrFactors[tab['true_fixed_SNR'] < 2]=1.0
             tab['fixed_y_c']=tab['fixed_y_c']*corrFactors
         tab['fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']
 

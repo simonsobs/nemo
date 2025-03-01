@@ -539,6 +539,11 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     else:
         biasModel={'func': catalogs._posRecFitFunc, 'params': biasModelParams}
 
+    if biasModelParams is None:
+        biasModel=None
+    else:
+        biasModel={'func': completeness.optBiasModelFunc, 'params': biasModelParams}
+
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
     for filterDict in config.parDict['mapFilters']:
@@ -548,23 +553,25 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     # The same as was used for detecting objects
     thresholdSigma=config.parDict['thresholdSigma']
 
-    # Set cosmological and scaling relation parameters
-    defCosmo={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95,
-              'delta': 500, 'rhoType': 'critical', 'concMassRelation': 'Bhattacharya13',
-              'massFunction': 'Tinker08', 'transferFunction': 'boltzmann_camb', 'theoryCode': theoryCode,
-              'numMassBins': numMassBins, 'zStep': zStep,
-              'relativisticCorrection': False}
-    for key in defCosmo:
-        if key not in config.parDict['massOptions'].keys():
-            config.parDict['massOptions'][key]=defCosmo[key]
+    # We can now specify multiple scaling relations in the config - but we only use the first one here
+    scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
 
-    tenToA0=config.parDict['massOptions']['tenToA0']
-    B0=config.parDict['massOptions']['B0']
-    sigma_int=config.parDict['massOptions']['sigma_int']
-    Mpivot=config.parDict['massOptions']['Mpivot']
-    rhoType=config.parDict['massOptions']['rhoType']
-    delta=config.parDict['massOptions']['delta']
-    relCorr=config.parDict['massOptions']['relativisticCorrection']
+    # If the config didn't give cosmological parameters, put in defaults
+    defaults={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.8, 'ns': 0.95,
+              'concMassRelation': 'Bhattacharya13', 'massFunction': 'Tinker08',
+              'transferFunction': 'boltzmann_camb', 'theoryCode': theoryCode,
+              'numMassBins': numMassBins, 'zStep': zStep}
+    for key in defaults:
+        if key not in config.parDict['massOptions'].keys():
+            config.parDict['massOptions'][key]=defaults[key]
+
+    tenToA0=scalingRelationDict['tenToA0']
+    B0=scalingRelationDict['B0']
+    sigma_int=scalingRelationDict['sigma_int']
+    Mpivot=scalingRelationDict['Mpivot']
+    rhoType=scalingRelationDict['rhoType']
+    delta=scalingRelationDict['delta']
+    relCorr=scalingRelationDict['relativisticCorrection']
 
     H0=config.parDict['massOptions']['H0']
     Om0=config.parDict['massOptions']['Om0']
@@ -573,7 +580,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     ns=config.parDict['massOptions']['ns']
 
     transferFunction=config.parDict['massOptions']['transferFunction']
-    massLabel="M%d%s" % (config.parDict['massOptions']['delta'], config.parDict['massOptions']['rhoType'][0])
+    massLabel="M%d%s" % (scalingRelationDict['delta'], scalingRelationDict['rhoType'][0])
 
     theoryCode=config.parDict['massOptions']['theoryCode']
     if theoryCode == 'CLASS-SZ':    # This is to save fiddling if moving between CCL <-> CLASS-SZ
