@@ -108,9 +108,11 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     return norm*np.exp(-snr/snrFold)+pedestal
     
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, zMinForAddRMpc = 0.2,
+def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.0, zMinForAddRMpc = 0.2,
                             A = 1.428, B = 0.0, maxCDF = 0.997):
-    """Checks the cross match offset between a cluster detection and an external catalog using a model derived
+    """THIS NEEDS REVISING, NO LONGER AN ACCURATE DESCRIPTION
+
+    Checks the cross match offset between a cluster detection and an external catalog using a model derived
     from source injection sims. In this case, we use a Rayleigh distribution with the scale set according to
     the model sigmaR = A*(1/fixedSNR)+B. We then evaluate the Rayleigh CDF at the given arcmin offset and
     accept the object as a match if the value is < maxCDF.
@@ -121,7 +123,9 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, zMinF
     distance less than addRMpc, it is accepted as a match.
 
     Args:
-        distArcmin (:obj:`float`): Distance of the potential cross match from the ACT position in arcmin.
+        distArcmin (:obj:`float`): Distance of the potential cross match from the ACT position in arcmin,
+            must be a positive value (negative values, e.g., a sentinel value of -99, will ensure this
+            routine returns False).
         fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
         z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift.
         addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown)
@@ -146,28 +150,20 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.5, zMinF
 
     """
 
+    # We usually use -99 as a sentinel
+    if distArcmin < 0:
+        return False
+
     sigmaR=A*(1/fixedSNR) + B
-
-    # # Subtract excess RMpc in quadrature before evaluating the match using the Rayleigh CDF
-    # addArcmin=0.0
-    # if z is not None and z > 0:
-    #     addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
-    # quadDiff2=distArcmin**2 - addArcmin**2
-    # if quadDiff2 > 0:
-    #     maxRadiusArcmin=np.sqrt(distArcmin**2 - addArcmin**2)
-    # else:
-    #     maxRadiusArcmin=0.0
-    # cdf=sstats.rayleigh.cdf(maxRadiusArcmin, loc=0, scale = sigmaR)
-    #
-    # return cdf < maxCDF
-
-    # Objects within projected distance < addRMpc are accepted as matches
-    # Otherwise, we use the Rayleigh CDF
-    cdf=sstats.rayleigh.cdf(distArcmin, loc=0, scale = sigmaR)
-    matched=cdf < maxCDF
-    if z is not None and z > zMinForAddRMpc and matched == False:
-        addArcmin=np.degrees(addRMpc/astCalc.da(z))*60.0
-        matched=distArcmin < addArcmin
+    rayleighMatchArcmin=sstats.rayleigh.ppf(maxCDF, loc = 0, scale = sigmaR)
+    if z is not None:
+        da=astCalc.da(z)
+        rMpc=np.radians(rayleighMatchArcmin/60)*da
+        rMpc=rMpc+addRMpc # in case we do still want to add extra for whatever reason
+        distMpc=np.radians(distArcmin/60)*da
+        matched=distMpc < rMpc
+    else:
+        matched=distArcmin < rayleighMatchArcmin
 
     return matched
 
