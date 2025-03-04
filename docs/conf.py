@@ -26,7 +26,7 @@ autodoc_mock_imports = ["pyccl", "mpi4py"]
 # -- Project information -----------------------------------------------------
 
 project = 'nemo'
-copyright = '2020 - 2023, Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
+copyright = '2020 - 2025, Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
 author = 'Nemo Contributors (Atacama Cosmology Telescope + Simons Observatory)'
 
 # The short X.Y version
@@ -48,7 +48,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
-    'readthedocs_ext.readthedocs',
+    #'readthedocs_ext.readthedocs',
     'sphinxarg.ext'
 ]
 
