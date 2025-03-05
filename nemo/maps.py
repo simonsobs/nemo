@@ -27,7 +27,9 @@ import copy
 import yaml
 import pickle
 from pixell import enmap, curvedsky, utils, powspec
-import pyccl as ccl
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 import nemo
 try:
     import reproject
