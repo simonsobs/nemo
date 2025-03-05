@@ -48,5 +48,6 @@ mapFilters:
                                   noiseGridArcmin: 40.0,
                                   numNoiseBins: 8},
                     saveFilteredMaps: True,
+                    saveFilter: True,
                     outputUnits: 'uK',
                     edgeTrimArcmin: 0.0}}

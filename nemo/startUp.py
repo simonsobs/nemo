@@ -40,7 +40,8 @@ def parseConfigFile(parDictFileName, verbose = False):
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
         maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan']
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan',
+                  'flagFromCatalog']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -116,6 +117,9 @@ def parseConfigFile(parDictFileName, verbose = False):
         # Don't reject objects in map border areas by default
         if 'rejectBorder' not in parDict.keys():
             parDict['rejectBorder']=0
+        # Default to old method for assembling optimal catalog if not given
+        if 'optimalCatalogMethod' not in parDict.keys():
+            parDict['optimalCatalogMethod']='ref-forced' # 'ref-first' is the new method
         # By default, undo the pixel window function
         if 'undoPixelWindow' not in parDict.keys():
             parDict['undoPixelWindow']=True
@@ -133,6 +137,8 @@ def parseConfigFile(parDictFileName, verbose = False):
                 parDict['selFnOptions']['QSource']='fit'
             else:
                 parDict['selFnOptions']['QSource']='injection'
+        if 'selFnOptions' in parDict.keys() and 'maxFlags' not in parDict['selFnOptions'].keys():
+            parDict['selFnOptions']['maxFlags']=None
         # Check of tile definitions
         if 'useTiling' not in list(parDict.keys()):
             parDict['useTiling']=False
@@ -156,25 +162,41 @@ def parseConfigFile(parDictFileName, verbose = False):
         if 'forcedPhotometryCatalog' not in parDict.keys():
             parDict['forcedPhotometryCatalog']=None
         # Used for finding and removing rings around bright sources
-        if 'removeRings' not in parDict.keys():
-            parDict['removeRings']=True
+        if 'flagRings' not in parDict.keys():
+            parDict['flagRings']=False
+        # Defaults chosen for ACT DR6 like cluster searches - these only applied if abobve is true
+        if 'ringFlagDistArcmin' not in parDict.keys():
+            parDict['ringFlagDistArcmin']=12.0
+        if 'ringFlagMinRingerSNR' not in parDict.keys():
+            parDict['ringFlagMinRingerSNR']=20.0
         if 'ringThresholdSigma' not in parDict.keys():
-            parDict['ringThresholdSigma']=3
+            parDict['ringThresholdSigma']=0.5
         # Applies to source injection recover sims only (whether print message or trigger exception)
         if 'haltOnPositionRecoveryProblem' not in parDict.keys():
             parDict['haltOnPositionRecoveryProblem']=False
+        # Position recovery analysis stuff
+        if 'positionRecoveryAnalysisMethod' not in parDict.keys():
+            parDict['positionRecoveryAnalysisMethod']='Rayleigh'
+        if parDict['positionRecoveryAnalysisMethod'] not in ['DR5', 'Rayleigh']:
+            raise Exception("positionRecoveryAnalysisMethod must be 'DR5' or 'Rayleigh'")
+        if 'positionRecoveryNumParams' not in parDict.keys():
+            parDict['positionRecoveryNumParams']=2 # Only applies for Rayleigh model
         # Mass/scaling relation/cosmology options - set fiducial values here if not chosen in config
         # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
         # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation
         if 'massOptions' not in parDict.keys():
-            parDict['massOptions']={}
-        defaults={'tenToA0': 4.95e-5, 'B0': 0.08, 'Mpivot': 3.0e+14, 'sigma_int': 0.2,
-                  'relativisticCorrection': True, 'rhoType': 'critical', 'delta': 500,
-                  'H0': 70.0, 'Om0': 0.3, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95,
-                  'concMassRelation': 'Bhattacharya13'}
-        for key in defaults:
+            parDict['massOptions']={'scalingRelations': []}
+        cosmoDefaults={'H0': 70.0, 'Om0': 0.3, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95,
+                       'concMassRelation': 'Bhattacharya13'}
+        scalingDefaults={'tenToA0': 4.95e-5, 'B0': 0.08, 'Mpivot': 3.0e+14, 'sigma_int': 0.2,
+                         'relativisticCorrection': True, 'rhoType': 'critical', 'delta': 500}
+        for key in cosmoDefaults:
             if key not in parDict['massOptions'].keys():
-                parDict['massOptions'][key]=defaults[key]
+                parDict['massOptions'][key]=cosmoDefaults[key]
+        for scalingRelation in parDict['massOptions']['scalingRelations']:
+            for key in scalingDefaults:
+                if key not in scalingRelation.keys():
+                    scalingRelation[key]=scalingDefaults[key]
 
     # Stuff which is now mandatory... left here until we update everywhere in code + docs
     parDict['stitchTiles']=True
@@ -448,6 +470,7 @@ class NemoConfig(object):
 
         # Identify filter sets, for enabling new multi-pass filtering and object finding
         self._identifyFilterSets()
+        self.currentFilterSet=None
 
         # Cache filters in memory to save some I/O
         self.cachedFilters={}
@@ -474,7 +497,9 @@ class NemoConfig(object):
             self.filterSetLabels={}
             for setNum in self.filterSetOptions.keys():
                 if 'label' in self.filterSetOptions[setNum].keys():
-                    self.filterSetLabels[setNum]=self.filterSetOptions[setNum]['label']
+                    raise Exception("Use 'fileLabel' instead of 'label' in 'filterSetOptions' dictionaries ('fileLabel' only needs to be included if you wish to write out catalogs or filtered maps for a filterSet other than the final one).")
+                if 'fileLabel' in self.filterSetOptions[setNum].keys():
+                    self.filterSetLabels[setNum]=self.filterSetOptions[setNum]['fileLabel']
                 else:
                     self.filterSetLabels[setNum]=None
 
@@ -724,6 +749,7 @@ class NemoConfig(object):
         options=None
         if setNum in self.filterSetOptions.keys():
             options=self.filterSetOptions[setNum]
+            self.currentFilterSet=setNum
             if 'saveCatalog' not in options.keys():
                 options['saveCatalog']=False
             #if 'maskSubtractedRegions' not in options.keys():
@@ -734,6 +760,11 @@ class NemoConfig(object):
                 options['addSiphonedFromSets']=None
             if 'ignoreSurveyMask' not in options.keys():
                 options['ignoreSurveyMask']=False
+
+        # Config options that we _only_ want to apply to the final output catalog
+        # We're ok to do this for Python 3.7+ as dictionaries are ordered by default
+        if setNum != list(self.filterSetOptions.keys())[-1]:
+            self.parDict['catalogCuts']=[]
 
         # We could add some checks here for options that don't make sense
         # e.g., if addSiphonedFromSets is present, better have subtractModelFromSets present

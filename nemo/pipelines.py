@@ -18,6 +18,7 @@ import numpy as np
 from scipy import ndimage, interpolate
 import copy
 from pixell import enmap
+import pyccl as ccl
 import nemo
 from . import startUp
 from . import filters
@@ -84,10 +85,10 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
 
             if config.rank == 0:
                 if config.filterSetOptions[setNum]['saveCatalog'] == True:
-                    if 'label' not in config.filterSetOptions[setNum].keys():
+                    if 'fileLabel' not in config.filterSetOptions[setNum].keys():
                         label="filterSet%d" % (setNum)
                     else:
-                        label=config.filterSetOptions[setNum]['label']
+                        label=config.filterSetOptions[setNum]['fileLabel']
                     outFileName=rootOutDir+os.path.sep+label+"_catalog.fits"
                     catalogs.writeCatalog(config.filterSetOptions[setNum]['catalog'], outFileName)
                     catalogs.catalog2DS9(config.filterSetOptions[setNum]['catalog'], outFileName.replace(".fits", ".reg"))
@@ -267,7 +268,9 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 catalog=photometry.findObjects(filteredMapDict, threshold = config.parDict['thresholdSigma'], 
                                                minObjPix = config.parDict['minObjPix'], 
                                                findCenterOfMass = config.parDict['findCenterOfMass'],
-                                               removeRings = config.parDict['removeRings'],
+                                               flagRings = config.parDict['flagRings'],
+                                               ringFlagDistArcmin = config.parDict['ringFlagDistArcmin'],
+                                               ringFlagMinRingerSNR = config.parDict['ringFlagMinRingerSNR'],
                                                ringThresholdSigma = config.parDict['ringThresholdSigma'],
                                                rejectBorder = config.parDict['rejectBorder'], 
                                                objIdent = config.parDict['objIdent'],
@@ -302,7 +305,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             catalogDict[label]['catalog']=catalog
 
     # Merged/optimal catalogs
-    optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'])
+    optimalCatalog=catalogs.makeOptimalCatalog(catalogDict, constraintsList = config.parDict['catalogCuts'],
+                                               photFilter = photFilter, method = config.parDict['optimalCatalogMethod'])
     
     # Gathering catalogs
     if config.MPIEnabled == True:
@@ -321,19 +325,23 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     # Gathering and stitching tiles
     # NOTE: Order matters, bumped up RMS map to make sure written before next stage
     # It doesn't matter if rank 0 then takes its time with the other maps that aren't needed again
+    # First deal with the potential case of wanting to write out output from a filterSet other than the last one
+    fileLabel=''
+    if config.currentFilterSet is not None and fileLabel in config.filterSetOptions[config.currentFilterSet].keys():
+        fileLabel=config.filterSetOptions[config.currentFilterSet]['fileLabel']+'-'
     labelsList=['area mask', 'flag mask', 'RMS map', 'filtered map', 'S/N map']
     tileDictsList=[areaMaskDict, flagMaskDict, stitchedRMSMapDict, stitchedFilteredMapDict, stitchedSNMapDict]
     writeMEFList=[writeAreaMask, writeFlagMask, True, False, False]
     writeStitchedList=[writeAreaMask, writeFlagMask, True, True, True]
     MEFPaths=[config.selFnDir+os.path.sep+"areaMask.fits",
               config.selFnDir+os.path.sep+"flagMask.fits",
-              config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilter),
+              config.selFnDir+os.path.sep+"RMSMap_%s%s.fits" % (fileLabel, photFilter),
               None, None]
     stitchedPaths=[config.selFnDir+os.path.sep+"stitched_areaMask.fits",
                    config.selFnDir+os.path.sep+"stitched_flagMask.fits",
-                   config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (photFilter),
-                   filteredMapsDir+os.path.sep+"stitched_%s_filteredMap.fits" % (photFilter),
-                   filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (photFilter)]
+                   config.selFnDir+os.path.sep+"stitched_RMSMap_%s%s.fits" % (fileLabel, photFilter),
+                   filteredMapsDir+os.path.sep+"stitched_%s%s_filteredMap.fits" % (fileLabel, photFilter),
+                   filteredMapsDir+os.path.sep+"stitched_%s%s_SNMap.fits" % (fileLabel, photFilter)]
     compressionTypeList=['PLIO_1', 'PLIO_1', None, None, None]
     for i in range(len(tileDictsList)):
         label=labelsList[i]
@@ -398,14 +406,29 @@ def makeRMSTables(config):
     if 'selFnFootprints' in config.parDict.keys():
         footprintsList=footprintsList+config.parDict['selFnFootprints']
         
-    # Run the selection function calculation on each tile in turn
+    # Let's only update files that need updating...
     selFnCollection={'full': []}
+    footprintsToUpdate=[]
     for footprintDict in footprintsList:
         if footprintDict['label'] not in selFnCollection.keys():
-            selFnCollection[footprintDict['label']]=[]
+            if footprintDict['label'] == "full":
+                label=""
+            else:
+                label="_"+footprintDict['label']
+            if config.parDict['selFnOptions']['maxFlags'] is not None:
+                label=label+"_maxFlags%d" % (config.parDict['selFnOptions']['maxFlags'])
+            outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
+            if os.path.exists(outFileName) == True:
+                print("... intersection mask and RMS table already exist for %s footprint with maxFlags = %s - skipping" % (footprintDict['label'], config.parDict['selFnOptions']['maxFlags']))
+                continue
+            else:
+                selFnCollection[footprintDict['label']]=[]
+                footprintsToUpdate.append(footprintDict)
 
+    # Run the selection function calculation on each tile in turn
     for tileName in config.tileNames:
-        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir)
+        RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
+                                      maxFlags = config.parDict['selFnOptions']['maxFlags'])
         selFnDict={'tileName': tileName,
                    'RMSTab': RMSTab,
                    'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
@@ -413,16 +436,18 @@ def makeRMSTables(config):
 
         # Generate footprint intersection masks (e.g., with HSC) and RMS tables, which are cached
         # May as well do this bit here (in parallel) and assemble output later
-        for footprintDict in footprintsList:
+        for footprintDict in footprintsToUpdate:
             completeness.makeIntersectionMask(tileName, config.selFnDir, footprintDict['label'], masksList = footprintDict['maskList'])
             tileAreaDeg2=completeness.getTileTotalAreaDeg2(tileName, config.selFnDir, footprintLabel = footprintDict['label'])
-            if tileAreaDeg2 > 0:
-                RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
-                                              footprintLabel = footprintDict['label'])
-                selFnDict={'tileName': tileName,
-                           'RMSTab': RMSTab,
-                           'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
-                selFnCollection[footprintDict['label']].append(selFnDict)
+            # Life is easier if we just generate empty tables when there is no intersection
+            # if tileAreaDeg2 > 0:
+            RMSTab=completeness.getRMSTab(tileName, photFilterLabel, config.selFnDir,
+                                            footprintLabel = footprintDict['label'],
+                                            maxFlags = config.parDict['selFnOptions']['maxFlags'])
+            selFnDict={'tileName': tileName,
+                        'RMSTab': RMSTab,
+                        'tileAreaDeg2': RMSTab['areaDeg2'].sum()}
+            selFnCollection[footprintDict['label']].append(selFnDict)
 
     if config.MPIEnabled == True:
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
@@ -449,6 +474,8 @@ def makeRMSTables(config):
                 label=""
             else:
                 label="_"+footprint
+            if config.parDict['selFnOptions']['maxFlags'] is not None:
+                label=label+"_maxFlags%d" % (config.parDict['selFnOptions']['maxFlags'])
             outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
             tabList=[]
             for selFnDict in selFnCollection[footprint]:
@@ -476,18 +503,19 @@ def makeRMSTables(config):
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True,\
                            writeInfo = True, verbose = True, QSource = 'fit', biasModelParams = None,
-                           theoryCode = 'CCL', zStep = 0.0005, numMassBins = 20000):
+                           theoryCode = 'CCL', zStep = 0.0005, numMassBins = 20000,
+                           minMass = 1e14, maxMass = 5e16, minRedshift = 0, maxRedshift = 3):
     """Generate a mock cluster catalog using the given nemo config.
-    
+
     Returns:
         List of catalogs (each is an astropy Table object)
-    
+
     """
-    
+
     # Having changed nemoMock interface, we may need to make output dir
     if os.path.exists(config.mocksDir) == False:
         os.makedirs(config.mocksDir, exist_ok = True)
-        
+
     # Noise sources in mocks
     if 'applyPoissonScatter' in config.parDict.keys():
         applyPoissonScatter=config.parDict['applyPoissonScatter']
@@ -501,178 +529,148 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
         applyNoiseScatter=config.parDict['applyNoiseScatter']
     else:
         applyNoiseScatter=True
-    if verbose: print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
-
     Q=signals.QFit(QSource = QSource, selFnDir = config.selFnDir, tileNames = config.allTileNames)
+
+    # Needed for adding tileName column to catalogs
+    tileCoordsDict=config.tileCoordsDict
 
     if biasModelParams is None:
         biasModel=None
     else:
         biasModel={'func': catalogs._posRecFitFunc, 'params': biasModelParams}
 
+    if biasModelParams is None:
+        biasModel=None
+    else:
+        biasModel={'func': completeness.optBiasModelFunc, 'params': biasModelParams}
+
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
     for filterDict in config.parDict['mapFilters']:
         if filterDict['label'] == photFilterLabel:
             break
-        
+
     # The same as was used for detecting objects
     thresholdSigma=config.parDict['thresholdSigma']
 
-    # We need an assumed scaling relation for mock observations
-    scalingRelationDict=config.parDict['massOptions']
-    
-    if verbose: print(">>> Setting up mock survey ...")
-    # NOTE: Consistency check is possible here: area in RMSTab should equal area from areaMask.fits
-    # If it isn't, there is a problem...
-    # Also, we're skipping the individual tile-loading routines here for speed
-    checkAreaConsistency=False
-    wcsDict={}
-    RMSMap=pyfits.open(config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (photFilterLabel))
-    RMSTab=atpy.Table().read(config.selFnDir+os.path.sep+"RMSTab.fits")
-    count=0
-    totalAreaDeg2=0
-    RMSMapDict={}
-    areaDeg2Dict={}
-    if checkAreaConsistency == True:
-        areaMap=pyfits.open(config.selFnDir+os.path.sep+"areaMask.fits")
-    t0=time.time()
-    for tileName in config.tileNames:
-        count=count+1
-        if tileName == 'PRIMARY':
-            if tileName in RMSMap:
-                extName=tileName
-                data=RMSMap[extName].data
-            else:
-                data=None
-            if data is None:
-                for extName in RMSMap:
-                    data=RMSMap[extName].data
-                    if data is not None:
-                        break
-            RMSMapDict[tileName]=RMSMap[extName].data
-            wcsDict[tileName]=astWCS.WCS(RMSMap[extName].header, mode = 'pyfits')
-        else:
-            RMSMapDict[tileName]=RMSMap[tileName].data
-            wcsDict[tileName]=astWCS.WCS(RMSMap[tileName].header, mode = 'pyfits')
-        # Area from RMS table
-        areaDeg2=RMSTab[RMSTab['tileName'] == tileName]['areaDeg2'].sum()
-        areaDeg2Dict[tileName]=areaDeg2
-        totalAreaDeg2=totalAreaDeg2+areaDeg2
-        # Area from map (slower)
-        if checkAreaConsistency == True:
-            areaMask, wcsDict[tileName]=completeness.loadAreaMask(tileName, config.selFnDir)
-            areaMask=areaMap[tileName].data
-            map_areaDeg2=(areaMask*maps.getPixelAreaArcmin2Map(areaMask.shape, wcsDict[tileName])).sum()/(60**2)
-            if abs(map_areaDeg2-areaDeg2) > 1e-4:
-                raise Exception("Area from areaMask.fits doesn't agree with area from RMSTab.fits")
-    RMSMap.close()
-    if checkAreaConsistency == True:
-        areaMap.close()
-    t1=time.time()
-    if verbose: print("... took %.3f sec ..." % (t1-t0))
-    
-    # Useful for testing:
-    if 'seed' in config.parDict.keys():
-        seed=config.parDict['seed']
-    else:
-        seed=None
-        
-    if seed is not None:
-        np.random.seed(seed)
-        
-    # We're now using one MockSurvey object for the whole survey
-    massOptions=config.parDict['massOptions']
-    minMass=5e13
-    zMin=0.0
-    zMax=2.0
-    defCosmo={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.80, 'ns': 0.95, 'delta': 500, 'rhoType': 'critical'}
-    for key in defCosmo:
-        if key not in massOptions.keys():
-            massOptions[key]=defCosmo[key]
-    H0=massOptions['H0']
-    Om0=massOptions['Om0']
-    Ob0=massOptions['Ob0']
-    sigma8=massOptions['sigma8']
-    ns=massOptions['ns']
-    delta=massOptions['delta']
-    rhoType=massOptions['rhoType']
-    relCorr=massOptions['relativisticCorrection']
-    # Only Tinker08 for now but this could be set by the user
-    if theoryCode == 'CLASS-SZ':
-        massFunction='T08M%d%s' % (delta, rhoType[0])
-    elif theoryCode == 'CCL':
-        massFunction='Tinker08'
-    mockSurvey=MockSurvey.MockSurvey(minMass, totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns, 
-                                     delta = delta, rhoType = rhoType, theoryCode = theoryCode,
-                                     massFunction = massFunction, zStep = zStep, numMassBins = numMassBins)
-    print("... mock survey parameters:")
-    print("    theoryCode = %s" % (theoryCode))
-    print("    massFunction = %s" % (massFunction))
+    # We can now specify multiple scaling relations in the config - but we only use the first one here
+    scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
+
+    # If the config didn't give cosmological parameters, put in defaults
+    defaults={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.8, 'ns': 0.95,
+              'concMassRelation': 'Bhattacharya13', 'massFunction': 'Tinker08',
+              'transferFunction': 'boltzmann_camb', 'theoryCode': theoryCode,
+              'numMassBins': numMassBins, 'zStep': zStep}
+    for key in defaults:
+        if key not in config.parDict['massOptions'].keys():
+            config.parDict['massOptions'][key]=defaults[key]
+
+    tenToA0=scalingRelationDict['tenToA0']
+    B0=scalingRelationDict['B0']
+    sigma_int=scalingRelationDict['sigma_int']
+    Mpivot=scalingRelationDict['Mpivot']
+    rhoType=scalingRelationDict['rhoType']
+    delta=scalingRelationDict['delta']
+    relCorr=scalingRelationDict['relativisticCorrection']
+
+    H0=config.parDict['massOptions']['H0']
+    Om0=config.parDict['massOptions']['Om0']
+    Ob0=config.parDict['massOptions']['Ob0']
+    sigma8=config.parDict['massOptions']['sigma8']
+    ns=config.parDict['massOptions']['ns']
+
+    transferFunction=config.parDict['massOptions']['transferFunction']
+    massLabel="M%d%s" % (scalingRelationDict['delta'], scalingRelationDict['rhoType'][0])
+
+    theoryCode=config.parDict['massOptions']['theoryCode']
+    if theoryCode == 'CLASS-SZ':    # This is to save fiddling if moving between CCL <-> CLASS-SZ
+        if config.parDict['massOptions']['massFunction'] == 'Tinker08':
+            config.parDict['massOptions']['massFunction']='T08M%d%s' % (delta, rhoType[0])
+    massFunction=config.parDict['massOptions']['massFunction']
+    numMassBins=config.parDict['massOptions']['numMassBins']
+    zStep=config.parDict['massOptions']['zStep']
+
+    # We use the stitched noise map for both determining the survey area and for drawing uncertainties
+    mapPath=config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (config.parDict['photFilter'])
+    if os.path.exists(mapPath) == False:
+        raise Exception("%s doesn't exist - this is needed for generating mock catalogs")
+    with pyfits.open(mapPath) as img:
+        for ext in img:
+            if ext.data is not None:
+                break
+        RMSMap=ext.data
+        wcs=astWCS.WCS(ext.header, mode = 'pyfits')
+    pixAreaMap=maps.getPixelAreaArcmin2Map(RMSMap.shape, wcs)
+    areaDeg2=(pixAreaMap[RMSMap > 0].sum())/60.0**2
+
+    print(">>> Mock parameters:")
+    print("    noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s)" % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
+    skipKeys=['redshiftCatalog']
+    for key in config.parDict['massOptions'].keys():
+        if key not in skipKeys:
+            print("    %s = %s" % (key, str(config.parDict['massOptions'][key])))
     print("    QSource = %s" % (QSource))
     print("    optimization bias model parameters = %s" % (str(biasModelParams)))
-    print("    applyRelativisticCorrection = %s" % (str(relCorr)))
-    for key in defCosmo.keys():
-        print("    %s = %s" % (key, str(massOptions[key])))
-    for key in ['tenToA0', 'B0', 'Mpivot', 'sigma_int']:
-        print("    %s = %s" % (key, str(scalingRelationDict[key])))
-    print("    total area = %.1f square degrees" % (totalAreaDeg2))
-    print("    random seed = %s" % (str(seed)))
+    print("    total area = %.1f square degrees" % (areaDeg2))
 
-    if verbose: print(">>> Making mock catalogs ...")
+    # Common set up
+    cosmoModel=ccl.Cosmology(Omega_c = Om0-Ob0, Omega_b = Ob0, h = 0.01*H0, sigma8 = sigma8, n_s = ns,
+                             transfer_function = transferFunction)
+    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, minRedshift, maxRedshift,
+                                     H0, Om0, Ob0, sigma8, ns,
+                                     maxMass = maxMass, zStep = zStep, numMassBins = numMassBins,
+                                     delta = delta, rhoType = rhoType,
+                                     transferFunction = transferFunction,
+                                     massFunction = massFunction,
+                                     theoryCode = theoryCode)
+    scalingRelationDict={'tenToA0': tenToA0, 'B0': B0, 'sigma_int': sigma_int, 'Mpivot': Mpivot}
+
+    # Generate mocks
     catList=[]
-    for i in range(numMocksToMake):       
-        mockTabsList=[]
+    for mockNum in range(1, numMocksToMake+1):
+        print(">>> Generating mock %d of %d:" % (mockNum, numMocksToMake))
         t0=time.time()
-        for tileName in config.tileNames:
-            # It's possible (depending on tiling) that blank tiles were included - so skip
-            # We may also have some tiles that are almost but not quite blank
-            if RMSMapDict[tileName].sum() == 0 or areaDeg2Dict[tileName] < 0.5:
-                continue
-            mockTab=mockSurvey.drawSample(RMSMapDict[tileName], scalingRelationDict, Q, wcs = wcsDict[tileName], 
-                                          photFilterLabel = photFilterLabel, tileName = tileName, makeNames = True,
-                                          SNRLimit = thresholdSigma, applySNRCut = True, 
-                                          areaDeg2 = areaDeg2Dict[tileName],
-                                          applyPoissonScatter = applyPoissonScatter, 
-                                          applyIntrinsicScatter = applyIntrinsicScatter,
-                                          applyNoiseScatter = applyNoiseScatter,
-                                          applyRelativisticCorrection = relCorr,
-                                          biasModel = biasModel)
-            if mockTab is not None:
-                mockTabsList.append(mockTab)
-        tab=atpy.vstack(mockTabsList)
-        catList.append(tab)
-        t1=time.time()
-        if verbose: print("... making mock catalog %d took %.3f sec ..." % (i+1, t1-t0))
-        
-        # Write catalog and .reg file
+        tab=mockSurvey.drawSample(RMSMap, scalingRelationDict, Q, wcs = wcs,
+                                  photFilterLabel = photFilterLabel,
+                                  makeNames = True,
+                                  SNRLimit = thresholdSigma,
+                                  applyPoissonScatter = applyPoissonScatter,
+                                  applyIntrinsicScatter = applyIntrinsicScatter,
+                                  applyNoiseScatter = applyNoiseScatter,
+                                  applyRelativisticCorrection = relCorr,
+                                  biasModel = biasModel,
+                                  tileCoordsDict = tileCoordsDict)
         if writeCatalogs == True:
-            #colNames=['name', 'RADeg', 'decDeg', 'template', 'redshift', 'redshiftErr', 'true_M500', 'true_fixed_y_c', 'fixed_SNR', 'fixed_y_c', 'fixed_err_y_c']
-            #colFmts =['%s',   '%.6f',  '%.6f',   '%s',       '%.3f',     '%.3f',        '%.3f',      '%.3f',           '%.1f',      '%.3f',      '%.3f']
-            mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.csv" % (i+1)
+            mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.csv" % (mockNum)
+            tab.meta['OM0']=Om0
+            tab.meta['OB0']=Ob0
+            tab.meta['H0']=H0
+            tab.meta['SIGMA8']=sigma8
+            tab.meta['NS']=ns
+            tab.meta['TENTOA0']=tenToA0
+            tab.meta['B0']=B0
+            tab.meta['SIGMA']=sigma_int
+            tab.meta['MPIVOT']=Mpivot/1e14
+            tab.meta['RHOTYPE']=rhoType
+            tab.meta['DELTA']=delta
             tab.meta['QSOURCE']=QSource
             catalogs.writeCatalog(tab, mockCatalogFileName)
             catalogs.writeCatalog(tab, mockCatalogFileName.replace(".csv", ".fits"))
-
             addInfo=[{'key': 'fixed_SNR', 'fmt': '%.1f'}]
-            catalogs.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [], 
-                                    addInfo = addInfo, color = "cyan") 
-            
+            catalogs.catalog2DS9(tab, mockCatalogFileName.replace(".csv", ".reg"), constraintsList = [],
+                                 addInfo = addInfo, color = "cyan")
+        catList.append(tab)
+        t1=time.time()
+        print("    took %.3f sec" % (t1-t0))
+
     if combineMocks == True:
-        tab=None
-        for i in range(numMocksToMake):
-            mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.fits" % (i+1)
-            stackTab=atpy.Table().read(mockCatalogFileName)
-            if tab is None:
-                tab=stackTab
-            else:
-                tab=atpy.vstack([tab, stackTab])
+        tab=atpy.vstack(catList)
         outFileName=config.mocksDir+os.path.sep+"mockCatalog_combined.fits"
         tab.meta['NEMOVER']=nemo.__version__
         tab.meta['QSOURCE']=QSource
         tab.meta['OPTBIAS']=str(biasModelParams)
         tab.write(outFileName, overwrite = True)
-    
+
     # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)
     if writeInfo == True:
         mockKeys=['massOptions', 'makeMockCatalogs', 'applyPoissonScatter', 'applyIntrinsicScatter', 'applyNoiseScatter']
@@ -680,7 +678,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             for m in mockKeys:
                 if m in config.parDict.keys():
                     outFile.write("%s: %s\n" % (m, config.parDict[m]))
-    
+
     return catList
 
 #------------------------------------------------------------------------------------------------------------

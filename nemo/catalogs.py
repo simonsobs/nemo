@@ -15,6 +15,7 @@ from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
 import astropy.io.fits as pyfits
 from scipy import ndimage
+from scipy import stats as sstats
 from . import maps
 
 # For adding meta data to output
@@ -34,6 +35,8 @@ COLUMN_NAMES    = ['name',
                    'template', 
                    'tileName',
                    'flags',
+                   'ringFlag',
+                   'tileBoundarySplit',
                    'galacticLatDeg',
                    'deltaT_c',
                    'err_deltaT_c',
@@ -59,6 +62,8 @@ COLUMN_FORMATS  = ['%s',
                    '%d',
                    '%s',
                    '%s',
+                   '%d',
+                   '%d',
                    '%d',
                    '%.6f',
                    '%.3f',
@@ -103,15 +108,75 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     return norm*np.exp(-snr/snrFold)+pedestal
     
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
-                    fitNorm = 38.097):
+def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.0, zMinForAddRMpc = 0.2,
+                            A = 1.428, B = 0.0, maxCDF = 0.997):
+    """THIS NEEDS REVISING, NO LONGER AN ACCURATE DESCRIPTION
+
+    Checks the cross match offset between a cluster detection and an external catalog using a model derived
+    from source injection sims. In this case, we use a Rayleigh distribution with the scale set according to
+    the model sigmaR = A*(1/fixedSNR)+B. We then evaluate the Rayleigh CDF at the given arcmin offset and
+    accept the object as a match if the value is < maxCDF.
+
+    The position recovery test itself only accounts for the effect of noise fluctuations in the maps on the
+    recovered SZ cluster positions. The addRMpc and z parameters can be used to account for additional
+    uncertainty on the position in the cross match catalog. If an object is located within a projected
+    distance less than addRMpc, it is accepted as a match.
+
+    Args:
+        distArcmin (:obj:`float`): Distance of the potential cross match from the ACT position in arcmin,
+            must be a positive value (negative values, e.g., a sentinel value of -99, will ensure this
+            routine returns False).
+        fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
+        z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift.
+        addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown)
+            in the external cross match catalog. Cross matches located within less than this distance will be
+            regarded as a match, regardless of the value of fixed_SNR, provided z > zMinForAddRMpc.
+            Requires z to be given.
+        zMinForAddRMpc (:obj:`float`, optional): Minimum redshift above which addRMpc is applied. This avoids
+            very low-z objects being automatically matched well beyond a reasonable positional uncertainty.
+            (e.g., 0.5 Mpc at z = 0.1 is 8.5 arcmin, which is much larger than any SZ positional uncertainty).
+        A (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
+        B (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
+        maxCDF (:obj:`float`, optional): The maximum value of the Rayleigh CDF below which an object is flagged
+            as a match. For example, 0.997 corresponds to using a match radius that contains 99.7% of
+
+    Returns:
+        True if distArcmin < model offset (+ optional addRMpc in arcmin at z), False if not.
+
+    Note:
+        Experimental!
+
+        Statement about the default values needs to be added here.
+
+    """
+
+    # We usually use -99 as a sentinel
+    if distArcmin < 0:
+        return False
+
+    sigmaR=A*(1/fixedSNR) + B
+    rayleighMatchArcmin=sstats.rayleigh.ppf(maxCDF, loc = 0, scale = sigmaR)
+    if z is not None:
+        da=astCalc.da(z)
+        rMpc=np.radians(rayleighMatchArcmin/60)*da
+        rMpc=rMpc+addRMpc # in case we do still want to add extra for whatever reason
+        distMpc=np.radians(distArcmin/60)*da
+        matched=distMpc < rMpc
+    else:
+        matched=distArcmin < rayleighMatchArcmin
+
+    return matched
+
+#------------------------------------------------------------------------------------------------------------
+def checkCrossMatchDR5(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
+                       fitNorm = 38.097):
     """Checks the cross match offset between a cluster detection and an external catalog using a model derived
-    from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysis`). The position recovery test
+    from source injection sims (see :func:`nemo.maps.positionRecoveryAnalysisDR5`). The position recovery test
     itself only accounts for the effect of noise fluctuations in the maps on the recovered SZ cluster
     positions.
     
     Args:
-        distArcmin (:obj:`bool`): Distance of the potential cross match from the ACT position in arcmin.
+        distArcmin (:obj:`float`): Distance of the potential cross match from the ACT position in arcmin.
         fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
         z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift, and then added
             in quadrature to the cross matching radius from the position recovery model.
@@ -146,7 +211,41 @@ def checkCrossMatch(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 
         return False
 
 #------------------------------------------------------------------------------------------------------------
-def makeOptimalCatalog(catalogDict, constraintsList = []):
+def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None, method = 'ref-first'):
+    """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a
+    master catalog with one entry per object, keeping only the details of the highest signal-to-noise
+    detection.
+
+    Args:
+        catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
+        constraintsList (:obj:`list`, optional): A list of constraints (for the format, see
+            :func:`selectFromCatalog`).
+        photFilter (:obj:`str`, optional): Name of the reference filter. If given, columns with prefix
+            `fixed_` will be added corresponding to this filter. This is only needed when using a config
+            that uses multiple filters such as cluster searches.
+        method (:obj:`str`, optional): Either 'ref-first' (coords are those of the detection in the
+            ``photFilter`` catalog ; ACT DR6+ behaviour), or 'ref-forced' (coords are those of the optimal
+            SNR detection and quantities at the ``photFilter`` scale are extracted by forced photometry at
+            these coords ; behaviour prior to ACT DR6). This only affects configs that use multiple filters
+            such as cluster searches.
+
+    Returns:
+        Optimal catalog (`astropy.table.Table` object)
+
+    """
+
+    if method == 'ref-first':
+        cat=_makeOptimalCatalogRefFirst(catalogDict, constraintsList = constraintsList,
+                                        photFilter = photFilter)
+    elif method == 'ref-forced':
+        cat=_makeOptimalCatalogForcedRef(catalogDict, constraintsList = constraintsList)
+    else:
+        raise Exception("There is no '%s' method - use either 'ref-first' or 'ref-forced'" % (method))
+
+    return cat
+
+#------------------------------------------------------------------------------------------------------------
+def _makeOptimalCatalogRefFirst(catalogDict, constraintsList = [], photFilter = None):
     """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a 
     master catalog with one entry per object, keeping only the details of the highest signal-to-noise 
     detection.
@@ -155,12 +254,78 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
         catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
         constraintsList (:obj:`list`, optional): A list of constraints (for the format, see 
             :func:`selectFromCatalog`).
+        photFilter (:obj:`str`, optional): Name of the reference filter. If given, columns with prefix
+            `fixed_` will be added corresponding to this filter.
         
     Returns:
-        None - an ``optimalCatalog`` key is added to ``catalogDict`` in place.
+        Optimal catalog (`astropy.table.Table` object)
+
+    Note:
+        This provides the 'ref-first' method of ``makeOptimalCatalog``.
     
     """
     
+    # Revised June 2024 - unlike the previous algorithm this puts the refScaleCatalog first
+    # i.e., guarantees SNR >= fixed_SNR always [weird issues a tiny fraction of the time otherwise]
+    # and that coords == coords at the ref scale detection, where available
+    # BUT this now drops objects that are not detected at the reference scale
+    # instead of assigning e.g. fixed_SNR < SNRCut
+    refScaleCatalog=[]
+    mergedCatalog=[]
+    for key in catalogDict.keys():
+        if len(catalogDict[key]['catalog']) > 0:
+            if key.split("#")[0] == photFilter:
+                refScaleCatalog.append(catalogDict[key]['catalog'])
+            else:
+                mergedCatalog.append(catalogDict[key]['catalog'])
+    if len(refScaleCatalog) > 0:
+        refScaleCatalog=atpy.vstack(refScaleCatalog)
+    else:
+        refScaleCatalog=None
+    if len(mergedCatalog) > 0:
+        mergedCatalog=atpy.vstack(mergedCatalog)
+    if refScaleCatalog is None: # This is the case for e.g. point sources
+        refScaleCatalog=mergedCatalog
+
+    # Add in optimal SNR columns info
+    colsToRewrite=['SNR', 'template', 'y_c', 'err_y_c', 'deltaT_c', 'err_deltaT_c']
+    if len(refScaleCatalog) > 0 and len(mergedCatalog) > 0:
+        for row in refScaleCatalog:
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], mergedCatalog['RADeg'].data,
+                                         mergedCatalog['decDeg'].data)
+            xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
+            if len(xIndices) > 1:
+                bestSNRIndex=xIndices[np.argmax(mergedCatalog[xIndices]['SNR'])]
+                if mergedCatalog['SNR'][bestSNRIndex] > row['SNR']:
+                    for c in colsToRewrite:
+                        if c in refScaleCatalog.keys():
+                            row[c]=mergedCatalog[c][bestSNRIndex]
+        refScaleCatalog.sort(['RADeg', 'decDeg'])
+        refScaleCatalog=selectFromCatalog(refScaleCatalog, constraintsList)
+    if len(refScaleCatalog) == 0:
+        refScaleCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
+    
+    return refScaleCatalog
+
+#------------------------------------------------------------------------------------------------------------
+def _makeOptimalCatalogForcedRef(catalogDict, constraintsList = []):
+    """Identifies common objects between every catalog in the input dictionary of catalogs, and creates a
+    master catalog with one entry per object, keeping only the details of the highest signal-to-noise
+    detection.
+
+    Args:
+        catalogDict (:obj:`dict`): Dictionary where each key points to a catalog of objects.
+        constraintsList (:obj:`list`, optional): A list of constraints (for the format, see
+            :func:`selectFromCatalog`).
+
+    Returns:
+        None - an ``optimalCatalog`` key is added to ``catalogDict`` in place.
+
+    Note:
+        This routine is the one used for ACT DR5 and earlier
+
+    """
+
     allCatalogs=[]
     for key in catalogDict.keys():
         if len(catalogDict[key]['catalog']) > 0:
@@ -170,8 +335,8 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
         mergedCatalog=allCatalogs.copy()
         mergedCatalog.add_column(atpy.Column(np.zeros(len(mergedCatalog)), 'toRemove'))
         for row in allCatalogs:
-            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data, 
-                                         allCatalogs['decDeg'].data) 
+            rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], allCatalogs['RADeg'].data,
+                                         allCatalogs['decDeg'].data)
             xIndices=np.where(rDeg < XMATCH_RADIUS_DEG)[0]
             if len(xIndices) > 1:
                 xMatches=allCatalogs[xIndices]
@@ -185,13 +350,14 @@ def makeOptimalCatalog(catalogDict, constraintsList = []):
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
         mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
-    
+
     return mergedCatalog
 
 #------------------------------------------------------------------------------------------------------------
 def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyToUse = 'name', 
                 RAKeyToUse = 'RADeg', decKeyToUse = 'decDeg', color = "cyan", showNames = True,
-                writeNemoInfo = True, coordSys = 'fk5', regionShape = 'point', width = 1):
+                writeNemoInfo = True, coordSys = 'fk5', regionShape = 'point', width = 1,
+                radiusArcsec = 360):
     """Writes a DS9 region file corresponding to the given catalog. 
     
     Args:
@@ -212,6 +378,8 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
             generated at the top of the DS9 .reg file.
         coordSys (:obj:`str`, optional): A string defining the coordinate system used for RA, dec, as 
             understood by DS9.
+        radiusArcsec (:obj:`float`, optional): Radius of the circular region in arcsec. Used only if
+            ``regionShape = `circle```.
         
     Returns:
         None
@@ -252,8 +420,9 @@ def catalog2DS9(catalog, outFileName, constraintsList = [], addInfo = [], idKeyT
                 outFile.write("%s;point(%.6f,%.6f) # point=cross color={%s} text={%s}\n" \
                             % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))
             elif regionShape == 'circle':
-                outFile.write('%s;circle(%.6f,%.6f,360") # color={%s} text={%s}\n' \
-                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], colorString, infoString))                
+                outFile.write('%s;circle(%.6f,%.6f,%.1f") # color={%s} text={%s}\n' \
+                            % (coordSys, obj[RAKeyToUse], obj[decKeyToUse], radiusArcsec, colorString,
+                               infoString))
 
 #------------------------------------------------------------------------------------------------------------
 def makeName(RADeg, decDeg, prefix = 'ACT-CL'):
@@ -431,7 +600,7 @@ def selectFromCatalog(catalog, constraintsList):
         An astropy Table object.
     
     """
-            
+
     passedConstraint=catalog
     for constraintString in constraintsList:
         key, op, value=constraintString.split()
@@ -912,7 +1081,11 @@ def addFootprintColumnToCatalog(tab, label, areaMask, wcs):
 
     """
 
-    inMask=np.zeros(len(tab['RADeg'].data), dtype = bool)
+    # We have to allow multiple masks per footprint, e.g., for KiDS
+    if 'footprint_%s' % (label) in tab.keys():
+        inMask=tab['footprint_%s' % (label)]
+    else:
+        inMask=np.zeros(len(tab['RADeg'].data), dtype = bool)
     coords=wcs.wcs2pix(tab['RADeg'].data, tab['decDeg'].data)
     coords=np.array(np.round(coords), dtype = int)
     mask1=np.logical_and(coords[:, 0] >= 0, coords[:, 1] >= 0)

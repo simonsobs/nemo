@@ -23,7 +23,9 @@ import sys
 
 #------------------------------------------------------------------------------------------------------------
 def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
-                findCenterOfMass = True, removeRings = True, ringThresholdSigma = 0, invertMap = False, 
+                findCenterOfMass = True, flagRings = True, ringThresholdSigma = 0,
+                ringFlagDistArcmin = 12.0, ringFlagMinRingerSNR = 20,
+                invertMap = False,
                 objIdent = 'ACT-CL', longNames = False, verbose = True, useInterpolator = True, 
                 measureShapes = False, DS9RegionsPath = None):
     """Finds objects in the filtered maps pointed to by the imageDict. Threshold is in units of sigma 
@@ -51,12 +53,12 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
     # This is for checking contamination
     if invertMap == True:
         data=data*-1
-        
+
     # Thresholding to identify significant pixels
     # Objects in rings will be discarded; we update the survey area mask accordingly in-place here
-    objIDs, objPositions, objNumPix, segMap=getObjectPositions(data, threshold, 
+    objIDs, objPositions, objNumPix, segMap=getObjectPositions(data, threshold,
                                                                findCenterOfMass = findCenterOfMass)
-    if removeRings == True:
+    if flagRings == True:
         minRingPix=30
         ringIDs, ringPositions, ringNumPix, ringSegMap=getObjectPositions(data, ringThresholdSigma, 
                                                                           findCenterOfMass = True)    
@@ -97,14 +99,15 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
     catalog=[]
     idNumCount=1
     for i in range(len(objIDs)):
-        if type(objNumPix) != float and objNumPix[i] > minObjPix:
+        if type(objNumPix) != float and objNumPix[i] >= minObjPix:
             objDict={}
             objDict['id']=idNumCount
             objDict['x']=objPositions[i][1]
             objDict['y']=objPositions[i][0]
+            objDict['ringFlag']=False
             if ringMask is not None:
                 if ringMask[int(objDict['y']), int(objDict['x'])] > 0:
-                    continue
+                    objDict['ringFlag']=True
             objDict['RADeg'], objDict['decDeg']=wcs.pix2wcs(objDict['x'], objDict['y'])
             if objDict['RADeg'] < 0:
                 objDict['RADeg']=360.0+objDict['RADeg']
@@ -185,6 +188,20 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
         catalog=catalogs.catalogListToTab(catalog)
         if DS9RegionsPath is not None:
             catalogs.catalog2DS9(catalog, DS9RegionsPath)
+
+        # Ring flagging should only be applied around high S/N objects
+        flagged=catalog[catalog['ringFlag'] == True]
+        highSNR=catalog[catalog['SNR'] > ringFlagMinRingerSNR]
+        for row in catalog:
+            if row['ringFlag'] == True:
+                rDeg=astCoords.calcAngSepDeg(row['RADeg'], row['decDeg'], highSNR['RADeg'], highSNR['decDeg'])
+                # Second condition here because we don't want to flag if we have picked the central object
+                if np.logical_and((rDeg*60) < ringFlagDistArcmin, rDeg > 0).sum() == 0:
+                    row['ringFlag']=False
+
+        # Add to ringFlag to flags column (but doesn't affect flagMask area calc)
+        # This allows us to continue cleaning catalogs based on flags column value alone
+        catalog['flags']=catalog['flags']+catalog['ringFlag']
 
     return catalog
 
@@ -551,3 +568,105 @@ def makeAnnulus(innerScalePix, outerScalePix):
     
     return annulus.astype('int64')
 
+#------------------------------------------------------------------------------------------------------------
+def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnName = None, interpOrder = 3):
+    """Given the path to a catalog that contains minimal columns name, RADeg, decDeg, redshift,
+    add forced photometry columns so we can estimate SZ masses.
+
+    """
+
+    print(">>> Doing forced photometry ...")
+
+    zTab=atpy.Table().read(pathToCatalog)
+    if zColumnName is not None:
+        if 'redshift' in zTab.keys():
+            zTab.remove_column('redshift')
+        zTab.rename_column(zColumnName, 'redshift')
+    if zErrColumnName is not None:
+        if 'redshiftErr' in zTab.keys():
+            zTab.remove_column('redshiftErr')
+        zTab.rename_column(zErrColumnName, 'redshiftErr')
+    if 'redshift' not in zTab.keys():
+        foundRedshiftCol=False
+        possZCols=['z', 'Z', 'REDSHIFT', 'Redshift', 'z_cl', 'Photz']
+        for p in possZCols:
+            if p in zTab.keys():
+                print("... assuming %s is the redshift column ..." % (p))
+                foundRedshiftCol=True
+                zTab.rename_column(p, 'redshift')
+        if foundRedshiftCol == False:
+            raise Exception("Couldn't find a redshift column in %s" % (pathToCatalog))
+    if 'redshiftErr' not in zTab.keys():
+        possZErrCols=['zErr', 'dz']
+        for p in possZErrCols:
+            if p in zTab.keys():
+                print("... assuming %s is the redshiftErr column ..." % (p))
+                zTab.rename_column(p, 'redshiftErr')
+    if 'redshiftErr' not in zTab.keys():
+        print("... assuming redshiftErr = 0 for all objects (no suitable redshiftErr column found) ...")
+        zTab.add_column(atpy.Column(np.zeros(len(zTab)), 'redshiftErr'))
+
+    config.parDict['forcedPhotometryCatalog']=pathToCatalog
+
+    # We need to disable any cut in SNR, otherwise we're not doing truly forced photometry
+    # This will allow -ve fixed_y_c, but we'll still only get the +ve masses though
+    config.parDict['thresholdSigma']=-100
+
+    ####
+    # Trim all but essential columns
+    RAKey, decKey=catalogs.getTableRADecKeys(zTab)
+    zTab.rename_column(RAKey, 'RADeg')
+    zTab.rename_column(decKey, 'decDeg')
+    keepCols=['name', 'RADeg', 'decDeg', 'redshift', 'redshiftErr', 'redshiftType']
+    for c in zTab.keys():
+        if c not in keepCols:
+            zTab.remove_column(c)
+
+    # New method - using stitched maps (this is all we usually write to disk now)
+    SNPath=config.filteredMapsDir+os.path.sep+"stitched_%s_SNMap.fits" % (config.parDict['photFilter'])
+    yPath=SNPath.replace("SNMap.fits", "filteredMap.fits")
+    validTab=None
+    for p, f in zip([SNPath, yPath], ['fixed_SNR', 'fixed_y_c']):
+        print("... %s ..." % (f))
+        with pyfits.open(p) as img:
+            for ext in img:
+                if ext.data is not None:
+                    break
+            forcedMap=np.float16(ext.data)
+            shape=forcedMap.shape
+            wcs=astWCS.WCS(ext.header, mode = 'pyfits')
+        if validTab is None:
+            validTab=catalogs.getCatalogWithinImage(zTab, forcedMap.shape, wcs)
+            validTab['fixed_SNR']=0.0
+            validTab['fixed_y_c']=0.0
+            validTab['fixed_err_y_c']=0.0
+        mapInterpolator=interpolate.RectBivariateSpline(np.arange(forcedMap.shape[0]),
+                                                        np.arange(forcedMap.shape[1]),
+                                                        forcedMap, kx = interpOrder, ky = interpOrder)
+        del forcedMap
+        for row in validTab:
+            x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+            if int(round(x)) < shape[1]-1 and int(round(y)) < shape[0]-1:
+                row[f]=mapInterpolator(y, x)[0][0]
+        del mapInterpolator
+    validTab=validTab[validTab['fixed_SNR'].nonzero()]
+    validTab['fixed_y_c']=validTab['fixed_y_c']/1e-4
+    validTab['fixed_err_y_c']=validTab['fixed_y_c']/validTab['fixed_SNR']
+
+    # Add tile location info
+    tileCoordsDict=config.tileCoordsDict
+    pixCoords=np.array(wcs.wcs2pix(validTab['RADeg'], validTab['decDeg']))
+    validTab['tileName']="            "
+    for tileName in tileCoordsDict.keys():
+        minX, maxX, minY, maxY=tileCoordsDict[tileName]['clippedSection']
+        xMask=np.logical_and(pixCoords[:, 0] >= minX, pixCoords[:, 0] < maxX)
+        yMask=np.logical_and(pixCoords[:, 1] >= minY, pixCoords[:, 1] < maxY)
+        tileMask=np.logical_and(xMask, yMask)
+        if tileMask.sum() > 0:
+            validTab['tileName'][tileMask]=tileName
+
+    # Safe to remove objects where we didn't get a tileName
+    # They are outside survey mask and not valid
+    validTab=validTab[validTab['tileName'] != "            "]
+
+    return validTab

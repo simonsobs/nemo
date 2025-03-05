@@ -9,6 +9,7 @@ from scipy import ndimage
 from scipy import interpolate
 from scipy.signal import convolve as scipy_convolve
 from scipy import optimize
+from scipy import stats as sstats
 import astropy.io.fits as pyfits
 import astropy.table as atpy
 import astropy.stats as apyStats
@@ -26,6 +27,7 @@ import copy
 import yaml
 import pickle
 from pixell import enmap, curvedsky, utils, powspec
+import pyccl as ccl
 import nemo
 try:
     import reproject
@@ -419,6 +421,26 @@ class MapDict(dict):
                     psMask[rDegMap < maskRadiusArcmin/60.0]=0
                     data[rDegMap < maskRadiusArcmin/60.0]=bckData[rDegMap < maskRadiusArcmin/60.0]
 
+        # Optional flagging of circular regions from external catalog
+        # Useful for extended sources like big galaxies
+        # NOTE: Yes, this can be tidied up by merging into the above / refactoring - but left for now
+        if 'flagFromCatalog' in list(self.keys()) and self['flagFromCatalog'] is not None:
+            if type(self['flagFromCatalog']) is not list:
+                self['flagFromCatalog']=[self['flagFromCatalog']]
+            rDegMap=np.ones(data.shape, dtype = float)*1e6
+            for catalogPath in self['flagFromCatalog']:
+                tab=atpy.Table().read(catalogPath)
+                tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
+                if 'rArcmin' not in tab.keys():
+                    raise Exception("Did not find 'rArcmin' column - this is needed when using 'flagFromCatalog'")
+                for row in tab:
+                    maskRadiusArcmin=row['rArcmin']
+                    rDegMap, xBounds, yBounds=makeDegreesDistanceMap(rDegMap, wcs,
+                                                                     row['RADeg'], row['decDeg'],
+                                                                     maskRadiusArcmin/60)
+                    selection=rDegMap < maskRadiusArcmin/60.0
+                    flagMask[selection]=flagMask[selection]+1
+
         if 'subtractModelFromCatalog' in list(self.keys()) and self['subtractModelFromCatalog'] is not None:
             if type(self['subtractModelFromCatalog']) is not list:
                 self['subtractModelFromCatalog']=[self['subtractModelFromCatalog']]
@@ -439,14 +461,17 @@ class MapDict(dict):
                 if type(tab) != atpy.Table:
                     tab=atpy.Table().read(catalogPath)
                 tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-                if len(tab) > 0 and 'ellipse_A' not in tab.keys():
-                    raise Exception("Need to set measureShapes: True to use maskAndFillFromCatalog")
+                if len(tab) > 0:
+                    if 'ellipse_A' not in tab.keys() and 'maskHoleRadiusArcmin' not in self.keys():
+                        raise Exception("Need to set measureShapes: True or set maskHoleRadiusArcmin to use maskAndFillFromCatalog")
                 for row in tab:
                     x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
                     rArcminMap=np.ones(data.shape, dtype = float)*1e6
                     if 'ellipse_A' and 'ellipse_B' in tab.keys():
                         xPixSizeArcmin=(wcs.getXPixelSizeDeg()/np.cos(np.radians(row['decDeg'])))*60
                         maskRadiusArcmin=(row['ellipse_A']/xPixSizeArcmin)/2
+                    if 'maskHoleRadiusArcmin' in self.keys() and self['maskHoleRadiusArcmin'] is not None:
+                        maskRadiusArcmin=self['maskHoleRadiusArcmin']
                     if 'maskHoleDilationFactor' in self.keys() and self['maskHoleDilationFactor'] is not None:
                         maskRadiusArcmin=maskRadiusArcmin*self['maskHoleDilationFactor']
                     rArcminMap, xBounds, yBounds=makeDegreesDistanceMap(rArcminMap, wcs,
@@ -1358,7 +1383,7 @@ def getPixelAreaArcmin2Map(shape, wcs):
         xPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra1, dec0)
         yPixScale=astCoords.calcAngSepDeg(ra0, dec0, ra0, dec1)
         pixAreasDeg2.append(xPixScale*yPixScale)
-    pixAreasDeg2=np.array(pixAreasDeg2)
+    pixAreasDeg2=np.array(pixAreasDeg2, dtype = np.float16)
     pixAreasArcmin2=pixAreasDeg2*(60**2)
     pixAreasArcmin2Map=np.array([pixAreasArcmin2]*shape[1]).transpose()
     
@@ -1740,6 +1765,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         else:
             for row in catalog:
                 count=count+1
+                theta500Arcmin=None # If using inferred properties, we will get this below
                 if 'true_M500c' in catalog.keys():
                     # This case is for when we're running from nemoMock output
                     # Since the idea of this is to create noise-free model images, we must use true values here
@@ -1747,6 +1773,16 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     M500=row['true_M500c']*1e14
                     z=row['redshift']
                     y0ToInsert=row['true_y_c']*1e-4
+                elif 'inferred_y_c' in catalog.keys():
+                    # NOTE: This is what we have if we run nemoMass with -I switch
+                    # This is a bit tortuous, but we used M500c in defining cluster signal maps interface below
+                    y0ToInsert=row['inferred_y_c']*1e-4
+                    theta500Arcmin=row['theta500Arcmin']
+                    z=row['redshift']
+                    R500Mpc=np.tan(np.radians(theta500Arcmin/60))*cosmoModel.angular_diameter_distance(1/(1+z))
+                    Ez=ccl.h_over_h0(cosmoModel, 1/(1+z))
+                    wrtDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
+                    M500=(4/3)*np.pi*500*wrtDensity*R500Mpc**3
                 else:
                     # NOTE: This case is for running from nemo output
                     # We need to adapt this for when the template names are not in this format
@@ -1756,7 +1792,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     M500=float(bits[1][1:].replace("p", "."))
                     z=float(bits[2][1:].replace("p", "."))
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
-                theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+                if theta500Arcmin is None:
+                    theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=5*(theta500Arcmin/60)
                 # Updated in place
                 makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
@@ -2093,11 +2130,102 @@ def sourceInjectionTest(config):
     return resultsTable
 
 #------------------------------------------------------------------------------------------------------------
-def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
-                             sourceInjectionModel = None, plotRawData = True, rawDataAlpha = 1,
-                             pickleFileName = None, selFnDir = None):
+def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel = 2, selFnDir = None):
+    """Fit a model for the &sigma;:sub:`R` parameter of a Rayleigh distribution in bins of fixed filter scale
+    S/N (fixed_SNR), using the contents of posRecTable (see positionRecoveryTest).
+
+    Args:
+        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus SNR
+            or fixed_SNR for various cluster/source models (produced by sourceInjectionTest).
+        plotFileName (str): Path where the plot file will be written.
+        numParamsModel (int): Number of parameters in the model for predicting &sigma;:sub:`R` from
+            ``fixed_SNR``. Either 1 or 2.
+        selFnDir (string, optional): If given, model fit parameters will be written to a file named
+            posRecModelParameters.txt under the given selFn directory path.
+
+    """
+
+    # The code in here comes from Mat M. originally
+    rArcmin=posRecTable['rArcmin']
+    SNR=posRecTable['SNR'] # This is actually fixed_SNR if a cluster catalog, despite the key name
+
+    SNEdges=np.linspace(4, 15.2, 29)
+    sigs=[]
+
+    # See scipy docs: x == rArcmin (applying the scale parameter is equivalent to pdf(y)/scale with y = x/scale
+    bins=np.geomspace(0.01,3,100)
+    cents=(bins[1:] + bins[:-1])/2.
+    for sl,sr in zip(SNEdges[:-1], SNEdges[1:]):
+        # Rayleigh PDF, simple fit to histogram
+        frdata=rArcmin[np.logical_and(SNR >= sl, SNR < sr)]
+        hist, _=np.histogram(frdata, bins = bins, density = True)
+        pfunc=lambda cents, scale: sstats.rayleigh.pdf(cents, loc = 0, scale = scale)
+        popt, _=optimize.curve_fit(pfunc,cents,hist,p0=[0.2])
+        pfitted=sstats.rayleigh.pdf(cents,  loc=0, scale=popt[0])
+        sigs.append(popt[0])
+        # Plot the histogram against the Rayleigh fit; this uses orphics, replace with matplotlib
+        #pl = io.Plotter(xyscale='loglin')
+        #pl._ax.hist(frdata,bins=np.geomspace(0.01,3,100),density=True,color=f'C{i}')
+        ## pl.add(cents,hist)
+        #pl.add(cents,pfitted,ls='--')
+        #pl.done(f'phist_{sl}_{sr}.png')
+
+    # Fit the Rayleigh_scale(SNR) to a simple a*(1/x) + b model [x == rArcmin]
+    sncents=(SNEdges[1:]+SNEdges[:-1])/2.
+    plotSNRs=np.linspace(3, 20, 100)
+    if numParamsModel == 2:
+        pfunc=lambda sncents,a,b: a*(1/sncents) + b   # Used in DR5
+        popt, _=optimize.curve_fit(pfunc, sncents, sigs, p0=[1,0.1])
+        A, B=popt
+        sigmaR=A*(1/plotSNRs) + B
+        # print("A = %.3f" % (A))
+        # print("B = %.3f" % (B))
+        fitLabel="$\\sigma_R$ = (%.3f / $\\tilde{q}$) + %.3f" % (A, B)
+    elif numParamsModel == 1:
+        pfunc=lambda sncents,a: a*(1/sncents)
+        popt, _=optimize.curve_fit(pfunc, sncents, sigs, p0=[1])
+        A=popt
+        sigmaR=A*(1/plotSNRs)
+        # print("A = %.3f" % (A))
+        fitLabel="$\\sigma_R$ = %.3f / $\\tilde{q}$" % (A)
+    else:
+        raise Exception("numParamsModel must be 1 or 2, not %s" % (str(numParamsModel)))
+
+    # Write fit results to a text file
+    if selFnDir is not None:
+        with open(selFnDir+os.path.sep+"positionRecoveryFitParams.txt", 'w', encoding = 'utf8') as outFile:
+            outFile.write("routine: positionRecoveryAnalysisRayleigh\n")
+            outFile.write("numParamsModel: %d\n" % (numParamsModel))
+            outFile.write("fitParams: %s\n" % (str(popt)))
+
+    # Plot
+    sns = np.arange(3.5,22,0.01)
+    sfunc = pfunc(sns,*popt)
+    plotSettings.update_rcParams()
+    plt.figure(figsize=(9,6.5))
+    ax=plt.axes([0.11, 0.11, 0.88, 0.87])
+    plt.plot(plotSNRs, sigmaR, 'k--', label = fitLabel)
+    plt.plot(sncents, sigs, 'D')
+    plt.xlim(4, 15)
+    plt.ylim(0, 0.5)
+    plt.legend(loc = 'upper right')
+    plt.xlabel("$\\tilde{q}$")
+    plt.ylabel("$\\sigma_R$ ($^\\prime$)")
+    plt.savefig(plotFileName)
+    plt.savefig(plotFileName.replace(".png", ".pdf"))
+    plt.close()
+
+#------------------------------------------------------------------------------------------------------------
+def positionRecoveryAnalysisDR5(posRecTable, plotFileName, percentiles = [50, 95, 99.7],
+                                sourceInjectionModel = None, theta500ArcminRange = None,
+                                maxCrossMatchRadiusArcmin = None,
+                                fluxRatioRange = None,
+                                plotRawData = True,
+                                rawDataAlpha = 1, pickleFileName = None, selFnDir = None,
+                                plotDR5Model = True):
     """Estimate and plot position recovery accuracy as function of fixed filter scale S/N (fixed_SNR), using
-    the contents of posRecTable (see positionRecoveryTest).
+    the contents of posRecTable (see positionRecoveryTest), with the method described in the
+    `ACT DR5 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2021ApJS..253....3H/abstract>`_.
     
     Args:
         posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus SNR
@@ -2108,6 +2236,13 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
         sourceInjectionModel (str, optional): If given, select only objects matching the given source
             injection model name from the input table. This can be used to get results for individual
             cluster scales, for example.
+        theta500ArcminRange (list, optional): If given, include only objects with scales within the range
+            [minTheta500ArcminRange, maxThetaArcminRange]. This will only work for cluster injection
+            simulations.
+        fluxRatioRange (list, optional): If given, include only objects with inFlux/outFlux within the range
+            [minFluxRatio, maxFluxRatio].
+        maxCrossMatchRadiusArcmin (float, optional): If given, throw out objects further than this distance
+            from the input position (for testing / post processing).
         plotRawData (bool, optional): Plot the raw (fixed_SNR, positional offset) data in the background.
         pickleFileName (string, optional): Saves the percentile contours data as a pickle file if not None.
             This is saved as a dictionary with top-level keys named according to percentilesToPlot.
@@ -2139,7 +2274,30 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
     # Optional cut on injected signal model
     if sourceInjectionModel is not None:
         tab=tab[tab['sourceInjectionModel'] == str(sourceInjectionModel)]
+
+    # Optional cut on injected cluster angular sizes
+    if theta500ArcminRange is not None:
+        if 'theta500Arcmin' not in tab.keys():
+            raise Exception("No theta500Arcmin column - you can only use theta500ArcminRange if this column is present (i.e., for cluster injection sims)")
+        mask=np.logical_and(tab['theta500Arcmin'] > theta500ArcminRange[0], tab['theta500Arcmin'] < theta500ArcminRange[1])
+        tab=tab[mask]
+
+    # Optional cut on flux ratio
+    if fluxRatioRange is not None:
+        fluxRatio=tab['inFlux']/tab['outFlux']
+        mask=np.logical_and(fluxRatio > fluxRatioRange[0], fluxRatio < fluxRatioRange[1])
+        tab=tab[mask]
+
+    # Optional cut on cross match distance
+    # We shouldn't have to do this... this is for testing
+    if maxCrossMatchRadiusArcmin is not None:
+        tab=tab[tab['rArcmin'] < maxCrossMatchRadiusArcmin]
+
+    # HACK: Try throwing out some %-age
+    # print("WARNING - Throwing out 0.1 per cent of largest offsets")
+    # tab=tab[tab['rArcmin'] < np.percentile(tab['rArcmin'], 99.9)]
     
+    # Old
     # Evaluate %-age of sample in bins of SNR within some rArcmin threshold
     # No longer separating by input model (clusters are all shapes anyway)
     SNREdges=np.linspace(3.0, 10.0, 36)#np.linspace(0, 10, 101)
@@ -2156,14 +2314,14 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             withinRGrid[j, i]=withinR
             if total > 0:
                 grid[j, i]=withinR/total
-    
+
     # What we want are contours of constant prob - easiest to get this via matplotlib
     levelsList=np.array(percentiles)/100.
     contours=plt.contour(SNRCentres, rArcminThreshold, grid, levels = levelsList)
     minSNR=SNRCentres[np.sum(grid, axis = 0) > 0].min()
     maxSNR=SNRCentres[np.sum(grid, axis = 0) > 0].max()
     plt.close()
-    
+
     # We make our own plot so we use consistent colours, style (haven't fiddled with contour rc settings)
     plotSettings.update_rcParams()
     plt.figure(figsize=(9,6.5))
@@ -2213,6 +2371,7 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             valid=np.where(a[SNRCol] >= 4.1)
             snr=a[SNRCol][valid]
             rArcmin=a['rArcmin'][valid]
+            # DR5 exponential model
             try:
                 results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
             except:
@@ -2221,9 +2380,15 @@ def positionRecoveryAnalysis(posRecTable, plotFileName, percentiles = [50, 95, 9
             bestFitSNRFold, bestFitPedestal, bestFitNorm=results[0]
             fitParamsDict[key]=np.array([bestFitSNRFold, bestFitPedestal, bestFitNorm])
             fitSNRs=np.linspace(4, 10, 100)
-            plt.plot(fitSNRs, 
-                     catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm)*plotUnitsMultiplier, 
+            plt.plot(fitSNRs,
+                     catalogs._posRecFitFunc(fitSNRs, bestFitSNRFold, bestFitPedestal, bestFitNorm)*plotUnitsMultiplier,
                      '-', label = key)
+
+        # Cross match model used for ACT DR5
+        if plotDR5Model is True:
+            plt.plot(fitSNRs,
+                     catalogs._posRecFitFunc(fitSNRs, 1.164, 0.685, 38.097)*plotUnitsMultiplier,
+                     '-', label = 'ACT DR5')
         #plt.ylim(0, 3)
         plt.legend(loc = 'upper right')
         plt.xlim(snr.min(), snr.max())

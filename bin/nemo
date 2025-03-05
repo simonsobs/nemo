@@ -93,8 +93,9 @@ if __name__ == '__main__':
         if config.rank == 0:
             optimalCatalog=catalogs.flagTileBoundarySplits(optimalCatalog)
             optimalCatalog.sort('name')
-            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName)
-            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"))
+            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName, constraintsList = config.parDict['catalogCuts'])
+            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"),
+                                  constraintsList = config.parDict['catalogCuts'])
             addInfo=[{'key': 'SNR', 'fmt': '%.1f'}]
             catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
                                  addInfo = addInfo, color = "cyan")
@@ -121,6 +122,7 @@ if __name__ == '__main__':
     else:
         if config.rank == 0:
             print("... already made source injection data %s" % (sourceInjPath))
+            sourceInjTable=atpy.Table().read(sourceInjPath)
 
     # Tidying up etc.
     if config.rank == 0:
@@ -130,14 +132,19 @@ if __name__ == '__main__':
         if sourceInjTable is not None:
             sourceInjTable.meta['NEMOVER']=nemo.__version__
             sourceInjTable.write(config.selFnDir+os.path.sep+"sourceInjectionData.fits", overwrite = True)
-            maps.positionRecoveryAnalysis(sourceInjTable, config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
-                                          percentiles = [50, 95, 99.7], plotRawData = True,
-                                          pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl',
-                                          selFnDir = config.selFnDir)
-
-        ## Plot contamination together
-        #if conTabDict != {}:
-            #maps.plotContamination(conTabDict, config.diagnosticsDir)
+            if config.parDict['positionRecoveryAnalysisMethod'] == 'DR5':
+                maps.positionRecoveryAnalysisDR5(sourceInjTable,
+                                                 config.diagnosticsDir+os.path.sep+"positionRecovery.pdf",
+                                                 percentiles = [50, 95, 99.7], plotRawData = True,
+                                                 pickleFileName = config.diagnosticsDir+os.path.sep+'positionRecovery.pkl',
+                                                 selFnDir = config.selFnDir)
+            elif config.parDict['positionRecoveryAnalysisMethod'] == 'Rayleigh':
+                maps.positionRecoveryAnalysisRayleigh(sourceInjTable,
+                                                      config.diagnosticsDir+os.path.sep+"rayleigh.pdf",
+                                                      numParamsModel = config.parDict['positionRecoveryNumParams'],
+                                                      selFnDir = config.selFnDir)
+            else:
+                raise Exception("Unknown 'positionRecoveryAnalysisMethod'")
 
         # Cache file containing weights for relativistic corrections
         # Saves doing this later (e.g., when nemoMass or nemoSelFn run) and it's quick to do

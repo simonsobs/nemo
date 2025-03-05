@@ -9,8 +9,9 @@ and capable of analyzing maps that will be produced by the
 * **Documentation:** https://nemo-sz.readthedocs.io
 * **License:** `BSD 3-Clause <https://github.com/simonsobs/nemo/blob/main/LICENSE>`_
 * **Authors:** Matt Hilton, with contributions from Simone Aiola, David Alonso,
-  Boris Bolliet, Matthew Hasselfield, Kevin Huffenberger, Toby Marriage, Niall MacCrann,
-  Sigurd Naess, Cristóbal Sifón, and Íñigo Zubeldia (not all reflected on GitHub).
+  Boris Bolliet, Matthew Hasselfield, Kevin Huffenberger, Mathew Madhavacheril, Toby Marriage,
+  Niall MacCrann, Sigurd Naess, Cristóbal Sifón, and Íñigo Zubeldia
+  (not all reflected on GitHub).
 * **Installation:** ``pip install nemo-sz``
 * **Support:** Please use the `GitHub issues page <https://github.com/simonsobs/nemo/issues>`_, 
   and/or contact `Matt Hilton <mailto:matt.hilton@mykolab.com>`_.
@@ -24,7 +25,7 @@ in the package.
 `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_, but implements many
 of the ideas presented there. *It is* the package that was used to produce the
 `ACT DR3 cluster catalog <https://ui.adsabs.harvard.edu/abs/2018ApJS..235...20H/abstract>`_,
-and the `ACT DR5 cluster catalog <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_.
+and the `ACT DR5 cluster catalog <https://ui.adsabs.harvard.edu/abs/2021ApJS..253....3H/abstract>`_.
 All ACT data products are available from `LAMBDA <https://lambda.gsfc.nasa.gov/product/act/actpol_prod_table.cfm>`_.
 
 **Nemo** is under active development, and not all documentation or example config files are up to date

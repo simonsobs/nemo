@@ -166,6 +166,7 @@ class MockSurvey(object):
         self._get_new_cosmo(H0, Om0, Ob0, sigma8, ns)
 
         # NOTE: These are just MSun now (NOT MSun/h); always defined according to mdef
+        assert(maxMass > minMass)
         self.log10M=np.linspace(np.log10(minMass), np.log10(maxMass), numMassBins)
         self.M=np.power(10, self.log10M)
         self.log10MBinEdges=np.linspace(self.log10M.min()-(self.log10M[1]-self.log10M[0])/2,
@@ -199,6 +200,7 @@ class MockSurvey(object):
 
 
     def _get_new_cosmo(self, H0, Om0, Ob0, sigma8, ns):
+        self._cosmoUpdated=False
         if ((self.H0 != H0) or (self.Om0 != Om0) or
             (self.Ob0 != Ob0) or (self.sigma8 != sigma8)):
 
@@ -207,6 +209,7 @@ class MockSurvey(object):
             self.Ob0=Ob0
             self.sigma8=sigma8
             self.ns=ns
+            self._cosmoUpdated=True
 
             # CCL cosmology - we may not want to entirely use CLASS-SZ, at least to start
             self.cosmoModel=ccl.Cosmology(Omega_c=Om0-Ob0,
@@ -289,12 +292,12 @@ class MockSurvey(object):
         h=self.cosmoModel['h']
         dndlnM=self.mfunc(self.cosmoModel, self.M, 1/(1+z)) / np.log(10)
         dndM=dndlnM/self.M
-        ngtm=integrate.cumtrapz(dndlnM[::-1], np.log(self.M), initial = 0)[::-1]
+        ngtm=integrate.cumulative_trapezoid(dndlnM[::-1], np.log(self.M), initial = 0)[::-1]
         
         MUpper=np.arange(np.log(self.M[-1]), np.log(10**18), np.log(self.M[1])-np.log(self.M[0]))
         extrapolator=_spline(np.log(self.M), np.log(dndlnM), k=1)
         MF_extr=extrapolator(MUpper)
-        intUpper=integrate.simps(np.exp(MF_extr), dx=MUpper[2] - MUpper[1], even='first')
+        intUpper=integrate.simpson(np.exp(MF_extr), dx=MUpper[2] - MUpper[1])#, even='first')
         ngtm=ngtm+intUpper
     
         return ngtm
@@ -316,36 +319,6 @@ class MockSurvey(object):
         self.fsky=self.areaSr/(4*np.pi) # in case it was updated
 
         if self.theoryCode == 'CCL':
-            # Previous way - this agrees with CLASS-SZ method below to 0.1 % or something
-            # zRange=self.zBinEdges
-            # h = self.cosmoModel['h']
-            # self.M=np.power(10, self.log10M) # in M_sun
-            # norm_mfunc=1. / np.log(10)
-            # numberDensity=[]
-            # clusterCount=[]
-            # totalVolumeMpc3=0.
-            # for i in range(len(zRange)-1):
-            #     zShellMin=zRange[i]
-            #     zShellMax=zRange[i+1]
-            #     zShellMid=(zShellMax+zShellMin)/2.
-            #     dndlnM=self.mfunc(self.cosmoModel, self.M, 1./(1+zShellMid)) * norm_mfunc
-            #     dndM = dndlnM / self.M
-            #     n=dndM * np.gradient(self.M)
-            #     numberDensity.append(n)
-            #     shellVolumeMpc3=self._comovingVolume(zShellMax)-self._comovingVolume(zShellMin)
-            #     shellVolumeMpc3=shellVolumeMpc3*(self.areaSr/(4*np.pi))
-            #     totalVolumeMpc3+=shellVolumeMpc3
-            #     clusterCount.append(n*shellVolumeMpc3)
-            # numberDensity=np.array(numberDensity)
-            # clusterCount=np.array(clusterCount)
-            # self.volumeMpc3=totalVolumeMpc3
-            # self.numberDensity=numberDensity
-            # self.clusterCount=clusterCount
-            # self.numClusters=np.sum(clusterCount)
-            # self.numClustersByRedshift=np.sum(clusterCount, axis = 1)
-
-            # New way (same as for CLASS-SZ below)
-            # Missing: self.volumeMpc3, self.numberDensity
             dndmdz=np.zeros((self.z.shape[0], self.log10M.shape[0]))
             norm_mfunc=1. / np.log(10)
             dVdzdOmega=(((signals.CLight/1000)/self.cosmoModel['H0'])*np.power(1+self.z, 2)*self.cosmoModel.angular_diameter_distance(self.a)**2)/self.cosmoModel.h_over_h0(self.a)
@@ -354,14 +327,14 @@ class MockSurvey(object):
                 dndmdz[i]=4.*np.pi*self.fsky*dVdzdOmega[i]*dndlnM
             dndmdz=dndmdz.transpose()
             self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
-            dndz=np.trapz(dndmdz, x = np.log(self.M), axis = 0)
-            self.numClusters=np.trapz(dndz, x = self.z)
-            self.numClustersByRedshift=dndz*np.gradient(self.z)
-            norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
-            self.clusterCount=dndmdz.transpose()/norm
+            self.dndmdzInterpolator=interpolate.RectBivariateSpline(np.log(self.M),
+                                                                    self.z,
+                                                                    dndmdz, kx = 3, ky = 3)
+            dndz_full=integrate.simpson(dndmdz, x = np.log(self.M), axis = 0)
+            numClusters_full=integrate.simpson(dndz_full, x = self.z)
+            self.numClusters=numClusters_full
 
         elif self.theoryCode == 'CLASS-SZ':
-            # Still need to implement (maybe): self.volumeMpc3, self.numberDensity
             lnms=np.log(np.power(10,  self.log10M)*self.cosmoCLASS.h())
             dndmdz = np.zeros((self.log10M.shape[0], self.z.shape[0]))
             for (im,mm) in enumerate(lnms):
@@ -369,40 +342,13 @@ class MockSurvey(object):
             self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
             dndz=np.trapz(dndmdz,x = lnms,axis = 0)
             self.numClusters=np.trapz(dndz, x = self.z)
-            self.numClustersByRedshift=dndz*np.gradient(self.z)
-            norm=np.sum(dndmdz)/self.numClusters # Should be good to 0.1%
-            self.clusterCount=dndmdz.transpose()/norm
+            self.dndmdzInterpolator=interpolate.RectBivariateSpline(np.log(self.M),
+                                                                    self.z,
+                                                                    dndmdz, kx = 3, ky = 3)
+            dndz_full=integrate.simpson(dndmdz, x = np.log(self.M), axis = 0)
+            numClusters_full=integrate.simpson(dndz_full, x = self.z)
+            self.numClusters=numClusters_full
 
-
-    def calcNumClustersExpected(self, MLimit = 1e13, zMin = 0.0, zMax = 2.0, compMz = None):
-        """Calculate the number of clusters expected above a given mass limit, for the
-        mass definition set when the MockSurvey object was constructed.
-        
-        Args:
-            MLimit (:obj:`float`, optional): Mass limit above which to count clusters, in MSun.
-            zMin (:obj:`float`, optional): Count clusters above this minimum redshift.
-            zMax (:obj:`float`, optional): Count clusters below this maximum redshift.
-            compMz (:obj:`np.ndarray`, optional): If given, a 2d array with the same dimensions
-                and binning as the (z, log10M) grid, as calculated by the
-                :class:`nemo.completeness.SelFn` class, that describes the completeness as
-                a function of mass and redshift.
-        
-        Returns:
-            The number of clusters in the survey area, according to the chose sample selection
-            cuts.
-        
-        """
-        
-        if type(compMz) == np.ndarray:
-            numClusters=compMz*self.clusterCount
-        else:
-            numClusters=self.clusterCount
-        
-        zMask=np.logical_and(np.greater(self.z, zMin), np.less(self.z, zMax))
-        mMask=np.greater(self.M, MLimit)
-        
-        return numClusters[:, mMask][zMask].sum()
-        
 
     def getPLog10M(self, z):
         """Returns the log10(mass) probability distribution at the given z, for the logarithmic mass
@@ -422,8 +368,8 @@ class MockSurvey(object):
 
 
     def drawSample(self, y0Noise, scalingRelationDict, QFit = None, wcs = None, photFilterLabel = None,\
-                   tileName = None, SNRLimit = None, makeNames = False, z = None, numDraws = None,\
-                   areaDeg2 = None, applySNRCut = False, applyPoissonScatter = True,\
+                   tileName = None, tileCoordsDict = None, SNRLimit = None, makeNames = False, z = None,\
+                   numDraws = None, areaDeg2 = None, applyPoissonScatter = True,\
                    applyIntrinsicScatter = True, applyNoiseScatter = True,\
                    applyRelativisticCorrection = True, verbose = False, biasModel = None):
         """Draw a cluster sample from the mass function, generating mock y0~ values (called `fixed_y_c` in
@@ -434,7 +380,8 @@ class MockSurvey(object):
             y0Noise (:obj:`float` or :obj:`np.ndarray`): Either a single number (if using e.g., a survey
                 average), an RMS table (with columns 'areaDeg2' and 'y0RMS'), or a noise map (2d array).
                 A noise map must be provided here if you want the output catalog to contain RA, dec
-                coordinates (in addition, a WCS object must also be provided - see below).
+                coordinates (in addition, a WCS object must also be provided - see below). The noise
+                map should in terms of the Comptonization parameter for the reference filter scale.
             scalingRelationDict (:obj:`dict`): A dictionary containing keys 'tenToA0', 'B0', 'Mpivot',
                 'sigma_int' that describes the scaling relation between y0~ and mass (this is the
                 format of `massOptions` in Nemo .yml config files).
@@ -448,9 +395,10 @@ class MockSurvey(object):
                 Nemo .yml config file) that is used to define y0~ (`fixed_y_c`) and the filter mismatch 
                 function, Q.
             tileName (:obj:`str`, optional): Name of the tile for which the sample will be generated.
-            SNRLimit (:obj:`float`, optional): Signal-to-noise detection threshold used for the
-                output catalog (corresponding to a cut on `fixed_SNR` in Nemo catalogs). Only applied
-                if `applySNRCut` is also True (yes, this can be cleaned up).
+            tileCoordsDict (:obj:`dict`, optional): Dictionary containing the tiling set-up, needed
+                if `tileName` is not given.
+            SNRLimit (:obj:`float`, optional): If set, cut the output catalog at this signal-to-noise
+                detection threshold (corresponding to a cut on `fixed_SNR` in Nemo catalogs).
             makeNames (:obj:`bool`, optional): If True, add names of the form MOCK CL JHHMM.m+/-DDMM
                 to the output catalog.
             z (:obj:`float`, optional): If given produce a sample at the nearest z in the MockSurvey
@@ -461,8 +409,6 @@ class MockSurvey(object):
             areaDeg2 (:obj:`float`, optional): If given, the cluster counts will be scaled to this
                 area. Otherwise, they correspond to `self.areaDeg2`. This parameter will be ignored
                 if `numDraws` is also given.
-            applySNRCut (:obj:`bool`, optional): If True, cut the output catalog according to the
-                `fixed_SNR` threshold set by `SNRLimit`.
             applyPoissonScatter (:obj:`bool`, optional): If True, add Poisson noise to the cluster
                 counts (implemented by modifiying the number of draws from the mass function).
             applyIntrinsicScatter (:obj:`bool`, optional): If True, apply intrinsic scatter to the
@@ -525,9 +471,13 @@ class MockSurvey(object):
                 count=count+1
                 if count > maxCount:
                     raise Exception("Failed to generate enough random coords in %d iterations" % (maxCount))
-                theta=np.degrees(np.pi*2*np.random.uniform(0, 1, numClusters))
-                phi=np.degrees(np.arccos(2*np.random.uniform(0, 1, numClusters)-1))-90
-                xyCoords=np.array(wcs.wcs2pix(theta, phi))
+                u=np.random.uniform(0, 1, numClusters)
+                v=np.random.uniform(0, 1, numClusters)
+                thetaRad=2*np.pi*u
+                phiRad=np.arccos(2*v-1)
+                RADeg=np.degrees(thetaRad)
+                decDeg=90-np.degrees(phiRad)
+                xyCoords=np.array(wcs.wcs2pix(RADeg, decDeg))
                 xs=np.array(np.round(xyCoords[:, 0]), dtype = int)
                 ys=np.array(np.round(xyCoords[:, 1]), dtype = int)
                 mask=np.logical_and(np.logical_and(xs >= 0, xs < RMSMap.shape[1]), np.logical_and(ys >= 0, ys < RMSMap.shape[0]))
@@ -566,6 +516,18 @@ class MockSurvey(object):
         else:
             names=np.arange(numClusters)+1
 
+        # Tilenames, needed in the case where we're trying to sim a whole survey map at once
+        tileNamesCol=np.array(["            "]*numClusters)
+        if tileCoordsDict is not None:
+            pixCoords=np.array(wcs.wcs2pix(RAs, decs))
+            for tileName in tileCoordsDict.keys():
+                minX, maxX, minY, maxY=tileCoordsDict[tileName]['clippedSection']
+                xMask=np.logical_and(pixCoords[:, 0] >= minX, pixCoords[:, 0] < maxX)
+                yMask=np.logical_and(pixCoords[:, 1] >= minY, pixCoords[:, 1] < maxY)
+                tileMask=np.logical_and(xMask, yMask)
+                if tileMask.sum() > 0:
+                    tileNamesCol[tileMask]=tileName
+
         # Draw zs and masses using rejection sampling (from Inigo Zubeldia)
         # NOTE: We can't parallelize this with e.g. multiprocessing because we can't pickle swig objects from pyccl
         zs=np.zeros(y0Noise.shape)
@@ -576,70 +538,65 @@ class MockSurvey(object):
         fRels=np.zeros(y0Noise.shape)
         t0=time.time()
         for clusterIndex in range(numClusters):
-            log10Ms[clusterIndex], zs[clusterIndex], log10M500cs[clusterIndex], Qs[clusterIndex], fRels[clusterIndex]=self._drawSampleRow(QFit = QFit, tileName = tileName)
+            log10Ms[clusterIndex], zs[clusterIndex], log10M500cs[clusterIndex], Qs[clusterIndex], fRels[clusterIndex]=self._drawSampleRow(QFit = QFit, tileName = tileNamesCol[clusterIndex])
         t1=time.time()
 
         # For some cosmo parameters, fRel can wander outside its range for crazy masses
-        # So we just cap it at 0.1 here just to avoid -ve in log
         fRels[fRels <= 0]=0.1
         fRels[fRels > 1]=1.0
+
+        # True y_c from the scaling relation
         Ez2s=np.power(ccl.h_over_h0(self.cosmoModel, 1/(1+zs)), 2)
         try:
-            true_y0s=tenToA0*Ez2s*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
+            true_y0s=tenToA0*Ez2s*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)
         except:
             raise Exception("Negative y0 values (probably spline related) for H0 = %.6f Om0 = %.6f sigma8 = %.6f at z = %.3f" % (self.H0, self.Om0, self.sigma8, zk))
         if applyRelativisticCorrection == True:
             true_y0s=true_y0s*fRels
 
-        # Add noise and intrinsic scatter everywhere
-        if applyIntrinsicScatter == True:
-            scattered_y0s=np.exp(np.random.normal(np.log(true_y0s), sigma_int, len(true_y0s)))
-        else:
-            scattered_y0s=true_y0s
-        if applyNoiseScatter == True:
-            measured_y0s=np.random.normal(scattered_y0s, y0Noise)
-        else:
-            measured_y0s=scattered_y0s
-
-        # NOTE: We're now allowing user to specify mass definition rather than hardcoding M500c
-        # So, label the output true mass column appropriately
+        # Set up catalog table
         massColLabel="true_M%d%s" % (self.delta, self.rhoType[0])
         tab=atpy.Table()
-        tab.add_column(atpy.Column(names, 'name'))
-        tab.add_column(atpy.Column(RAs, 'RADeg'))
-        tab.add_column(atpy.Column(decs, 'decDeg'))
-        tab.add_column(atpy.Column(np.power(10, log10Ms)/1e14, massColLabel))
+        tab['name']=names
+        tab['RADeg']=RAs
+        tab['decDeg']=decs
+        tab[massColLabel]=np.power(10, log10Ms)/1e14
         if 'true_M500c' not in tab.keys():
-            tab.add_column(atpy.Column(np.power(10, log10M500cs)/1e14, 'true_M500c'))
-        if QFit is None:
-            tab.add_column(atpy.Column(true_y0s/1e-4, 'true_y_c'))
-        else:
-            tab.add_column(atpy.Column(Qs, 'true_Q'))
-            tab.add_column(atpy.Column(true_y0s/1e-4, 'true_fixed_y_c'))
-            tab.add_column(atpy.Column(measured_y0s/1e-4, 'fixed_y_c'))
-            tab.add_column(atpy.Column(y0Noise/1e-4, 'fixed_err_y_c'))
-            tab['true_fixed_SNR']=tab['true_fixed_y_c']/tab['fixed_err_y_c']  # True truth, but pre-intrinsic and measurement scatter
-            # tab['true_fixed_SNR']=(scattered_y0s/1e-4)/tab['fixed_err_y_c']     # With intrinsic scatter, no measurement scatter
-            # tab['true_fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']         # Like forced photometry case on a real map at true location
-            # Apply optimization bias first, then it'll feed through to SNR automatically
-            if biasModel is not None:
-                corrFactors=biasModel['func'](tab['true_fixed_SNR'], biasModel['params'][0], biasModel['params'][1], biasModel['params'][2])
-                tab['fixed_y_c']=tab['fixed_y_c']*corrFactors
-            tab['fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']
+            tab['true_M500c']=np.power(10, log10M500cs)/1e14
+        tab['redshift']=zs
+        tab['redshiftErr']=zErrs
+        tab['true_y_c']=true_y0s/1e-4
 
-        tab.add_column(atpy.Column(zs, 'redshift'))
-        tab.add_column(atpy.Column(zErrs, 'redshiftErr'))
-        if photFilterLabel is not None and tileName is not None:
-            tab.add_column(atpy.Column([photFilterLabel]*len(tab), 'template'))
-            tab.add_column(atpy.Column([tileName]*len(tab), 'tileName'))
+        # Easiest to apply intrinsic scatter to the true y_c first
+        if applyIntrinsicScatter == True and sigma_int > 0:
+            tab['true_y_c']=np.exp(np.random.normal(np.log(tab['true_y_c']), sigma_int, len(tab)))
+
+        # Make fixed_y_c using Q and add sources of scatter
+        tab['true_Q']=Qs
+        tab['fixed_y_c']=tab['true_y_c']*tab['true_Q']
+        tab['fixed_err_y_c']=y0Noise/1e-4
+        tab['fixed_SNR']=np.zeros(len(tab))
+        tab['true_fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c'] # Int. scatter but no noise scatter
+        for row in tab:
+            if applyNoiseScatter == True:
+                row['fixed_y_c']=row['fixed_y_c'] + np.random.normal(0, row['fixed_err_y_c'])
+        tab['tileName']=tileNamesCol
+
+        # Apply optimization bias first, then it'll feed through to SNR automatically
+        if biasModel is not None:
+            biasFunc=biasModel['func']
+            corrFactors=biasFunc(tab['true_fixed_SNR'], biasModel['params'])
+            corrFactors[tab['true_fixed_SNR'] < 2]=1.0
+            tab['fixed_y_c']=tab['fixed_y_c']*corrFactors
+        tab['fixed_SNR']=tab['fixed_y_c']/tab['fixed_err_y_c']
 
         # Apply selection?
-        if applySNRCut == True:
-            selMask=tab['fixed_SNR'] > tab['fixed_err_y_c']*SNRLimit
+        if SNRLimit is not None:
+            selMask=tab['fixed_y_c'] > (tab['fixed_err_y_c']*SNRLimit)
             tab=tab[selMask]
-        t1=time.time()
 
         return tab
+
 
     def _drawSampleRow(self, QFit = None, tileName = None):
         hmfEval=0.

@@ -57,9 +57,8 @@ def makeParser():
                         'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
                         results).", default = 'fit', choices = ['fit', 'injection'])
     parser.add_argument("-p", "--bias-model-parameters", dest = "biasModelParams", default = None,
-                        help = "If given, apply optimization bias model to the mock catalog.\
-                        Three parameters are needed (e-folding, pedestal, normalization), delimited by commas\
-                        (e.g., 2.26,1.00,0.22)")
+                        help = "If given, apply optimization bias model to the mock catalog (series model,\
+                        with parameter values delimited by commas).")
     parser.add_argument("-t", "--theory-code", dest = 'theoryCode', choices = ['CCL', 'CLASS-SZ'], default = 'CCL',
                         help = "Code to use for mass function calculations. CLASS-SZ is currently much\
                         faster for generating mock cluster samples than CCL.")

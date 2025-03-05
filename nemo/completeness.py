@@ -17,6 +17,9 @@ from scipy import interpolate
 from scipy.interpolate import InterpolatedUnivariateSpline as _spline
 from scipy import ndimage
 from scipy import optimize
+from scipy import integrate
+from scipy import special
+import pyccl as ccl
 import nemo
 from . import signals
 from . import maps
@@ -57,7 +60,7 @@ class SelFn(object):
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection
             cut (labelled as `fixed_SNR` in the catalogs produced by :ref:`nemoCommand`).
         configFileName (:obj:`str`, optional): Path to a Nemo configuration file. If not given, this
-            will be read from ``selFnDir/config.yml``, which is the config file for the 
+            will be read from ``selFnDir/config.yml``, which is the config file for the
             :ref:`nemoCommand` run that produced the ``selFn`` directory.
         footprint (:obj:`str`, optional): Use this to specify a footprint, if any are defined in the
             Nemo config used to produce the ``selFn`` dir (e.g., 'DES', 'HSC', 'KiDS' etc.). The default
@@ -89,6 +92,10 @@ class SelFn(object):
         QSource (:obj:`str`, optional): The source to use for Q (the filter mismatch function) - either
             'fit' (to use results from the original Q-fitting routine) or 'injection' (to use Q derived
             from source injection simulations).
+        overrideNoise (:obj:`float`, optional): If given, overwrite the contents of all noise maps with
+            the given value (used for testing).
+        maxFlags (:obj:`int`, optional): If given, apply the flags mask, cutting areas where the flags
+            value is greater than this value.
 
     Attributes:
         SNRCut (:obj:`float`): Completeness will be computed relative to this signal-to-noise selection cut
@@ -129,11 +136,13 @@ class SelFn(object):
     """
         
     def __init__(self, selFnDir, SNRCut, configFileName = None, footprint = None, zStep = 0.01,
-                 zMax = 3.0, tileNames = None, mockOversampleFactor = 1.0,
-                 downsampleRMS = True, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
+                 zMin = 0.0, zMax = 3.0, minMass = 5e13, numMassBins = 200, tileNames = None, mockOversampleFactor = 1.0,
+                 downsampleRMS = 2, applyMFDebiasCorrection = True, applyRelativisticCorrection = True,
                  setUpAreaMask = False, enableCompletenessCalc = True, delta = 500, rhoType = 'critical',
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
-                 QSource = 'fit', noiseCut = None, biasModel = None):
+                 QSource = 'fit', useAverageQ = False, theoryCode = 'CCL', noiseCut = None, biasModel = None,
+                 truncateDeltaSNR = 3.0, overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001,
+                 maxFlags = None):
         
         self.SNRCut=SNRCut
         self.biasModel=biasModel
@@ -145,7 +154,13 @@ class SelFn(object):
         self.applyRelativisticCorrection=applyRelativisticCorrection
         self.selFnDir=selFnDir
         self.zStep=zStep
+        self.numMassBins=numMassBins
         self.maxTheta500Arcmin=maxTheta500Arcmin
+        self.useAverageQ=useAverageQ
+        self.massBinsTheory=massBinsTheory
+        self.zStepTheory=zStepTheory
+        self.truncateDeltaSNR=truncateDeltaSNR
+        self.maxFlags=maxFlags
 
         if configFileName is None:
             configFileName=self.selFnDir+os.path.sep+"config.yml"
@@ -162,7 +177,7 @@ class SelFn(object):
         
         deprecatedMethods=['montecarlo']
         if method in deprecatedMethods:
-            raise Exception("Selection function completeness calculation method '%s' is deprecated - use a valid method (e.g., 'injection')" % (method))
+            raise Exception("Selection function completeness calculation method '%s' is deprecated - use a valid method (e.g., 'fast')" % (method))
         self.method=method
 
         # Needed for generating mock samples directly
@@ -189,22 +204,37 @@ class SelFn(object):
                 
         if enableCompletenessCalc == True:
             
-            self.scalingRelationDict=parDict['massOptions']
+            # We can now specify multiple scaling relations in the config - but we only use the first one here
+            self.scalingRelationDict=parDict['massOptions']['scalingRelations'][0]
 
             # If the config didn't give cosmological parameters, put in defaults
             defaults={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.8, 'ns': 0.95}
             for key in defaults:
-                if key not in self.scalingRelationDict.keys():
-                    self.scalingRelationDict[key]=defaults[key]
+                if key not in parDict['massOptions'].keys():
+                    parDict['massOptions'][key]=defaults[key]
+
+            # For caching / faster updating
+            self._last_H0=None
+            self._last_Om0=None
+            self._last_Ob0=None
+            self._last_sigma8=None
+            self._last_ns=None
+            self._last_scalingRelationDict=None
+            self._y0GridCache={}
+            self._theta500GridCache={}
 
             # We should be able to do everything (except clustering) with this
             # NOTE: Some tiles may be empty, so we'll exclude them from tileNames list here
             RMSTabFileName=self.selFnDir+os.path.sep+"RMSTab.fits"
             if footprint is not None:
                 RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprint))
+            if maxFlags is not None:
+                RMSTabFileName=RMSTabFileName.replace(".fits", "_maxFlags%d.fits" % (maxFlags))
             if os.path.exists(RMSTabFileName) == False:
-                raise FootprintError
+                raise Exception("File %s not found - perhaps check maxFlags value given?" % (RMSTabFileName))
             self.RMSTab=atpy.Table().read(RMSTabFileName)
+            if overrideNoise is not None:
+                self.RMSTab['y0RMS']=overrideNoise
             # Sanitise just in case [this is an edge case that has happened on one sim]
             self.RMSTab=self.RMSTab[self.RMSTab['areaDeg2'] > 0]
             if noiseCut is not None:
@@ -214,14 +244,16 @@ class SelFn(object):
             totalAreaDeg2=0.0 # Doing it this way so that tileNames can be chosen and fed into selFn
             for tileName in self.tileNames:
                 tileTab=self.RMSTab[self.RMSTab['tileName'] == tileName]
-                if downsampleRMS == True and len(tileTab) > 0:
-                    tileTab=downsampleRMSTab(tileTab) 
+                if downsampleRMS > 1 and len(tileTab) > 0:
+                    tileTab=downsampleRMSTab(tileTab, downsampleRMS)
                 if len(tileTab) > 0:    # We may have some blank tiles...
                     self.RMSDict[tileName]=tileTab
                     tileNames.append(tileName)
                     totalAreaDeg2=totalAreaDeg2+tileTab['areaDeg2'].sum()
             self.tileNames=tileNames
             self.totalAreaDeg2=totalAreaDeg2
+            if totalAreaDeg2 == 0:
+                raise FootprintError
             # If want a plot of noise distribution
             # plt.hist(self.RMSTab['y0RMS'], weights = self.RMSTab['areaDeg2'], bins  = 100, density=True)
 
@@ -272,22 +304,38 @@ class SelFn(object):
             self.Q=signals.QFit(QSource = QSource, selFnDir = self.selFnDir, tileNames = tileNames)
 
             # Initial cosmology set-up
-            minMass=5e13
-            zMin=0.0
-            H0=self.scalingRelationDict['H0']
-            Om0=self.scalingRelationDict['Om0']
-            Ob0=self.scalingRelationDict['Ob0']
-            sigma8=self.scalingRelationDict['sigma8']
-            ns=self.scalingRelationDict['ns']
+            H0=parDict['massOptions']['H0']
+            Om0=parDict['massOptions']['Om0']
+            Ob0=parDict['massOptions']['Ob0']
+            sigma8=parDict['massOptions']['sigma8']
+            ns=parDict['massOptions']['ns']
             self.mockSurvey=MockSurvey.MockSurvey(minMass, self.totalAreaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
-                                                  zStep = self.zStep,
-                                                  delta = delta, rhoType = rhoType, massFunction = massFunction)
+                                                  zStep = self.zStepTheory, numMassBins = self.massBinsTheory,
+                                                  delta = delta, rhoType = rhoType, massFunction = massFunction,
+                                                  theoryCode = theoryCode)
+            # This will usually be a coarser gridding than used in the MockSurvey object
+            # NOTE: binning mass in log(M) rather than log10(M) here
+            numRedshiftBins=int(round((zMax-zMin)/zStep))
+            self.zBinEdges=np.linspace(zMin, zMax, numRedshiftBins+1)
+            # self.zBinEdges=np.arange(zMin, zMax+zStep, zStep)
+            self.logMBinEdges=np.linspace(np.log(self.mockSurvey.M).min(), np.log(self.mockSurvey.M).max(), self.numMassBins)
+            self.clusterCount=np.zeros([self.zBinEdges.shape[0]-1, self.logMBinEdges.shape[0]-1])
+            self.z=(self.zBinEdges[1:]+self.zBinEdges[:-1])/2
+            self.a=1./(1+self.z)
+            log10MBinEdges=np.log10(np.exp(self.logMBinEdges))
+            self.log10M=(log10MBinEdges[1:]+log10MBinEdges[:-1])/2
+            self.M=np.power(10, self.log10M)
+            # Below used for Q calc only, changes only if cosmological parameters do
+            self._theta500Grid=np.zeros([self.z.shape[0], self.log10M.shape[0]])
             self.update(H0, Om0, Ob0, sigma8, ns)
 
 
     def _setUpAreaMask(self):
         """Sets-up WCS info and loads area masks (taking into account the footprint, if specified)
         - needed for quick position checks etc.
+
+        Note:
+            This takes into account the maxFlags property.
         
         """
         
@@ -307,6 +355,9 @@ class SelFn(object):
                 areaMap, wcs=loadAreaMask(row['tileName'], self.selFnDir)
             else:
                 areaMap, wcs=loadIntersectionMask(row['tileName'], self.selFnDir, self.footprint)
+            if self.maxFlags is not None:
+                flagMap, wcs=loadFlagMask(row['tileName'], self.selFnDir)
+                areaMap[flagMap > self.maxFlags]=0
             self.WCSDict[row['tileName']]=wcs.copy()
             self.areaMaskDict[row['tileName']]=areaMap
             ra0, dec0=self.WCSDict[row['tileName']].pix2wcs(0, 0)
@@ -373,6 +424,38 @@ class SelFn(object):
         return inMask
         
 
+    def _doClusterCount(self, numRedshiftPoints = 25, numMassPoints = 25):
+        """Update cluster counts (prior to applying selection function) on the gridding used by this object.
+        This routine used to be in the MockSurvey class.
+
+        Args:
+            numRedshiftPoints (int): Number of points to subdivide each SelFn redshift bin into.
+            numMassPoints (int): Number of points to subdivide each SelFn mass bin into.
+
+        """
+
+        # t0=time.time()
+        summedOverBins=0
+        for zi in range(self.zBinEdges.shape[0]-1):
+            zMin=self.zBinEdges[zi]
+            zMax=self.zBinEdges[zi+1]
+            zPoints=np.linspace(zMin, zMax, numRedshiftPoints)
+            for mi in range(self.logMBinEdges.shape[0]-1):
+                mMin=self.logMBinEdges[mi]
+                mMax=self.logMBinEdges[mi+1]
+                mPoints=np.linspace(mMin, mMax, numMassPoints)
+                dndz=integrate.simpson(self.mockSurvey.dndmdzInterpolator(mPoints, zPoints), x = mPoints, axis = 0)
+                # dndm=integrate.simpson(dndmdz_interpolator(mPoints, zPoints), x = zPoints, axis = 1)
+                numClusters_from_dndz=integrate.simpson(dndz, x = zPoints)
+                # numClusters_from_dndm=integrate.simpson(dndm, x = mPoints)
+                summedOverBins=summedOverBins+numClusters_from_dndz
+                self.clusterCount[zi, mi]=numClusters_from_dndz
+        res=abs(1-(summedOverBins/self.mockSurvey.numClusters))
+        if res > 1e-2:
+            raise Exception("Coarse (mass, z) binning used in SelFn does not accurately reproduce total theory cluster count (res = %.3e)." % (res))
+        # t1=time.time()
+
+
     def update(self, H0, Om0, Ob0, sigma8, ns, scalingRelationDict = None):
         """Re-calculates the survey-average selection function for a given set of cosmological and scaling
         relation parameters.
@@ -385,28 +468,57 @@ class SelFn(object):
 
         if scalingRelationDict is not None:
             self.scalingRelationDict=scalingRelationDict
-        
         self.mockSurvey.update(H0, Om0, Ob0, sigma8, ns)
-        zRange=self.mockSurvey.z
-        if self.method == 'injection':
 
-            # WARNING: Here there is no Q, and y0 is true y0, NOT y0~
-            # These grids are purely mapping 'input' signals to M, z via the scaling relation
-            y0Grid, theta500Grid=self._makeSignalGrids(applyQ = False)
+        self._doClusterCount()
 
-            compMz=np.zeros(y0Grid.shape)
+        # Interpolator for erf, can be used by 'fast' completeness method
+        # Only faster than direct calls of self._get_erf_diff for < 10000 points
+        # Doesn't get any faster for < 1000 points
+        self._compSNRLimInterp=None
+        if self.method == 'faster':
+            raise Exception("This has been disabled as it's not helpful unless you use very fine (M,z) gridding")
+            qmin=0 # Should always be zero
+            qmax=100
+            qin=np.linspace(qmin, qmax, 2000)
+            erf_compl=self._get_erf_diff(qin, self.SNRCut, qmax, self.SNRCut)
+            try:
+                truncIndex=np.where(erf_compl == 1)[0][0]
+                self._compSNRLimInterp=interpolate.interp1d(qin[:truncIndex], erf_compl[:truncIndex], fill_value = 1, bounds_error = False)
+            except:
+                pass
+
+        # theta500s for Q calc
+        if self.mockSurvey._cosmoUpdated is True or self._theta500Grid.sum() == 0:
+            zRange=self.z
+            Ez=ccl.h_over_h0(self.mockSurvey.cosmoModel, self.a)
+            Ez2=np.power(Ez, 2)
+            DAz=ccl.angular_diameter_distance(self.mockSurvey.cosmoModel, self.a)
+            criticalDensity=ccl.physical_constants.RHO_CRITICAL*(Ez*self.mockSurvey.cosmoModel['h'])**2
             for i in range(len(zRange)):
+                if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
+                    M500s=self.mockSurvey._transToM500c(self.mockSurvey.cosmoModel, self.M, self.a[i])
+                    self._log10M500s=np.log10(M500s)
+                else:
+                    M500s=self.M
+                    self._log10M500s=self.log10M
+                R500Mpc=np.power((3*M500s)/(4*np.pi*500*criticalDensity[i]), 1.0/3.0)
+                self._theta500Grid[i]=np.degrees(np.arctan(R500Mpc/DAz[i]))*60.0
+
+        if self.method == 'injection':
+            # WARNING: Here there is no Q, and y0 is true y0, NOT y0~
+            # This grid is purely mapping 'input' signals to M, z via the scaling relation
+            y0Grid=self._makeSignalGrid(applyQ = False)
+            compMz=np.zeros(y0Grid.shape)
+            for i in range(len(self.z)):
                 try:
-                    compMz[i]=np.diag(self.compThetaInterpolator(theta500Grid[i], y0Grid[i]/1e-04))
+                    compMz[i]=np.diag(self.compThetaInterpolator(self._theta500Grid[i], y0Grid[i]/1e-04))
                 except:
                     # If above fails, it's because relativistic correction is on, and y0 doesn't always increase
                     for j in range(y0Grid[i].shape[0]):
-                        compMz[i][j]=self.compThetaInterpolator(theta500Grid[i][j], y0Grid[i][j]/1e-04)
-            compMz[compMz < 0]=0
-            compMz[compMz > 1]=1
+                        compMz[i][j]=self.compThetaInterpolator(self._theta500Grid[i][j], y0Grid[i][j]/1e-04)
             self.compMz=compMz
-            self.y0TildeGrid=self.Q.getQ(theta500Grid)*y0Grid
-
+            self.y0TildeGrid=self.Q.getQ(self._theta500Grid)*y0Grid
             if self.scalingRelationDict['sigma_int'] > 0:
                 # Fiddling with Gaussian filter params has no effect
                 mode='nearest'
@@ -417,82 +529,176 @@ class SelFn(object):
                     if dy > 0:
                         npix=self.scalingRelationDict['sigma_int']/dy
                         npix=npix*0.8   # Making this correction seems to work but not sure why yet
-                        self.mockSurvey.clusterCount[i]=ndimage.gaussian_filter1d(self.mockSurvey.clusterCount[i], npix,
+                        self.clusterCount[i]=ndimage.gaussian_filter1d(self.clusterCount[i], npix,
                                                                                   mode = mode, truncate = truncate)
 
-        elif self.method == 'fast':
-            y0GridCube=[]
-            compMzCube=[]
-            theta500Cube=[]
-            for tileName in self.RMSDict.keys():
-                y0Grid, theta500Grid=self._makeSignalGrids(tileName = tileName)
-                # Calculate completeness using area-weighted average
-                # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
-                RMSTab=self.RMSDict[tileName]
-                areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-                y0Lim=self.SNRCut*RMSTab['y0RMS']
-                log_y0Lim=np.log(self.SNRCut*RMSTab['y0RMS'])
-                log_y0=np.log(y0Grid)
-                compMz=np.zeros(log_y0.shape)
-                for i in range(len(RMSTab)):
-                    if self.biasModel is not None:
-                        trueSNR=y0Grid/RMSTab['y0RMS'][i]
-                        corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
-                    else:
-                        corrFactors=np.ones(y0Grid.shape)
-                    # With intrinsic scatter [may not be quite right, but a good approximation]
-                    totalLogErr=np.sqrt((RMSTab['y0RMS'][i]/y0Grid)**2 + self.scalingRelationDict['sigma_int']**2)
-                    sfi=stats.norm.sf(y0Lim[i], loc = y0Grid*corrFactors, scale = totalLogErr*(y0Grid*corrFactors))
-                    compMz=compMz+sfi*areaWeights[i]
-                    # No intrinsic scatter, Gaussian noise
-                    #sfi=stats.norm.sf(y0Lim[i], loc = y0Grid, scale = RMSTab['y0RMS'][i])
-                    #compMz=compMz+sfi*areaWeights[i]
-                if self.maxTheta500Arcmin is not None:
-                    compMz=compMz*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
-                compMzCube.append(compMz)
-                y0GridCube.append(y0Grid)
-            compMzCube=np.array(compMzCube)
-            y0GridCube=np.array(y0GridCube)
+        elif self.method == 'fast' or self.method == 'faster':
+            compMzCube=np.zeros([len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
+            t0=time.time()
+            for tileIndex in range(len(self.tileNames)):
+                tileName=self.tileNames[tileIndex]
+                compMzCube[tileIndex]=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
-            # self.compMz=np.einsum('ijk,i->jk', np.nan_to_num(compMzCube), self.fracArea) # Equivalent, for noting
-            self.y0TildeGrid=np.average(y0GridCube, axis = 0, weights = self.fracArea)
+
+        # Deals with corner at high S/N, high-z sometimes weirdly having lower than 1 completeness
+        for i in range(self.compMz.shape[0]):
+            minIndex=np.where(self.compMz[i] >= 1)[0]
+            if len(minIndex) > 0:
+                minIndex=minIndex[0]
+                self.compMz[i][minIndex:]=1
+        self.compMz[self.compMz < 0]=0
+
+        self.predObsCount=self.compMz*self.clusterCount
+
+        # For caching/update checks
+        self._last_scalingRelationDict=self.scalingRelationDict
+        self._last_H0=self.mockSurvey.H0
+        self._last_Om0=self.mockSurvey.Om0
+        self._last_Ob0=self.mockSurvey.Ob0
+        self._last_sigma8=self.mockSurvey.sigma8
+        self._last_ns=self.mockSurvey.ns
 
 
-    def _makeSignalGrids(self, applyQ = True, tileName = None):
-        """Returns y0~ and theta500 grid. tileName here is optional and only used for Q.
+    def calcFastCompletenessInTile(self, tileName, return_y0Grid = False, RMSTab = None):
+        """Calculate completeness on the (M, z) grid for the given tile using the fast method.
+
+        Args:
+            tileName (str): Name of the tile
+            return_y0Grid (bool, optional): If given, return the ``fixed_y_c`` signal calculated
+                on the (M, z) grid
+            RMSTab (:obj:`astropy.table.Table`, optional): If given, this is used instead of the
+                RMS noise information held by the ``SelFn`` object.
+
+        Returns:
+            2d array (completeness on the M,z grid for the tile with same dimensions as
+            ``self.clusterCount``)
 
         """
-        zRange=self.mockSurvey.z
-        tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
-                                        self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
-        y0Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-        theta500Grid=np.zeros([zRange.shape[0], self.mockSurvey.clusterCount.shape[1]])
-        for i in range(len(zRange)):
-            zk=zRange[i]
-            k=np.argmin(abs(self.mockSurvey.z-zk))
-            if self.mockSurvey.delta != 500 or self.mockSurvey.rhoType != "critical":
-                log10M500s=np.log10(self.mockSurvey._transToM500c(self.mockSurvey.cosmoModel,
-                                                                  self.mockSurvey.M,
-                                                                  self.mockSurvey.a[k]))
+
+        t00=time.time()
+        # NOTE: y0Grid, theta500 grid are cached and only re-calculated if parameters change
+        if self.useAverageQ == False:
+            y0Grid=self._makeSignalGrid(tileName = tileName)
+        else:
+            y0Grid=self._makeSignalGrid(tileName = None)
+        compMzTile=np.zeros(y0Grid.shape)
+        # Calculate completeness using area-weighted average
+        # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
+        if RMSTab is None:
+            RMSTab=self.RMSDict[tileName]
+        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+        t22=time.time()
+        # SOLikeT style - tiny loops are faster than doing this with array functions
+        for i in range(len(RMSTab)):
+            if self.biasModel is not None:
+                trueSNR=y0Grid/RMSTab['y0RMS'][i]
+                # Old model
+                # corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
+                # New model [if we do want the old model, should call it like this anyway]
+                corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
+                # Some models may give unphysically large correction factors when extrapolated S/N -> 0
+                # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
+                if self.truncateDeltaSNR is not None:
+                    corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
             else:
-                log10M500s=self.mockSurvey.log10M
-            theta500s_zk=interpolate.splev(log10M500s, self.mockSurvey.theta500Splines[k])
-            Qs_zk=self.Q.getQ(theta500s_zk, zk, tileName = tileName)
-            #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-            true_y0s_zk=tenToA0*np.power(self.mockSurvey.Ez[k], 2)*np.power(np.power(10, self.mockSurvey.log10M)/Mpivot,
-                                                                            1+B0)
-            if applyQ == True:
-                true_y0s_zk=true_y0s_zk*Qs_zk
-            if self.applyRelativisticCorrection == True:
-                fRels_zk=interpolate.splev(log10M500s, self.mockSurvey.fRelSplines[k])
-                true_y0s_zk=true_y0s_zk*fRels_zk
-            y0Grid[i]=true_y0s_zk #*0.95
-            theta500Grid[i]=theta500s_zk
+                corrFactors=np.ones(y0Grid.shape)
+            # If we decide to bring back the 'faster' method, see below
+            # if self._compSNRLimInterp is not None:
+            #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._compSNRLimInterp((y0Grid*corrFactors)/RMSTab['y0RMS'][i])*areaWeights[i]
+            # else:
+            #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
+            if self.scalingRelationDict['sigma_int'] == 0:
+                compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
+            else:
+                # SOLikeT style
+                scatter=self.scalingRelationDict['sigma_int']
+                lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
+                yy0=np.exp(lnyy)
+                mu=np.float32(np.log(y0Grid*corrFactors))
+                fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
+                arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
+                cc=np.float32(arg*areaWeights[i])
+                arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
+                args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
+                compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
 
-        # For some cosmological parameters, we can still get the odd -ve y0
-        y0Grid[y0Grid <= 0] = 1e-9
+        if self.maxTheta500Arcmin is not None:
+            compMzTile=compMzTile*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
 
-        return y0Grid, theta500Grid
+        if return_y0Grid is True:
+            return compMzTile, y0Grid
+        else:
+            return compMzTile
+
+
+    def _get_erf_diff(self, qin, qmin, qmax, qcut):
+        """Based on SOLikeT - qin == input SNR (y0/RMS on the grid)"""
+        arg1 = (qin - qmax)/np.sqrt(2.)
+        if qmin > qcut:
+            qlim = qmin
+        else:
+            qlim = qcut
+        arg2 = (qin - qlim)/np.sqrt(2.)
+        erf_compl = (special.erf(arg2) - special.erf(arg1)) / 2.
+
+        return erf_compl
+
+
+    def _checkIfParametersUpdated(self):
+        paramsUpdated=False
+        if self._last_H0 != self.mockSurvey.H0:
+            paramsUpdated=True
+        if self._last_Om0 != self.mockSurvey.Om0:
+            paramsUpdated=True
+        if self._last_Ob0 != self.mockSurvey.Ob0:
+            paramsUpdated=True
+        if self._last_sigma8 != self.mockSurvey.sigma8:
+            paramsUpdated=True
+        if self._last_ns != self.mockSurvey.ns:
+            paramsUpdated=True
+        if self._last_scalingRelationDict != self.scalingRelationDict:
+            paramsUpdated=True
+
+        return paramsUpdated
+
+
+    def _makeSignalGrid(self, applyQ = True, tileName = None):
+        """Returns y0~ grid. tileName here is optional and only used for Q.
+
+        Previous results may be cached and re-used
+
+        """
+
+        y0Grid=None
+
+        if self._checkIfParametersUpdated() == False:
+            if tileName in self._y0GridCache.keys():
+                y0Grid=self._y0GridCache[tileName]
+
+        if y0Grid is None:
+            zRange=self.z
+            tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
+                                            self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+            y0Grid=np.zeros([zRange.shape[0], self.clusterCount.shape[1]])
+            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), 2)
+            for i in range(len(zRange)):
+                zk=zRange[i]
+                # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
+                k=np.argmin(abs(self.mockSurvey.z-zk))
+                Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
+                #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
+                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)
+                if applyQ == True:
+                    true_y0s_zk=true_y0s_zk*Qs_zk
+                if self.applyRelativisticCorrection == True:
+                    fRels_zk=interpolate.splev(self._log10M500s, self.mockSurvey.fRelSplines[k])
+                    true_y0s_zk=true_y0s_zk*fRels_zk
+                y0Grid[i]=true_y0s_zk
+            # For some cosmological parameters, we can still get the odd -ve y0
+            y0Grid[y0Grid <= 0] = 1e-9
+            self._y0GridCache[tileName]=y0Grid
+
+        return y0Grid
 
 
     def projectCatalogToMz(self, tab):
@@ -509,7 +715,7 @@ class SelFn(object):
         
         """
         
-        catProjectedMz=np.zeros(self.mockSurvey.clusterCount.shape)
+        catProjectedMz=np.zeros(self.clusterCount.shape)
         tenToA0, B0, Mpivot, sigma_int=self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'], \
                                        self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']
 
@@ -612,7 +818,7 @@ class SelFn(object):
                                                self.Q, wcs = None, 
                                                photFilterLabel = self.photFilterLabel, tileName = tileName, 
                                                makeNames = False,
-                                               SNRLimit = self.SNRCut, applySNRCut = True,
+                                               SNRLimit = self.SNRCut,
                                                areaDeg2 = areaDeg2*mockOversampleFactor,
                                                applyPoissonScatter = applyPoissonScatter,
                                                applyIntrinsicScatter = True,
@@ -642,18 +848,69 @@ class SelFn(object):
         """
         
         if zBinEdges is None:
-            zBinEdges=self.mockSurvey.zBinEdges
-            
-        return calcMassLimit(completenessFraction, self.compMz, self.mockSurvey, zBinEdges)
+            zBinEdges=self.zBinEdges
 
-    
+        massLimit=np.power(10, self.log10M[np.argmin(abs(self.compMz-completenessFraction), axis = 1)])/1e14
+        if len(zBinEdges) > 0:
+            binnedMassLimit=np.zeros(len(zBinEdges)-1)
+            for i in range(len(zBinEdges)-1):
+                binnedMassLimit[i]=np.average(massLimit[np.logical_and(self.z > zBinEdges[i], self.z <= zBinEdges[i+1])])
+            massLimit=binnedMassLimit
+
+        return massLimit
+
+#------------------------------------------------------------------------------------------------------------
+def optBiasModelFunc(snr, params):
+    """Optimization bias model function, of the form ``corrFactor = 1 + p1/x + p2/x**2 + ... + pn/x**n``
+    where p1...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
+    method of the ``SelFn`` class.
+
+    Args:
+        snr (:obj:`np.ndarray`): Array of true signal-to-noise ratio values
+        params (:obj:`np.ndarray`): Fit coefficients.
+
+    Returns:
+        Array of correction factors.
+
+    """
+
+    model=np.ones(snr.shape)
+    index=1
+    for p in params:
+        model=model+p/(snr**index)
+        index=index+1
+
+    return model
+
+#------------------------------------------------------------------------------------------------------------
+def optBiasSeriesOffsetModelFunc(snr, params):
+    """Optimization bias model function, of the form ``corrFactor = p0 + p1/x + p2/x**2 + ... + pn/x**n``
+    where p0...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
+    method of the ``SelFn`` class.
+
+    Args:
+        snr (:obj:`np.ndarray`): Array of true signal-to-noise ratio values
+        params (:obj:`np.ndarray`): Fit coefficients.
+
+    Returns:
+        Array of correction factors.
+
+    """
+
+    model=np.ones(snr.shape)*params[0]
+    index=1
+    for p in params[1:]:
+        model=model+p/(snr**index)
+        index=index+1
+    return model
+
 #------------------------------------------------------------------------------------------------------------
 def _parseSourceInjectionData(injTab, inputTab, SNRCut):
     """Produce arrays for constructing interpolator objects from source injection test data.
 
     Args:
         injTab (:obj:`astropy.table.Table`): Output catalog produced by the source injection test.
-        inputTab (:obj:`astropy.table.Table`): Input catalog produced by the source injectio test.
+        inputTab (:obj:`astropy.table.Table`): Input catalog produced by the source injection test.
         SNRCut (:obj:`float`): Selection threshold in S/N to apply.
 
     Returns:
@@ -937,14 +1194,14 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         xOut=np.arange(intersectMask.shape[1])
         yOut=np.arange(intersectMask.shape[0])
         for i in yOut[yMask]:
-            intersectMask[i][xMask]=maskData[yIn[i], xIn[xMask]]
+            intersectMask[i][xMask]=intersectMask[i][xMask]+maskData[yIn[i], xIn[xMask]]
     intersectMask=np.array(np.greater(intersectMask, 0.5), dtype = int)
     maps.saveFITS(intersectFileName, intersectMask*areaMap, wcs, compressionType = 'PLIO_1')
 
     return intersectMask
 
 #------------------------------------------------------------------------------------------------------------
-def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
+def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None, maxFlags = None):
     """Makes a table containing map area in the tile refered to by `tileName` against RMS (noise level)
     values, compressing the information in the RMS maps. Results are cached under `selFnDir`, and read from
     disk if found.
@@ -969,14 +1226,19 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
     RMSTabFileName=selFnDir+os.path.sep+"RMSTab.fits"
     if footprintLabel is not None:
         RMSTabFileName=RMSTabFileName.replace(".fits", "_%s.fits" % (footprintLabel))
+    if maxFlags is not None:
+        RMSTabFileName=RMSTabFileName.replace(".fits", "_maxFlags%d.fits" % (maxFlags))
     if os.path.exists(RMSTabFileName):
         tab=atpy.Table().read(RMSTabFileName)
         return tab[np.where(tab['tileName'] == tileName)]
 
     # Table doesn't exist, so make it...
-    print(("... making RMS table for tile = %s, footprint = %s" % (tileName, footprintLabel)))
+    print(("... making RMS table for tile = %s, footprint = %s, maxFlags = %s" % (tileName, footprintLabel, str(maxFlags))))
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
+    if maxFlags is not None:
+        flagMask, wcs=loadFlagMask(tileName, selFnDir)
+        areaMap[flagMask > maxFlags]=0
     areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)
 
     if footprintLabel != None:  
@@ -1003,19 +1265,24 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None):
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
-def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
+def downsampleRMSTab(RMSTab, downsampleFactor = 2):
     """Downsamples `RMSTab` (see :meth:`getRMSTab`) in terms of noise resolution, binning by `stepSize`.
     
     Args:
         RMSTab (:obj:`astropy.table.Table`): An RMS table, as produced by :meth:`getRMSTab`.
-        stepSize (:obj:`float`, optional): Sets the re-binning in terms of y0.
+        downsampleFactor (:obj:`float`, optional): Downsample the number of y0 bins by this factor.
+            (e.g., downsample = 2 gives half the number of bins compared to the original table).
         
     Returns:
         A table of RMS (noise level) values versus area in square degrees (:obj:`astropy.table.Table`).        
     
     """
     
-    binEdges=np.arange(RMSTab['y0RMS'].min(), RMSTab['y0RMS'].max()+stepSize, stepSize)
+    if downsampleFactor < 1:
+        raise Exception("downsampleFactor must be >= 1 - given %.1f" % (downsampleFactor))
+    numBinEdges=int(len(RMSTab)/downsampleFactor)
+    # We go slightly out of range here to allow overrideNoise option to work with changing anything else
+    binEdges=np.linspace(RMSTab['y0RMS'].min()*0.999, RMSTab['y0RMS'].max()*1.001, numBinEdges+1)
     y0Binned=[]
     tileAreaBinned=[]
     binMins=[]
@@ -1035,7 +1302,8 @@ def downsampleRMSTab(RMSTab, stepSize = 0.001*1e-4):
     return RMSTab
 
 #------------------------------------------------------------------------------------------------------------
-def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintLabel = None):
+def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintLabel = None,
+                                 maxFlags = None):
     """Returns the area weighted average ỹ\ :sub:`0` noise value in the tile.
     
     Args:
@@ -1054,7 +1322,8 @@ def calcTileWeightedAverageNoise(tileName, photFilterLabel, selFnDir, footprintL
         
     """
 
-    RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = footprintLabel)
+    RMSTab=getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = footprintLabel,
+                     maxFlags = maxFlags)
     RMSValues=np.array(RMSTab['y0RMS'])
     tileArea=np.array(RMSTab['areaDeg2'])
     tileRMSValue=np.average(RMSValues, weights = tileArea)
@@ -1090,15 +1359,38 @@ def completenessByFootprint(config):
 
     for footprintLabel in footprintLabels:
 
+        # We now support multiple relations, but here we take only the first entry
+        scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
+
+        # Optimization bias can now be applied here
+        biasModelDict=None
+        if 'biasModel' in config.parDict['selFnOptions'].keys():
+            if config.parDict['selFnOptions']['biasModel'] == 'series':
+                biasModel=optBiasModelFunc
+            elif config.parDict['selFnOptions']['biasModel'] == 'exp':
+                biasModel=optBiasFuncExpModel
+            else:
+                raise Exception("biasModel must be 'series' or 'exp' - check selFnOptions in your config")
+            try:
+                biasModelParams=config.parDict['selFnOptions']['biasModelParams']
+            except:
+                raise Exception("If you specify biasModel, you must also give biasModelParams - check selFnOptions in your config")
+            biasModelDict={'func': biasModel, 'params': biasModelParams}
+            if footprintLabel == footprintLabels[0]:
+                print(">>> Optimization bias model will be applied")
+
         try:
             selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
-                        footprint = footprintLabel, zStep = 0.1,
+                        footprint = footprintLabel, zStep = 0.02,
+                        massBinsTheory = 200, zStepTheory = 0.01,
                         downsampleRMS = False,
-                        applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
-                        delta = config.parDict['massOptions']['delta'],
-                        rhoType = config.parDict['massOptions']['rhoType'],
+                        applyRelativisticCorrection = scalingRelationDict['relativisticCorrection'],
+                        delta = scalingRelationDict['delta'],
+                        rhoType = scalingRelationDict['rhoType'],
                         method = config.parDict['selFnOptions']['method'],
-                        QSource = config.parDict['selFnOptions']['QSource'])
+                        QSource = config.parDict['selFnOptions']['QSource'],
+                        maxFlags = config.parDict['selFnOptions']['maxFlags'],
+                        biasModel = biasModelDict)
         except FootprintError:
             continue
             #print("... no overlapping area with footprint %s" % (footprintLabel))
@@ -1108,22 +1400,21 @@ def completenessByFootprint(config):
         if footprintLabel is None:
             footprintLabel="full"
 
-        massLimit_90Complete=calcMassLimit(0.9, selFn.compMz, selFn.mockSurvey, zBinEdges = zBinEdges)
         outFileName=config.diagnosticsDir+os.path.sep+"MzCompleteness_%s_%s.npz" % (selFn.method, footprintLabel)
-        np.savez(outFileName, z = selFn.mockSurvey.z, log10M = selFn.mockSurvey.log10M, completeness = selFn.compMz)
-        makeMzCompletenessPlot(selFn.compMz, selFn.mockSurvey.log10M, selFn.mockSurvey.z, footprintLabel, massLabel,
+        np.savez(outFileName, z = selFn.z, log10M = selFn.log10M, completeness = selFn.compMz)
+        makeMzCompletenessPlot(selFn.compMz, selFn.log10M, selFn.z, footprintLabel, massLabel,
                                config.diagnosticsDir+os.path.sep+"MzCompleteness_%s_%s.pdf" % (selFn.method, footprintLabel))
 
-        # 90% mass completeness limit and plots
-        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres,
-                                   config.diagnosticsDir+os.path.sep+"completeness90Percent_%s_%s.pdf" % (selFn.method, footprintLabel),
-                                   title = "footprint: %s" % (footprintLabel))
-        zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
+        # 90% mass completeness limit [we don't really need the plots any more - can use the Mz ones above]
+        massLimit_90Complete=selFn.getMassLimit(0.9)
+        # makeMassLimitVRedshiftPlot(massLimit_90Complete, selFn.z,
+        #                            config.diagnosticsDir+os.path.sep+"completeness90Percent_%s_%s.pdf" % (selFn.method, footprintLabel),
+        #                            title = "footprint: %s" % (footprintLabel))
+        zMask=np.logical_and(selFn.z >= 0.2, selFn.z < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-        print(">>> Survey-averaged results inside footprint %s:" % (footprintLabel))
+        print(">>> Survey-averaged results inside footprint %s [maxFlags = %s]:" % (footprintLabel, config.parDict['selFnOptions']['maxFlags']))
         print("... total survey area (after masking) = %.1f sq deg" % (selFn.totalAreaDeg2))
         print("... survey-averaged 90%% mass (%s) completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLabel, massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
-        print("... survey-averaged 90%% mass (%s) completeness limit (0.2 < z < 1.0) = %.1f x 10^14 MSun" % (massLabel, averageMassLimit_90Complete))
 
 #------------------------------------------------------------------------------------------------------------
 def calcCompletenessContour(compMz, log10M, z, level = 0.90):
@@ -1231,196 +1522,12 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
         plt.title(title)    
     plt.savefig(outFileName)
     plt.close()
-
-#------------------------------------------------------------------------------------------------------------
-def calcMassLimit(completenessFraction, compMz, mockSurvey, zBinEdges = None):
-    """Given a completeness (log\ :sub:`10` mass, z) grid as made by :meth:`calcCompleteness`, return the
-    mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`) as a function of redshift at the given completeness
-    level. By default, the same binning as the given `mockSurvey` object is used - this can be overridden by
-    giving `zBinEdges`.
-    
-    Args:
-        completenessFraction (:obj:`float`): Fractional completeness level (e.g., 0.90 is 90% completeness).
-        compMz (:obj:`np.ndarray`): Map (2d array) of completeness on the (log\ :sub:`10` mass, z) plane.
-        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
-            function calculations and generating mock catalogs.
-        zBinEdges (:obj:`np.ndarray`, optional): Redshifts at which the mass limit is evaluated.
-
-    Returns:
-        The mass limit (units of 10\ :sup:`14` M\ :sub:`Sun`, 1d array) at each requested redshift.
-    
-    """
-    
-    massLimit=np.power(10, mockSurvey.log10M[np.argmin(abs(compMz-completenessFraction), axis = 1)])/1e14
-    
-    if zBinEdges is not None and len(zBinEdges) > 0:
-        binnedMassLimit=np.zeros(len(zBinEdges)-1)
-        for i in range(len(zBinEdges)-1):
-            binnedMassLimit[i]=np.average(massLimit[np.logical_and(mockSurvey.z > zBinEdges[i], mockSurvey.z <= zBinEdges[i+1])])
-        massLimit=binnedMassLimit
-    
-    return massLimit
-    
-#------------------------------------------------------------------------------------------------------------
-def calcCompleteness(RMSTab, SNRCut, tileName, mockSurvey, massOptions, QFit, plotFileName = None, z = None,
-                     method = "fast", numDraws = 2000000, numIterations = 100, verbose = False):
-    """Calculate completeness as a function of (log\ :sub:`10` mass, z) on the mockSurvey grid at the given
-    `SNRCut`. Intrinsic scatter in the scaling relation is taken into account.
-    
-    Args:
-        RMSTab (:obj:`astropy.table.Table`): Table containing noise level by area, as returned by
-            :meth:`getRMSTab`.
-        SNRCut (:obj:`float`): Completeness will be calculated for objects relative to this cut in 
-            ``fixed_SNR``.
-        tileName (:obj:`str`): Name of the map tile.
-        mockSurvey (:class:`nemo.MockSurvey.MockSurvey`): A :class:`MockSurvey` object, used for halo mass
-            function calculations and generating mock catalogs.
-        massOptions (:obj:`dict`): A dictionary of scaling relation, cosmological, and mass definition
-            parameters (see example Nemo config files for the format).
-        QFit (:class:`nemo.signals.QFit`): An object for calculating the filter mismatch function, referred
-            to as `Q` in the ACT papers from `Hasselfield et al. (2013) <http://adsabs.harvard.edu/abs/2013JCAP...07..008H>`_
-            onwards.
-        plotFileName (:obj:`str`, optional): If given, write a plot showing 90% completness limit to this
-            path.
-        z (:obj:`float`, optional): Redshift at which the completeness calculation will be performed.
-            If None, the redshift range will be taken from the :class:`MockSurvey` object.
-        method (:obj:`str`, optional): Two methods for doing the calculation are available: "fast" (applies
-            the measurement errors and scatter to 'true' ỹ\ :sub:`0` values on a grid) and "montecarlo" (uses
-            samples drawn from a mock catalog, generated on the fly, to estimate the completeness). Both
-            methods should give consistent results.
-        numDraws (:obj:`int`, optional): Used by the "montecarlo" method - sets the number of draws from the
-            halo mass function on each iteration.
-        numIterations (:obj:`int`, optional): Used by the "montecarlo" method - sets the number of iterations,
-            i.e., the number of mock catalogs from which the completeness is estimated.
-
-    Returns:
-        A 2d array of (log\ :sub:`10` mass, z) completeness.
-    
-    """
-        
-    if z is not None:
-        zIndex=np.argmin(abs(mockSurvey.z-z))
-        zRange=mockSurvey.z[zIndex:zIndex+1]
-    else:
-        zRange=mockSurvey.z
-
-    trueMassCol="true_M%d%s" % (mockSurvey.delta, mockSurvey.rhoType[0])
-
-    if verbose == True:
-        print("... calcuating completeness in tile %s using '%s' method" % (tileName, method))
-
-    if method == "montecarlo":
-
-        #t0=time.time()
-        # Need area-weighted average noise in the tile - we could change this to use entire RMS map instead
-        areaWeights=RMSTab['areaDeg2'].data/RMSTab['areaDeg2'].data.sum()
-        if areaWeights.sum() > 0:
-            y0Noise=np.average(RMSTab['y0RMS'].data, weights = areaWeights)
-            # Monte-carlo sims approach: slow - but can use to verify the other approach below
-            halfBinWidth=(mockSurvey.log10M[1]-mockSurvey.log10M[0])/2.0
-            binEdges_log10M=(mockSurvey.log10M-halfBinWidth).tolist()+[np.max(mockSurvey.log10M)+halfBinWidth]
-            halfBinWidth=(mockSurvey.z[1]-mockSurvey.z[0])/2.0
-            binEdges_z=(zRange-halfBinWidth).tolist()+[np.max(zRange)+halfBinWidth]
-            allMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-            detMz=np.zeros([mockSurvey.clusterCount.shape[1], mockSurvey.clusterCount.shape[0]])
-            for i in range(numIterations):
-                tab=mockSurvey.drawSample(y0Noise, massOptions, QFit, tileName = tileName,
-                                          SNRLimit = SNRCut, applySNRCut = False, z = z, numDraws = numDraws,
-                                          applyRelativisticCorrection = massOptions['relativisticCorrection'])
-                allMz=allMz+np.histogram2d(np.log10(tab[trueMassCol]*1e14), tab['redshift'], [binEdges_log10M, binEdges_z])[0]
-                detMask=np.greater(tab['fixed_y_c']*1e-4, y0Noise*SNRCut)
-                detMz=detMz+np.histogram2d(np.log10(tab[trueMassCol][detMask]*1e14), tab['redshift'][detMask], [binEdges_log10M, binEdges_z])[0]
-            mask=np.not_equal(allMz, 0)
-            compMz=np.ones(detMz.shape)
-            compMz[mask]=detMz[mask]/allMz[mask]
-            compMz=compMz.transpose()
-        else:
-            compMz=np.zeros([mockSurvey.clusterCount.shape[0], mockSurvey.clusterCount.shape[1]])
-        #astImages.saveFITS("test_compMz_MC_5000.fits", compMz.transpose(), None)
-        #t1=time.time()
-
-    elif method == "fast":
-
-        # Using full noise distribution, weighted by fraction of area
-        # NOTE: removed recMassBias and div parameters
-        tenToA0, B0, Mpivot, sigma_int=[massOptions['tenToA0'], massOptions['B0'],
-                                        massOptions['Mpivot'], massOptions['sigma_int']]
-        y0Grid=np.zeros([zRange.shape[0], mockSurvey.clusterCount.shape[1]])
-        for i in range(len(zRange)):
-            zk=zRange[i]
-            k=np.argmin(abs(mockSurvey.z-zk))
-            # WARNING: the interpolates for theta500, fRel in MockSurvey work in terms of M500c
-            # mockSurvey.log10M is NOT necessarily M500c any more
-            if massOptions['delta'] == 500 and massOptions['rhoType'] == "critical":
-                log10M500cs=mockSurvey.log10M
-            else:
-                log10M500cs=np.log10(mockSurvey._transToM500c(mockSurvey.cosmoModel,
-                                                              np.power(10, mockSurvey.log10M),
-                                                              1/(1+zk)))
-
-            theta500s_zk=interpolate.splev(log10M500cs, mockSurvey.theta500Splines[k])
-            Qs_zk=QFit.getQ(theta500s_zk, z = zk, tileName = tileName)
-            true_y0s_zk=tenToA0*np.power(mockSurvey.Ez[k], 2)*np.power(np.power(10, mockSurvey.log10M)/Mpivot, 1+B0)*Qs_zk
-            if massOptions['relativisticCorrection'] == True:
-                fRels_zk=interpolate.splev(log10M500cs, mockSurvey.fRelSplines[k])
-                true_y0s_zk=true_y0s_zk*fRels_zk
-            y0Grid[i]=true_y0s_zk
-            
-        # For some cosmological parameters, we can still get the odd -ve y0
-        y0Grid[y0Grid <= 0] = 1e-9
-
-        # Calculate completeness using area-weighted average
-        # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
-        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-        log_y0Lim=np.log(SNRCut*RMSTab['y0RMS'])
-        log_y0=np.log(y0Grid)
-        compMz=np.zeros(log_y0.shape)
-        for i in range(len(RMSTab)):
-            SNRGrid=y0Grid/RMSTab['y0RMS'][i]
-            SNRGrid=SNRGrid
-            log_y0Err=1/SNRGrid
-            log_y0Err[SNRGrid < SNRCut]=1/SNRCut
-            log_totalErr=np.sqrt(log_y0Err**2 + sigma_int**2)
-            compMz=compMz+stats.norm.sf(log_y0Lim[i], loc = log_y0, scale = log_totalErr)*areaWeights[i]
-        
-        #t1=time.time()
-        
-        # For checking figure-of-merit
-        #predMz=compMz*mockSurvey.clusterCount
-        #predMz=predMz/predMz.sum()
-        #astImages.saveFITS("predMz.fits", predMz.transpose(), None)        
-        #projImg=pyfits.open("projMz_SNR%.2f.fits" % (SNRCut))        
-        #projMz=projImg[0].data.transpose()
-        #projImg.close()
-        #merit=np.sum(np.sqrt(np.power(projMz-predMz, 2)))
-        #print(merit)
-        #IPython.embed()
-        #sys.exit()
-
-    elif method is None:
-        return None
-
-    else:
-        raise Exception("calcCompleteness only has 'fast', and 'Monte Carlo' methods available")
-            
-    if plotFileName is not None:
-        # Calculate 90% completeness as function of z
-        zBinEdges=np.arange(0.05, 2.1, 0.1)
-        zBinCentres=(zBinEdges[:-1]+zBinEdges[1:])/2.
-        massLimit_90Complete=calcMassLimit(0.9, compMz, mockSurvey, zBinEdges = zBinEdges)
-        zMask=np.logical_and(zBinCentres >= 0.2, zBinCentres < 1.0)
-        averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-        makeMassLimitVRedshiftPlot(massLimit_90Complete, zBinCentres, plotFileName, 
-                                   title = "%s: $M_{\\rm %d%s}$ / $10^{14}$ M$_{\odot}$ > %.2f (0.2 < $z$ < 1)" % (tileName,
-                                   mockSurvey.delta, mockSurvey.rhoType[0], averageMassLimit_90Complete))
-            
-    return compMz
       
 #------------------------------------------------------------------------------------------------------------
 def makeMassLimitMapsAndPlots(config):
-    """Makes maps of mass completeness and associated plots. Output is written to the the `diagnosticsDir`
-    directory). The maps to make are controlled by the ``massLimitMaps`` parameter in the ``selFnOptions``
-    dictionary in the Nemo config file.
+    """Makes maps of approximate mass completeness and associated plots. Output is written to the
+    `diagnosticsDir` directory. The maps to make are controlled by the ``massLimitMaps`` parameter in the
+    selFnOptions`` dictionary in the Nemo config file.
     
     Args:
         config (:class:`nemo.startUp.NemoConfig`): A NemoConfig object.
@@ -1430,111 +1537,130 @@ def makeMassLimitMapsAndPlots(config):
     
     """
 
+
+    # We now support multiple relations, but here we take only the first entry
+    scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
+
+    # Optimization bias can now be applied here
+    biasModelDict=None
+    if 'biasModel' in config.parDict['selFnOptions'].keys():
+        if config.parDict['selFnOptions']['biasModel'] == 'series':
+            biasModel=optBiasModelFunc
+        elif config.parDict['selFnOptions']['biasModel'] == 'exp':
+            biasModel=optBiasFuncExpModel
+        else:
+            raise Exception("biasModel must be 'series' or 'exp' - check selFnOptions in your config")
+        try:
+            biasModelParams=config.parDict['selFnOptions']['biasModelParams']
+        except:
+            raise Exception("If you specify biasModel, you must also give biasModelParams - check selFnOptions in your config")
+        biasModelDict={'func': biasModel, 'params': biasModelParams}
+        # print(">>> Optimization bias model will be applied")
+
     selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                 footprint = None, zStep = 0.1, setUpAreaMask = True,
                 downsampleRMS = False,
-                applyRelativisticCorrection = config.parDict['massOptions']['relativisticCorrection'],
-                delta = config.parDict['massOptions']['delta'],
-                rhoType = config.parDict['massOptions']['rhoType'],
+                applyRelativisticCorrection = scalingRelationDict['relativisticCorrection'],
+                delta = scalingRelationDict['delta'],
+                rhoType = scalingRelationDict['rhoType'],
                 method = config.parDict['selFnOptions']['method'],
-                QSource = config.parDict['selFnOptions']['QSource'])
+                QSource = config.parDict['selFnOptions']['QSource'],
+                maxFlags = config.parDict['selFnOptions']['maxFlags'],
+                biasModel = biasModelDict)
 
-    if config.parDict['stitchTiles'] == True:
-        inFileName=config.selFnDir+os.path.sep+"stitched_RMSMap_%s.fits" % (config.parDict['photFilter'])
-    else:
-        inFileName=config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (config.parDict['photFilter'])
-
-    d, wcs=maps.chunkLoadMask(inFileName, dtype = np.float32)
-    noiseLevels=np.unique(d)
-    noiseLevels=noiseLevels[noiseLevels > 0]
-
-    y0Grid, theta500Grid=selFn._makeSignalGrids()
-
-    # Fill in blocks in map for each RMS value
+    # Load in tiles RMS map and fill a mass limit tiled map, then stitch at the end
     for massLimDict in config.parDict['selFnOptions']['massLimitMaps']:
         t0=time.time()
-        # Need re-bin here to make this run in sensible amount of time
-        if 'numBins' not in massLimDict.keys():
-            numBins=50
-        else:
-            numBins=massLimDict['numBins']
         if 'completenessFraction' not in massLimDict.keys():
             completenessFraction=0.9
         else:
             completenessFraction=massLimDict['completenessFraction']
-        binEdges=np.linspace(noiseLevels.min(), noiseLevels.max(), numBins+1)
-        binCentres=(binEdges[1:]+binEdges[:-1])/2
-        zIndex=np.argmin(abs(selFn.mockSurvey.z-massLimDict['z']))
-        z=selFn.mockSurvey.z[zIndex]
+        zIndex=np.argmin(abs(selFn.z-massLimDict['z']))
+        z=selFn.z[zIndex]
         outFileName=config.diagnosticsDir+os.path.sep+"massLimitMap_z%.2f_comp%.2f.fits" % (z, completenessFraction)
-        if os.path.exists(outFileName) == True:
-            print("... already made mass limit map %s" % (outFileName))
-            massLimMap, wcs=maps.chunkLoadMask(outFileName, dtype = np.float32)
-        else:
-            massLimMap=np.zeros(d.shape)
+        inFileName=config.selFnDir+os.path.sep+"RMSMap_%s.fits" % (config.parDict['photFilter'])
+        stitchedMapLimDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+        with pyfits.open(inFileName) as img:
             count=0
-            t0=time.time()
-            for i in range(len(binEdges)-1):
-                binMin=binEdges[i]
-                binMax=binEdges[i+1]
-                mask=np.logical_and(d > binMin, d <= binMax)
-                print("... %d/%d" % (i+1, len(binCentres)))
-                # No intrinsic scatter
-                #sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = binCentres[i])
-                # With intrinsic scatter [see fast method in selFn.update]
-                totalLogErr=np.sqrt((binCentres[i]/y0Grid)**2 + selFn.scalingRelationDict['sigma_int']**2)
-                sfi=stats.norm.sf(selFn.SNRCut*binCentres[i], loc = y0Grid, scale = totalLogErr*y0Grid)
-                massLimMap[mask]=selFn.mockSurvey.log10M[np.argmin(abs(sfi[zIndex]-0.9))]
-            t1=time.time()
-            mask=np.not_equal(massLimMap, 0)
-            massLimMap[mask]=np.power(10, massLimMap[mask])/1e14
-            maps.saveFITS(outFileName, massLimMap, wcs, compressionType = "RICE_1")
-            print("... made mass limit map '%s' (time taken = %.3f sec)" % (outFileName, t1-t0))
-        del d, y0Grid, theta500Grid, noiseLevels
+            for tileName in config.allTileNames:
+                count=count+1
+                d=img[tileName].data
+                noiseLevels=np.unique(d)
+                noiseLevels=noiseLevels[noiseLevels > 0]
+                for n in noiseLevels:
+                    RMSTab=atpy.Table()
+                    RMSTab['y0RMS']=[n]
+                    RMSTab['areaDeg2']=[100] # doesn't matter, just for weighting
+                    compMzTile, y0Grid=selFn.calcFastCompletenessInTile(tileName = tileName, return_y0Grid = True,
+                                                                        RMSTab = RMSTab)
+                    massLim=selFn.log10M[np.where(compMzTile[zIndex] > completenessFraction)[0][0]]
+                    massLim=np.power(10, massLim)/1e14
+                    d[d == n]=massLim
+                stitchedMapLimDict[tileName]=d
+        stitchedMapLimDict.saveStitchedFITS(outFileName, config.origWCS, compressionType = "RICE_1")
+        t1=time.time()
+        print("... made mass limit map '%s' (time taken = %.3f sec)" % (outFileName, t1-t0))
 
         # Plots
         plotSettings.update_rcParams()
+        for key in list(stitchedMapLimDict.keys()):
+            del stitchedMapLimDict[key]
+        del stitchedMapLimDict
+        with pyfits.open(outFileName) as img:
+            for ext in img:
+                if ext.data is not None:
+                    massLimMap=np.float16(ext.data)
+                    wcs=astWCS.WCS(ext.header, mode = 'pyfits')
 
         # Map plot [this is only set-up really for large area maps]
-        massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap)
-        fontSize=20.0
-        figSize=(16, 5.7)
+        colorBarPos='vertical'
         axesLabels="sexagesimal"
-        axes=[0.08,0.15,0.91,0.88]
-        cutLevels=[2, int(np.median(massLimMap[np.nonzero(massLimMap)]))+2]
+        fontSize=20.0
+        figSize=(15.5, 4)
+        axes=[0.08,0.07,0.88,0.96]
+        cbShrink=0.8
+        cbAspect=10
+        fraction=0.05
+        pad=0.01
+        rotation=90
+        labelpad=5
+        # massLimMap=np.ma.masked_where(massLimMap <1e-6, massLimMap) # We run out of memory with this
+        massLimMap[massLimMap < 1e-6]=np.nan
+        cutLevels=[massLimMap[massLimMap > 0].min(), massLimMap[massLimMap > 0].max()]
         colorMapName=colorcet.m_rainbow
         fig=plt.figure(figsize = figSize)
         p=astPlots.ImagePlot(massLimMap, wcs, cutLevels = cutLevels, title = None, axes = axes,
                              axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif',
                              RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
                              axesFontSize = fontSize)
-        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
-        cbShrink=0.7
-        cbAspect=40
-        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18,
-                        shrink = cbShrink, aspect = cbAspect)
-        plt.figtext(0.53, 0.04, cbLabel, ha="center", va="center", fontsize = fontSize, family = "sans-serif")
+        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)\n[%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
+        cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation = colorBarPos, fraction = fraction, pad = pad,
+                shrink = cbShrink, aspect = cbAspect)
+        cb.ax.get_yaxis().labelpad=labelpad
+        cb.ax.set_ylabel(cbLabel, rotation = rotation)
         plt.savefig(outFileName.replace(".fits", ".pdf"), dpi = 300)
         plt.savefig(outFileName.replace(".fits", ".png"), dpi = 300)
         plt.close()
         del p
+        del selFn
 
         # Cumulative area info [note, compression drives up number of 'mass limits', so we rebin]
         pixAreaMap=maps.getPixelAreaArcmin2Map(massLimMap.shape, wcs)
-        limits=np.unique(massLimMap)
+        pixAreaMap=pixAreaMap/(60**2) # Have to do this here to avoid overflow if 16 bit
+        limits=np.unique(massLimMap[massLimMap > 0])
         limits=limits[limits > 0]
-        binEdges=np.linspace(limits.min(), limits.max(), 50)
+        binEdges=np.linspace(limits.min(), limits.max(), 30)
         binCentres=(binEdges[1:]+binEdges[:-1])/2
-        areas=[]
+        areas=np.zeros(len(binCentres))
         for i in range(len(binEdges)-1):
             binMin=binEdges[i]
             binMax=binEdges[i+1]
             mask=np.logical_and(massLimMap > binMin, massLimMap <= binMax)
-            areas.append(pixAreaMap[mask].sum())
+            if mask.sum() > 0:
+                areas[i]=pixAreaMap[mask].sum()
         tab=atpy.Table()
         tab['MLim']=binCentres
         tab['areaDeg2']=areas
-        tab['areaDeg2']=tab['areaDeg2']/(60**2)
         tab.sort('MLim')
         del pixAreaMap, massLimMap, limits
 
@@ -1544,8 +1670,11 @@ def makeMassLimitMapsAndPlots(config):
         plt.minorticks_on()
         plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
         #plt.plot(plotMRange, plotCumArea, 'k-')
-        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0]))
-        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction)))
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (scalingRelationDict['delta'],
+                                                                      scalingRelationDict['rhoType'][0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (scalingRelationDict['delta'],
+                                                                                scalingRelationDict['rhoType'][0],
+                                                                                int(100*completenessFraction)))
         labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
         plt.ylim(0.0, 1.2*np.cumsum(tab['areaDeg2']).max())
         plt.xlim(tab['MLim'].min(), tab['MLim'].max())
@@ -1561,8 +1690,11 @@ def makeMassLimitMapsAndPlots(config):
         ax=plt.axes([0.155, 0.12, 0.82, 0.86])
         plt.minorticks_on()
         plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
-        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0]))
-        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction)))
+        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (scalingRelationDict['delta'],
+                                                                      scalingRelationDict['rhoType'][0]))
+        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (scalingRelationDict['delta'],
+                                                                                scalingRelationDict['rhoType'][0],
+                                                                                int(100*completenessFraction)))
         labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
         plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
         plt.xlim(deepTab['MLim'].min(), deepTab['MLim'].max())

@@ -40,86 +40,26 @@ import time
 import yaml
 
 #------------------------------------------------------------------------------------------------------------
-def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnName = None):
-    """Given the path to a catalog that contains minimal columns name, RADeg, decDeg, redshift, 
-    add forced photometry columns so we can estimate SZ masses.
-    
-    """
-    
-    print(">>> Doing forced photometry ...")
-    
-    zTab=atpy.Table().read(pathToCatalog)
-    if zColumnName is not None:
-        if 'redshift' in zTab.keys():
-            zTab.remove_column('redshift')
-        zTab.rename_column(zColumnName, 'redshift')
-    if zErrColumnName is not None:
-        if 'redshiftErr' in zTab.keys():
-            zTab.remove_column('redshiftErr')
-        zTab.rename_column(zErrColumnName, 'redshiftErr')
-    if 'redshift' not in zTab.keys():
-        foundRedshiftCol=False
-        possZCols=['z', 'Z', 'REDSHIFT', 'Redshift', 'z_cl', 'Photz']
-        for p in possZCols:
-            if p in zTab.keys():
-                print("... assuming %s is the redshift column ..." % (p))
-                foundRedshiftCol=True
-                zTab.rename_column(p, 'redshift')
-        if foundRedshiftCol == False:
-            raise Exception("Couldn't find a redshift column in %s" % (pathToCatalog))
-    if 'redshiftErr' not in zTab.keys():
-        possZErrCols=['zErr', 'dz']
-        for p in possZErrCols:
-            if p in zTab.keys():
-                print("... assuming %s is the redshiftErr column ..." % (p))
-                zTab.rename_column(p, 'redshiftErr')
-    if 'redshiftErr' not in zTab.keys():
-        print("... assuming redshiftErr = 0 for all objects (no suitable redshiftErr column found) ...")
-        zTab.add_column(atpy.Column(np.zeros(len(zTab)), 'redshiftErr'))
-        
-    config.parDict['forcedPhotometryCatalog']=pathToCatalog
-    
-    # We need to disable any cut in SNR, otherwise we're not doing truly forced photometry
-    # This will allow -ve fixed_y_c, but we'll still only get the +ve masses though
-    config.parDict['thresholdSigma']=-100
-    
-    # Trim all filters except the reference one, then make catalog
-    trimmedList=[]
-    for mapFilter in config.parDict['mapFilters']:
-        if mapFilter['label'] == config.parDict['photFilter']:
-            trimmedList.append(mapFilter)
-    config.parDict['mapFilters']=trimmedList
-    forcedTab=pipelines.filterMapsAndMakeCatalogs(config, useCachedFilteredMaps = True)
-
-    # Need to graft the redshifts back on
-    zMatched, forcedMatched, rDeg=catalogs.crossMatch(zTab, forcedTab)
-    tab=forcedMatched
-    tab.add_column(zMatched['redshift'])
-    tab.add_column(zMatched['redshiftErr'])
-    
-    return tab
-
-#------------------------------------------------------------------------------------------------------------
-def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstimates = [],
+def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassEstimates = [],
              inferSZProperties = False):
     """Calculates masses for cluster data in table.
     
     """
 
-    refMassDef=ccl.halos.MassDef(massOptions['delta'], massOptions['rhoType'])
+    refMassDef=ccl.halos.MassDef(scalingRelation['delta'], scalingRelation['rhoType'])
 
-    if 'relativisticCorrection' not in massOptions.keys():
-        massOptions['relativisticCorrection']=True
+    if 'relativisticCorrection' not in scalingRelation.keys():
+        scalingRelation['relativisticCorrection']=True
         
     # Experimenting with E(z)^gamma instead of E(z)^2
-    if 'Ez_gamma' not in massOptions.keys():
-        massOptions['Ez_gamma']=2
+    if 'Ez_gamma' not in scalingRelation.keys():
+        scalingRelation['Ez_gamma']=2
 
     # Experimenting with arbitrary (1+z)^something
-    if 'onePlusRedshift_power' not in massOptions.keys():
-        massOptions['onePlusRedshift_power']=0.0
+    if 'onePlusRedshift_power' not in scalingRelation.keys():
+        scalingRelation['onePlusRedshift_power']=0.0
     
-    # print("massOptions", massOptions)
+    # print("scalingRelation", scalingRelation)
 
     # Extra columns for other inferred quantities
     if inferSZProperties == True:
@@ -130,15 +70,25 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
         extraDivs=[]
 
     # Add all columns for all used mass definitions
-    labels=['M%d%s' % (massOptions['delta'], massOptions['rhoType'][0])]
+    if 'label' not in scalingRelation.keys():
+        prefix=''
+    else:
+        prefix=scalingRelation['label']+"_"
+    labels=['M%d%s' % (scalingRelation['delta'], scalingRelation['rhoType'][0])]
     for massDefDict in otherMassEstimates:
         labels.append('M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0]))
     for l in labels:
-        colNames=['%s' % (l), '%sUncorr' % (l)]
-        if 'rescaleFactor' in massOptions.keys():
-            colNames.append('%sCal' % (l))
-        colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
+        colNames=[prefix+'%s' % (l), prefix+'%sUncorr' % (l)]
+        if 'rescaleFactor' in scalingRelation.keys():
+            if 'rescaleLabel' not in scalingRelation.keys():
+                rescaleLabel='Cal'
+            else:
+                rescaleLabel=scalingRelation['rescaleLabel']
+            colNames.append(prefix+'%s%s' % (l, rescaleLabel))
+        # colNames=colNames+["M200m", "M200mUncorr"] # We will generalize fully later so user can choose mass defs
         for c in colNames:
+            if c in tab.keys():
+                raise Exception("Already found column named '%s' - add 'label' keys to scalingRelation dictionaries in massOptions?" % (c))
             tab['%s' % (c)]=np.zeros(len(tab))
             tab['%s_errPlus' % (c)]=np.zeros(len(tab))
             tab['%s_errMinus' % (c)]=np.zeros(len(tab))
@@ -159,67 +109,71 @@ def calcMass(tab, massOptions, QFit, fRelWeightsDict, mockSurvey, otherMassEstim
         tileName=row['tileName']
         
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
+        # Added cut on z here to avoid blow-ups for extreme low-z
+        if row['redshift'] < 0.025:
+            print("... skipping %s - redshift < 0.025 ..." % (row['name']))
+            continue
         if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
             # Corrected for mass function steepness
             massDict=signals.inferClusterProperties(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4,
                                             row['redshift'], row['redshiftErr'],
-                                            tenToA0 = massOptions['tenToA0'],
-                                            B0 = massOptions['B0'], 
-                                            Mpivot = massOptions['Mpivot'], 
-                                            sigma_int = massOptions['sigma_int'],
-                                            Ez_gamma = massOptions['Ez_gamma'],
-                                            onePlusRedshift_power = massOptions['onePlusRedshift_power'],
+                                            tenToA0 = scalingRelation['tenToA0'],
+                                            B0 = scalingRelation['B0'],
+                                            Mpivot = scalingRelation['Mpivot'],
+                                            sigma_int = scalingRelation['sigma_int'],
+                                            Ez_gamma = scalingRelation['Ez_gamma'],
+                                            onePlusRedshift_power = scalingRelation['onePlusRedshift_power'],
                                             QFit = QFit, mockSurvey = mockSurvey, 
                                             applyMFDebiasCorrection = True,
-                                            applyRelativisticCorrection = massOptions['relativisticCorrection'],
+                                            applyRelativisticCorrection = scalingRelation['relativisticCorrection'],
                                             fRelWeightsDict = fRelWeightsDict[tileName],
                                             tileName = tileName,
                                             inferSZProperties = inferSZProperties)
-            row['%s' % (label)]=massDict['%s' % (label)]
-            row['%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
-            row['%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
+            row[prefix+'%s' % (label)]=massDict['%s' % (label)]
+            row[prefix+'%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
+            row[prefix+'%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
             for mc, div in zip(extraCols, extraDivs):
                 row[mc]=massDict[mc]/div
                 row[mc+"_err"]=massDict[mc+"_err"]/div
             # Uncorrected for mass function steepness
             unCorrMassDict=signals.inferClusterProperties(row['fixed_y_c']*1e-4, row['fixed_err_y_c']*1e-4,
                                                     row['redshift'], row['redshiftErr'],
-                                                    tenToA0 = massOptions['tenToA0'],
-                                                    B0 = massOptions['B0'], 
-                                                    Mpivot = massOptions['Mpivot'], 
-                                                    sigma_int = massOptions['sigma_int'],
-                                                    Ez_gamma = massOptions['Ez_gamma'],
-                                                    onePlusRedshift_power = massOptions['onePlusRedshift_power'],
+                                                    tenToA0 = scalingRelation['tenToA0'],
+                                                    B0 = scalingRelation['B0'],
+                                                    Mpivot = scalingRelation['Mpivot'],
+                                                    sigma_int = scalingRelation['sigma_int'],
+                                                    Ez_gamma = scalingRelation['Ez_gamma'],
+                                                    onePlusRedshift_power = scalingRelation['onePlusRedshift_power'],
                                                     QFit = QFit, mockSurvey = mockSurvey, 
                                                     applyMFDebiasCorrection = False,
-                                                    applyRelativisticCorrection = massOptions['relativisticCorrection'],
+                                                    applyRelativisticCorrection = scalingRelation['relativisticCorrection'],
                                                     fRelWeightsDict = fRelWeightsDict,
                                                     tileName = tileName)
-            row['%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
-            row['%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
-            row['%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
+            row[prefix+'%sUncorr' % (label)]=unCorrMassDict['%s' % (label)]
+            row[prefix+'%sUncorr_errPlus' % (label)]=unCorrMassDict['%s_errPlus' % (label)]
+            row[prefix+'%sUncorr_errMinus' % (label)]=unCorrMassDict['%s_errMinus' % (label)]
             # Re-scaling (e.g., using richness-based weak-lensing mass calibration)
-            if 'rescaleFactor' in massOptions.keys():
-                row['%sCal' % (label)]=massDict['%s' % (label)]/massOptions['rescaleFactor']
-                row['%sCal_errPlus' % (label)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
-                                                       np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
-                row['%sCal_errMinus' % (label)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
-                                                        np.power(massOptions['rescaleFactorErr']/massOptions['rescaleFactor'], 2))*row['%sCal' % (label)]
-                calMassDict={label: row['%sCal' % (label)],
-                             label+'_errPlus': row['%sCal_errPlus' % (label)],
-                             label+'_errMinus': row['%sCal_errMinus' % (label)]}
+            if 'rescaleFactor' in scalingRelation.keys():
+                row[prefix+'%s%s' % (label, rescaleLabel)]=massDict['%s' % (label)]/scalingRelation['rescaleFactor']
+                row[prefix+'%s%s_errPlus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errPlus' % (label)]/row['%s' % (label)], 2) + \
+                                                       np.power(scalingRelation['rescaleFactorErr']/scalingRelation['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
+                row[prefix+'%s%s_errMinus' % (label, rescaleLabel)]=np.sqrt(np.power(row['%s_errMinus' % (label)]/row['%s' % (label)], 2) + \
+                                                        np.power(scalingRelation['rescaleFactorErr']/scalingRelation['rescaleFactor'], 2))*row['%s%s' % (label, rescaleLabel)]
+                calMassDict={label: row[prefix+'%s%s' % (label, rescaleLabel)],
+                             label+'_errPlus': row[prefix+'%s%s_errPlus' % (label, rescaleLabel)],
+                             label+'_errMinus': row[prefix+'%s%s_errMinus' % (label, rescaleLabel)]}
 
             # CCL-based mass conversions
             resultsList=[massDict, unCorrMassDict]
             suffixList=['', 'Uncorr']
-            if 'rescaleFactor' in massOptions.keys():
+            if 'rescaleFactor' in scalingRelation.keys():
                 resultsList.append(calMassDict)
-                suffixList.append('Cal')
+                suffixList.append(rescaleLabel)
             for resultDict, suffix in zip(resultsList, suffixList):
                 for massDefDict in otherMassEstimates:
                     if 'concMassRelation' not in massDefDict.keys():
                         massDefDict['concMassRelation']=None
-                    thisLabel='M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0])
+                    thisLabel=prefix+'M%d%s' % (massDefDict['delta'], massDefDict['rhoType'][0])
                     thisMassDef=ccl.halos.MassDef(massDefDict['delta'], massDefDict['rhoType'])
                     thisMass=signals.MDef1ToMDef2(resultDict[label]*1e14, row['redshift'], refMassDef, thisMassDef, mockSurvey.cosmoModel,
                                                   c_m_relation = massDefDict['concMassRelation'])/1e14
@@ -266,6 +220,11 @@ def makeParser():
                         quantities such as angular size (theta500Arcmin), Q, central Comptonization parameter\
                         (inferred_y_c), and Y500 (inferred_Y500Arcmin2). Y500 values currently assume the Arnaud+2010\
                         Universal Pressure Profile, even if alternative GNFW parameters are given in the config file.")
+    parser.add_argument("-m", "--make-model-maps", dest = "makeModelMaps", default = False,
+                        action = "store_true", help = "Make model maps and masks for the SZ signal\
+                        corresponding to the maps given in the config file by running the nemoModel script.\
+                        Output will be written to the clusterModelMaps directory under the Nemo output\
+                        directory.")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If you \
                         want to use this, run with e.g., mpiexec -np 4 nemoMass configFile.yml -M", 
                         default = False)
@@ -289,6 +248,9 @@ if __name__ == '__main__':
     catFileName=args.catFileName
     outFileName=args.outFileName
     forcedPhotometry=args.forcedPhotometry
+    if forcedPhotometry == True and args.MPIEnabled == True:
+        print("Aborted - cannot use forced photometry mode with MPI currently")
+        sys.exit()
     QSource=args.QSource
     if QSource not in ['fit', 'injection', 'hybrid']:
         raise Exception("QSource must be either 'fit', 'injection', or 'hybrid'")
@@ -337,8 +299,12 @@ if __name__ == '__main__':
             if key not in tab.keys():
                 forcedPhotometry=True
         config=startUp.NemoConfig(parDictFileName, MPIEnabled = args.MPIEnabled, divideTilesByProcesses = False,
-                                  setUpMaps = forcedPhotometry, writeTileInfo = False, verbose = False,
+                                  setUpMaps = False, writeTileInfo = False, verbose = False,
                                   strictMPIExceptions = strictMPIExceptions)
+
+    # Clean out any z = 0 things that have crept through because these blow things up
+    tab=tab[tab['redshift'] > 0]
+    # tab=tab[:10] # For testing
     
     # Remaining set-up
     massOptions=config.parDict['massOptions']
@@ -354,7 +320,7 @@ if __name__ == '__main__':
     # Forced photometry (if enabled) - modifying table in place
     # NOTE: Move this up if/when we make it run under MPI
     if forcedPhotometry == True:
-        tab=addForcedPhotometry(catFileName, config, args.zColumnName, args.zErrColumnName)
+        tab=photometry.addForcedPhotometry(catFileName, config, args.zColumnName, args.zErrColumnName)
     
     # Set cosmological parameters for e.g. E(z) calc if these are set in .par file
     # We set them after the Q calc, because the Q calc needs to be for the fiducial cosmology
@@ -374,9 +340,7 @@ if __name__ == '__main__':
     Ob0=massOptions['Ob0']
     sigma8=massOptions['sigma8']
     ns=massOptions['ns']
-    mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
-                                     rhoType = massOptions['rhoType'], delta = massOptions['delta'])
-        
+
     tab.add_column(atpy.Column(np.arange(len(tab)), "sortIndex"))
     if config.MPIEnabled == True:
         numRowsPerProcess=int(np.ceil(len(tab)/config.size))
@@ -386,8 +350,20 @@ if __name__ == '__main__':
             endIndex=len(tab)
         tab=tab[startIndex:endIndex]
 
-    tab=calcMass(tab, massOptions, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates,
-                 inferSZProperties = args.inferSZProperties)
+    # Multiple scaling relations now supported in one run
+    # BUT will only infer SZ properties for the first scaling relation in the list
+    count=0
+    for scalingRelation in massOptions['scalingRelations']:
+        if scalingRelation == massOptions['scalingRelations'][0]:
+            inferSZProperties=args.inferSZProperties
+        else:
+            inferSZProperties=False
+        count=count+1
+        print(">>> Scaling relation %d/%d" % (count, len(massOptions['scalingRelations'])))
+        mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
+                                     rhoType = scalingRelation['rhoType'], delta = scalingRelation['delta'])
+        tab=calcMass(tab, scalingRelation, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates,
+                     inferSZProperties = inferSZProperties)
     
     if config.MPIEnabled == True:
         tabList=config.comm.gather(tab, root = 0)
@@ -407,44 +383,35 @@ if __name__ == '__main__':
         os.makedirs(outDir, exist_ok = True)
     tab.meta['NEMOVER']=nemo.__version__
     tab.meta['QSOURCE']=QSource
+    # Cosmo params useful for when running with nemo-sim-kit
+    tab.meta['OM0']=massOptions['Om0']
+    tab.meta['OB0']=massOptions['Ob0']
+    tab.meta['H0']=massOptions['H0']
+    tab.meta['SIGMA8']=massOptions['sigma8']
+    tab.meta['NS']=massOptions['ns']
+    # We don't need scaling params any more because we may have multiple scaling relations
+    # tab.meta['TENTOA0']=massOptions['tenToA0']
+    # tab.meta['B0']=massOptions['B0']
+    # tab.meta['SIGMA']=massOptions['sigma_int']
+    # tab.meta['MPIVOT']=massOptions['Mpivot']/1e14
+    # tab.meta['RHOTYPE']=massOptions['rhoType']
+    # tab.meta['DELTA']=massOptions['delta']
     tab.write(outFileName, overwrite = True)
-    
-    # Detect if testing a mock catalog, and write some stats on recovered masses
-    if 'true_M500' in tab.keys():
-        # Noise sources in mocks
-        if 'applyPoissonScatter' in config.parDict.keys():
-            applyPoissonScatter=config.parDict['applyPoissonScatter']
-        else:
-            applyPoissonScatter=True
-        if 'applyIntrinsicScatter' in config.parDict.keys():
-            applyIntrinsicScatter=config.parDict['applyIntrinsicScatter']
-        else:
-            applyIntrinsicScatter=True
-        if 'applyNoiseScatter' in config.parDict.keys():
-            applyNoiseScatter=config.parDict['applyNoiseScatter']
-        else:
-            applyNoiseScatter=True
-        print(">>> Mock noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s) ..." % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
-        if applyNoiseScatter == True and applyIntrinsicScatter == True:
-            print("... for these options, median M500 / true_M500 = 1.000 if mass recovery is unbiased ...")
-        elif applyNoiseScatter == False and applyIntrinsicScatter == False:
-            print("... for these options, median M500Unc / true_M500 = 1.000 if mass recovery is unbiased ...")
-        else:
-            print("... for these options, both median M500 / true_M500 and median M500Unc / true_M500 will be biased ...")
-        ratio=tab['M500']/tab['true_M500']
-        ratioUnc=tab['M500Uncorr']/tab['true_M500']
-        print(">>> Mock catalog mass recovery stats:")
-        SNRCuts=[4, 5, 7, 10]
-        for s in SNRCuts:
-            mask=np.greater(tab['fixed_SNR'], s)
-            print("--> SNR > %.1f (N = %d):" % (s, np.sum(mask))) 
-            print("... mean M500 / true_M500 = %.3f +/- %.3f (stdev) +/- %.3f (sterr)" % (np.mean(ratio[mask]), 
-                                                                                          np.std(ratio[mask]), 
-                                                                                          np.std(ratio[mask])/np.sqrt(np.sum(mask))))
-            print("... median M500 / true_M500 = %.3f" % (np.median(ratio[mask])))
-            print("... mean M500Unc / true_M500 = %.3f +/- %.3f (stdev) +/- %.3f (sterr)" % (np.mean(ratioUnc[mask]), 
-                                                                                          np.std(ratioUnc[mask]), 
-                                                                                          np.std(ratioUnc[mask])/np.sqrt(np.sum(mask))))
-            print("... median M500Unc / true_M500 = %.3f" % (np.median(ratioUnc[mask])))
+    print("... mass table written to %s ..." % (outFileName))
 
-
+    # Optionally making model images
+    # These take ~2 min per map for ~7000 clusters in an ACT DR5/DR6 scale map on a single core
+    if args.makeModelMaps == True:
+        del MockSurvey
+        print(">>> Making model cluster SZ signal maps")
+        t0=time.time()
+        os.makedirs(outDir+os.path.sep+"clusterModelMaps", exist_ok = True)
+        catFileName=outFileName
+        for mapDict in config.parDict['unfilteredMaps']:
+            print("... %s ..." % (mapDict['label']))
+            outModelFileName=outDir+os.path.sep+"clusterModelMaps"+os.path.sep+"clusterModelMap_%s.fits" % (mapDict['label'])
+            cmd="nemoModel %s %s %s %s -f %.1f -m" % (catFileName, mapDict['surveyMask'], mapDict['beamFileName'],
+                                                      outModelFileName, mapDict['obsFreqGHz'])
+            os.system(cmd)
+        t1=time.time()
+        print("... time taken to generate model cluster SZ signal maps = %.1f sec" % (t1-t0))

@@ -216,7 +216,7 @@ class QFit(object):
             refTheta=None
 
         # Inspect file and get tile names if MEF
-        if tileNames is None:
+        if tileNames is None or tileNames == []:
             tileNames=[]
             with pyfits.open(QFitFileName) as QTab:
                 for ext in QTab:
@@ -321,7 +321,7 @@ class QFit(object):
         if z is not None:
             if type(z) == np.ndarray and z.shape == (1,):
                 z=float(z)
-            if type(z) is not float and type(z) is not np.float64:
+            if type(z) is not float and type(z) is not np.float64 and type(z) is not np.float32:
                 raise Exception("z must be a float, and not, e.g., an array")
         
         if self.zDependent == True:
@@ -1350,14 +1350,16 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         #     sys.exit()
 
         # y0
+        # NOTE: To avoid issues where we might stray out of valid Q range, at low z, we truncate a bit
         fRels=interpolate.splev(log10M500c, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)
         fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
         y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
         y0pred=y0pred*np.power(1+z, onePlusRedshift_power)
         if applyRelativisticCorrection == True:
             y0pred=y0pred*fRels
-        true_y0pred=y0pred/Qs
-        Ptrue_y0=P/np.trapz(P, true_y0pred)
+        valid=Qs > 0
+        true_y0pred=y0pred[valid]/Qs[valid]
+        Ptrue_y0=P[valid]/np.trapz(P[valid], true_y0pred)
         true_y0, true_y0_errMinus, true_y0_errPlus=getMLValueFromP(Ptrue_y0, true_y0pred)
 
         # Y500
@@ -1402,12 +1404,16 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
 
     onePlusRedshift_power: added multiplication by (1+z)**onePlusRedshift_power (for checking evolution)
 
+    If zErr is < 0.01 it will be treated as if zErr == 0.
+
     If return2D == True, returns a grid of same dimensions / binning as mockSurvey.z, mockSurvey.log10M,
     normalised such that the sum of the values is 1.
 
     """
 
     # For marginalising over photo-z errors (we assume +/-5 sigma is accurate enough)
+    if zErr < 0.01:
+        zErr=0.0    # Ignore tiny z errors, unless we really want to use very fine z binning
     if zErr > 0:
         zMin=z-zErr*5
         zMax=z+zErr*5

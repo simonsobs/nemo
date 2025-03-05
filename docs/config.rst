@@ -510,28 +510,6 @@ forcedPhotometryCatalog
        forcedPhotometryCatalog: "redMaPPer.fits"
 
 
-twoPass
-^^^^^^^
-
-    If True, the ``twoPass`` source detection pipeline is used. This runs an
-    initial search for extremely bright sources in the first pass using a
-    simple noise model, so that these sources can be subtracted when using the
-    map itself as the filter noise model in the second pass. This allows
-    source catalogs to be constructed from the maps with zero (or very little)
-    masking.
-    
-    .. note::  At present, this method works only for detecting sources, and
-               not clusters. An equivalent cluster pipeline can be constructed
-               by using two :ref:`nemoCommand` runs, using the output of the
-               first run as `noiseMaskCatalog`_ in the second run).
-
-    *Example:*
-
-    .. code-block:: yaml 
-    
-       twoPass: False
-
-
 catalogCuts
 ^^^^^^^^^^^
     
@@ -539,6 +517,11 @@ catalogCuts
     item is a string of the form  "key < value", "key > value", etc., and "key"
     can be any column name in the output catalog. Note that the spaces between
     the key, operator (e.g. '<'), and value are essential.
+
+    .. note::  The constraints specified here are only applied to the final
+               output catalog, i.e., they are *not* applied to intermediate
+               catalogs that may be produced if using `filterSetOptions`_ to
+               implement multi-pass filtering and object finding.
 
     *Example:*
 
@@ -806,6 +789,19 @@ GNFWParams
     
        # Planck Pressure Profile
        GNFWParams: {P0: 6.41, c500: 1.81, gamma: 0.31, alpha: 1.33, beta: 4.13}
+
+
+.. _MultiPass:
+
+Multi-pass Filtering and Object Detection
+=========================================
+
+Documentation for this will be added later.
+
+filterSetOptions
+^^^^^^^^^^^^^^^^
+
+    To be added later.
 
 
 .. _ClusterMassEstimates:
