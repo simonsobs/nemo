@@ -19,7 +19,9 @@ from scipy import ndimage
 from scipy import optimize
 from scipy import integrate
 from scipy import special
-import pyccl as ccl
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 import nemo
 from . import signals
 from . import maps
