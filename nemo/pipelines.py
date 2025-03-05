@@ -18,7 +18,9 @@ import numpy as np
 from scipy import ndimage, interpolate
 import copy
 from pixell import enmap
-import pyccl as ccl
+on_rtd=os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import pyccl as ccl
 import nemo
 from . import startUp
 from . import filters
