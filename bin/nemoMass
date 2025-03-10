@@ -269,11 +269,17 @@ if __name__ == '__main__':
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])           
         nemoTab=atpy.Table().read(optimalCatalogFileName)
         zTab=atpy.Table().read(config.parDict['massOptions']['redshiftCatalog'])
-        if args.xMatchArcmin != 'act':
+        if args.xMatchArcmin != 'rayleigh':
             xMatchArcmin=float(args.xMatchArcmin)
             nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = xMatchArcmin)
         else:
-            raise Exception("Fancier cross-matching not implemented yet.")
+            nemoTab, zTab, rDeg=catalogs.crossMatch(nemoTab, zTab, radiusArcmin = 2.5)
+            mask=[]
+            for row, zRow, r in zip(nemoTab, zTab, rDeg):
+                mask.append(catalogs.checkCrossMatchRayleigh(r*60.0, row['fixed_SNR']))
+            nemoTab=nemoTab[mask]
+            zTab=zTab[mask]
+            # raise Exception("Fancier cross-matching not implemented yet.")
         nemoTab['redshift']=zTab['redshift']
         if 'redshiftErr' in zTab.keys():
             nemoTab['redshiftErr']=zTab['redshiftErr']
