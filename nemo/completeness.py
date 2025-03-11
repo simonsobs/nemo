@@ -1383,7 +1383,9 @@ def completenessByFootprint(config):
         # Optimization bias can now be applied here
         biasModelDict=None
         if 'biasModel' in config.parDict['selFnOptions'].keys():
-            if config.parDict['selFnOptions']['biasModel'] == 'series':
+            if config.parDict['selFnOptions']['biasModel'] == 'power':
+                biasModel=optBiasPowerModelFunc
+            elif config.parDict['selFnOptions']['biasModel'] == 'series':
                 biasModel=optBiasModelFunc
             elif config.parDict['selFnOptions']['biasModel'] == 'exp':
                 biasModel=optBiasFuncExpModel
@@ -1562,7 +1564,9 @@ def makeMassLimitMapsAndPlots(config):
     # Optimization bias can now be applied here
     biasModelDict=None
     if 'biasModel' in config.parDict['selFnOptions'].keys():
-        if config.parDict['selFnOptions']['biasModel'] == 'series':
+        if config.parDict['selFnOptions']['biasModel'] == 'power':
+            biasModel=optBiasPowerModelFunc
+        elif config.parDict['selFnOptions']['biasModel'] == 'series':
             biasModel=optBiasModelFunc
         elif config.parDict['selFnOptions']['biasModel'] == 'exp':
             biasModel=optBiasFuncExpModel
