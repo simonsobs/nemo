@@ -26,6 +26,7 @@ from nemo import MockSurvey
 from nemo import plotSettings
 from nemo import startUp
 from nemo import pipelines
+from nemo import completeness
 import argparse
 import types
 import pickle
@@ -56,9 +57,12 @@ def makeParser():
     parser.add_argument("-Q", "--Q-source", dest="QSource", help = "Source of the Q function data - either\
                         'fit' (the 'classic' method) or 'injection' (for Q based on source injection test\
                         results).", default = 'fit', choices = ['fit', 'injection'])
+    parser.add_argument("-f", "--bias-model", dest = "biasModel", default = 'power',
+                        help = "Function to use for optimization bias model. One of:\
+                        'power' (the default), 'series', or 'exp'.")
     parser.add_argument("-p", "--bias-model-parameters", dest = "biasModelParams", default = None,
-                        help = "If given, apply optimization bias model to the mock catalog (series model,\
-                        with parameter values delimited by commas).")
+                        help = "If given, apply optimization bias model (chosen with --bias-model)\
+                        to the mock catalog, with parameter values delimited by commas.")
     parser.add_argument("-t", "--theory-code", dest = 'theoryCode', choices = ['CCL', 'CLASS-SZ'], default = 'CCL',
                         help = "Code to use for mass function calculations. CLASS-SZ is currently much\
                         faster for generating mock cluster samples than CCL.")
@@ -88,7 +92,8 @@ if __name__ == '__main__':
     biasModelParams=args.biasModelParams
     if biasModelParams is not None:
         biasModelParams=np.array(biasModelParams.split(","), dtype = float)
-        assert(biasModelParams.shape[0] == 3)
+        if len(biasModelParams) == 1:
+            biasModelParams=biasModelParams[0]
 
     if configFileName is None:
         configFileName=args.selFnDir+os.path.sep+"config.yml"
@@ -107,6 +112,20 @@ if __name__ == '__main__':
     if config.MPIEnabled == True and numMocksToMake > 1:
         raise Exception("NemoMock needs to be adapted for MPI if making multiple mocks - not done yet.")
 
+    # Optimization bias model setup
+    if args.biasModelParams is None:
+        biasModelDict=None
+    else:
+        if args.biasModel == 'power':
+            biasModel=completeness.optBiasPowerModelFunc
+        elif args.biasModel == 'series':
+            biasModel=completeness.optBiasModelFunc
+        elif args.biasModel == 'exp':
+            biasModel=completeness.optBiasFuncExpModel
+        else:
+            raise Exception("biasModel must be 'series' or 'exp'")
+        biasModelDict={'func': biasModel, 'params': biasModelParams}
+
     pipelines.makeMockClusterCatalog(config, numMocksToMake = numMocksToMake, combineMocks = combineMocks,
                                      writeCatalogs = True, verbose = True, QSource = QSource,
-                                     biasModelParams = biasModelParams, theoryCode = args.theoryCode)
+                                     biasModel = biasModelDict, theoryCode = args.theoryCode)
