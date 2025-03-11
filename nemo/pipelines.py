@@ -504,7 +504,7 @@ def makeRMSTables(config):
 
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True,\
-                           writeInfo = True, verbose = True, QSource = 'fit', biasModelParams = None,
+                           writeInfo = True, verbose = True, QSource = 'fit', biasModel = None,
                            theoryCode = 'CCL', zStep = 0.0005, numMassBins = 20000,
                            minMass = 1e14, maxMass = 5e16, minRedshift = 0, maxRedshift = 3):
     """Generate a mock cluster catalog using the given nemo config.
@@ -535,16 +535,6 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
 
     # Needed for adding tileName column to catalogs
     tileCoordsDict=config.tileCoordsDict
-
-    if biasModelParams is None:
-        biasModel=None
-    else:
-        biasModel={'func': catalogs._posRecFitFunc, 'params': biasModelParams}
-
-    if biasModelParams is None:
-        biasModel=None
-    else:
-        biasModel={'func': completeness.optBiasModelFunc, 'params': biasModelParams}
 
     # We only care about the filter used for fixed_ columns
     photFilterLabel=config.parDict['photFilter']
@@ -610,9 +600,12 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     skipKeys=['redshiftCatalog']
     for key in config.parDict['massOptions'].keys():
         if key not in skipKeys:
-            print("    %s = %s" % (key, str(config.parDict['massOptions'][key])))
+            if key == 'scalingRelations':
+                print("    %s = %s" % (key, str(config.parDict['massOptions'][key][0])))
+            else:
+                print("    %s = %s" % (key, str(config.parDict['massOptions'][key])))
     print("    QSource = %s" % (QSource))
-    print("    optimization bias model parameters = %s" % (str(biasModelParams)))
+    print("    optimization bias model = %s" % (str(biasModel)))
     print("    total area = %.1f square degrees" % (areaDeg2))
 
     # Common set up
@@ -670,7 +663,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
         outFileName=config.mocksDir+os.path.sep+"mockCatalog_combined.fits"
         tab.meta['NEMOVER']=nemo.__version__
         tab.meta['QSOURCE']=QSource
-        tab.meta['OPTBIAS']=str(biasModelParams)
+        tab.meta['OPTBIASP']=str(biasModel['params'])
         tab.write(outFileName, overwrite = True)
 
     # Write a small text file with the parameters used to generate the mocks into the mocks dir (easier than using headers)

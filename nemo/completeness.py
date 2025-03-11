@@ -885,6 +885,24 @@ def optBiasModelFunc(snr, params):
     return model
 
 #------------------------------------------------------------------------------------------------------------
+def optBiasPowerModelFunc(snr, param):
+    """Optimization bias model function, of the form ``corrFactor = 1 + 1/x**p``
+    where p is a fit paramer. This is for use with the `fast` completeness
+    method of the ``SelFn`` class.
+
+    Args:
+        snr (:obj:`np.ndarray`): Array of true signal-to-noise ratio values
+        params (:obj:`float`): Fit parameter.
+
+    Returns:
+        Array of correction factors.
+
+    """
+
+    model=1+1/np.power(snr, param)
+    return model
+
+#------------------------------------------------------------------------------------------------------------
 def optBiasSeriesOffsetModelFunc(snr, params):
     """Optimization bias model function, of the form ``corrFactor = p0 + p1/x + p2/x**2 + ... + pn/x**n``
     where p0...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
@@ -1367,7 +1385,9 @@ def completenessByFootprint(config):
         # Optimization bias can now be applied here
         biasModelDict=None
         if 'biasModel' in config.parDict['selFnOptions'].keys():
-            if config.parDict['selFnOptions']['biasModel'] == 'series':
+            if config.parDict['selFnOptions']['biasModel'] == 'power':
+                biasModel=optBiasPowerModelFunc
+            elif config.parDict['selFnOptions']['biasModel'] == 'series':
                 biasModel=optBiasModelFunc
             elif config.parDict['selFnOptions']['biasModel'] == 'exp':
                 biasModel=optBiasFuncExpModel
@@ -1546,7 +1566,9 @@ def makeMassLimitMapsAndPlots(config):
     # Optimization bias can now be applied here
     biasModelDict=None
     if 'biasModel' in config.parDict['selFnOptions'].keys():
-        if config.parDict['selFnOptions']['biasModel'] == 'series':
+        if config.parDict['selFnOptions']['biasModel'] == 'power':
+            biasModel=optBiasPowerModelFunc
+        elif config.parDict['selFnOptions']['biasModel'] == 'series':
             biasModel=optBiasModelFunc
         elif config.parDict['selFnOptions']['biasModel'] == 'exp':
             biasModel=optBiasFuncExpModel
