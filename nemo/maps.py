@@ -2614,7 +2614,7 @@ def makeMaskFromDS9PolyRegionFile(regionFileName, shape, wcs):
     for line in lines:
         if line.find("polygon") != -1:
             polyPoints=[]
-            coords=line.split("polygon(")[-1].split(") ")[0].split(",")
+            coords=line.split("polygon(")[-1].split(")")[0].split(",")
             for i in range(0, len(coords), 2):
                 try:
                     RADeg, decDeg=[float(coords[i]), float(coords[i+1])]
