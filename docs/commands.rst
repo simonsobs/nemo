@@ -46,7 +46,10 @@ nemoMask
    :func: makeParser
    :prog: nemoMask
 
-   :program:`nemoMask` creates a mask image from a SAOImage DS9 region file.
+   :program:`nemoMask` creates a mask image from either a SAOImage DS9 region file
+   (containing polygon regions; for making footprint or search area masks), or a
+   FITS catalog with columns ``RADeg``, ``decDeg``, ``rArcmin`` (for making masks
+   with circular regions or holes; e.g., extended source or star masks).
 
 
 .. _nemoMockCommand:

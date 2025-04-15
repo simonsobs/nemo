@@ -39,9 +39,9 @@ def parseConfigFile(parDictFileName, verbose = False):
         # We've moved masks out of the individual map definitions in the config file
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
-        maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan',
-                  'flagFromCatalog']
+        # NOTE: 'flagMask' and 'flagFromCatalog' were here, now replaced by 'postFlags'
+        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -181,6 +181,9 @@ def parseConfigFile(parDictFileName, verbose = False):
             raise Exception("positionRecoveryAnalysisMethod must be 'DR5' or 'Rayleigh'")
         if 'positionRecoveryNumParams' not in parDict.keys():
             parDict['positionRecoveryNumParams']=2 # Only applies for Rayleigh model
+        # This replaces flagMask and flagFromCatalog, done after main nemo run
+        if 'postFlags' not in parDict.keys():
+            parDict['postFlags']=[]
         # Mass/scaling relation/cosmology options - set fiducial values here if not chosen in config
         # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
         # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation

@@ -13,6 +13,7 @@ import time
 import astropy.table as atpy
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
+import shutil
 import astropy.io.fits as pyfits
 from scipy import ndimage
 from scipy import stats as sstats
@@ -1095,3 +1096,123 @@ def addFootprintColumnToCatalog(tab, label, areaMask, wcs):
     tab['footprint_%s' % (label)]=inMask
 
     return tab
+
+#------------------------------------------------------------------------------------------------------------
+def addPostFlags(config):
+    """Add post processing flags to the catalog, if defined in the config. This is for handling things like
+    star masks, dust masks, extended objects. These get added as additional columns to the catalog, and
+    the flags column is incremented. We save a back-up of the catalog first, in case the user wants to re-run
+    the post processing flagging.
+
+    Args:
+        config (:obj:`nemo.startup.NemoConfig`): Nemo configuration object.
+
+    Returns:
+        None - the Nemo output catalog and flags mask are updated and overwritten (backups of the pre-flagged
+        output are made first).
+
+    """
+
+    if config.rank == 0 and 'postFlags' in config.parDict.keys() and len(config.parDict['postFlags']) > 0:
+
+        # We need this for writing updated version, or reading
+        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+
+        # We keep a backup of the catalog before we add in post processing flags
+        os.makedirs(config.selFnDir+os.path.sep+"prePostFlags", exist_ok = True)
+        prePostCatFileName=config.selFnDir+os.path.sep+"prePostFlags"+os.path.sep+"%s_optimalCatalog_prePostFlags.fits" % (os.path.split(config.rootOutDir)[-1])
+        if os.path.exists(prePostCatFileName) == False:
+            if os.path.exists(optimalCatalogFileName) == False:
+                raise Exception("Couldn't load '%s' - needs to be made before addPostFlags will work." % (optimalCatalogFileName))
+            tab=atpy.Table().read(optimalCatalogFileName)
+            tab.write(prePostCatFileName)
+        else:
+            tab=atpy.Table().read(prePostCatFileName)
+
+        # We keep a backup of the MEF flag mask before we add in post processing flags
+        prePostFileName=config.selFnDir+os.path.sep+"prePostFlags"+os.path.sep+"flagMask_prePostFlags.fits"
+        if os.path.exists(prePostFileName) == False:
+            shutil.copyfile(config.selFnDir+os.path.sep+"flagMask.fits", prePostFileName)
+
+        # We keep a backup of the stitched flag mask before we add in post processing flags
+        prePostFileName=config.selFnDir+os.path.sep+"prePostFlags"+os.path.sep+"stitched_flagMask_prePostFlags.fits"
+        if os.path.exists(prePostFileName) == False:
+            flagMap, wcs=maps.chunkLoadMask(config.selFnDir+os.path.sep+"stitched_flagMask.fits")
+            maps.saveFITS(prePostFileName, flagMap, wcs, compressionType = 'PLIO_1')
+        else:
+            flagMap, wcs=maps.chunkLoadMask(prePostFileName)
+        flagMapCube={'wcs': wcs, 'finder': flagMap}
+
+        flagColsToAdd=[]
+        for flagDict in config.parDict['postFlags']:
+
+            print("... post flagging - %s ..." % (flagDict['flagLabel']))
+            t0=time.time()
+            colName=flagDict['flagLabel']
+            if colName[-4:] != 'Flag':
+                colName=colName+"Flag"
+            if colName not in tab.keys():
+                tab.add_column(np.zeros(len(tab), dtype = np.uint8),
+                               index = tab.index_column('flags')+1,
+                               name = colName)
+                flagColsToAdd.append(colName)
+
+            # Load in a flag mask
+            # This is all we support here, because handling big catalogs on the fly is too slow
+            # For now, require flag masks to have same pixelization + WCS as the maps we used
+            # So we can just add them together
+            thisMap, thisWCS=maps.chunkLoadMask(flagDict['fileName'])
+            refWCS=thisWCS
+            try:
+                assert(refWCS.header['CTYPE1'] == wcs.header['CTYPE1'])
+                assert(refWCS.header['CTYPE2'] == wcs.header['CTYPE2'])
+                assert(refWCS.header['NAXIS1'] == wcs.header['NAXIS1'])
+                assert(refWCS.header['NAXIS2'] == wcs.header['NAXIS2'])
+                assert(refWCS.getXPixelSizeDeg() == wcs.getXPixelSizeDeg())
+                assert(refWCS.getYPixelSizeDeg() == wcs.getYPixelSizeDeg())
+            except:
+                raise Exception("WCS of %s is not consistent with other maps (all maps and masks must have the same WCS)." % (str(flagDict)))
+
+            # Find flagged pixels and update catalog
+            for row in tab:
+                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+                x=int(round(x)); y=int(round(y))
+                if x >= 0 and x < thisMap.shape[1]-1 and y >= 0 and y < thisMap.shape[0]-1:
+                    row[colName]=thisMap[y, x]
+
+            # Make a cube instead of just adding? Use header meta data to label the planes
+            if flagDict['flagLabel'] not in flagMapCube.keys():
+                flagMapCube[flagDict['flagLabel']]=thisMap
+            else:
+                flagMapCube[flagDict['flagLabel']]=flagMapCube[flagDict['flagLabel']]+thisMap
+            t1=time.time()
+            # print("took %.3f sec" % (t1-t0))
+
+        # Update total flags - we put the ones from Nemo run into 'finderFlag' first
+        # ringFlag is already added by main nemo run itself and is part of finderFlag
+        tab.add_column(tab['flags'], index = tab.index_column('flags')+1,
+                       name = 'finderFlag')
+        for c in flagColsToAdd:
+            tab['flags']=tab['flags']+tab[c]
+        writeCatalog(tab, optimalCatalogFileName)
+        writeCatalog(tab, optimalCatalogFileName.replace(".fits", ".csv"))
+
+        # Save out the updated stitched flag mask
+        # We could also save the cube as multi-dimensional FITS image - may be useful in future
+        sumFlags=np.zeros(flagMap.shape, dtype = np.uint8)
+        for key in flagMapCube:
+            if key != 'wcs':
+                sumFlags=sumFlags+flagMapCube[key]
+        maps.saveFITS(config.selFnDir+os.path.sep+"stitched_flagMask.fits", sumFlags, wcs,
+                      compressionType = 'PLIO_1')
+
+        # We also need to save this as tiles MEF, for the SelFn stuff
+        flagMEFTileDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
+        for tileName in config.tileCoordsDict.keys():
+            xMin, xMax, yMin, yMax=flagMEFTileDict.tileCoordsDict[tileName]['clippedSection']
+            flagMEFTileDict[tileName]=sumFlags[yMin:yMax, xMin:xMax]
+        flagMEFTileDict.saveMEF(config.selFnDir+os.path.sep+"flagMask.fits", compressionType='PLIO_1')
+
+    # Just because we might need to sync up after post flags is done
+    if config.MPIEnabled == True:
+        config.comm.barrier()
