@@ -595,6 +595,12 @@ class NemoConfig(object):
                                       'areaMaskInClipSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']],
                                       'reprojectToTan': self.parDict['reprojectToTan']}
 
+        # For tiling when CDELT1 is +ve rather than negative - used in RA tiling below
+        if wcs.isFlipped() == 1:
+            flipper=-1
+        else:
+            flipper=1
+
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
             if self.verbose: print(">>> Finding tile coords")
@@ -623,9 +629,9 @@ class NemoConfig(object):
                 ra1, dec1=wcs.pix2wcs(x1, y1)
                 # Be careful with signs here... and we're assuming approx pixel size is ok
                 if x0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
-                    ra0=ra0+tileOverlapDeg
+                    ra0=ra0+flipper*tileOverlapDeg
                 if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
-                    ra1=ra1-tileOverlapDeg
+                    ra1=ra1-flipper*tileOverlapDeg
                 if y0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
                     dec0=dec0-tileOverlapDeg
                 if y1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[0]:

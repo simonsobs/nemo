@@ -719,7 +719,13 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         they overlap.
     
     """
-    
+
+    # For tiling when CDELT1 is +ve rather than negative - used in RA tiling below
+    if wcs.isFlipped() == 1:
+        flipper=-1
+    else:
+        flipper=1
+
     # This deals with identifying boss vs. full AdvACT footprint maps 
     mapCentreRA, mapCentreDec=wcs.getCentreWCSCoords()    
     skyWidth, skyHeight=wcs.getFullSizeSkyDeg()
@@ -784,8 +790,8 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             numCols=int(stripWidthDeg/(targetTileWidth*stretchFactor))
             for j in range(numCols):
                 tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
-                RALeft=RAMax-j*tileWidth
-                RARight=RAMax-(j+1)*tileWidth
+                RALeft=RAMax-flipper*j*tileWidth
+                RARight=RAMax-flipper*(j+1)*tileWidth
                 if RALeft < 0:
                     RALeft=RALeft+360
                 if RARight < 0:
@@ -794,6 +800,15 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                 if handle180Wrap == True:
                     if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
                         RARight=180.01
+                # This bit only comes up for flipped == -1 (Niall maps)
+                if flipper == -1:
+                    if RARight >= 360 and flipper:
+                        RARight=RARight-360
+                        RALeft=RALeft-360
+                    if RARight > RALeft:
+                        temp=RALeft
+                        RALeft=RARight
+                        RARight=temp
                 # NOTE: floats here to make tileDefinitions.yml readable
                 tileList.append({'tileName': '%d_%d_%d' % (f, i, j),
                                  'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})
