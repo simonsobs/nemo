@@ -329,12 +329,15 @@ class QFit(object):
             thetaMask=theta500Arcmin > self.zDepThetaMax(z)
             Qs[thetaMask]=0.0
             if z < self.zMin or z > self.zMax:
-                Qs=0
+                if type(theta500Arcmin) == float:
+                    Qs=0.0
+                else:
+                    Qs=np.zeros(len(theta500Arcmin))
         else:
             # Univariate case handles own valid bounds checking
             Qs=self.fitDict[tileName](theta500Arcmin)
 
-        if (Qs < 0).sum() > 0:
+        if type(Qs) != float and (Qs < 0).sum() > 0:
             #print("WARNING: negative Q value in tileName = %s" % (tileName))
             Qs[Qs < 0]=0
         
@@ -539,7 +542,8 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     beta_alpha_m=0.0480
     beta_alpha_z=0.615
 
-    M200c=M500cToMdef(M500c, z, M200cDef, cosmoModel)
+    # Throws CCL error if mass out-of-range - we catch that elsewhere, e.g., in fitQ
+    M200c=M500cToMdef(M500c, z, M200cDef, cosmoModel) #, c_m_relation = 'Ishiyama21')
 
     P0z=P0*np.power(M200c/1e14, P0_alpha_m)*np.power(1+z, P0_alpha_z)
     xcz=xc*np.power(M200c/1e14, xc_alpha_m)*np.power(1+z, xc_alpha_z)
@@ -1081,10 +1085,12 @@ def fitQ(config):
                 # Yes, this should have the beam in it (certainly for TILe-C)
                 # NOTE: CCL can blow up for some of the extreme masses we try to feed in here
                 # (so we just skip those if it happens)
-                # try:
-                signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
+                try:
+                    signalMap=makeSignalModelMap(z, M500MSun, shape, wcs, beam = beamsDict[obsFreqGHz],
                                              amplitude = amplitude, convolveWithBeam = True,
                                              GNFWParams = config.parDict['GNFWParams'])
+                except ccl.CCLError:
+                    continue
                 signalMap=enmap.apply_window(signalMap, pow = 1.0)
                 # except:
                 #     continue

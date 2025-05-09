@@ -39,9 +39,9 @@ def parseConfigFile(parDictFileName, verbose = False):
         # We've moved masks out of the individual map definitions in the config file
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
-        maskKeys=['pointSourceMask', 'surveyMask', 'flagMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan',
-                  'flagFromCatalog']
+        # NOTE: 'flagMask' and 'flagFromCatalog' were here, now replaced by 'postFlags'
+        maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -181,6 +181,9 @@ def parseConfigFile(parDictFileName, verbose = False):
             raise Exception("positionRecoveryAnalysisMethod must be 'DR5' or 'Rayleigh'")
         if 'positionRecoveryNumParams' not in parDict.keys():
             parDict['positionRecoveryNumParams']=2 # Only applies for Rayleigh model
+        # This replaces flagMask and flagFromCatalog, done after main nemo run
+        if 'postFlags' not in parDict.keys():
+            parDict['postFlags']=[]
         # Mass/scaling relation/cosmology options - set fiducial values here if not chosen in config
         # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
         # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation
@@ -592,6 +595,12 @@ class NemoConfig(object):
                                       'areaMaskInClipSection': [0, wcs.header['NAXIS1'], 0, wcs.header['NAXIS2']],
                                       'reprojectToTan': self.parDict['reprojectToTan']}
 
+        # For tiling when CDELT1 is +ve rather than negative - used in RA tiling below
+        if wcs.isFlipped() == 1:
+            flipper=-1
+        else:
+            flipper=1
+
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
             if self.verbose: print(">>> Finding tile coords")
@@ -620,9 +629,9 @@ class NemoConfig(object):
                 ra1, dec1=wcs.pix2wcs(x1, y1)
                 # Be careful with signs here... and we're assuming approx pixel size is ok
                 if x0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
-                    ra0=ra0+tileOverlapDeg
+                    ra0=ra0+flipper*tileOverlapDeg
                 if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
-                    ra1=ra1-tileOverlapDeg
+                    ra1=ra1-flipper*tileOverlapDeg
                 if y0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
                     dec0=dec0-tileOverlapDeg
                 if y1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[0]:

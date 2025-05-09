@@ -267,7 +267,7 @@ class MapDict(dict):
             psMask=np.ones(data.shape, dtype = np.uint8)
 
         # Use for tracking regions where subtraction/in-painting took place to make flags in catalog
-        # We can also supply a flag mask at the start, e.g., for marking dusty regions without zapping them
+        # Previously we allowed a mask to be input here - e.g. dust mask - that is now handled by postFlags
         # NOTE: flag masks for each frequency map get combined within filter objects
         if 'flagMask' in list(self.keys()) and self['flagMask'] is not None:
             flagMask=self.loadTile('flagMask', tileName)*surveyMask
@@ -422,26 +422,6 @@ class MapDict(dict):
                     surveyMask[rDegMap < maskRadiusArcmin/60.0]=0
                     psMask[rDegMap < maskRadiusArcmin/60.0]=0
                     data[rDegMap < maskRadiusArcmin/60.0]=bckData[rDegMap < maskRadiusArcmin/60.0]
-
-        # Optional flagging of circular regions from external catalog
-        # Useful for extended sources like big galaxies
-        # NOTE: Yes, this can be tidied up by merging into the above / refactoring - but left for now
-        if 'flagFromCatalog' in list(self.keys()) and self['flagFromCatalog'] is not None:
-            if type(self['flagFromCatalog']) is not list:
-                self['flagFromCatalog']=[self['flagFromCatalog']]
-            rDegMap=np.ones(data.shape, dtype = float)*1e6
-            for catalogPath in self['flagFromCatalog']:
-                tab=atpy.Table().read(catalogPath)
-                tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-                if 'rArcmin' not in tab.keys():
-                    raise Exception("Did not find 'rArcmin' column - this is needed when using 'flagFromCatalog'")
-                for row in tab:
-                    maskRadiusArcmin=row['rArcmin']
-                    rDegMap, xBounds, yBounds=makeDegreesDistanceMap(rDegMap, wcs,
-                                                                     row['RADeg'], row['decDeg'],
-                                                                     maskRadiusArcmin/60)
-                    selection=rDegMap < maskRadiusArcmin/60.0
-                    flagMask[selection]=flagMask[selection]+1
 
         if 'subtractModelFromCatalog' in list(self.keys()) and self['subtractModelFromCatalog'] is not None:
             if type(self['subtractModelFromCatalog']) is not list:
@@ -739,7 +719,13 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         they overlap.
     
     """
-    
+
+    # For tiling when CDELT1 is +ve rather than negative - used in RA tiling below
+    if wcs.isFlipped() == 1:
+        flipper=-1
+    else:
+        flipper=1
+
     # This deals with identifying boss vs. full AdvACT footprint maps 
     mapCentreRA, mapCentreDec=wcs.getCentreWCSCoords()    
     skyWidth, skyHeight=wcs.getFullSizeSkyDeg()
@@ -804,8 +790,8 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             numCols=int(stripWidthDeg/(targetTileWidth*stretchFactor))
             for j in range(numCols):
                 tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
-                RALeft=RAMax-j*tileWidth
-                RARight=RAMax-(j+1)*tileWidth
+                RALeft=RAMax-flipper*j*tileWidth
+                RARight=RAMax-flipper*(j+1)*tileWidth
                 if RALeft < 0:
                     RALeft=RALeft+360
                 if RARight < 0:
@@ -814,6 +800,15 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                 if handle180Wrap == True:
                     if RARight < 180.01 and RALeft < 180+tileWidth and RALeft > 180.01:
                         RARight=180.01
+                # This bit only comes up for flipped == -1 (Niall maps)
+                if flipper == -1:
+                    if RARight >= 360 and flipper:
+                        RARight=RARight-360
+                        RALeft=RALeft-360
+                    if RARight > RALeft:
+                        temp=RALeft
+                        RALeft=RARight
+                        RARight=temp
                 # NOTE: floats here to make tileDefinitions.yml readable
                 tileList.append({'tileName': '%d_%d_%d' % (f, i, j),
                                  'RADecSection': [float(RARight), float(RALeft), float(decBottom), float(decTop)]})
@@ -2403,30 +2398,6 @@ def positionRecoveryAnalysisDR5(posRecTable, plotFileName, percentiles = [50, 95
         with open(outFileName, "wb") as pickleFile:
             pickler=pickle.Pickler(pickleFile)
             pickler.dump(fitParamsDict)
-
-#------------------------------------------------------------------------------------------------------------
-def noiseBiasAnalysis(sourceInjTable, plotFileName, sourceInjectionModel = None):
-    """Estimate the noise bias from the ratio of input to recovered flux as a function of signal-to-noise.
-    
-    Args:
-        posRecTable (:obj:`astropy.table.Table`): Table containing recovered position offsets versus fixed_SNR 
-            for various cluster/source models (produced by sourceInjectionTest).
-        plotFileName (str): Path where the plot file will be written.
-        clipPercentile (float, optional): Clips offset values outside of this percentile of the whole 
-            position offsets distribution, to remove a small number of outliers (spurious next-neighbour 
-            cross matches) that otherwise bias the contours high for large (99%+) percentile cuts in 
-            individual fixed_SNR bins.
-        sourceInjectionModel (str, optional): If given, restrict analysis to only objects matching this.
-    
-    Notes:
-        For clusters, bear in mind this only makes sense if any mismatch between the inserted cluster's 
-        shape and the signal assumed by the filter is taken into account. This is done using the Q-function
-        in sourceInjectionTest.
-            
-    """
-
-    print("Work in progress - skipped")
-    return None
         
 #---------------------------------------------------------------------------------------------------
 def saveFITS(outputFileName, mapData, wcs, compressionType = None):
@@ -2614,7 +2585,7 @@ def makeMaskFromDS9PolyRegionFile(regionFileName, shape, wcs):
     for line in lines:
         if line.find("polygon") != -1:
             polyPoints=[]
-            coords=line.split("polygon(")[-1].split(") ")[0].split(",")
+            coords=line.split("polygon(")[-1].split(")")[0].split(",")
             for i in range(0, len(coords), 2):
                 try:
                     RADeg, decDeg=[float(coords[i]), float(coords[i+1])]

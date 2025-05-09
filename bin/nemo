@@ -84,9 +84,9 @@ if __name__ == '__main__':
     if config.parDict['forcedPhotometryCatalog'] is not None:
         label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]
         label=os.path.basename(label)+"_"+os.path.basename(config.rootOutDir)+"_forcedCatalog"
-        optimalCatalogFileName=label+".csv"
+        optimalCatalogFileName=label+".fits"
     else:
-        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.csv" % (os.path.split(config.rootOutDir)[-1])
+        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
 
     if os.path.exists(optimalCatalogFileName) == False:
         optimalCatalog=pipelines.filterMapsAndMakeCatalogs(config, writeAreaMask = True, writeFlagMask = True)
@@ -94,13 +94,18 @@ if __name__ == '__main__':
             optimalCatalog=catalogs.flagTileBoundarySplits(optimalCatalog)
             optimalCatalog.sort('name')
             catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName, constraintsList = config.parDict['catalogCuts'])
-            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".csv", ".fits"),
+            catalogs.writeCatalog(optimalCatalog, optimalCatalogFileName.replace(".fits", ".csv"),
                                   constraintsList = config.parDict['catalogCuts'])
             addInfo=[{'key': 'SNR', 'fmt': '%.1f'}]
-            catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".csv", ".reg"),
+            catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".fits", ".reg"),
                                  addInfo = addInfo, color = "cyan")
     else:
-        if config.rank == 0: print("... already made catalog %s" % (optimalCatalogFileName))
+        if config.rank == 0:
+            print("... already made catalog %s" % (optimalCatalogFileName))
+            optimalCatalog=atpy.Table().read(optimalCatalogFileName)
+
+    # Post-processing flags - dust masking, star masks etc., if given in config
+    optimalCatalog=catalogs.addPostFlags(config)
                 
     # Q function (filter mismatch) - if needed options have been given
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:

@@ -653,6 +653,17 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
     validTab['fixed_y_c']=validTab['fixed_y_c']/1e-4
     validTab['fixed_err_y_c']=validTab['fixed_y_c']/validTab['fixed_SNR']
 
+    # Check that objects are actually the search area mask
+    m, wcs=maps.chunkLoadMask(config.selFnDir+os.path.sep+"stitched_areaMask.fits")
+    validTab['inAreaMask']=0
+    for row in validTab:
+        x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
+        x=int(round(x)); y=int(round(y))
+        if x >= 0 and x < m.shape[1]-1:
+            if y >= 0 and y < m.shape[0]-1:
+                row['inAreaMask']=m[y, x]
+    validTab=validTab[validTab['inAreaMask'] > 0]
+
     # Add tile location info
     tileCoordsDict=config.tileCoordsDict
     pixCoords=np.array(wcs.wcs2pix(validTab['RADeg'], validTab['decDeg']))

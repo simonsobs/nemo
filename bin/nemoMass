@@ -110,8 +110,8 @@ def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassE
         
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
         # Added cut on z here to avoid blow-ups for extreme low-z
-        if row['redshift'] < 0.03:
-            print("... skipping %s - redshift < 0.03 ..." % (row['name']))
+        if row['redshift'] < 0.027: # Ok, this is highly tuned... but is the lowest z in ACT DR6
+            print("... skipping %s - redshift < 0.027 ..." % (row['name']))
             continue
         if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
             # Corrected for mass function steepness
