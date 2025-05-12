@@ -2177,14 +2177,14 @@ def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel =
         sigmaR=A*(1/plotSNRs) + B
         # print("A = %.3f" % (A))
         # print("B = %.3f" % (B))
-        fitLabel="$\\sigma_R$ = (%.3f / $\\tilde{q}$) + %.3f" % (A, B)
+        fitLabel="$\\sigma$ = (%.3f / $\\tilde{q}$) + %.3f" % (A, B)
     elif numParamsModel == 1:
         pfunc=lambda sncents,a: a*(1/sncents)
         popt, _=optimize.curve_fit(pfunc, sncents, sigs, p0=[1])
         A=popt
         sigmaR=A*(1/plotSNRs)
         # print("A = %.3f" % (A))
-        fitLabel="$\\sigma_R$ = %.3f / $\\tilde{q}$" % (A)
+        fitLabel="$\\sigma$ = %.3f / $\\tilde{q}$" % (A)
     else:
         raise Exception("numParamsModel must be 1 or 2, not %s" % (str(numParamsModel)))
 
@@ -2207,7 +2207,7 @@ def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel =
     plt.ylim(0, 0.5)
     plt.legend(loc = 'upper right')
     plt.xlabel("$\\tilde{q}$")
-    plt.ylabel("$\\sigma_R$ ($^\\prime$)")
+    plt.ylabel("$\\sigma$ (arcmin)")
     plt.savefig(plotFileName)
     plt.savefig(plotFileName.replace(".png", ".pdf"))
     plt.close()
