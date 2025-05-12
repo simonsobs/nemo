@@ -1720,11 +1720,16 @@ def makeMassLimitMapsAndPlots(config):
         ax=plt.axes([0.155, 0.12, 0.82, 0.86])
         plt.minorticks_on()
         plt.plot(tab['MLim'], np.cumsum(tab['areaDeg2']), 'k-')
-        plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (scalingRelationDict['delta'],
-                                                                      scalingRelationDict['rhoType'][0]))
-        plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (scalingRelationDict['delta'],
-                                                                                scalingRelationDict['rhoType'][0],
-                                                                                int(100*completenessFraction)))
+        # plt.ylabel("survey area < $M_{\\rm %d%s}$ limit (deg$^2$)" % (scalingRelationDict['delta'],
+        #                                                               scalingRelationDict['rhoType'][0]))
+        # plt.xlabel("$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$) [%d%% complete]" % (scalingRelationDict['delta'],
+        #                                                                         scalingRelationDict['rhoType'][0],
+        #                                                                         int(100*completenessFraction)))
+        # Suggested by Arthur in DR6 review process
+        plt.ylabel("sky area (deg$^2$)")
+        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)" % (int(100*completenessFraction),
+                                                                                        scalingRelationDict['delta'],
+                                                                                        scalingRelationDict['rhoType'][0]))
         labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
         plt.ylim(0.0, 1.2*np.cumsum(deepTab['areaDeg2']).max())
         plt.xlim(deepTab['MLim'].min(), deepTab['MLim'].max())
