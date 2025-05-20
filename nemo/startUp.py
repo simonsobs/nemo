@@ -765,6 +765,8 @@ class NemoConfig(object):
                 #options['maskSubtractedRegions']=False
             if 'maskHoleDilationFactor' not in options.keys():
                 options['maskHoleDilationFactor']=None
+            if 'maskHoleRadiusArcmin' not in options.keys():
+                options['maskHoleRadiusArcmin']=None
             if 'addSiphonedFromSets' not in options.keys():
                 options['addSiphonedFromSets']=None
             if 'ignoreSurveyMask' not in options.keys():
@@ -833,5 +835,6 @@ class NemoConfig(object):
             for mapDict in self.unfilteredMapsDictList:
                 #mapDict['maskSubtractedRegions']=options['maskSubtractedRegions']
                 mapDict['maskHoleDilationFactor']=options['maskHoleDilationFactor']
+                mapDict['maskHoleRadiusArcmin']=options['maskHoleRadiusArcmin']
                 if options['ignoreSurveyMask'] == True:
                     mapDict['surveyMask']=None
