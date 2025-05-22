@@ -456,14 +456,14 @@ class MockSurvey(object):
                                         scalingRelationDict['Mpivot'], scalingRelationDict['sigma_int']]
 
         # Optional extras for z evolution
-        if 'onePlusRedshift_power' not in self.scalingRelationDict.keys():
+        if 'onePlusRedshift_power' not in scalingRelationDict.keys():
             onePlusRedshift_power=0.0
         else:
-            onePlusRedshift_power=self.scalingRelationDict['onePlusRedshift_power']
-        if 'Ez_gamma' not in self.scalingRelationDict.keys():
+            onePlusRedshift_power=scalingRelationDict['onePlusRedshift_power']
+        if 'Ez_gamma' not in scalingRelationDict.keys():
             Ez_gamma=2.0 # Default self-similar
         else:
-            Ez_gamma=self.scalingRelationDict['Ez_gamma']
+            Ez_gamma=scalingRelationDict['Ez_gamma']
 
         # If given y0Noise as RMSMap, draw coords (assuming clusters aren't clustered - which they are...)
         # NOTE: switched to using valid part of RMSMap here rather than areaMask - we need to fix the latter to same area
