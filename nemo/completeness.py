@@ -681,15 +681,26 @@ class SelFn(object):
             zRange=self.z
             tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
                                             self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+            # Optional extras for z evolution
+            if 'onePlusRedshift_power' not in self.scalingRelationDict.keys():
+                onePlusRedshift_power=0.0
+            else:
+                onePlusRedshift_power=self.scalingRelationDict['onePlusRedshift_power']
+            if 'Ez_gamma' not in self.scalingRelationDict.keys():
+                Ez_gamma=2.0 # Default self-similar
+            else:
+                Ez_gamma=self.scalingRelationDict['Ez_gamma']
+
             y0Grid=np.zeros([zRange.shape[0], self.clusterCount.shape[1]])
-            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), 2)
+            # NOTE: Still called Ez2, but now has gamma option enabled
+            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), Ez_gamma)
             for i in range(len(zRange)):
                 zk=zRange[i]
                 # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
                 k=np.argmin(abs(self.mockSurvey.z-zk))
                 Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
                 #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)
+                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)*np.power(1+zk, onePlusRedshift_power)
                 if applyQ == True:
                     true_y0s_zk=true_y0s_zk*Qs_zk
                 if self.applyRelativisticCorrection == True:
