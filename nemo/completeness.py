@@ -625,7 +625,7 @@ class SelFn(object):
                 compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
 
         if self.maxTheta500Arcmin is not None:
-            compMzTile=compMzTile*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
+            compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
 
         if return_y0Grid is True:
             return compMzTile, y0Grid

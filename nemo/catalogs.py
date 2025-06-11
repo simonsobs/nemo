@@ -109,8 +109,8 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     return norm*np.exp(-snr/snrFold)+pedestal
     
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.0, zMinForAddRMpc = 0.2,
-                            A = 1.428, B = 0.0, maxCDF = 0.997):
+def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, floorRMpc = 0.0, zMinForFloorRMpc = 0.2,
+                            A = 1.428, B = 0.0, maxCDF = 0.997, returnMatchDistMpc = False):
     """THIS NEEDS REVISING, NO LONGER AN ACCURATE DESCRIPTION
 
     Checks the cross match offset between a cluster detection and an external catalog using a model derived
@@ -129,13 +129,11 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.0, zMinF
             routine returns False).
         fixed_SNR (:obj:`float`): Signal-to-noise at reference filter scale (fixed_SNR) in ACT catalog.
         z (:obj:`float`, optional): If given, addRMpc will be converted to arcmin at this redshift.
-        addRMpc (:obj:`float`, optional): Accounts for additional positional uncertainty (probably unknown)
-            in the external cross match catalog. Cross matches located within less than this distance will be
-            regarded as a match, regardless of the value of fixed_SNR, provided z > zMinForAddRMpc.
-            Requires z to be given.
-        zMinForAddRMpc (:obj:`float`, optional): Minimum redshift above which addRMpc is applied. This avoids
-            very low-z objects being automatically matched well beyond a reasonable positional uncertainty.
-            (e.g., 0.5 Mpc at z = 0.1 is 8.5 arcmin, which is much larger than any SZ positional uncertainty).
+        floorRMpc (:obj:`float`, optional): If RMpc from the positional uncertainty is less than this floor
+            value, we use floorRMpc as the cross match radius. This can be used to restrict cross matching
+            to e.g. 0.5 Mpc projected distance at low-z, but switches to cross match radius based on
+            SZ position uncertainty when RMpc > floorRMpc.
+        zMinForFloorRMpc (:obj:`float`, optional): Minimum redshift above which floorRMpc is applied.
         A (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         B (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         maxCDF (:obj:`float`, optional): The maximum value of the Rayleigh CDF below which an object is flagged
@@ -157,16 +155,21 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, addRMpc = 0.0, zMinF
 
     sigmaR=A*(1/fixedSNR) + B
     rayleighMatchArcmin=sstats.rayleigh.ppf(maxCDF, loc = 0, scale = sigmaR)
+    rMpc=None
     if z is not None:
         da=astCalc.da(z)
         rMpc=np.radians(rayleighMatchArcmin/60)*da
-        rMpc=rMpc+addRMpc # in case we do still want to add extra for whatever reason
+        if rMpc < floorRMpc:
+            rMpc=floorRMpc
         distMpc=np.radians(distArcmin/60)*da
         matched=distMpc < rMpc
     else:
         matched=distArcmin < rayleighMatchArcmin
 
-    return matched
+    if returnMatchDistMpc is False:
+        return matched
+    else:
+        return matched, rMpc
 
 #------------------------------------------------------------------------------------------------------------
 def checkCrossMatchDR5(distArcmin, fixedSNR, z = None, addRMpc = 0.5, fitSNRFold = 1.164, fitPedestal = 0.685,
