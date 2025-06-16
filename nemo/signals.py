@@ -325,6 +325,8 @@ class QFit(object):
                 raise Exception("z must be a float, and not, e.g., an array")
         
         if self.zDependent == True:
+            if z is None:
+                raise Exception("z must be given when using z-dependent Q")
             # Removed zMax cut because SO sims have things at z > 2
             if z > self.zMax:
                 z=self.zMax

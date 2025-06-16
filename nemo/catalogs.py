@@ -109,7 +109,7 @@ def _posRecFitFunc(snr, snrFold, pedestal, norm):
     return norm*np.exp(-snr/snrFold)+pedestal
     
 #------------------------------------------------------------------------------------------------------------
-def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, floorRMpc = 0.0, zMinForFloorRMpc = 0.2,
+def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, floorRMpc = 0.0,
                             A = 1.428, B = 0.0, maxCDF = 0.997, returnMatchDistMpc = False):
     """THIS NEEDS REVISING, NO LONGER AN ACCURATE DESCRIPTION
 
@@ -133,7 +133,6 @@ def checkCrossMatchRayleigh(distArcmin, fixedSNR, z = None, floorRMpc = 0.0, zMi
             value, we use floorRMpc as the cross match radius. This can be used to restrict cross matching
             to e.g. 0.5 Mpc projected distance at low-z, but switches to cross match radius based on
             SZ position uncertainty when RMpc > floorRMpc.
-        zMinForFloorRMpc (:obj:`float`, optional): Minimum redshift above which floorRMpc is applied.
         A (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         B (:obj:`float`, optional): Parameter in the model for the Rayleigh scale as a function of fixed_SNR.
         maxCDF (:obj:`float`, optional): The maximum value of the Rayleigh CDF below which an object is flagged
