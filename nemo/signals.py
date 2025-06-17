@@ -1311,7 +1311,8 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
     if y0 < 0:
         raise Exception('y0 cannot be negative')
     if y0 > 1e-2:
-        raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
+        print("... WARNING: y0 is suspiciously large - perhaps you need to multiply by 1e-4?")
+        return None
 
     P=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot,
                 sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power,
