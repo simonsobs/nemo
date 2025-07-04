@@ -538,7 +538,7 @@ class SelFn(object):
         elif self.method == 'fast' or self.method == 'faster':
             compMzCube=np.zeros([len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
             if self.SNBinEdges is not None:
-                compMzSNBins=np.zeros([self.SNBinEdges.shape[0]-1, len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
+                compMzSNBins=np.zeros([len(self.tileNames), self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
             else:
                 compMzSNBins=None
             t0=time.time()
@@ -547,13 +547,12 @@ class SelFn(object):
                 compMzBinsInTile=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
                 compMzCube[tileIndex]=compMzBinsInTile[0]
                 if self.SNBinEdges is not None:
-                    for i in range(compMzBinsInTile.shape[0]-1):
-                        compMzSNBins[i]=compMzBinsInTile[i+1]
+                    compMzSNBins[tileIndex]=compMzBinsInTile[1:]
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
             if compMzSNBins is not None:
                 self.compMzSNBins=np.zeros([self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
-                for i in range(compMzSNBins.shape[0]):
-                    self.compMzSNBins[i]=np.average(compMzSNBins[i], axis = 0, weights = self.fracArea)
+                for i in range(self.compMzSNBins.shape[0]):
+                    self.compMzSNBins[i]=np.average(compMzSNBins[:, i], axis = 0, weights = self.fracArea)
             else:
                 self.compMzSNBins=None
 
@@ -664,25 +663,24 @@ class SelFn(object):
         t22=time.time()
         # SOLikeT style - tiny loops are faster than doing this with array functions
         # Again, k == 0 is the everything > SNRCut, other planes are S/N bins if requested
-        for i in range(len(RMSTab)):
-            if self.biasModel is not None:
-                trueSNR=y0Grid/RMSTab['y0RMS'][i]
-                corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
-                # Some models may give unphysically large correction factors when extrapolated S/N -> 0
-                # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
-                if self.truncateDeltaSNR is not None:
-                    corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
+        for k in range(numIter):
+            compMzTile=compMzCube[k]
+            if k == 0:
+                minSN=self.SNRCut
+                maxSN=1e5
             else:
-                corrFactors=np.ones(y0Grid.shape)
-            for k in range(numIter):
-                compMzTile=compMzCube[k]
-                if k == 0:
-                    minSN=self.SNRCut
-                    maxSN=1e5
+                minSN=self.SNBinEdges[k-1]
+                maxSN=self.SNBinEdges[k]
+            for i in range(len(RMSTab)):
+                if self.biasModel is not None:
+                    trueSNR=y0Grid/RMSTab['y0RMS'][i]
+                    corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
+                    # Some models may give unphysically large correction factors when extrapolated S/N -> 0
+                    # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
+                    if self.truncateDeltaSNR is not None:
+                        corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
                 else:
-                    minSN=self.SNBinEdges[k-1]
-                    maxSN=self.SNBinEdges[k]
-                    print("min, max SN", minSN, maxSN, k)
+                    corrFactors=np.ones(y0Grid.shape)
                 if self.scalingRelationDict['sigma_int'] == 0:
                     compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
                 else:
@@ -697,8 +695,8 @@ class SelFn(object):
                     arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
                     args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
                     compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
-                if self.maxTheta500Arcmin is not None:
-                    compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
+            if self.maxTheta500Arcmin is not None:
+                compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
 
         if return_y0Grid is True:
             return compMzCube, y0Grid
