@@ -591,58 +591,6 @@ class SelFn(object):
 
         """
 
-        # #### OLD
-        # t00=time.time()
-        # # NOTE: y0Grid, theta500 grid are cached and only re-calculated if parameters change
-        # if self.useAverageQ == False:
-        #     y0Grid=self._makeSignalGrid(tileName = tileName)
-        # else:
-        #     y0Grid=self._makeSignalGrid(tileName = None)
-        # compMzTile=np.zeros(y0Grid.shape)
-        # # Calculate completeness using area-weighted average
-        # # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
-        # if RMSTab is None:
-        #     RMSTab=self.RMSDict[tileName]
-        # areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-        # t22=time.time()
-        # # SOLikeT style - tiny loops are faster than doing this with array functions
-        # for i in range(len(RMSTab)):
-        #     if self.biasModel is not None:
-        #         trueSNR=y0Grid/RMSTab['y0RMS'][i]
-        #         # Old model
-        #         # corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
-        #         # New model [if we do want the old model, should call it like this anyway]
-        #         corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
-        #         # Some models may give unphysically large correction factors when extrapolated S/N -> 0
-        #         # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
-        #         if self.truncateDeltaSNR is not None:
-        #             corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
-        #     else:
-        #         corrFactors=np.ones(y0Grid.shape)
-        #     # If we decide to bring back the 'faster' method, see below
-        #     # if self._compSNRLimInterp is not None:
-        #     #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._compSNRLimInterp((y0Grid*corrFactors)/RMSTab['y0RMS'][i])*areaWeights[i]
-        #     # else:
-        #     #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
-        #     if self.scalingRelationDict['sigma_int'] == 0:
-        #         compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
-        #     else:
-        #         # SOLikeT style
-        #         scatter=self.scalingRelationDict['sigma_int']
-        #         lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
-        #         yy0=np.exp(lnyy)
-        #         mu=np.float32(np.log(y0Grid*corrFactors))
-        #         fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
-        #         arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
-        #         cc=np.float32(arg*areaWeights[i])
-        #         arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
-        #         args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
-        #         compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
-        # #### End OLD
-
-        #### NEW
-        # S/N binning version
-        t00=time.time()
         # NOTE: y0Grid, theta500 grid are cached and only re-calculated if parameters change
         if self.useAverageQ == False:
             y0Grid=self._makeSignalGrid(tileName = tileName)
@@ -660,7 +608,6 @@ class SelFn(object):
         if RMSTab is None:
             RMSTab=self.RMSDict[tileName]
         areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-        t22=time.time()
         # SOLikeT style - tiny loops are faster than doing this with array functions
         # Again, k == 0 is the everything > SNRCut, other planes are S/N bins if requested
         for k in range(numIter):
@@ -682,7 +629,7 @@ class SelFn(object):
                 else:
                     corrFactors=np.ones(y0Grid.shape)
                 if self.scalingRelationDict['sigma_int'] == 0:
-                    compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
+                    compMzTile+=self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
                 else:
                     # SOLikeT style
                     scatter=self.scalingRelationDict['sigma_int']
