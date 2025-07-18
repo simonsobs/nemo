@@ -563,6 +563,15 @@ class SelFn(object):
                 minIndex=minIndex[0]
                 self.compMz[i][minIndex:]=1
         self.compMz[self.compMz < 0]=0
+        # And for SN bins
+        if self.compMzSNBins is not None:
+            for k in range(self.compMzSNBins.shape[0]):
+                for i in range(self.compMzSNBins.shape[1]):
+                    minIndex=np.where(self.compMzSNBins[k, i] >= 1)[0]
+                    if len(minIndex) > 0:
+                        minIndex=minIndex[0]
+                        self.compMzSNBins[k, i][minIndex:]=1
+        self.compMzSNBins[self.compMzSNBins < 0]=0
 
         self.predObsCount=self.compMz*self.clusterCount
 
@@ -617,7 +626,7 @@ class SelFn(object):
                 maxSN=1e5
             else:
                 minSN=self.SNBinEdges[k-1]
-                maxSN=self.SNBinEdges[k]
+                maxSN=1e5 # self.SNBinEdges[k]
             for i in range(len(RMSTab)):
                 if self.biasModel is not None:
                     trueSNR=y0Grid/RMSTab['y0RMS'][i]
@@ -631,9 +640,25 @@ class SelFn(object):
                 if self.scalingRelationDict['sigma_int'] == 0:
                     compMzTile+=self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
                 else:
-                    # SOLikeT style
+                    # Modified1 - not this
+                    # scatter=self.scalingRelationDict['sigma_int']
+                    # lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
+                    # yy0=np.exp(lnyy)
+                    # trueSNR=yy0/RMSTab['y0RMS'][i]
+                    # lnyycorrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
+                    # if self.truncateDeltaSNR is not None:
+                    #     lnyycorrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
+                    # lnyycorr=np.log(lnyycorrFactors*yy0)
+                    # mu=np.float32(np.log(y0Grid*corrFactors))
+                    # fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
+                    # arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)
+                    # cc=np.float32(arg*areaWeights[i])
+                    # arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
+                    # args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
+                    # compMzTile+=np.trapz(np.float32(args), x=lnyycorr, axis=0)
+                    # Original SOLikeT style but simpson integration
                     scatter=self.scalingRelationDict['sigma_int']
-                    lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
+                    lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), y0Grid.shape[1]) # was 44
                     yy0=np.exp(lnyy)
                     mu=np.float32(np.log(y0Grid*corrFactors))
                     fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
@@ -641,7 +666,8 @@ class SelFn(object):
                     cc=np.float32(arg*areaWeights[i])
                     arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
                     args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
-                    compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
+                    compMzTile+=integrate.simpson(args, x=lnyy, axis=0)
+                    # compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
             if self.maxTheta500Arcmin is not None:
                 compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
 
@@ -907,6 +933,16 @@ def optBiasModelFunc(snr, params):
 
     model=np.ones(snr.shape)
     index=1
+    for p in params:
+        model=model+p/(snr**index)
+        index=index+1
+
+    return model
+
+def optBiasModelFuncB(snr, params):
+    """Same as series, but starts at index 2"""
+    model=np.ones(snr.shape)#*params['par0']
+    index=2
     for p in params:
         model=model+p/(snr**index)
         index=index+1
