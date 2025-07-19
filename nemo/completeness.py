@@ -564,14 +564,14 @@ class SelFn(object):
                 self.compMz[i][minIndex:]=1
         self.compMz[self.compMz < 0]=0
         # And for SN bins
-        if self.compMzSNBins is not None:
-            for k in range(self.compMzSNBins.shape[0]):
-                for i in range(self.compMzSNBins.shape[1]):
-                    minIndex=np.where(self.compMzSNBins[k, i] >= 1)[0]
-                    if len(minIndex) > 0:
-                        minIndex=minIndex[0]
-                        self.compMzSNBins[k, i][minIndex:]=1
-        self.compMzSNBins[self.compMzSNBins < 0]=0
+        # if self.compMzSNBins is not None:
+        #     for k in range(self.compMzSNBins.shape[0]):
+        #         for i in range(self.compMzSNBins.shape[1]):
+        #             minIndex=np.where(self.compMzSNBins[k, i] >= 1)[0]
+        #             if len(minIndex) > 0:
+        #                 minIndex=minIndex[0]
+        #                 self.compMzSNBins[k, i][minIndex:]=1
+        # self.compMzSNBins[self.compMzSNBins < 0]=0
 
         self.predObsCount=self.compMz*self.clusterCount
 
@@ -616,65 +616,56 @@ class SelFn(object):
         # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
         if RMSTab is None:
             RMSTab=self.RMSDict[tileName]
-        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-        # SOLikeT style - tiny loops are faster than doing this with array functions
-        # Again, k == 0 is the everything > SNRCut, other planes are S/N bins if requested
         for k in range(numIter):
-            compMzTile=compMzCube[k]
             if k == 0:
                 minSN=self.SNRCut
                 maxSN=1e5
             else:
                 minSN=self.SNBinEdges[k-1]
-                maxSN=1e5 # self.SNBinEdges[k]
-            for i in range(len(RMSTab)):
-                if self.biasModel is not None:
-                    trueSNR=y0Grid/RMSTab['y0RMS'][i]
-                    corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
-                    # Some models may give unphysically large correction factors when extrapolated S/N -> 0
-                    # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
-                    if self.truncateDeltaSNR is not None:
-                        corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
-                else:
-                    corrFactors=np.ones(y0Grid.shape)
-                if self.scalingRelationDict['sigma_int'] == 0:
-                    compMzTile+=self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
-                else:
-                    # Modified1 - not this
-                    # scatter=self.scalingRelationDict['sigma_int']
-                    # lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
-                    # yy0=np.exp(lnyy)
-                    # trueSNR=yy0/RMSTab['y0RMS'][i]
-                    # lnyycorrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
-                    # if self.truncateDeltaSNR is not None:
-                    #     lnyycorrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
-                    # lnyycorr=np.log(lnyycorrFactors*yy0)
-                    # mu=np.float32(np.log(y0Grid*corrFactors))
-                    # fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
-                    # arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)
-                    # cc=np.float32(arg*areaWeights[i])
-                    # arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
-                    # args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
-                    # compMzTile+=np.trapz(np.float32(args), x=lnyycorr, axis=0)
-                    # Original SOLikeT style but simpson integration
-                    scatter=self.scalingRelationDict['sigma_int']
-                    lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), y0Grid.shape[1]) # was 44
-                    yy0=np.exp(lnyy)
-                    mu=np.float32(np.log(y0Grid*corrFactors))
-                    fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
-                    arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)
-                    cc=np.float32(arg*areaWeights[i])
-                    arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
-                    args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
-                    compMzTile+=integrate.simpson(args, x=lnyy, axis=0)
-                    # compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
-            if self.maxTheta500Arcmin is not None:
-                compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
-
+                maxSN=self.SNBinEdges[k]
+            compMzCube[k]=self._fastCompMz(y0Grid, RMSTab, minSN, maxSN)
         if return_y0Grid is True:
             return compMzCube, y0Grid
         else:
             return compMzCube
+
+
+    def _fastCompMz(self, y0Grid, RMSTab, minSN, maxSN):
+        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
+        # SOLikeT style - tiny loops are faster than doing this with array functions
+        # Again, k == 0 is the everything > SNRCut, other planes are S/N bins if requested
+        compMzTile=np.zeros(y0Grid.shape)
+        for i in range(len(RMSTab)):
+            if self.biasModel is not None:
+                trueSNR=y0Grid/RMSTab['y0RMS'][i]
+                corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
+                # Some models may give unphysically large correction factors when extrapolated S/N -> 0
+                # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
+                if self.truncateDeltaSNR is not None:
+                    # corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
+                    corrFactors[trueSNR < minSN-self.truncateDeltaSNR]=1.0
+            else:
+                corrFactors=np.ones(y0Grid.shape)
+            if self.scalingRelationDict['sigma_int'] == 0:
+                compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
+            else:
+                # SOLikeT style but simpson integration
+                scatter=self.scalingRelationDict['sigma_int']
+                lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44) # y0Grid.shape[1]) # was 44
+                yy0=np.exp(lnyy)
+                mu=np.log(y0Grid*corrFactors)
+                fac=1./np.sqrt(2.*np.pi*scatter**2)
+                # arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)
+                arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, minSN)
+                cc=arg*areaWeights[i]
+                arg0=(lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter)
+                args=fac*np.exp(-arg0**2.) * cc[:, None,None]
+                # compMzTile+=integrate.simpson(args, x=lnyy, axis=0)
+                compMzTile=compMzTile+np.trapz(args, x=lnyy, axis=0)
+        # We could probably retire this
+        if self.maxTheta500Arcmin is not None:
+            compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
+        return compMzTile
 
 
     def _get_erf_diff(self, qin, qmin, qmax, qcut):
