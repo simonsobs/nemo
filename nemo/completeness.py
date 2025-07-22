@@ -1515,7 +1515,8 @@ def calcCompletenessContour(compMz, log10M, z, level = 0.90):
     contours=plt.contour(z, log10M, compMz.transpose(), levels = [level])
     cont_z=[]
     cont_log10M=[]
-    for p in contours.collections[0].get_paths():
+    paths=contours.get_paths() # for matplotlib 3.10
+    for p in paths:
         v=p.vertices
         cont_z=cont_z+v[:, 0].tolist()
         cont_log10M=cont_log10M+v[:, 1].tolist()
@@ -1574,7 +1575,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
     plt.ylim(coords_log10M.min(), coords_log10M.max())
     if massLabel[0] == "M":
         massLabel=massLabel[1:]
-    plt.ylabel("log$_{10}$ ($M_{\\rm %s} / M_{\odot}$)" % (massLabel))
+    plt.ylabel("log$_{10}$ ($M_{\\rm %s} / M_{\\odot}$)" % (massLabel))
     
     x_tck=interpolate.splrep(z, np.arange(z.shape[0]))
     plot_z=np.linspace(0.0, 2.0, 11)
@@ -1646,7 +1647,7 @@ def makeMassLimitMapsAndPlots(config):
                 method = config.parDict['selFnOptions']['method'],
                 QSource = config.parDict['selFnOptions']['QSource'],
                 maxFlags = config.parDict['selFnOptions']['maxFlags'],
-                biasModel = biasModelDict)
+                biasModel = biasModelDict, SNBinEdges = None)
 
     # Load in tiles RMS map and fill a mass limit tiled map, then stitch at the end
     for massLimDict in config.parDict['selFnOptions']['massLimitMaps']:
@@ -1673,6 +1674,8 @@ def makeMassLimitMapsAndPlots(config):
                     RMSTab['areaDeg2']=[100] # doesn't matter, just for weighting
                     compMzTile, y0Grid=selFn.calcFastCompletenessInTile(tileName = tileName, return_y0Grid = True,
                                                                         RMSTab = RMSTab)
+                    if compMzTile.ndim == 3:
+                        compMzTile=compMzTile[0]
                     massLim=selFn.log10M[np.where(compMzTile[zIndex] > completenessFraction)[0][0]]
                     massLim=np.power(10, massLim)/1e14
                     d[d == n]=massLim
@@ -1713,7 +1716,7 @@ def makeMassLimitMapsAndPlots(config):
                              axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif',
                              RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
                              axesFontSize = fontSize)
-        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)\n[%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
+        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\\odot}$)\n[%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
         cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation = colorBarPos, fraction = fraction, pad = pad,
                 shrink = cbShrink, aspect = cbAspect)
         cb.ax.get_yaxis().labelpad=labelpad
@@ -1758,7 +1761,7 @@ def makeMassLimitMapsAndPlots(config):
         #                                                                         int(100*completenessFraction)))
         # Suggested by Arthur in DR6 review process
         plt.ylabel("sky area (deg$^2$)")
-        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)" % (int(100*completenessFraction),
+        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\\odot}$)" % (int(100*completenessFraction),
                                                                                         scalingRelationDict['delta'],
                                                                                         scalingRelationDict['rhoType'][0]))
         labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
@@ -1783,7 +1786,7 @@ def makeMassLimitMapsAndPlots(config):
         #                                                                         int(100*completenessFraction)))
         # Suggested by Arthur in DR6 review process
         plt.ylabel("sky area (deg$^2$)")
-        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)" % (int(100*completenessFraction),
+        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\\odot}$)" % (int(100*completenessFraction),
                                                                                         scalingRelationDict['delta'],
                                                                                         scalingRelationDict['rhoType'][0]))
         labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
@@ -1824,7 +1827,7 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     plt.ylim(0.5, 8)
     plt.xticks(np.arange(0, 2.2, 0.2))
     plt.xlim(0, 2)
-    labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]"
+    labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\\odot}$) [90% complete]"
     plt.ylabel(labelStr)
     plt.savefig(outFileName)
     if outFileName.find(".pdf") != -1:
@@ -1878,7 +1881,7 @@ def makeFullSurveyMassLimitMapPlot(z, config):
                                 axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif', 
                                 RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
                                 axesFontSize = fontSize)
-            cbLabel="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]"
+            cbLabel="$M_{\\rm 500c}$ (10$^{14}$ M$_{\\odot}$) [90% complete]"
             cbShrink=0.7
             cbAspect=40
             cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18, 
