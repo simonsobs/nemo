@@ -2152,14 +2152,20 @@ def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel =
     # See scipy docs: x == rArcmin (applying the scale parameter is equivalent to pdf(y)/scale with y = x/scale
     bins=np.geomspace(0.01,3,100)
     cents=(bins[1:] + bins[:-1])/2.
+    selMask=[]
     for sl,sr in zip(SNEdges[:-1], SNEdges[1:]):
         # Rayleigh PDF, simple fit to histogram
         frdata=rArcmin[np.logical_and(SNR >= sl, SNR < sr)]
-        hist, _=np.histogram(frdata, bins = bins, density = True)
-        pfunc=lambda cents, scale: sstats.rayleigh.pdf(cents, loc = 0, scale = scale)
-        popt, _=optimize.curve_fit(pfunc,cents,hist,p0=[0.2])
-        pfitted=sstats.rayleigh.pdf(cents,  loc=0, scale=popt[0])
-        sigs.append(popt[0])
+        if frdata.shape[0] > 0:
+            selMask.append(True)
+            hist, _=np.histogram(frdata, bins = bins, density = True)
+            pfunc=lambda cents, scale: sstats.rayleigh.pdf(cents, loc = 0, scale = scale)
+            popt, _=optimize.curve_fit(pfunc,cents,hist,p0=[0.2])
+            pfitted=sstats.rayleigh.pdf(cents,  loc=0, scale=popt[0])
+            sigs.append(popt[0])
+        else:
+            selMask.append(False)
+            sigs.append(-99)
         # Plot the histogram against the Rayleigh fit; this uses orphics, replace with matplotlib
         #pl = io.Plotter(xyscale='loglin')
         #pl._ax.hist(frdata,bins=np.geomspace(0.01,3,100),density=True,color=f'C{i}')
@@ -2168,11 +2174,12 @@ def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel =
         #pl.done(f'phist_{sl}_{sr}.png')
 
     # Fit the Rayleigh_scale(SNR) to a simple a*(1/x) + b model [x == rArcmin]
+    sigs=np.array(sigs)
     sncents=(SNEdges[1:]+SNEdges[:-1])/2.
     plotSNRs=np.linspace(3, 20, 100)
     if numParamsModel == 2:
         pfunc=lambda sncents,a,b: a*(1/sncents) + b   # Used in DR5
-        popt, _=optimize.curve_fit(pfunc, sncents, sigs, p0=[1,0.1])
+        popt, _=optimize.curve_fit(pfunc, sncents[selMask], sigs[selMask], p0=[1,0.1])
         A, B=popt
         sigmaR=A*(1/plotSNRs) + B
         # print("A = %.3f" % (A))
@@ -2180,7 +2187,7 @@ def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel =
         fitLabel="$\\sigma$ = (%.3f / $\\tilde{q}$) + %.3f" % (A, B)
     elif numParamsModel == 1:
         pfunc=lambda sncents,a: a*(1/sncents)
-        popt, _=optimize.curve_fit(pfunc, sncents, sigs, p0=[1])
+        popt, _=optimize.curve_fit(pfunc, sncents[selMask], sigs[selMask], p0=[1])
         A=popt
         sigmaR=A*(1/plotSNRs)
         # print("A = %.3f" % (A))
@@ -2202,7 +2209,7 @@ def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel =
     plt.figure(figsize=(9,6.5))
     ax=plt.axes([0.11, 0.11, 0.88, 0.87])
     plt.plot(plotSNRs, sigmaR, 'k--', label = fitLabel)
-    plt.plot(sncents, sigs, 'D')
+    plt.plot(sncents[selMask], sigs[selMask], 'D')
     plt.xlim(4, 15)
     plt.ylim(0, 0.5)
     plt.legend(loc = 'upper right')

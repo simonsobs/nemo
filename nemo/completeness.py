@@ -144,7 +144,7 @@ class SelFn(object):
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
                  QSource = 'fit', useAverageQ = False, theoryCode = 'CCL', noiseCut = None, biasModel = None,
                  truncateDeltaSNR = 3.0, overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001,
-                 maxFlags = None):
+                 SNBinEdges = None, maxFlags = None):
         
         self.SNRCut=SNRCut
         self.biasModel=biasModel
@@ -162,6 +162,7 @@ class SelFn(object):
         self.massBinsTheory=massBinsTheory
         self.zStepTheory=zStepTheory
         self.truncateDeltaSNR=truncateDeltaSNR
+        self.SNBinEdges=SNBinEdges
         self.maxFlags=maxFlags
 
         if configFileName is None:
@@ -203,7 +204,7 @@ class SelFn(object):
             self.tileTab=None
             self.WCSDict=None
             self.areaMaskDict=None
-                
+
         if enableCompletenessCalc == True:
             
             # We can now specify multiple scaling relations in the config - but we only use the first one here
@@ -536,11 +537,24 @@ class SelFn(object):
 
         elif self.method == 'fast' or self.method == 'faster':
             compMzCube=np.zeros([len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
+            if self.SNBinEdges is not None:
+                compMzSNBins=np.zeros([len(self.tileNames), self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
+            else:
+                compMzSNBins=None
             t0=time.time()
             for tileIndex in range(len(self.tileNames)):
                 tileName=self.tileNames[tileIndex]
-                compMzCube[tileIndex]=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
+                compMzBinsInTile=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
+                compMzCube[tileIndex]=compMzBinsInTile[0]
+                if self.SNBinEdges is not None:
+                    compMzSNBins[tileIndex]=compMzBinsInTile[1:]
             self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+            if compMzSNBins is not None:
+                self.compMzSNBins=np.zeros([self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
+                for i in range(self.compMzSNBins.shape[0]):
+                    self.compMzSNBins[i]=np.average(compMzSNBins[:, i], axis = 0, weights = self.fracArea)
+            else:
+                self.compMzSNBins=None
 
         # Deals with corner at high S/N, high-z sometimes weirdly having lower than 1 completeness
         for i in range(self.compMz.shape[0]):
@@ -549,6 +563,15 @@ class SelFn(object):
                 minIndex=minIndex[0]
                 self.compMz[i][minIndex:]=1
         self.compMz[self.compMz < 0]=0
+        # And for SN bins
+        # if self.compMzSNBins is not None:
+        #     for k in range(self.compMzSNBins.shape[0]):
+        #         for i in range(self.compMzSNBins.shape[1]):
+        #             minIndex=np.where(self.compMzSNBins[k, i] >= 1)[0]
+        #             if len(minIndex) > 0:
+        #                 minIndex=minIndex[0]
+        #                 self.compMzSNBins[k, i][minIndex:]=1
+        # self.compMzSNBins[self.compMzSNBins < 0]=0
 
         self.predObsCount=self.compMz*self.clusterCount
 
@@ -577,60 +600,72 @@ class SelFn(object):
 
         """
 
-        t00=time.time()
         # NOTE: y0Grid, theta500 grid are cached and only re-calculated if parameters change
         if self.useAverageQ == False:
             y0Grid=self._makeSignalGrid(tileName = tileName)
         else:
             y0Grid=self._makeSignalGrid(tileName = None)
-        compMzTile=np.zeros(y0Grid.shape)
+        # 0-index of this is everything > SNRCut, then each plane after is a SN bin
+        if self.SNBinEdges is not None:
+            compMzCube=np.zeros((self.SNBinEdges.shape[0], y0Grid.shape[0], y0Grid.shape[1]))
+            numIter=self.SNBinEdges.shape[0]
+        else:
+            compMzCube=np.zeros((1, y0Grid.shape[0], y0Grid.shape[1]))
+            numIter=1
         # Calculate completeness using area-weighted average
         # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
         if RMSTab is None:
             RMSTab=self.RMSDict[tileName]
+        for k in range(numIter):
+            if k == 0:
+                minSN=self.SNRCut
+                maxSN=1e5
+            else:
+                minSN=self.SNBinEdges[k-1]
+                maxSN=self.SNBinEdges[k]
+            compMzCube[k]=self._fastCompMz(y0Grid, RMSTab, minSN, maxSN)
+        if return_y0Grid is True:
+            return compMzCube, y0Grid
+        else:
+            return compMzCube
+
+
+    def _fastCompMz(self, y0Grid, RMSTab, minSN, maxSN):
         areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-        t22=time.time()
         # SOLikeT style - tiny loops are faster than doing this with array functions
+        # Again, k == 0 is the everything > SNRCut, other planes are S/N bins if requested
+        compMzTile=np.zeros(y0Grid.shape)
         for i in range(len(RMSTab)):
             if self.biasModel is not None:
                 trueSNR=y0Grid/RMSTab['y0RMS'][i]
-                # Old model
-                # corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'][0], self.biasModel['params'][1], self.biasModel['params'][2])
-                # New model [if we do want the old model, should call it like this anyway]
                 corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
                 # Some models may give unphysically large correction factors when extrapolated S/N -> 0
                 # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
                 if self.truncateDeltaSNR is not None:
-                    corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
+                    # corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
+                    corrFactors[trueSNR < minSN-self.truncateDeltaSNR]=1.0
             else:
                 corrFactors=np.ones(y0Grid.shape)
-            # If we decide to bring back the 'faster' method, see below
-            # if self._compSNRLimInterp is not None:
-            #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._compSNRLimInterp((y0Grid*corrFactors)/RMSTab['y0RMS'][i])*areaWeights[i]
-            # else:
-            #     compMzCube[tileIndex]=compMzCube[tileIndex]+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
             if self.scalingRelationDict['sigma_int'] == 0:
-                compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)*areaWeights[i]
+                compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
             else:
-                # SOLikeT style
+                # SOLikeT style but simpson integration
                 scatter=self.scalingRelationDict['sigma_int']
-                lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)
+                lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44) # y0Grid.shape[1]) # was 44
                 yy0=np.exp(lnyy)
-                mu=np.float32(np.log(y0Grid*corrFactors))
-                fac=np.float32(1./np.sqrt(2.*np.pi*scatter**2))
-                arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], self.SNRCut, 1e5, self.SNRCut)
-                cc=np.float32(arg*areaWeights[i])
-                arg0=np.float32((lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter))
-                args=fac*np.exp(np.float32(-arg0**2.)) * cc[:, None,None]
-                compMzTile+=np.trapz(np.float32(args), x=lnyy, axis=0)
-
+                mu=np.log(y0Grid*corrFactors)
+                fac=1./np.sqrt(2.*np.pi*scatter**2)
+                # arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)
+                arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, minSN)
+                cc=arg*areaWeights[i]
+                arg0=(lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter)
+                args=fac*np.exp(-arg0**2.) * cc[:, None,None]
+                # compMzTile+=integrate.simpson(args, x=lnyy, axis=0)
+                compMzTile=compMzTile+np.trapz(args, x=lnyy, axis=0)
+        # We could probably retire this
         if self.maxTheta500Arcmin is not None:
-            compMzTile=compMzTile*np.array(theta500Grid < self.maxTheta500Arcmin, dtype = float)
-
-        if return_y0Grid is True:
-            return compMzTile, y0Grid
-        else:
-            return compMzTile
+            compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
+        return compMzTile
 
 
     def _get_erf_diff(self, qin, qmin, qmax, qcut):
@@ -681,15 +716,26 @@ class SelFn(object):
             zRange=self.z
             tenToA0, B0, Mpivot, sigma_int=[self.scalingRelationDict['tenToA0'], self.scalingRelationDict['B0'],
                                             self.scalingRelationDict['Mpivot'], self.scalingRelationDict['sigma_int']]
+            # Optional extras for z evolution
+            if 'onePlusRedshift_power' not in self.scalingRelationDict.keys():
+                onePlusRedshift_power=0.0
+            else:
+                onePlusRedshift_power=self.scalingRelationDict['onePlusRedshift_power']
+            if 'Ez_gamma' not in self.scalingRelationDict.keys():
+                Ez_gamma=2.0 # Default self-similar
+            else:
+                Ez_gamma=self.scalingRelationDict['Ez_gamma']
+
             y0Grid=np.zeros([zRange.shape[0], self.clusterCount.shape[1]])
-            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), 2)
+            # NOTE: Still called Ez2, but now has gamma option enabled
+            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), Ez_gamma)
             for i in range(len(zRange)):
                 zk=zRange[i]
                 # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
                 k=np.argmin(abs(self.mockSurvey.z-zk))
                 Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
                 #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)
+                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)*np.power(1+zk, onePlusRedshift_power)
                 if applyQ == True:
                     true_y0s_zk=true_y0s_zk*Qs_zk
                 if self.applyRelativisticCorrection == True:
@@ -878,6 +924,16 @@ def optBiasModelFunc(snr, params):
 
     model=np.ones(snr.shape)
     index=1
+    for p in params:
+        model=model+p/(snr**index)
+        index=index+1
+
+    return model
+
+def optBiasModelFuncB(snr, params):
+    """Same as series, but starts at index 2"""
+    model=np.ones(snr.shape)#*params['par0']
+    index=2
     for p in params:
         model=model+p/(snr**index)
         index=index+1
@@ -1459,7 +1515,8 @@ def calcCompletenessContour(compMz, log10M, z, level = 0.90):
     contours=plt.contour(z, log10M, compMz.transpose(), levels = [level])
     cont_z=[]
     cont_log10M=[]
-    for p in contours.collections[0].get_paths():
+    paths=contours.get_paths() # for matplotlib 3.10
+    for p in paths:
         v=p.vertices
         cont_z=cont_z+v[:, 0].tolist()
         cont_log10M=cont_log10M+v[:, 1].tolist()
@@ -1518,7 +1575,7 @@ def makeMzCompletenessPlot(compMz, log10M, z, title, massLabel, outFileName):
     plt.ylim(coords_log10M.min(), coords_log10M.max())
     if massLabel[0] == "M":
         massLabel=massLabel[1:]
-    plt.ylabel("log$_{10}$ ($M_{\\rm %s} / M_{\odot}$)" % (massLabel))
+    plt.ylabel("log$_{10}$ ($M_{\\rm %s} / M_{\\odot}$)" % (massLabel))
     
     x_tck=interpolate.splrep(z, np.arange(z.shape[0]))
     plot_z=np.linspace(0.0, 2.0, 11)
@@ -1590,7 +1647,7 @@ def makeMassLimitMapsAndPlots(config):
                 method = config.parDict['selFnOptions']['method'],
                 QSource = config.parDict['selFnOptions']['QSource'],
                 maxFlags = config.parDict['selFnOptions']['maxFlags'],
-                biasModel = biasModelDict)
+                biasModel = biasModelDict, SNBinEdges = None)
 
     # Load in tiles RMS map and fill a mass limit tiled map, then stitch at the end
     for massLimDict in config.parDict['selFnOptions']['massLimitMaps']:
@@ -1617,6 +1674,8 @@ def makeMassLimitMapsAndPlots(config):
                     RMSTab['areaDeg2']=[100] # doesn't matter, just for weighting
                     compMzTile, y0Grid=selFn.calcFastCompletenessInTile(tileName = tileName, return_y0Grid = True,
                                                                         RMSTab = RMSTab)
+                    if compMzTile.ndim == 3:
+                        compMzTile=compMzTile[0]
                     massLim=selFn.log10M[np.where(compMzTile[zIndex] > completenessFraction)[0][0]]
                     massLim=np.power(10, massLim)/1e14
                     d[d == n]=massLim
@@ -1657,7 +1716,7 @@ def makeMassLimitMapsAndPlots(config):
                              axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif',
                              RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
                              axesFontSize = fontSize)
-        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)\n[%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
+        cbLabel="$M_{\\rm %d%s}$ (10$^{14}$ M$_{\\odot}$)\n[%d%% complete]" % (selFn.mockSurvey.delta, selFn.mockSurvey.rhoType[0], int(100*completenessFraction))
         cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation = colorBarPos, fraction = fraction, pad = pad,
                 shrink = cbShrink, aspect = cbAspect)
         cb.ax.get_yaxis().labelpad=labelpad
@@ -1702,7 +1761,7 @@ def makeMassLimitMapsAndPlots(config):
         #                                                                         int(100*completenessFraction)))
         # Suggested by Arthur in DR6 review process
         plt.ylabel("sky area (deg$^2$)")
-        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)" % (int(100*completenessFraction),
+        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\\odot}$)" % (int(100*completenessFraction),
                                                                                         scalingRelationDict['delta'],
                                                                                         scalingRelationDict['rhoType'][0]))
         labelStr="total survey area = %.0f deg$^2$" % (np.cumsum(tab['areaDeg2']).max())
@@ -1727,7 +1786,7 @@ def makeMassLimitMapsAndPlots(config):
         #                                                                         int(100*completenessFraction)))
         # Suggested by Arthur in DR6 review process
         plt.ylabel("sky area (deg$^2$)")
-        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\odot}$)" % (int(100*completenessFraction),
+        plt.xlabel("%d%% completeness limit $M_{\\rm %d%s}$ (10$^{14}$ M$_{\\odot}$)" % (int(100*completenessFraction),
                                                                                         scalingRelationDict['delta'],
                                                                                         scalingRelationDict['rhoType'][0]))
         labelStr="area of deepest 20%% = %.0f deg$^2$" % (0.2 * totalAreaDeg2)
@@ -1768,7 +1827,7 @@ def makeMassLimitVRedshiftPlot(massLimit_90Complete, zRange, outFileName, title 
     plt.ylim(0.5, 8)
     plt.xticks(np.arange(0, 2.2, 0.2))
     plt.xlim(0, 2)
-    labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]"
+    labelStr="$M_{\\rm 500c}$ (10$^{14}$ M$_{\\odot}$) [90% complete]"
     plt.ylabel(labelStr)
     plt.savefig(outFileName)
     if outFileName.find(".pdf") != -1:
@@ -1822,7 +1881,7 @@ def makeFullSurveyMassLimitMapPlot(z, config):
                                 axesLabels = axesLabels, colorMapName = colorMapName, axesFontFamily = 'sans-serif', 
                                 RATickSteps = {'deg': 30.0, 'unit': 'h'}, decTickSteps = {'deg': 20.0, 'unit': 'd'},
                                 axesFontSize = fontSize)
-            cbLabel="$M_{\\rm 500c}$ (10$^{14}$ M$_{\odot}$) [90% complete]"
+            cbLabel="$M_{\\rm 500c}$ (10$^{14}$ M$_{\\odot}$) [90% complete]"
             cbShrink=0.7
             cbAspect=40
             cb=plt.colorbar(p.axes.images[0], ax = p.axes, orientation="horizontal", fraction = 0.05, pad = 0.18, 

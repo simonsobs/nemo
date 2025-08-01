@@ -325,10 +325,15 @@ class QFit(object):
                 raise Exception("z must be a float, and not, e.g., an array")
         
         if self.zDependent == True:
+            if z is None:
+                raise Exception("z must be given when using z-dependent Q")
+            # Removed zMax cut because SO sims have things at z > 2
+            if z > self.zMax:
+                z=self.zMax
             Qs=self.fitDict[tileName](z, theta500Arcmin)[0]
             thetaMask=theta500Arcmin > self.zDepThetaMax(z)
             Qs[thetaMask]=0.0
-            if z < self.zMin or z > self.zMax:
+            if z < self.zMin:# or z > self.zMax:
                 if type(theta500Arcmin) == float:
                     Qs=0.0
                 else:
@@ -1306,13 +1311,16 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
     if y0 < 0:
         raise Exception('y0 cannot be negative')
     if y0 > 1e-2:
-        raise Exception('y0 is suspiciously large - probably you need to multiply by 1e-4')
+        print("... WARNING: y0 is suspiciously large - perhaps you need to multiply by 1e-4?")
+        return None
 
     P=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot,
                 sigma_int = sigma_int, Ez_gamma = Ez_gamma, onePlusRedshift_power = onePlusRedshift_power,
                 applyMFDebiasCorrection = applyMFDebiasCorrection,
                 applyRelativisticCorrection = applyRelativisticCorrection, fRelWeightsDict = fRelWeightsDict,
                 tileName = tileName)
+    if P is None:
+        return None
 
     MDelta, errMDeltaMinus, errMDeltaPlus=getMassFromP(P, mockSurvey.log10M, calcErrors = calcErrors)
     label=mockSurvey.mdefLabel
@@ -1521,7 +1529,10 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
 
     # Marginalised over z uncertainty
     P=np.sum(PArr, axis = 0)
-    P=P/np.trapz(P, log10Ms)
+    try:
+        P=P/np.trapz(P, log10Ms)
+    except:
+        return None
 
     # Reshape to (M, z) grid - use this if use different log10M range to mockSurvey
     #tck=interpolate.splrep(log10Ms, P)

@@ -129,6 +129,9 @@ def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassE
                                             fRelWeightsDict = fRelWeightsDict[tileName],
                                             tileName = tileName,
                                             inferSZProperties = inferSZProperties)
+            if massDict is None:
+                print("... skipping %s - failed to get mass (perhaps Q outside valid range for this M, z) ..." % (row['name']))
+                continue
             row[prefix+'%s' % (label)]=massDict['%s' % (label)]
             row[prefix+'%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
             row[prefix+'%s_errMinus' % (label)]=massDict['%s_errMinus' % (label)]
@@ -321,7 +324,7 @@ if __name__ == '__main__':
         otherMassEstimates=config.parDict['otherMassEstimates']
     else:
         # Default to match older versions of Nemo
-        otherMassEstimates=[{'delta': 200, 'rhoType': 'matter', 'concMassRelation': "Bhattacharya13"}]
+        otherMassEstimates=[]#[{'delta': 200, 'rhoType': 'matter', 'concMassRelation': "Bhattacharya13"}]
 
     # Forced photometry (if enabled) - modifying table in place
     # NOTE: Move this up if/when we make it run under MPI
@@ -338,7 +341,7 @@ if __name__ == '__main__':
     minMass=1e13
     areaDeg2=700.
     zMin=0.0
-    zMax=2.0
+    zMax=4.0
     # H0, Om0, Ol0 used for E(z), theta500 calcs in Q - these are updated when we call create mockSurvey
     # NOTE: startUp now sets defaults for these if not given in config
     H0=massOptions['H0']
