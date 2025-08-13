@@ -1,7 +1,7 @@
 .. _DR5Tutorial:
 
 ==============================================================
-Tutorial: Re-creating the ACT DR6 Cluster Search Data Products
+Tutorial: Recreating the ACT DR6 Cluster Search Data Products
 ==============================================================
 
 
