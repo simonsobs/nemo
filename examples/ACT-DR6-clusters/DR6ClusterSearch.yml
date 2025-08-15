@@ -1,0 +1,243 @@
+# Nemo config file
+# YAML format 
+# - use null to return None in Python
+# - note that YAML is fussy about large numbers: use e.g. 1.0e+14 for M500MSun (not 1e14)
+
+# This should be a list of maps at different frequencies
+# Valid units are only uK (delta T with respect to CMB) - Jy/sr has yet to be added
+unfilteredMaps:
+    - {mapFileName: "maps/act-planck_dr4dr6_coadd_AA_daynight_f090_map.fits",
+       weightsFileName: "maps/act-planck_dr4dr6_coadd_AA_daynight_f090_ivar.fits",
+       obsFreqGHz: 97.8, units: 'uK',
+       beamFileName: "beams/beam_f090_tform.txt",
+       label: 'f090'}
+    - {mapFileName: "maps/act-planck_dr4dr6_coadd_AA_daynight_f150_map.fits",
+       weightsFileName: "maps/act-planck_dr4dr6_coadd_AA_daynight_f150_ivar.fits",
+       obsFreqGHz: 149.6, units: 'uK',
+       beamFileName: "beams/beam_f150_tform.txt",
+       label: 'f150'}
+    - {mapFileName: "maps/act-planck_dr6.02_coadd_AA_daynight_f220_map.fits",
+       weightsFileName: "maps/act-planck_dr6.02_coadd_AA_daynight_f220_ivar.fits",
+       obsFreqGHz: 216.5, units: 'uK',
+       beamFileName: "beams/beam_f220_tform.txt",
+       label: 'f220'}
+
+# Full search mask (smaller footprints that intersect this given in selFnFootprints)
+surveyMask: "masks/ExtendedSurveyMask_v3.fits"
+
+# Post processing flagging
+# This takes a list of dictionaries - fileName must point to a mask image of same dimensions as maps
+# These can be made from catalogs which contain columns RADeg, decDeg, rArcmin using nemoMask
+# For flagLabel, we will append 'Flag' if not already given, gets added to the output catalog as a column
+# Multiple flag sources can have the same label
+# The sum of all flags, regardless of source, goes into the 'flags' column in the nemo output catalog
+postFlags:
+    - {fileName: "masks/dustMask_0.002.fits", flagLabel: 'dust'}
+    - {fileName: "masks/mask_2MASSLargeGalaxyAtlas_Nemo.fits", flagLabel: "extObj"}
+    - {fileName: "masks/mask_NGC2000_Nemo.fits", flagLabel: "extObj"}
+    - {fileName: "masks/mask_WISEStars_Nemo.fits", flagLabel: "star"}
+
+# Detection/catalog options
+# Set useInterpolator; True for sub-pixel flux and SNR measurements
+thresholdSigma: 3.0
+minObjPix: 1
+findCenterOfMass: True
+optimalCatalogMethod: 'ref-first'
+useInterpolator: True
+rejectBorder: 0
+objIdent: 'ACT-CL'
+longNames: False
+
+# These are only applied to the final output catalog, not any produced by intermediate filterSets
+catalogCuts:
+    - 'fixed_SNR > 4'
+
+# Flag possible ring artifacts - happens around bright sources/clusters
+# For sources, can deal with by having filterSets with different S/N cuts and subtraction between steps
+# For clusters, parameters below should work for ACT-like maps
+flagRings: True
+ringFlagDistArcmin: 12.0
+ringFlagMinRingerSNR: 20
+ringThresholdSigma: 0.5
+
+# Photometry options
+photFilter: 'Arnaud_M2e14_z0p4' # Defines the reference filter for cluster selection / mass estimates
+
+# Optionally override the GNFW parameters - if not present, Arnaud et al. (2010) parameters are used
+# The example below is for the Planck Pressure Profile (PPP)
+#GNFWParams: {P0: 6.41, c500: 1.81, gamma: 0.31, alpha: 1.33, beta: 4.13, tol: 1e-7, npts: 100}
+
+# Mass measurement options - used by nemoMass
+# redshiftCatalog:  A .fits table containing name, RADeg, decDeg, redshift, redshiftErr columns
+# scalingRelations: A list of dictionaries with the following keys
+#   tenToA0, B0, Mpivot, sigma_int: Fixed scaling relation options (see H13 or ACTPol paper)
+#   rescaleFactor, rescaleFactorErr: For MCal masses, as in the ACTPol, DR5 papers (just rescales M500c)
+#   delta, rhoType are used to state what definition is used for the scaling relation here
+#   NOTE: Must include a 'label' key for scaling relations after the first one, added as a prefix to column names
+# Masses calculated here can be converted to other definitions (see otherMassEstimates below)
+massOptions:
+    redshiftCatalog: "ClustersAnalysis/AdvACT_confirmed.fits"
+    scalingRelations:
+        - {tenToA0: 3.0e-05,
+           B0: 0.08,
+           Mpivot: 3.0e+14,
+           sigma_int: 0.2,
+           relativisticCorrection: True,
+           delta: 500,
+           rhoType: 'critical'}
+        - {label: 'A10',
+           tenToA0: 4.95e-05,
+           B0: 0.08,
+           Mpivot: 3.0e+14,
+           sigma_int: 0.2,
+           relativisticCorrection: True,
+           delta: 500,
+           rhoType: 'critical'}
+
+# Other mass estimates to calculate besides the default in massOptions
+# These will be converted from the other definitions
+otherMassEstimates:
+    - {delta: 200, rhoType: 'matter', concMassRelation: "Bhattacharya13"}
+    - {delta: 200, rhoType: 'critical', concMassRelation: "Bhattacharya13"}
+
+# Selection function options - this calculation can also be enabled with the nemo -S switch
+# NOTE: could eventually add 'completenessFraction' to 'massLimitMaps', which is why that's a dictionary list
+# Use selFnFootprints to calculate average completeness in given sky areas - e.g., overlap with optical surveys
+# NOTE: Where a scaling relation is required, mass-related things will use the first entry in scalingRelations
+fitQ: True
+selFnOptions: {fixedSNRCut: 5.0,
+               method: 'fast',
+               massLimitMaps: [{z: 0.5}],
+               maxFlags: 0,
+               biasModel: 'power',
+               biasModelParams: 2.1}
+selFnFootprints:
+   - {label: "ACT-DR5",
+      maskList: ["masks/AdvACTSurveyMask_v7_galLatCut_S18.fits"]}
+   - {label: "HSC",
+      maskList: ["footprints/hpmap_camira_wide_mask_CAR_uint8.fits"]}
+   - {label: "KiDS",
+      maskList: ["footprints/mask_KiDSN.fits", "footprints/mask_KiDSS.fits"]}
+   - {label: "DES",
+      maskList: ["footprints/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits"]}
+   - {label: "DESPlusHSC",
+      maskList: ["footprints/AdvACT_y3a2_footprint_griz_1exp_v2.0.fits", "footprints/hpmap_camira_wide_mask_CAR_uint8.fits"]}
+   - {label: "eROSITADe",
+      maskList: ["footprints/eROSITA_De.fits"]}
+   - {label: "Legacy",
+      maskList: ["footprints/ACTLegacy.fits"]}
+
+# If using filterSets, specify some options here,
+# e.g., maps to use - if not given, default is to use all maps in unfilteredMaps
+# If we wanted to override S/N thresholds for detection etc., we'd implement it in this thing
+filterSetOptions: {1: {mapToUse: 'f090', thresholdSigma: 50.0, objIdent: 'ACT-S',
+                       measureShapes: True, ignoreSurveyMask: True},
+                   2: {mapToUse: 'f090', thresholdSigma: 5.0, objIdent: 'ACT-S',
+                       subtractModelFromSets: [1], addSiphonedFromSets: [1],
+                       maskAndFillFromSets: [1], maskHoleDilationFactor: 3.0,
+                       saveCatalog: True, saveFilteredMaps: False, fileLabel: 'ptsrc_f090'},
+                   3: {mapToUse: 'f150', thresholdSigma: 50.0, objIdent: 'ACT-S',
+                       measureShapes: True, ignoreSurveyMask: True},
+                   4: {mapToUse: 'f150', thresholdSigma: 5.0, objIdent: 'ACT-S',
+                       subtractModelFromSets: [3], addSiphonedFromSets: [3],
+                       maskAndFillFromSets: [3], maskHoleDilationFactor: 3.0,
+                       saveCatalog: True, saveFilteredMaps: False, fileLabel: 'ptsrc_f150'},
+                   5: {mapToUse: 'f220', thresholdSigma: 50.0, objIdent: 'ACT-S',
+                       measureShapes: True, ignoreSurveyMask: True},
+                   6: {mapToUse: 'f220', thresholdSigma: 5.0, objIdent: 'ACT-S',
+                       subtractModelFromSets: [5], addSiphonedFromSets: [5],
+                       maskAndFillFromSets: [5], maskHoleDilationFactor: 3.0,
+                       saveCatalog: True, saveFilteredMaps: False, fileLabel: 'ptsrc_f220'},
+                   10: {subtractModelFromSets: [2, 4, 6],
+                        maskAndFillFromSets: [1, 3, 5], maskHoleDilationFactor: 3.0},
+                   11: {subtractModelFromSets: [2, 4, 6],
+                        maskAndFillFromSets: [1, 3, 5], maskHoleDilationFactor: 3.0,
+                        noiseModelCatalogFromSets: [10]}
+                  }
+
+# allFilters is a dictionary of parameters that will be copied into all mapFilters
+# (these can be overridden by keys with the same name in mapFilters)
+allFilters: {class: "ArnaudModelMatchedFilter",
+             params: {noiseParams: {method: "dataMap",
+                                    noiseGridArcmin: 80.}, #,
+                                    # numNoiseBins: 12},
+                      saveFilteredMaps: False,
+                      saveRMSMap: False,
+                      savePlots: False,
+                      saveDS9Regions: False,
+                      outputUnits: 'yc',
+                      edgeTrimArcmin: 0.0},
+             filterSets: [10, 11]
+            }
+
+# mapFilters is a list of all the different filters to apply
+# (keys in mapFilters with the same name as those in allFilters take priority)
+mapFilters:
+    - {label: "BeamPass1",
+       class: "BeamMatchedFilter",
+       params: {outputUnits: 'uK', noiseParams: {method: "model"}},
+       filterSets: [1, 3, 5]}
+    - {label: "BeamPass2",
+       class: "BeamMatchedFilter",
+       params: {outputUnits: 'uK', noiseParams: {method: "dataMap"}},
+       filterSets: [2, 4, 6]}
+    - {label: "Arnaud_M1e14_z0p2",
+       params: {M500MSun: 1.0e+14, z: 0.2}}
+    - {label: "Arnaud_M2e14_z0p2",
+       params: {M500MSun: 2.0e+14, z: 0.2}}
+    - {label: "Arnaud_M4e14_z0p2",
+       params: {M500MSun: 4.0e+14, z: 0.2}}
+    - {label: "Arnaud_M8e14_z0p2",
+       params: {M500MSun: 8.0e+14, z: 0.2}}
+    - {label: "Arnaud_M1e14_z0p4",
+       params: {M500MSun: 1.0e+14, z: 0.4}}
+    - {label: "Arnaud_M2e14_z0p4",
+       params: {M500MSun: 2.0e+14, z: 0.4,
+                saveFilteredMaps: True,
+                savePlots: False}}
+    - {label: "Arnaud_M4e14_z0p4",
+       params: {M500MSun: 4.0e+14, z: 0.4}}
+    - {label: "Arnaud_M8e14_z0p4",
+       params: {M500MSun: 8.0e+14, z: 0.4}}
+    - {label: "Arnaud_M1e14_z0p8",
+       params: {M500MSun: 1.0e+14, z: 0.8}}
+    - {label: "Arnaud_M2e14_z0p8",
+       params: {M500MSun: 2.0e+14, z: 0.8}}
+    - {label: "Arnaud_M4e14_z0p8",
+       params: {M500MSun: 4.0e+14, z: 0.8}}
+    - {label: "Arnaud_M8e14_z0p8",
+       params: {M500MSun: 8.0e+14, z: 0.8}}
+    - {label: "Arnaud_M1e14_z1p2",
+       params: {M500MSun: 1.0e+14, z: 1.2}}
+    - {label: "Arnaud_M2e14_z1p2",
+       params: {M500MSun: 2.0e+14, z: 1.2}}
+    - {label: "Arnaud_M4e14_z1p2",
+       params: {M500MSun: 4.0e+14, z: 1.2}}
+    - {label: "Arnaud_M8e14_z1p2",
+       params: {M500MSun: 8.0e+14, z: 1.2}}
+
+# Source injection test - enabled with the nemo -I switch
+# Same scales used as in DR5
+sourceInjectionIterations: 18
+sourcesPerTile: 50
+sourceInjectionDistribution: linear
+sourceInjectionAmplitudeRange: [0.001, 10]
+sourceInjectionModels:
+ - {redshift: 0.8, M500: 2.0e+14}
+ - {redshift: 0.4, M500: 2.0e+14}
+ - {redshift: 0.2, M500: 2.0e+14}
+ - {redshift: 0.1, M500: 2.0e+14}
+positionRecoveryAnalysisMethod: Rayleigh
+positionRecoveryNumParams: 1
+
+# tileDir options - cut-up each map into smaller sections
+useTiling: True
+stitchTiles: True
+tileOverlapDeg: 1.0
+tileDefinitions: {mask: 'masks/ExtendedSurveyMask_v3.fits',
+                  targetTileWidthDeg: 25.0,
+                  targetTileHeightDeg: 2.0}
+
+# If this is given, only the named tiles will be processed (useful for testing)
+# tileNameList:
+#     - '1_7_1'      # Ring?

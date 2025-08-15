@@ -1,0 +1,17 @@
+#!/bin/sh
+#PBS -l select=1:ncpus=4:mem=32gb
+#PBS -P ASTR1534
+#PBS -q serial
+#PBS -l walltime=05:00:00
+#PBS -o DR6ClusterSearch-S.log
+#PBS -e DR6ClusterSearch-S.err
+#PBS -m abe
+#PBS -M matt.hilton@wits.ac.za
+ulimit -s unlimited
+cd /mnt/lustre/users/mhilton/testDR6Tutorial
+
+export NEMO_NOCLASSSZ=1
+export PYTHONUNBUFFERED=1
+time nemo DR6ClusterSearch.yml -S
+sleep 10
+
