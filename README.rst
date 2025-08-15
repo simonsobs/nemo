@@ -36,5 +36,5 @@ some experimental features that are not necessarily well tested.
 If you need to acknowledge the use of **Nemo**, please cite one of
 `Hilton et al. (2021) <https://ui.adsabs.harvard.edu/abs/2020arXiv200911043H/abstract>`_ or
 `ACT-DES-HSC Collaboration (2025) <https://ui.adsabs.harvard.edu/abs/2025arXiv250721459H/abstract>`_.
-The latter describes features like multi-pass filtering and object detection available in
+The latter describes features like multi-pass filtering and object detection available
 in v0.8.0 and later.
