@@ -1120,7 +1120,7 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None):
+def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None, noiseSeed = None):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1157,14 +1157,15 @@ def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None):
     randMap=curvedsky.rand_map(shape, wcs.AWCS, ps = ps, spin = [0,2], seed = seed)
 
     if noiseLevel is not None:
-        randMap=randMap+simNoiseMap(shape, noiseLevel)
+        randMap=randMap+simNoiseMap(shape, noiseLevel, seed = noiseSeed)
 
     np.random.seed()
     
     return randMap
 
 #-------------------------------------------------------------------------------------------------------------
-def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMode = 'perPixel', lmin = 100):
+def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMode = 'perPixel', lmin = 100,
+                seed = None):
     """Generate a simulated noise map. This may contain just white noise, or optionally a 1/f noise component
     can be generated.
 
@@ -1190,7 +1191,10 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMo
 
     """
 
-    np.random.seed()
+    if seed is None:
+        np.random.seed()
+    else:
+        np.random.seed(seed)
 
     assert(noiseMode in ['perPixel', 'perSquareArcmin'])
     if noiseMode == 'perSquareArcmin' and lKnee is not None:
@@ -1253,6 +1257,8 @@ def simNoiseMap(shape, noiseLevel, wcs = None, lKnee = None, alpha = -3, noiseMo
         assert np.all(np.isfinite(Nl_atm))
         randMap = _mod_noise_map(ivarMap, Nl_atm)
         assert np.all(np.isfinite(randMap))
+
+    np.random.seed()
 
     return randMap
 

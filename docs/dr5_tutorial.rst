@@ -1,7 +1,7 @@
 .. _DR5Tutorial:
 
 =================================================
-Tutorial: Re-creating the ACT DR5 Cluster Catalog
+Tutorial: Recreating the ACT DR5 Cluster Catalog
 =================================================
 
 
