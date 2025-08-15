@@ -1,12 +1,12 @@
+Here we provide a guide to reproducing the ACT DR6 cluster search
+data products, as described in the `ACT DR6 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2025arXiv250721459H/abstract>`_.
+
 .. note::  This is under construction. It will probably only be
            completed after a new **Nemo** release is made together
            with an updated release of the ACT DR6 cluster search
            products. So, fully up-to-date documentation might not
            be found in the **Nemo** source distribution
            corresponding to the latest stable release.
-
-Here we provide a guide to reproducing the ACT DR6 cluster search
-data products, as described in the `ACT DR6 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2025arXiv250721459H/abstract>`_.
 
 .. note::  The config files and scripts needed for this tutorial can be
            found in the `examples/ACT-DR6-clusters <https://github.com/simonsobs/nemo/tree/main/examples/ACT-DR6-clusters>`_
@@ -70,7 +70,7 @@ Post-processing runs (footprint and flagging adjustments)
 the full map filtering and object detection pipeline, after adjusting
 some of the options in the configuration file.
 
-To get **Nemo** to produce information related to completeness for
+To produce information related to completeness for
 different footprints that overlap with the cluster search area, run
 :ref:`nemoCommand` with the ``-S`` switch as below:
 
@@ -128,13 +128,16 @@ parameters, which can be edited in the ``massOptions`` section of the
 Making model cluster signal maps
 ================================
 
+To be added.
 
 
 Forced photometry
 =================
 
+To be added.
 
 
 Running source injection simulations
 ====================================
 
+To be added.
