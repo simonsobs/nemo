@@ -126,6 +126,7 @@ if __name__ == '__main__':
         assert(os.path.exists(args.addMap) == True)
 
     areaMask, wcs=maps.chunkLoadMask(args.maskFileName)
+    wcs.header['NEMOVER']=nemo.__version__
     shape=areaMask.shape
     del areaMask
 
