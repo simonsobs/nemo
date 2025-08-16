@@ -1644,7 +1644,8 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 #------------------------------------------------------------------------------------------------------------
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default',\
                    profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,\
-                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0, reportTimingInfo = False):
+                   validAreaSection = None, minSNR = -99, TCMBAlpha = 0, reportTimingInfo = False,\
+                   maxSizeDegMultiplier = 5):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1680,7 +1681,10 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         TCMBAlpha (float, optional): This should always be zero unless you really do want to make a
             cluster model image where CMB temperature evolves as T0*(1+z)^{1-TCMBAlpha}.
         reportTimingInfo (bool, optional): If True, report how long each step takes.
-        
+        maxSizeDegMultiplier (float, optional): Sets the size of the postage stamp (this times by
+            theta500) for model cluster images that are painted into the maps (has no effect on
+            point sources).
+
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
     
@@ -1797,7 +1801,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
                 if theta500Arcmin is None:
                     theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
-                maxSizeDeg=5*(theta500Arcmin/60)
+                maxSizeDeg=maxSizeDegMultiplier*(theta500Arcmin/60)
                 # Updated in place
                 makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
                                      decDeg = row['decDeg'], beam = beam,
