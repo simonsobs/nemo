@@ -197,5 +197,5 @@ This was used to produce the results shown in Section 2.4 and Figure 7 of the
 
 This takes 12h to complete, running on 144 CPU cores on Lengau at
 the `CHPC <https://www.chpc.ac.za/>`_ using the set-up given in
-``DR6ClusterSearch.yml``. See :ref:`SourceInjection` to see documentation on
+``DR6ClusterSearch.yml``. See :ref:`SourceInjection` for documentation on
 configuration file parameters that affect this mode.
