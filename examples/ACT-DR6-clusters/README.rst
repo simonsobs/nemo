@@ -124,20 +124,81 @@ The inferred masses depend on the assumed scaling relation
 parameters, which can be edited in the ``massOptions`` section of the
 ``DR6ClusterSearch.yml`` config file.
 
+Running ``nemoMass`` with the ``-I`` switch adds some additional columns
+for inferred cluster SZ properties (e.g. ``inferred_y_c`` and
+``inferred_Y500Arcmin2``; see :ref:`Catalogs`).
+
 
 Making model cluster signal maps
 ================================
 
-To be added.
+To make the model cluster signal maps as provided with the DR6 cluster
+search data products, it is easiest to run:
+
+.. code-block::
+
+   mpiexec nemoMass DR6ClusterSearch.yml -M -I -m
+
+This will produce cluster model maps for clusters with redshifts only,
+writing them to the directory ``DR6ClusterSearch/clusterModelMaps/``.
+
+To produce model maps from the candidate list, you can do something like
+the following:
+
+.. code-block::
+
+   nemoModel DR6ClusterSearch/DR6ClusterSearch_optimalCatalog.fits masks/ExtendedSurveyMask_v3.fits beams/beam_f090_tform.txt candidatesModelMap_f090.fits -f 97.8 -m
+   nemoModel DR6ClusterSearch/DR6ClusterSearch_optimalCatalog.fits masks/ExtendedSurveyMask_v3.fits beams/beam_f150_tform.txt candidatesModelMap_f150.fits -f 149.6 -m
+   nemoModel DR6ClusterSearch/DR6ClusterSearch_optimalCatalog.fits masks/ExtendedSurveyMask_v3.fits beams/beam_f220_tform.txt candidatesModelMap_f220.fits -f 216.5 -m
+
+These should take roughly 3 minutes to run per frequency map. The above
+set-up will include objects that are flagged (``flags > 0``) in the
+candidates list, as the whole candidate list is fed into
+:ref:`nemoModelCommand` in this example.
+
+Note that running :ref:`nemoModelCommand` requires a minimum of 16 GB
+of memory for DR6-sized maps.
 
 
 Forced photometry
 =================
 
-To be added.
+To run forced photometry on eRASS1 cluster positions as described in
+Section 5.2 of the
+`ACT DR6 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2025arXiv250721459H/abstract>`_,
+first download the appropriate eRASS1 cluster catalog from
+`this page <https://erosita.mpe.mpg.de/dr1/AllSkySurveyData_dr1/Catalogues_dr1/>`_,
+and then run:
+
+.. code-block::
+
+   nemoMass DR6ClusterSearch.yml -c erass1cl_primary_v3.2.fits -F
+
+This will create a catalog called ``erass1cl_primary_v3.2_mass.fits`` in
+the current directory. This contains measurements extracted by forced
+photometry at the positions given in the ``erass1cl_primary_v3.2.fits``
+catalog, found in the ``fixed_SNR`` and ``fixed_y_c`` columns, in
+addition to SZ mass estimates inferred using the scaling relation
+set-up specified in ``DR6ClusterSearch.yml``.
+
+A subset of the eRASS1 forced photometry catalog produced in the above
+way is plotted in Figure 18 of the
+`ACT DR6 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2025arXiv250721459H/abstract>`_.
 
 
 Running source injection simulations
 ====================================
 
-To be added.
+Source injection simulations can be run using:
+
+.. code-block::
+
+   mpiexec nemo DR6ClusterSearch.yml -M -I
+
+This was used to produce the results shown in Section 2.4 and Figure 7 of the
+`ACT DR6 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2025arXiv250721459H/abstract>`_.
+
+This takes 12h to complete, running on 144 CPU cores on Lengau at
+the `CHPC <https://www.chpc.ac.za/>`_ using the set-up given in
+``DR6ClusterSearch.yml``. See :ref:`SourceInjection` to see documentation on
+configuration file parameters that affect this mode.

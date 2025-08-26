@@ -76,7 +76,7 @@ photFilter: 'Arnaud_M2e14_z0p4' # Defines the reference filter for cluster selec
 #   NOTE: Must include a 'label' key for scaling relations after the first one, added as a prefix to column names
 # Masses calculated here can be converted to other definitions (see otherMassEstimates below)
 massOptions:
-    redshiftCatalog: "ClustersAnalysis/AdvACT_confirmed.fits"
+    redshiftCatalog: "redshifts.fits"
     scalingRelations:
         - {tenToA0: 3.0e-05,
            B0: 0.08,
