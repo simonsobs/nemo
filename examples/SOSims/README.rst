@@ -1,6 +1,10 @@
 .. role:: raw-html-m2r(raw)
    :format: html
 
+.. note::  This tutorial is probably out of date, and should be
+           replaced with a guide on how to run **Nemo** on the
+           mission-scale simulations. Some of the tools
+           mentioned in here may still be useful though.
 
 The `examples/SOSims <https://github.com/simonsobs/nemo/tree/main/examples/SOSims>`_
 directory contains scripts for working with

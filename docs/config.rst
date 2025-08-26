@@ -1060,6 +1060,8 @@ applyIntrinsicScatter
        applyIntrinsicScatter: True
 
 
+.. _SourceInjection:
+
 Source Injection Simulations
 ============================
 
