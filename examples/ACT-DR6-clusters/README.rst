@@ -182,6 +182,12 @@ A subset of the eRASS1 forced photometry catalog produced in the above
 way is plotted in Figure 18 of the
 `ACT DR6 cluster catalog paper <https://ui.adsabs.harvard.edu/abs/2025arXiv250721459H/abstract>`_.
 
+The forced photometry mode can be used to do stacking analyses of
+external catalogs by averaging the output SZ quantities in bins of
+some other observable (e.g., optical richness). Other tools are
+available for stacking in image space - see for example the
+`DR6 y-map stacking notebook <https://github.com/ACTCollaboration/DR6_Notebooks/blob/main/ACT_DR6_ymap_stacking.ipynb>`_.
+
 
 Running source injection simulations
 ====================================
