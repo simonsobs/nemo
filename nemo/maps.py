@@ -901,7 +901,7 @@ def chunkLoadMask(fileName, numChunks = 8, dtype = np.uint8, returnWCS = True):
 
     Args:
         fileName (:obj:`str`): Path to the FITS-format mask file.
-        numChunks (:obj:`int`): Number of chunks in which to load the file. Largers numbers use less memory,
+        numChunks (:obj:`int`): Number of chunks in which to load the file. Larger numbers use less memory,
             but it takes a little longer for the mask to load.
         returnWCS (:obj:`bool`, optional): If given, return the WCS of the mask.
 
