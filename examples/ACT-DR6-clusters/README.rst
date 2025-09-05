@@ -153,6 +153,13 @@ set-up will include objects that are flagged (``flags > 0``) in the
 candidates list, as the whole candidate list is fed into
 :ref:`nemoModelCommand` in this example.
 
+With the default settings, the output maps may look boxier than you may like,
+as cluster model images are painted inside a region of size
+:math:`10 \times \theta`\ :sub:`500c`.
+This can be eliminated by adding ``-x 40`` to the list of arguments given
+to :ref:`nemoModelCommand`. This paints cluster model images out to
+:math:`40 \times \theta`\ :sub:`500c`, at the cost of additional run time.
+
 Note that running :ref:`nemoModelCommand` requires a minimum of 16 GB
 of memory for DR6-sized maps.
 

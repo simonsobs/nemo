@@ -97,7 +97,7 @@ def makeParser():
                         with `_mask.fits.gz`.", default = False)
     parser.add_argument("-x", "--max-size-deg-multiplier", dest="maxSizeDegMultiplier", default = 10,\
                         help="Sets the size of model cluster images that are painted into the maps\
-                            - this value mutiplied by theta500 (default: 10).")
+                            - this value mutiplied by theta500 (default: 10).", type = float)
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If used,\
                         the catalog to be painted will be divided amongst processes. If you\
                         want to use this, run with e.g., mpiexec -np 4 nemoModel args -M", 
