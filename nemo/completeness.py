@@ -725,10 +725,14 @@ class SelFn(object):
                 Ez_gamma=2.0 # Default self-similar
             else:
                 Ez_gamma=self.scalingRelationDict['Ez_gamma']
-
+            if 'zpivot' not in self.scalingRelationDict.keys():
+                zpivot=0
+            else:
+                zpivot=self.scalingRelationDict['zpivot']
             y0Grid=np.zeros([zRange.shape[0], self.clusterCount.shape[1]])
-            # NOTE: Still called Ez2, but now has gamma option enabled
-            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), Ez_gamma)
+            # NOTE: Still called Ez2, but now has gamma option enabled, and possibly zpivot != 0
+            Ez0=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zpivot)), Ez_gamma)
+            Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), Ez_gamma)/Ez0
             for i in range(len(zRange)):
                 zk=zRange[i]
                 # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
