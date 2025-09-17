@@ -1217,10 +1217,7 @@ class BeamFilter(MapFilter):
     """
     
     def makeSignalTemplateMap(self, beamFileName, amplitude = None):
-        signalMap=signals.makeBeamModelSignalMap(np.degrees(self.radiansMap),
-                                                            self.wcs, 
-                                                            beamFileName,
-                                                            amplitude = amplitude)
+        signalMap=signals.makeBeamModelSignalMap(self.shape, self.wcs, beamFileName, amplitude = amplitude)
 
         return signalMap
     

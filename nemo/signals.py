@@ -592,11 +592,12 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
 
 
 #------------------------------------------------------------------------------------------------------------
-def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
+def makeBeamModelSignalMap(shape, wcs, beam, amplitude = None, RADeg = None, decDeg = None,
+                           maxSizeDeg = 1.0, omap = None):
     """Makes a 2d signal only map containing the given beam.
     
     Args:
-        degreesMap (:obj:`np.ndarray`): Map of angular distance from the object position.
+        shape (:obj:`tuple`): A tuple describing the map (numpy array) shape in pixels (height, width).
         wcs (:obj:`astWCS.WCS`): WCS corresponding to degreesMap.
         beam (:obj:`BeamProfile` or str): Either a BeamProfile object, or a string that gives the path to a 
             text file that describes the beam profile.
@@ -618,11 +619,10 @@ def makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None):
     
     if type(beam) == str:
         beam=BeamProfile(beamFileName = beam)        
-    profile1d=amplitude*beam.profile1d
 
-    # Turn 1d profile into 2d
-    r2p=interpolate.interp1d(beam.rDeg, profile1d, bounds_error=False, fill_value=0.0)
-    signalMap=r2p(degreesMap)
+    signalMap=_paintSignalMap(shape, wcs, beam.tck, beam = None, RADeg = RADeg, decDeg = decDeg,
+                              amplitude = amplitude, maxSizeDeg = maxSizeDeg,
+                              convolveWithBeam = False, omap = omap)
     
     return signalMap
 

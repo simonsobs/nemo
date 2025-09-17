@@ -1316,7 +1316,7 @@ def convolveMapWithBeam(data, wcs, beam, maxDistDegrees = 1.0):
     RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2)+1, int(degreesMap.shape[0]/2)+1)
     degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg,
                                                         maxDistDegrees)
-    beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)
+    beamMap=signals.makeBeamModelSignalMap(degreesMap.shape, wcs, beam)
     if (yBounds[1]-yBounds[0]) > beamMap.shape[1] and (yBounds[1]-yBounds[0]) % 2 == 0:
         yBounds[0]=yBounds[0]-1
     if (xBounds[1]-xBounds[0]) > beamMap.shape[0] and (xBounds[1]-xBounds[0]) % 2 == 0:
@@ -1810,19 +1810,13 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                      cosmoModel = cosmoModel, omap = modelMap,
                                      obsFrequencyGHz = obsFreqGHz, TCMBAlpha = TCMBAlpha)
     else:
-        # Sources - slower but more accurate way
+        # Sources - switched to sim_objects underneath
         for row in catalog:
-            if validAreaSection is not None:
-                x0, x1, y0, y1=validAreaSection
-                x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
-                if (x >= x0 and x < x1 and y >= y0 and y < y1) == False:
-                    continue
-            degreesMap=np.ones(modelMap.shape, dtype = float)*1e6 # NOTE: never move this
-            degreesMap, xBounds, yBounds=makeDegreesDistanceMap(degreesMap, wcs,
-                                                                row['RADeg'], row['decDeg'],
-                                                                maxSizeDeg)
-            signalMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam)*row['deltaT_c']
-            modelMap=modelMap+signalMap
+            signals.makeBeamModelSignalMap(shape, wcs, beam, RADeg = row['RADeg'],
+                                           decDeg = row['decDeg'], maxSizeDeg = 1.0,
+                                           amplitude = row['deltaT_c'],
+                                           omap = modelMap)
+
     t1=time.time()
     if reportTimingInfo: print("makeModelImage - painting objects - took %.3f sec" % (t1-t0))
 

@@ -829,9 +829,9 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             shape=(wcs.header['NAXIS2'], wcs.header['NAXIS1'])
             degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
             RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
-            degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
-            beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
-            refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
+            # degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            beamMap=signals.makeBeamModelSignalMap(shape, wcs, beam, amplitude = None)
+            refBeamMap=signals.makeBeamModelSignalMap(shape, wcs, refBeam, amplitude = None)
             matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
             
             # Find and apply radial fudge factor
