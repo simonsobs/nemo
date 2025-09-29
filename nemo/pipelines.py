@@ -319,7 +319,11 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
         for collectedTab in optimalCatalogList:
             if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
                 toStack.append(collectedTab)
-        optimalCatalog=atpy.vstack(toStack)
+        # This is in case we have e.g. an empty high S/N 1st pass or something
+        if len(toStack) > 0:
+            optimalCatalog=atpy.vstack(toStack)
+        else:
+            optimalCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
         # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
         if len(optimalCatalog) > 0:
             optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
