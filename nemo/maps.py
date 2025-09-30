@@ -1803,16 +1803,21 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     M500=float(bits[1][1:].replace("p", "."))
                     z=float(bits[2][1:].replace("p", "."))
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
+                    if z == 0:
+                        raise Exception("z = 0 template? template = %s, tileName = %s" % (row['template'], row['tileName']))
                 if theta500Arcmin is None:
                     theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
                 maxSizeDeg=maxSizeDegMultiplier*(theta500Arcmin/60)
                 # Updated in place
-                makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
+                try:
+                    makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
                                      decDeg = row['decDeg'], beam = beam,
                                      GNFWParams = GNFWParams, amplitude = y0ToInsert,
                                      maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
                                      cosmoModel = cosmoModel, omap = modelMap,
                                      obsFrequencyGHz = obsFreqGHz, TCMBAlpha = TCMBAlpha)
+                except:
+                    raise Exception("Failed on makeClusterSignalMap: z = %.4f, M500 = %.4e, modelMap.shape = %s, maxSizeDeg = %.4f" % (z, M500, str(modelMap.shape), maxSizeDeg))
     else:
         # Sources - switched to sim_objects underneath
         for row in catalog:
