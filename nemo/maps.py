@@ -1120,7 +1120,8 @@ def addWhiteNoise(mapData, noisePerPix):
     return mapData
 
 #------------------------------------------------------------------------------------------------------------
-def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None, noiseSeed = None):
+def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None, noiseSeed = None,
+              spectrumPath = None):
     """Generate a simulated CMB map, optionally convolved with the beam and with (white) noise added.
     
     Args:
@@ -1134,6 +1135,8 @@ def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None, noiseSeed
             the beam with which the map will be convolved, or a :obj:`signals.BeamProfile` object. If None,
             no beam convolution is applied.
         seed (:obj:`int`): The seed used for the random CMB realisation.
+        spectrumPath (:obj:`str`): Path to a text file containing CMB spectrum, in a format that can be
+            understood by `pixell.powspec.read_spectrum`.
             
     Returns:
         A map (:obj:`numpy.ndarray`)
@@ -1142,8 +1145,9 @@ def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None, noiseSeed
 
     # Power spectrum array ps here is indexed by ell, starting from 0
     # i.e., each element corresponds to the power at ell = 0, 1, 2 ... etc.
-    ps=powspec.read_spectrum(nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat",
-                             scale = True, expand = None)
+    if spectrumPath is None:
+        spectrumPath=nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat"
+    ps=powspec.read_spectrum(spectrumPath, scale = True, expand = None)
     ps=ps[0]
     lps=np.arange(0, len(ps))
 
