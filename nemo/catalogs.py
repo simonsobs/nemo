@@ -612,13 +612,15 @@ def selectFromCatalog(catalog, constraintsList):
     return passedConstraint
 
 #------------------------------------------------------------------------------------------------------------
-def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
+def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES, minStrLength = 30):
     """Converts a catalog in the form of a list of dictionaries (where each dictionary holds the object
     properties) into an :obj:`astropy.table.Table` object.
     
     Args:
         catalogList (:obj:`list`): Catalog in the form of a list of dictionaries.
         keysToWrite (:obj:`list`, optional): Keys to convert into columns in the output table.
+        minStrLength (:obj:`int`, optional): String columns in the output will have this minimum length
+            enforced, to avoid possible truncation issues.
     
     Returns:
         An :obj:`astropy.table.Table` object, where each row corresponds to an object in the catalog.
@@ -635,7 +637,11 @@ def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
                     arr.append(obj[key])
                 else:
                     arr.append(-99)
-            tab.add_column(atpy.Column(arr, key))
+            # if key == 'template':
+            newCol=atpy.Column(arr, key)
+            if newCol.dtype.name[:3] == 'str':
+                newCol=atpy.Column(arr, key, dtype = 'U%d' % (minStrLength))
+            tab.add_column(newCol)
 
     return tab
 
