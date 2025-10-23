@@ -157,7 +157,7 @@ def tsz_profile_los(x, c = 1.177, alpha = 1.0510, beta = 5.4905, gamma = 0.3081,
         _tsz_profile_los_cache[key] = (interpolate.interp1d(xp, yp, "cubic"), x1, x2, yp[0], yp[-1], (yp[-2]-yp[-1])/(xp[-2]-xp[-1]))
     spline, xmin, xmax, vleft, vright, slope = _tsz_profile_los_cache[key]
     # Split into 3 cases: x<xmin, x inside and x > xmax.
-    x     = np.asfarray(x)
+    x     = np.asarray(x, dtype = float)
     left  = x<xmin
     right = x>xmax
     inside= (~left) & (~right)

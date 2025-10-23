@@ -340,8 +340,8 @@ class MockSurvey(object):
             for (im,mm) in enumerate(lnms):
                 dndmdz[im,:]=4.*np.pi*self.fsky*np.vectorize(self.cosmoCLASS.get_volume_dVdzdOmega_at_z)(self.z)*np.vectorize(self.cosmoCLASS.get_dndlnM_at_z_and_M)(self.z,np.exp(mm))
             self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
-            dndz=np.trapz(dndmdz,x = lnms,axis = 0)
-            self.numClusters=np.trapz(dndz, x = self.z)
+            dndz=np.trapezoid(dndmdz,x = lnms,axis = 0)
+            self.numClusters=np.trapezoid(dndz, x = self.z)
             self.dndmdzInterpolator=interpolate.RectBivariateSpline(np.log(self.M),
                                                                     self.z,
                                                                     dndmdz, kx = 3, ky = 3)
@@ -362,7 +362,7 @@ class MockSurvey(object):
         
         """
         numberDensity=self._cumulativeNumberDensity(z)
-        PLog10M=numberDensity/np.trapz(numberDensity, self.M)
+        PLog10M=numberDensity/np.trapezoid(numberDensity, self.M)
 
         return PLog10M
 

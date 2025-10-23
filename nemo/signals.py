@@ -1248,7 +1248,7 @@ def getMassFromP(P, log10M, calcErrors = True):
     tckP=interpolate.splrep(log10M, P)
     fineLog10M=np.linspace(log10M.min(), log10M.max(), 10000)
     fineP=interpolate.splev(fineLog10M, tckP)
-    fineP=fineP/np.trapz(fineP, fineLog10M)
+    fineP=fineP/np.trapezoid(fineP, fineLog10M)
     index=np.argmax(fineP)
     
     clusterLogM500=fineLog10M[index]
@@ -1265,7 +1265,7 @@ def getMassFromP(P, log10M, calcErrors = True):
                 clusterM500MinusErr=0.
                 clusterM500PlusErr=0.
                 break
-            p=np.trapz(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
+            p=np.trapezoid(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
             if p >= 0.6827:
                 clusterLogM500Min=fineLog10M[minIndex]
                 clusterLogM500Max=fineLog10M[maxIndex]
@@ -1338,13 +1338,13 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         # (this is a bit clunky but easier)
 
         # M500c in 1e14 MSun
-        Plog10M500c=P/np.trapz(P, log10M500c)
+        Plog10M500c=P/np.trapezoid(P, log10M500c)
         M500c, M500c_errMinus, M500c_errPlus=getMassFromP(Plog10M500c, log10M500c, calcErrors = calcErrors)
 
         # theta500
         mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-z))
         theta500s=interpolate.splev(log10M500c, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
-        Ptheta500=P/np.trapz(P, theta500s)
+        Ptheta500=P/np.trapezoid(P, theta500s)
         theta500, theta500_errMinus, theta500_errPlus=getMLValueFromP(Ptheta500, theta500s)
 
         # Q
@@ -1354,7 +1354,7 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         Qs=QFit.getQ(theta500s, z, tileName = tileName)
         # # Qs=QFit(theta500s)
         # Below can blow up at low-z
-        # PQ=P/np.trapz(P, Qs)
+        # PQ=P/np.trapezoid(P, Qs)
         # try:
         #     Q, Q_errMinus, Q_errPlus=getMLValueFromP(PQ, Qs)
         # except:
@@ -1373,7 +1373,7 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
             y0pred=y0pred*fRels
         valid=Qs > 0
         true_y0pred=y0pred[valid]/Qs[valid]
-        Ptrue_y0=P[valid]/np.trapz(P[valid], true_y0pred)
+        Ptrue_y0=P[valid]/np.trapezoid(P[valid], true_y0pred)
         true_y0, true_y0_errMinus, true_y0_errPlus=getMLValueFromP(Ptrue_y0, true_y0pred)
 
         # Y500
@@ -1437,7 +1437,7 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
             #zMin=1e-3
         #zRange=np.arange(zMin, zMax, 0.005)
         Pz=np.exp(-np.power(z-zRange, 2)/(2*(np.power(zErr, 2))))
-        Pz=Pz/np.trapz(Pz, zRange)
+        Pz=Pz/np.trapezoid(Pz, zRange)
     else:
         zRange=[z]
         Pz=np.ones(len(zRange))
@@ -1483,12 +1483,12 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
             continue
         log_y0pred=np.log(y0pred[valid])
         Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
-        Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms[valid])
+        Py0GivenM=Py0GivenM/np.trapezoid(Py0GivenM, log10Ms[valid])
 
         # Mass function de-bias
         if applyMFDebiasCorrection == True:
             PLog10M=mockSurvey.getPLog10M(zk)
-            PLog10M=PLog10M/np.trapz(PLog10M, log10Ms)
+            PLog10M=PLog10M/np.trapezoid(PLog10M, log10Ms)
         else:
             PLog10M=1.0
 
@@ -1512,12 +1512,12 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         #     log_y0pred=np.log(y0pred)
         #
         #     Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
-        #     Py0GivenM=Py0GivenM/np.trapz(Py0GivenM, log10Ms)
+        #     Py0GivenM=Py0GivenM/np.trapezoid(Py0GivenM, log10Ms)
         #
         #     # Mass function de-bias
         #     if applyMFDebiasCorrection == True:
         #         PLog10M=mockSurvey.getPLog10M(zk)
-        #         PLog10M=PLog10M/np.trapz(PLog10M, log10Ms)
+        #         PLog10M=PLog10M/np.trapezoid(PLog10M, log10Ms)
         #     else:
         #         PLog10M=1.0
         #
@@ -1530,7 +1530,7 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
     # Marginalised over z uncertainty
     P=np.sum(PArr, axis = 0)
     try:
-        P=P/np.trapz(P, log10Ms)
+        P=P/np.trapezoid(P, log10Ms)
     except:
         return None
 
@@ -1570,7 +1570,7 @@ def getMLValueFromP(P, x, calcErrors = True):
     #     sys.exit()
     # finex=np.linspace(x.min(), x.max(), 10000)
     # fineP=interpolate.splev(finex, tckP)
-    # fineP=fineP/np.trapz(fineP, finex)
+    # fineP=fineP/np.trapezoid(fineP, finex)
 
     index=np.argmax(fineP)
     MLValue=finex[index]
@@ -1583,7 +1583,7 @@ def getMLValueFromP(P, x, calcErrors = True):
                 minusErr=0.
                 plusErr=0.
                 break
-            p=np.trapz(fineP[minIndex:maxIndex], finex[minIndex:maxIndex])
+            p=np.trapezoid(fineP[minIndex:maxIndex], finex[minIndex:maxIndex])
             if p >= 0.6827:
                 xMin=finex[minIndex]
                 xMax=finex[maxIndex]

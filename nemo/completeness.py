@@ -661,7 +661,7 @@ class SelFn(object):
                 arg0=(lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter)
                 args=fac*np.exp(-arg0**2.) * cc[:, None,None]
                 # compMzTile+=integrate.simpson(args, x=lnyy, axis=0)
-                compMzTile=compMzTile+np.trapz(args, x=lnyy, axis=0)
+                compMzTile=compMzTile+np.trapezoid(args, x=lnyy, axis=0)
         # We could probably retire this
         if self.maxTheta500Arcmin is not None:
             compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
@@ -1319,7 +1319,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None, maxFla
     if maxFlags is not None:
         flagMask, wcs=loadFlagMask(tileName, selFnDir)
         areaMap[flagMask > maxFlags]=0
-    areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60**2)
+    areaMapSqDeg=(maps.getPixelAreaArcmin2Map(areaMap.shape, wcs)*areaMap)/(60.0**2)
 
     if footprintLabel != None:  
         intersectMask=makeIntersectionMask(tileName, selFnDir, footprintLabel)
