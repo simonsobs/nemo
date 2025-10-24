@@ -1649,7 +1649,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default',\
                    profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,\
                    validAreaSection = None, minSNR = -99, TCMBAlpha = 0, reportTimingInfo = False,\
-                   maxSizeDegMultiplier = 5):
+                   maxSizeDegMultiplier = 5, useInferredSZProperties = False):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1688,6 +1688,10 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         maxSizeDegMultiplier (float, optional): Sets the size of the postage stamp (this times by
             theta500) for model cluster images that are painted into the maps (has no effect on
             point sources).
+        useInferredSZProperties (bool, optional): If True, use the `inferred_y_c` column (etc.) for
+            drawing cluster models if present. This may be more accurate than relying on the maximal
+            SNR template *if* the underlying model (pressure profile, scaling relation parameters)
+            is a close match to reality / the simulation being used.
 
     Returns:
         Map containing injected sources, or None if there are no objects within the map dimensions.
@@ -1784,7 +1788,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     M500=row['true_M500c']*1e14
                     z=row['redshift']
                     y0ToInsert=row['true_y_c']*1e-4
-                elif 'inferred_y_c' in catalog.keys():
+                elif 'inferred_y_c' in catalog.keys() and useInferredSZProperties == True:
                     # NOTE: This is what we have if we run nemoMass with -I switch
                     # This is a bit tortuous, but we used M500c in defining cluster signal maps interface below
                     y0ToInsert=row['inferred_y_c']*1e-4
