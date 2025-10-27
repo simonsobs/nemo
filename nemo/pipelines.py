@@ -335,7 +335,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     # It doesn't matter if rank 0 then takes its time with the other maps that aren't needed again
     # First deal with the potential case of wanting to write out output from a filterSet other than the last one
     fileLabel=''
-    if config.currentFilterSet is not None and fileLabel in config.filterSetOptions[config.currentFilterSet].keys():
+    if config.currentFilterSet is not None and 'fileLabel' in config.filterSetOptions[config.currentFilterSet].keys():
         fileLabel=config.filterSetOptions[config.currentFilterSet]['fileLabel']+'-'
     labelsList=['area mask', 'flag mask', 'RMS map', 'filtered map', 'S/N map']
     tileDictsList=[areaMaskDict, flagMaskDict, stitchedRMSMapDict, stitchedFilteredMapDict, stitchedSNMapDict]
