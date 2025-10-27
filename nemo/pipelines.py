@@ -73,6 +73,8 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
             if setNum == config.filterSets[-1]:
                 writeAreaMask=True
                 writeFlagMask=True
+                if 'forcedPhotometryCatalog' in config._origParDict.keys():
+                    config.parDict['forcedPhotometryCatalog']=config._origParDict['forcedPhotometryCatalog']
             config.filterSetOptions[setNum]['catalog']=_filterMapsAndMakeCatalogs(config, verbose = True,
                                                                                   useCachedFilters = False,
                                                                                   useCachedFilteredMaps = False,
@@ -261,6 +263,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
 
             # Forced photometry on user-supplied list of objects, or detect sources
             if 'forcedPhotometryCatalog' in config.parDict.keys() and config.parDict['forcedPhotometryCatalog'] is not None:
+                if config.rank == 0:
+                    print("... doing forced photometry using catalog %s" % (config.parDict['forcedPhotometryCatalog']))
                 catalog=photometry.makeForcedPhotometryCatalog(filteredMapDict, 
                                                                config.parDict['forcedPhotometryCatalog'],
                                                                useInterpolator = config.parDict['useInterpolator'],
@@ -392,7 +396,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------
-def makeRMSTables(config):
+def makeRMSTables(config, catFileName = None):
     """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
     in the config file, plus the full survey mask), that contain information on noise levels and area covered,
     and completeness. Adds footprint columns to object catalog.
@@ -497,7 +501,8 @@ def makeRMSTables(config):
                 tab.write(outFileName, overwrite = True)
 
         # Add footprint columns to object catalog
-        catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+        if catFileName is None:
+            catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
         tab=atpy.Table().read(catFileName)
         for footprintDict in footprintsList:
             for maskPath in footprintDict['maskList']:

@@ -1106,7 +1106,7 @@ def addFootprintColumnToCatalog(tab, label, areaMask, wcs):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def addPostFlags(config):
+def addPostFlags(config, origCatalogFileName = None):
     """Add post processing flags to the catalog, if defined in the config. This is for handling things like
     star masks, dust masks, extended objects. These get added as additional columns to the catalog, and
     the flags column is incremented. We save a back-up of the catalog first, in case the user wants to re-run
@@ -1114,7 +1114,9 @@ def addPostFlags(config):
 
     Args:
         config (:obj:`nemo.startup.NemoConfig`): Nemo configuration object.
-
+        origCatalogFileName (:obj:`str`): Path to the pre-post-flags catalog, which is backed up before this
+            routine runs. If None, defaults to the default optimal catalog path, found under the Nemo output
+            directory. This option is provided in case Nemo is run in forced photometry mode only.
     Returns:
         None - the Nemo output catalog and flags mask are updated and overwritten (backups of the pre-flagged
         output are made first).
@@ -1123,8 +1125,11 @@ def addPostFlags(config):
 
     if config.rank == 0 and 'postFlags' in config.parDict.keys() and len(config.parDict['postFlags']) > 0:
 
-        # We need this for writing updated version, or reading
-        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+        # We need this for writing updated version
+        if origCatalogFileName is None:
+            optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+        else:
+            optimalCatalogFileName=origCatalogFileName
 
         # We keep a backup of the catalog before we add in post processing flags
         os.makedirs(config.selFnDir+os.path.sep+"prePostFlags", exist_ok = True)
@@ -1198,8 +1203,11 @@ def addPostFlags(config):
 
         # Update total flags - we put the ones from Nemo run into 'finderFlag' first
         # ringFlag is already added by main nemo run itself and is part of finderFlag
+        if 'finderFlag' in tab.keys():
+            tab.remove_columns('finderFlag')
         tab.add_column(tab['flags'], index = tab.index_column('flags')+1,
                        name = 'finderFlag')
+
         for c in flagColsToAdd:
             tab['flags']=tab['flags']+tab[c]
         writeCatalog(tab, optimalCatalogFileName)
