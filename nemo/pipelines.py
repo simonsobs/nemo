@@ -73,8 +73,6 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
             if setNum == config.filterSets[-1]:
                 writeAreaMask=True
                 writeFlagMask=True
-                if 'forcedPhotometryCatalog' in config._origParDict.keys():
-                    config.parDict['forcedPhotometryCatalog']=config._origParDict['forcedPhotometryCatalog']
             config.filterSetOptions[setNum]['catalog']=_filterMapsAndMakeCatalogs(config, verbose = True,
                                                                                   useCachedFilters = False,
                                                                                   useCachedFilteredMaps = False,

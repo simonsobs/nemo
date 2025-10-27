@@ -393,6 +393,7 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalog, useInterpolator =
     areaMask=filteredMapDict['surveyMask'] 
     tileName=filteredMapDict['tileName']
     data=filteredMapDict['SNMap']
+    flagMask=filteredMapDict['flagMask']
     if useInterpolator == True:
         mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
                                                         np.arange(data.shape[1]), 
@@ -420,6 +421,7 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalog, useInterpolator =
                 objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
             else:
                 objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+            objDict['flags']=flagMask[int(round(objDict['y'])), int(round(objDict['x']))]
             catalog.append(objDict)
             idNumCount=idNumCount+1
 

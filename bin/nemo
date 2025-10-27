@@ -81,6 +81,7 @@ if __name__ == '__main__':
         sys.exit()
 
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
+    config._origParDict['forcedPhotometryCatalog']=args.forcedCatalogFileName # Needed for filterSets
     if config.parDict['forcedPhotometryCatalog'] is not None:
         label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]
         label=os.path.basename(label)+"_"+os.path.basename(config.rootOutDir)+"_forcedCatalog"
