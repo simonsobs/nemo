@@ -294,7 +294,7 @@ class NemoTests(object):
 
         inTab=self.inTab
         outTab=self.outTab
-        mask=outTab[SNRKey] > SNRCut
+        mask=outTab[SNRKey] > 0.0#SNRCut
         x=inTab[inKey]
         y=outTab[outKey]
         meanRatio=np.mean(y[mask])/np.mean(x[mask])

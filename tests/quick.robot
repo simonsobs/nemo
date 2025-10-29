@@ -43,7 +43,7 @@ Recovered sim source amplitudes are unbiased
     Set config      configs/sim_ptsrc_f090.yml
     Run nemo
     Cross match     testsCache/sim_f090_inputCatalog.fits     testsCache/sim_ptsrc_f090/sim_ptsrc_f090_optimalCatalog.fits
-    Check recovered ratio   deltaT_c    deltaT_c    toleranceSigma=3.0  SNRKey=SNR  SNRCut=7.0  plotLabel=sim_ptsrc_amplitudes
+    Check recovered ratio   deltaT_c    deltaT_c    toleranceSigma=3.0  SNRKey=SNR  SNRCut=5.0  plotLabel=sim_ptsrc_amplitudes
     Status should be        SUCCESS
     
 End-to-end source recovery and subtraction

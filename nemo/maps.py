@@ -740,6 +740,13 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
     except:
         raise Exception("surveyMask given for autotiler is probably too complicated (breaks into > 256 regions) - check your mask and/or config file.")
 
+    # For dealing with flipped maps / SO CFC maps
+    leftEdgeRADeg, blah=wcs.pix2wcs(0, 0)
+    rightEdgeRADeg, blah=wcs.pix2wcs(surveyMask.shape[1], 0)
+    # This is to avoid annoyingly coords being rounded to exactly 360 degrees with %.6f, which messes up region files
+    if rightEdgeRADeg > 359.999:
+        rightEdgeRADeg=359.999
+
     # More memory efficient than previous version
     fieldIDs=np.arange(1, numObjects+1, dtype = segMap.dtype)
     maskSections=ndimage.find_objects(segMap)
@@ -802,9 +809,11 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
                         RARight=180.01
                 # This bit only comes up for flipped == -1 (Niall maps)
                 if flipper == -1:
-                    if RARight >= 360 and flipper:
-                        RARight=RARight-360
-                        RALeft=RALeft-360
+                    if RARight >= rightEdgeRADeg:
+                        RARight=rightEdgeRADeg
+                    # if RARight >= 360 and flipper:
+                    #     RARight=RARight-360
+                    #     RALeft=RALeft-360
                     if RARight > RALeft:
                         temp=RALeft
                         RALeft=RARight
