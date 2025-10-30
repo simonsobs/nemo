@@ -108,6 +108,10 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     if verbose == True and config.rank == 0:
         print("... after map filtering and making catalogs: time since start = %.3f sec" % (time.time()-config._timeStarted))
 
+    # If for whatever reason, we find nothing, the below will get passed safely through everything else
+    if catalog == []:
+        catalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
+
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
@@ -501,13 +505,14 @@ def makeRMSTables(config, catFileName = None):
         # Add footprint columns to object catalog
         if catFileName is None:
             catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
-        tab=atpy.Table().read(catFileName)
-        for footprintDict in footprintsList:
-            for maskPath in footprintDict['maskList']:
-                m, wcs=maps.chunkLoadMask(maskPath)
-                tab=catalogs.addFootprintColumnToCatalog(tab, footprintDict['label'], m, wcs)
-        catalogs.writeCatalog(tab, catFileName)
-        catalogs.writeCatalog(tab, catFileName.replace(".fits", ".csv"))
+        if os.path.exists(catFileName) == True:
+            tab=atpy.Table().read(catFileName)
+            for footprintDict in footprintsList:
+                for maskPath in footprintDict['maskList']:
+                    m, wcs=maps.chunkLoadMask(maskPath)
+                    tab=catalogs.addFootprintColumnToCatalog(tab, footprintDict['label'], m, wcs)
+            catalogs.writeCatalog(tab, catFileName)
+            catalogs.writeCatalog(tab, catFileName.replace(".fits", ".csv"))
 
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True,\

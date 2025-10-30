@@ -245,6 +245,9 @@ def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None, met
     else:
         raise Exception("There is no '%s' method - use either 'ref-first' or 'ref-forced'" % (method))
 
+    if len(cat) == 0:
+        cat=atpy.Table(names=('SNR', 'RADeg', 'decDeg', 'name'))
+
     return cat
 
 #------------------------------------------------------------------------------------------------------------
@@ -305,8 +308,6 @@ def _makeOptimalCatalogRefFirst(catalogDict, constraintsList = [], photFilter = 
                             row[c]=mergedCatalog[c][bestSNRIndex]
         refScaleCatalog.sort(['RADeg', 'decDeg'])
         refScaleCatalog=selectFromCatalog(refScaleCatalog, constraintsList)
-    if len(refScaleCatalog) == 0:
-        refScaleCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
     
     return refScaleCatalog
 
@@ -352,7 +353,7 @@ def _makeOptimalCatalogForcedRef(catalogDict, constraintsList = []):
         mergedCatalog.sort(['RADeg', 'decDeg'])
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
-        mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
+        mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg', 'name'))
 
     return mergedCatalog
 
@@ -685,8 +686,9 @@ def writeCatalog(catalog, outFileName, constraintsList = []):
     """
 
     # Deal with any blank catalogs (e.g., in blank tiles - not that we would want such things...)
-    if type(catalog) == list and len(catalog) == 0:
+    if len(catalog) == 0:
         return None
+
     cutCatalog=selectFromCatalog(catalog, constraintsList)
     cutCatalog.meta['NEMOVER']=nemo.__version__
     if outFileName.split(".")[-1] == 'csv':
@@ -760,7 +762,7 @@ def flagTileBoundarySplits(tab, xMatchRadiusArcmin = 2.5):
     
     """
     
-    if len(tab) == 1:
+    if len(tab) <= 1:
         return tab
     
     xMatchRadiusDeg=xMatchRadiusArcmin/60.
