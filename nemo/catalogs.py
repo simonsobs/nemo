@@ -10,6 +10,7 @@ import operator
 import os
 import sys
 import time
+import astropy
 import astropy.table as atpy
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
@@ -245,8 +246,11 @@ def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None, met
     else:
         raise Exception("There is no '%s' method - use either 'ref-first' or 'ref-forced'" % (method))
 
-    if len(cat) == 0:
+    if len(cat) == 0 or cat is None:
         cat=atpy.Table(names=('SNR', 'RADeg', 'decDeg', 'name'))
+
+    if type(cat) != astropy.table.table.Table:
+        raise Exception("cat should be an astropy table but is instead %s - printing cat: %s" % (type(cat), str(cat)))
 
     return cat
 
