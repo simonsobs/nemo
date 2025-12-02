@@ -412,7 +412,7 @@ if __name__ == '__main__':
     # These take ~2 min per map for ~7000 clusters in an ACT DR5/DR6 scale map on a single core
     if args.makeModelMaps == True:
         del MockSurvey
-        print(">>> Making model cluster SZ signal maps")
+        print(">>> Making model cluster SZ signal maps [inferred SZ properties are not used]")
         t0=time.time()
         os.makedirs(outDir+os.path.sep+"clusterModelMaps", exist_ok = True)
         catFileName=outFileName

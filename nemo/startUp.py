@@ -799,12 +799,15 @@ class NemoConfig(object):
                         for noiseSubIndex in options['noiseModelCatalogFromSets']:
                             filtDict['params']['noiseModelCatalog'].append(self.filterSetOptions[noiseSubIndex]['catalog'])
                 # NOTE: We prevent any filter set apart from the last one from writing maps, filters to disk
-                # Similarly, no point doing forced photometry on any run except the last
+                # Similarly, no point doing forced photometry on any run except the last, unless this is specifically requested
                 if setNum != self.filterSets[-1]:
                     for saveKey in saveKeys:
                         if saveKey in filtDict['params'].keys():
                             filtDict['params'][saveKey]=False
                     self.parDict['forcedPhotometryCatalog']=None
+                if type(options) == dict and 'forcedPhotometryCatalog' in options.keys():
+                    self.parDict['forcedPhotometryCatalog']=options['forcedPhotometryCatalog']
+                    self.parDict['thresholdSigma']=-1000
                 # However, we do allow intermediate filter sets to write maps, if explicitly asked for
                 # (e.g., useful for debugging a point source run before a cluster run)
                 if type(options) == dict and 'saveFilteredMaps' in options.keys():

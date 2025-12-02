@@ -10,6 +10,7 @@ import operator
 import os
 import sys
 import time
+import astropy
 import astropy.table as atpy
 from astropy.coordinates import SkyCoord
 from astropy.coordinates import match_coordinates_sky
@@ -245,6 +246,12 @@ def makeOptimalCatalog(catalogDict, constraintsList = [], photFilter = None, met
     else:
         raise Exception("There is no '%s' method - use either 'ref-first' or 'ref-forced'" % (method))
 
+    if len(cat) == 0 or cat is None:
+        cat=atpy.Table(names=('SNR', 'RADeg', 'decDeg', 'name'))
+
+    if type(cat) != astropy.table.table.Table:
+        raise Exception("cat should be an astropy table but is instead %s - printing cat: %s" % (type(cat), str(cat)))
+
     return cat
 
 #------------------------------------------------------------------------------------------------------------
@@ -305,8 +312,6 @@ def _makeOptimalCatalogRefFirst(catalogDict, constraintsList = [], photFilter = 
                             row[c]=mergedCatalog[c][bestSNRIndex]
         refScaleCatalog.sort(['RADeg', 'decDeg'])
         refScaleCatalog=selectFromCatalog(refScaleCatalog, constraintsList)
-    if len(refScaleCatalog) == 0:
-        refScaleCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
     
     return refScaleCatalog
 
@@ -352,7 +357,7 @@ def _makeOptimalCatalogForcedRef(catalogDict, constraintsList = []):
         mergedCatalog.sort(['RADeg', 'decDeg'])
         mergedCatalog=selectFromCatalog(mergedCatalog, constraintsList)
     else:
-        mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
+        mergedCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg', 'name'))
 
     return mergedCatalog
 
@@ -612,13 +617,15 @@ def selectFromCatalog(catalog, constraintsList):
     return passedConstraint
 
 #------------------------------------------------------------------------------------------------------------
-def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
+def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES, minStrLength = 30):
     """Converts a catalog in the form of a list of dictionaries (where each dictionary holds the object
     properties) into an :obj:`astropy.table.Table` object.
     
     Args:
         catalogList (:obj:`list`): Catalog in the form of a list of dictionaries.
         keysToWrite (:obj:`list`, optional): Keys to convert into columns in the output table.
+        minStrLength (:obj:`int`, optional): String columns in the output will have this minimum length
+            enforced, to avoid possible truncation issues.
     
     Returns:
         An :obj:`astropy.table.Table` object, where each row corresponds to an object in the catalog.
@@ -635,7 +642,11 @@ def catalogListToTab(catalogList, keysToWrite = COLUMN_NAMES):
                     arr.append(obj[key])
                 else:
                     arr.append(-99)
-            tab.add_column(atpy.Column(arr, key))
+            # if key == 'template':
+            newCol=atpy.Column(arr, key)
+            if newCol.dtype.name[:3] == 'str':
+                newCol=atpy.Column(arr, key, dtype = 'U%d' % (minStrLength))
+            tab.add_column(newCol)
 
     return tab
 
@@ -679,8 +690,9 @@ def writeCatalog(catalog, outFileName, constraintsList = []):
     """
 
     # Deal with any blank catalogs (e.g., in blank tiles - not that we would want such things...)
-    if type(catalog) == list and len(catalog) == 0:
+    if len(catalog) == 0:
         return None
+
     cutCatalog=selectFromCatalog(catalog, constraintsList)
     cutCatalog.meta['NEMOVER']=nemo.__version__
     if outFileName.split(".")[-1] == 'csv':
@@ -754,7 +766,7 @@ def flagTileBoundarySplits(tab, xMatchRadiusArcmin = 2.5):
     
     """
     
-    if len(tab) == 1:
+    if len(tab) <= 1:
         return tab
     
     xMatchRadiusDeg=xMatchRadiusArcmin/60.
@@ -1100,7 +1112,7 @@ def addFootprintColumnToCatalog(tab, label, areaMask, wcs):
     return tab
 
 #------------------------------------------------------------------------------------------------------------
-def addPostFlags(config):
+def addPostFlags(config, origCatalogFileName = None):
     """Add post processing flags to the catalog, if defined in the config. This is for handling things like
     star masks, dust masks, extended objects. These get added as additional columns to the catalog, and
     the flags column is incremented. We save a back-up of the catalog first, in case the user wants to re-run
@@ -1108,7 +1120,9 @@ def addPostFlags(config):
 
     Args:
         config (:obj:`nemo.startup.NemoConfig`): Nemo configuration object.
-
+        origCatalogFileName (:obj:`str`): Path to the pre-post-flags catalog, which is backed up before this
+            routine runs. If None, defaults to the default optimal catalog path, found under the Nemo output
+            directory. This option is provided in case Nemo is run in forced photometry mode only.
     Returns:
         None - the Nemo output catalog and flags mask are updated and overwritten (backups of the pre-flagged
         output are made first).
@@ -1117,8 +1131,11 @@ def addPostFlags(config):
 
     if config.rank == 0 and 'postFlags' in config.parDict.keys() and len(config.parDict['postFlags']) > 0:
 
-        # We need this for writing updated version, or reading
-        optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+        # We need this for writing updated version
+        if origCatalogFileName is None:
+            optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+        else:
+            optimalCatalogFileName=origCatalogFileName
 
         # We keep a backup of the catalog before we add in post processing flags
         os.makedirs(config.selFnDir+os.path.sep+"prePostFlags", exist_ok = True)
@@ -1192,8 +1209,11 @@ def addPostFlags(config):
 
         # Update total flags - we put the ones from Nemo run into 'finderFlag' first
         # ringFlag is already added by main nemo run itself and is part of finderFlag
+        if 'finderFlag' in tab.keys():
+            tab.remove_columns('finderFlag')
         tab.add_column(tab['flags'], index = tab.index_column('flags')+1,
                        name = 'finderFlag')
+
         for c in flagColsToAdd:
             tab['flags']=tab['flags']+tab[c]
         writeCatalog(tab, optimalCatalogFileName)

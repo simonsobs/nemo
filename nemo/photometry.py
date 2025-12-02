@@ -56,8 +56,12 @@ def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 
 
     # Thresholding to identify significant pixels
     # Objects in rings will be discarded; we update the survey area mask accordingly in-place here
-    objIDs, objPositions, objNumPix, segMap=getObjectPositions(data, threshold,
-                                                               findCenterOfMass = findCenterOfMass)
+    stuff=getObjectPositions(data, threshold, findCenterOfMass = findCenterOfMass)
+    if stuff is None: # Happens if we decided to tile over blank spaces in maps (some people do)
+        return []
+    else:
+        objIDs, objPositions, objNumPix, segMap=stuff
+
     if flagRings == True:
         minRingPix=30
         ringIDs, ringPositions, ringNumPix, ringSegMap=getObjectPositions(data, ringThresholdSigma, 
@@ -219,13 +223,19 @@ def getObjectPositions(mapData, threshold, findCenterOfMass = True):
         objPositions (list): List of corresponding (y, x) positions.
         objNumPix (:obj:`numpy.ndarray`): Array listing number of pixels per object.
         segmentationMap (:obj:`numpy.ndarray`): The segmentation map (2d array).
+
+    None:
+        Returns None if there are no significant pixels (if, e.g., a blank tile is included for some reason)
     
     """
     
     if threshold < 0:
         raise Exception("Detection threshold (thresholdSigma in the config file) cannot be negative unless in forced photometry mode.")
-            
+
     sigPix=np.array(np.greater(mapData, threshold), dtype=int)
+    if (sigPix != 0).sum() == 0:
+        return None
+
     sigPixMask=np.equal(sigPix, 1)    
     segmentationMap, numObjects=ndimage.label(sigPix)
     objIDs=np.unique(segmentationMap)
@@ -393,6 +403,7 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalog, useInterpolator =
     areaMask=filteredMapDict['surveyMask'] 
     tileName=filteredMapDict['tileName']
     data=filteredMapDict['SNMap']
+    flagMask=filteredMapDict['flagMask']
     if useInterpolator == True:
         mapInterpolator=interpolate.RectBivariateSpline(np.arange(data.shape[0]), 
                                                         np.arange(data.shape[1]), 
@@ -406,7 +417,7 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalog, useInterpolator =
         objDict['id']=idNumCount
         x, y=wcs.wcs2pix(row['RADeg'], row['decDeg'])
         x, y=int(round(x)), int(round(y))
-        if data[y, x] != 0:
+        if areaMask[y, x] != 0:
             objDict['x']=x
             objDict['y']=y
             objDict['RADeg'], objDict['decDeg']=row['RADeg'], row['decDeg']
@@ -420,6 +431,7 @@ def makeForcedPhotometryCatalog(filteredMapDict, inputCatalog, useInterpolator =
                 objDict['SNR']=mapInterpolator(objDict['y'], objDict['x'])[0][0]
             else:
                 objDict['SNR']=data[int(round(objDict['y'])), int(round(objDict['x']))]
+            objDict['flags']=flagMask[int(round(objDict['y'])), int(round(objDict['x']))]
             catalog.append(objDict)
             idNumCount=idNumCount+1
 

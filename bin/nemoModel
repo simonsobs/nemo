@@ -95,9 +95,13 @@ def makeParser():
                         a mask with values of 0 where objects are located (a threshold of 1 uK is used),\
                         and 1 everywhere else. The filename will be outputFileName, with `.fits` replaced\
                         with `_mask.fits.gz`.", default = False)
-    parser.add_argument("-x", "--max-size-deg-multiplier", dest="maxSizeDegMultiplier", default = 10,\
+    parser.add_argument("-x", "--max-size-deg-multiplier", dest = "maxSizeDegMultiplier", default = 10,\
                         help="Sets the size of model cluster images that are painted into the maps\
                             - this value mutiplied by theta500 (default: 10).", type = float)
+    parser.add_argument("-i", "--use-inferred-SZ-properties", dest = "useInferredSZProperties",
+                        action = "store_true", help = "Paint cluster tSZ signals using the `inferred_y_c`\
+                        etc. columns, if present in the catalog (rather than using the template\
+                        corresponding to the maximal SNR).")
     parser.add_argument("-M", "--mpi", dest="MPIEnabled", action="store_true", help="Enable MPI. If used,\
                         the catalog to be painted will be divided amongst processes. If you\
                         want to use this, run with e.g., mpiexec -np 4 nemoModel args -M", 
@@ -242,7 +246,8 @@ if __name__ == '__main__':
                                    TCMBAlpha = args.TCMBAlpha,
                                    profile = args.profile, cosmoModel = cosmoModel,
                                    reportTimingInfo = False,
-                                   maxSizeDegMultiplier = args.maxSizeDegMultiplier)
+                                   maxSizeDegMultiplier = args.maxSizeDegMultiplier,
+                                   useInferredSZProperties = args.useInferredSZProperties)
     t1=time.time()
     print("... rank %d image complete (took %.3f sec)" % (rank, t1-t0))
 

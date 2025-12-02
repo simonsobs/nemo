@@ -108,6 +108,10 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
     if verbose == True and config.rank == 0:
         print("... after map filtering and making catalogs: time since start = %.3f sec" % (time.time()-config._timeStarted))
 
+    # If for whatever reason, we find nothing, the below will get passed safely through everything else
+    if catalog == []:
+        catalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
+
     return catalog
 
 #------------------------------------------------------------------------------------------------------------
@@ -261,6 +265,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
 
             # Forced photometry on user-supplied list of objects, or detect sources
             if 'forcedPhotometryCatalog' in config.parDict.keys() and config.parDict['forcedPhotometryCatalog'] is not None:
+                if config.rank == 0:
+                    print("... doing forced photometry using catalog %s" % (config.parDict['forcedPhotometryCatalog']))
                 catalog=photometry.makeForcedPhotometryCatalog(filteredMapDict, 
                                                                config.parDict['forcedPhotometryCatalog'],
                                                                useInterpolator = config.parDict['useInterpolator'],
@@ -319,7 +325,11 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
         for collectedTab in optimalCatalogList:
             if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
                 toStack.append(collectedTab)
-        optimalCatalog=atpy.vstack(toStack)
+        # This is in case we have e.g. an empty high S/N 1st pass or something
+        if len(toStack) > 0:
+            optimalCatalog=atpy.vstack(toStack)
+        else:
+            optimalCatalog=atpy.Table(names=('SNR', 'RADeg', 'decDeg'))
         # Strip out duplicates (this is necessary when run in tileDir mode under MPI)
         if len(optimalCatalog) > 0:
             optimalCatalog, numDuplicatesFound, names=catalogs.removeDuplicates(optimalCatalog)
@@ -329,7 +339,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     # It doesn't matter if rank 0 then takes its time with the other maps that aren't needed again
     # First deal with the potential case of wanting to write out output from a filterSet other than the last one
     fileLabel=''
-    if config.currentFilterSet is not None and fileLabel in config.filterSetOptions[config.currentFilterSet].keys():
+    if config.currentFilterSet is not None and 'fileLabel' in config.filterSetOptions[config.currentFilterSet].keys():
         fileLabel=config.filterSetOptions[config.currentFilterSet]['fileLabel']+'-'
     labelsList=['area mask', 'flag mask', 'RMS map', 'filtered map', 'S/N map']
     tileDictsList=[areaMaskDict, flagMaskDict, stitchedRMSMapDict, stitchedFilteredMapDict, stitchedSNMapDict]
@@ -388,7 +398,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     return optimalCatalog
 
 #------------------------------------------------------------------------------------------------------------
-def makeRMSTables(config):
+def makeRMSTables(config, catFileName = None):
     """Makes a collection of selection function dictionaries (one per footprint specified in selFnFootprints
     in the config file, plus the full survey mask), that contain information on noise levels and area covered,
     and completeness. Adds footprint columns to object catalog.
@@ -493,14 +503,16 @@ def makeRMSTables(config):
                 tab.write(outFileName, overwrite = True)
 
         # Add footprint columns to object catalog
-        catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
-        tab=atpy.Table().read(catFileName)
-        for footprintDict in footprintsList:
-            for maskPath in footprintDict['maskList']:
-                m, wcs=maps.chunkLoadMask(maskPath)
-                tab=catalogs.addFootprintColumnToCatalog(tab, footprintDict['label'], m, wcs)
-        catalogs.writeCatalog(tab, catFileName)
-        catalogs.writeCatalog(tab, catFileName.replace(".fits", ".csv"))
+        if catFileName is None:
+            catFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
+        if os.path.exists(catFileName) == True:
+            tab=atpy.Table().read(catFileName)
+            for footprintDict in footprintsList:
+                for maskPath in footprintDict['maskList']:
+                    m, wcs=maps.chunkLoadMask(maskPath)
+                    tab=catalogs.addFootprintColumnToCatalog(tab, footprintDict['label'], m, wcs)
+            catalogs.writeCatalog(tab, catFileName)
+            catalogs.writeCatalog(tab, catFileName.replace(".fits", ".csv"))
 
 #------------------------------------------------------------------------------------------------------------
 def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, writeCatalogs = True,\
@@ -829,9 +841,9 @@ def extractSpec(config, tab, method = 'CAP', diskRadiusArcmin = 4.0, highPassFil
             shape=(wcs.header['NAXIS2'], wcs.header['NAXIS1'])
             degreesMap=np.ones([shape[0], shape[1]], dtype = float)*1e6
             RADeg, decDeg=wcs.pix2wcs(int(degreesMap.shape[1]/2), int(degreesMap.shape[0]/2))
-            degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
-            beamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, beam, amplitude = None)
-            refBeamMap=signals.makeBeamModelSignalMap(degreesMap, wcs, refBeam, amplitude = None)
+            # degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, wcs, RADeg, decDeg, 1.0)
+            beamMap=signals.makeBeamModelSignalMap(shape, wcs, beam, amplitude = None)
+            refBeamMap=signals.makeBeamModelSignalMap(shape, wcs, refBeam, amplitude = None)
             matchedBeamMap=maps.convolveMapWithBeam(beamMap*attenuationFactor, wcs, convKernel, maxDistDegrees = 1.0)
             
             # Find and apply radial fudge factor

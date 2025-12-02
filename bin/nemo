@@ -81,10 +81,11 @@ if __name__ == '__main__':
         sys.exit()
 
     config.parDict['forcedPhotometryCatalog']=args.forcedCatalogFileName
+    config._origParDict['forcedPhotometryCatalog']=args.forcedCatalogFileName # Needed for filterSets
     if config.parDict['forcedPhotometryCatalog'] is not None:
         label=os.path.splitext(config.parDict['forcedPhotometryCatalog'])[0]
         label=os.path.basename(label)+"_"+os.path.basename(config.rootOutDir)+"_forcedCatalog"
-        optimalCatalogFileName=label+".fits"
+        optimalCatalogFileName=config.rootOutDir+os.path.sep+label+".fits"
     else:
         optimalCatalogFileName=config.rootOutDir+os.path.sep+"%s_optimalCatalog.fits" % (os.path.split(config.rootOutDir)[-1])
 
@@ -99,13 +100,14 @@ if __name__ == '__main__':
             addInfo=[{'key': 'SNR', 'fmt': '%.1f'}]
             catalogs.catalog2DS9(optimalCatalog, optimalCatalogFileName.replace(".fits", ".reg"),
                                  addInfo = addInfo, color = "cyan")
+            print("... wrote output catalog to %s" % (optimalCatalogFileName))
     else:
         if config.rank == 0:
             print("... already made catalog %s" % (optimalCatalogFileName))
             optimalCatalog=atpy.Table().read(optimalCatalogFileName)
 
     # Post-processing flags - dust masking, star masks etc., if given in config
-    optimalCatalog=catalogs.addPostFlags(config)
+    optimalCatalog=catalogs.addPostFlags(config, origCatalogFileName = optimalCatalogFileName)
                 
     # Q function (filter mismatch) - if needed options have been given
     if 'photFilter' in config.parDict.keys() and config.parDict['photFilter'] is not None and config.parDict['fitQ'] == True:
@@ -114,7 +116,7 @@ if __name__ == '__main__':
 
     # Generates the noise versus area tables, and adds 'footprint_label' columns to output catalogs
     # config.comm.barrier() # Hopefully not needed
-    pipelines.makeRMSTables(config)
+    pipelines.makeRMSTables(config, catFileName = optimalCatalogFileName)
 
     # Source injection test - one way to calculate completeness ; needed for position recovery tests
     sourceInjTable=None
