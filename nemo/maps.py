@@ -227,6 +227,12 @@ class MapDict(dict):
                 raise Exception("no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
                         % (self['obsFreqGHz']))
 
+        # On-the-fly white noise injection [for CFC maps made 2025/2026, which otherwise give checkerboards when filtered]
+        # Fix seed so that if we have to use this, at least we get the same result every run
+        # [not needed for real maps, nemo-sim-kit maps, or SO MSS2 sims]
+        if 'injectNoiseInPix' in self.keys():
+            data=data+simNoiseMap(data.shape, self['injectNoiseInPix'], seed = 3141592654 + self['obsFreqGHz'])
+
         # Load weight map if given
         if 'weightsFileName' in list(self.keys()) and self['weightsFileName'] is not None:
             weights=self.loadTile('weightsFileName', tileName)
