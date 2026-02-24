@@ -796,6 +796,8 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             RAMax, decc=wcs.pix2wcs(xMin, yc)
             RAMin, decc=wcs.pix2wcs(xMax, yc)
             numCols=int(stripWidthDeg/targetTileWidth)
+            if numCols == 0:
+                numCols=1
             tileWidth=np.ceil((stripWidthDeg/numCols)*100)/100
             #assert(tileWidth < targetTileWidth*1.1)
 
