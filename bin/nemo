@@ -75,7 +75,8 @@ if __name__ == '__main__':
                               sourceInjectionTest = args.sourceInjectionTest, MPIEnabled = args.MPIEnabled,
                               strictMPIExceptions = strictMPIExceptions, writeTileInfo = True)
     logger=logging.getLogger('nemo')
-    logger.info("command line parameters: %s" % str(args))
+    if config.rank == 0:
+        logger.info("command line parameters: %s" % str(args))
 
     if args.tilingCheck == True:
         logger.info("Tiling check:")
