@@ -134,6 +134,7 @@ Clean up
     Remove directory        testsCache/quickstart-multipass-Q           True
     Remove file             testsCache/*forcedCatalog*
     Remove file             testsCache/*_mass.fits
+    Remove file             testsCache/*.log
 
 *** Settings ***
 #Documentation              To be added here

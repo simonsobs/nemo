@@ -47,6 +47,9 @@ from . import completeness
 import astropy.table as atpy
 import time
 
+import logging
+logger=logging.getLogger('nemo')
+
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = '.', \
                selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedFilter = False, \
@@ -78,7 +81,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = 
     f=filterParams
     label=f['label']+"#"+tileName
 
-    print("... making filtered map %s" % (label))
+    logger.info("making filtered map %s" % (label))
     filterClass=eval('%s' % (f['class']))
     filterObj=filterClass(f['label'], unfilteredMapsDictList, f['params'], tileName = tileName,
                             diagnosticsDir = diagnosticsDir, selFnDir = selFnDir)
@@ -94,7 +97,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = 
     # Undo pixel window function using Sigurd's FFT method (takes into account variable pixel scale etc.)
     # We only need to do this for maps of signal (cancels in S/N map)
     # We do this once because it does take some time...
-    # ... and then we can forget about if e.g. stacking or doing forced photometry later
+    # and then we can forget about if e.g. stacking or doing forced photometry later
     if undoPixelWindow == True:
         mask=np.equal(filteredMapDict['data'], 0)
         filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
@@ -167,7 +170,7 @@ class MapFilter(object):
         for mapDict, i in zip(self.unfilteredMapsDictList, range(len(self.unfilteredMapsDictList))):
             self.flagMask=self.flagMask+(mapDict['flagMask']*(i+1))
 
-        # Get beam solid angle info (units: nanosteradians)... we'll need for fluxes in Jy later
+        # Get beam solid angle info (units: nanosteradians)we'll need for fluxes in Jy later
         self.beamSolidAnglesDict={}
         for mapDict in self.unfilteredMapsDictList:    
             if 'solidAngle_nsr' in mapDict.keys():
@@ -191,7 +194,7 @@ class MapFilter(object):
         # For pixell / enmap
         self.enwcs=self.wcs.AWCS
 
-        # We could make this adjustable... added after switch to pixell
+        # We could make this adjustableadded after switch to pixell
         self.apodPix=20
         
         # Check that all maps are the same dimensions
@@ -686,7 +689,7 @@ class MatchedFilter(MapFilter):
             else:
                 raise Exception('need to specify "outputUnits" ("yc" or "uK") in filter params')
         else:
-            print("... loading cached filter")
+            logger.info("loading cached filter")
             self.loadFilter()
             self.params['saveRMSMap']=False
             self.params['saveFilter']=False
@@ -741,7 +744,7 @@ class MatchedFilter(MapFilter):
         filteredMap=filteredMap*surveyMask # NOTE: Needed for 2-pass (I think)
         del edgeCheck
 
-        # Just in case... we always want to trim the apodized region from the region searched
+        # Just in casewe always want to trim the apodized region from the region searched
         # This has no effect if we're using a survey mask already
         # Doing this makes life easier when running tests that use small survey masks or go right to edge of tile otherwise
         apodMask=np.equal(enmap.apod(np.ones(filteredMap.shape), self.apodPix), 1)
@@ -767,7 +770,7 @@ class MatchedFilter(MapFilter):
                 img.header['RW%d_GHZ' % (count)]=key
                 img.header['RW%d' % (count)]=self.fRelWeights[key]
             img.data=self.filt
-            # Just in case... saves having to fix this up elsewhere
+            # Just in casesaves having to fix this up elsewhere
             os.makedirs(os.path.split(self.filterFileName)[0], exist_ok = True)
             img.writeto(self.filterFileName, overwrite = True) 
             
@@ -945,7 +948,7 @@ class RealSpaceMatchedFilter(MapFilter):
         rIndex=np.where(arcminRange > kernelMaxArcmin)[0][0]
         mask=np.less(arcminRange, kernelMaxArcmin)
 
-        # Kernel can be either fully 2d, or be azimuthally averaged... in the ACTPol E-D56 paper, we used the latter
+        # Kernel can be either fully 2d, or be azimuthally averagedin the ACTPol E-D56 paper, we used the latter
         if 'symmetrize' in self.params['noiseParams'].keys() and self.params['noiseParams']['symmetrize'] == True:
             rRadians=np.radians(arcminRange/60.)
             profile2d=[]
@@ -1144,7 +1147,7 @@ class RealSpaceMatchedFilter(MapFilter):
         surveyMask=edgeCheck*surveyMask*psMask
         del edgeCheck
 
-        # Just in case... we always want to trim the apodized region from the region searched
+        # Just in casewe always want to trim the apodized region from the region searched
         # This has no effect if we're using a survey mask already
         # Doing this makes life easier when running tests that use small survey masks or go right to edge of tile otherwise
         apodMask=np.equal(enmap.apod(np.ones(filteredMap.shape), self.apodPix), 1)

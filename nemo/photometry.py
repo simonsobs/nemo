@@ -21,6 +21,9 @@ from . import completeness
 from . import signals
 import sys
 
+import logging
+logger=logging.getLogger('nemo')
+
 #------------------------------------------------------------------------------------------------------------
 def findObjects(filteredMapDict, threshold = 3.0, minObjPix = 3, rejectBorder = 10, 
                 findCenterOfMass = True, flagRings = True, ringThresholdSigma = 0,
@@ -587,7 +590,7 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
 
     """
 
-    print(">>> Doing forced photometry ...")
+    logger.info("Doing forced photometry ...")
 
     zTab=atpy.Table().read(pathToCatalog)
     if zColumnName is not None:
@@ -603,7 +606,7 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
         possZCols=['z', 'Z', 'REDSHIFT', 'Redshift', 'z_cl', 'Photz']
         for p in possZCols:
             if p in zTab.keys():
-                print("... assuming %s is the redshift column ..." % (p))
+                logger.info("assuming %s is the redshift column ..." % (p))
                 foundRedshiftCol=True
                 zTab.rename_column(p, 'redshift')
         if foundRedshiftCol == False:
@@ -612,10 +615,10 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
         possZErrCols=['zErr', 'dz']
         for p in possZErrCols:
             if p in zTab.keys():
-                print("... assuming %s is the redshiftErr column ..." % (p))
+                logger.info("assuming %s is the redshiftErr column ..." % (p))
                 zTab.rename_column(p, 'redshiftErr')
     if 'redshiftErr' not in zTab.keys():
-        print("... assuming redshiftErr = 0 for all objects (no suitable redshiftErr column found) ...")
+        logger.info("assuming redshiftErr = 0 for all objects (no suitable redshiftErr column found) ...")
         zTab.add_column(atpy.Column(np.zeros(len(zTab)), 'redshiftErr'))
 
     config.parDict['forcedPhotometryCatalog']=pathToCatalog
@@ -639,7 +642,7 @@ def addForcedPhotometry(pathToCatalog, config, zColumnName = None, zErrColumnNam
     yPath=SNPath.replace("SNMap.fits", "filteredMap.fits")
     validTab=None
     for p, f in zip([SNPath, yPath], ['fixed_SNR', 'fixed_y_c']):
-        print("... %s ..." % (f))
+        logger.info("%s ..." % (f))
         with pyfits.open(p) as img:
             for ext in img:
                 if ext.data is not None:

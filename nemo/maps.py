@@ -43,6 +43,9 @@ from . import pipelines
 from . import completeness
 np.random.seed()
 
+import logging
+logger=logging.getLogger('nemo')
+
 #------------------------------------------------------------------------------------------------------------
 class MapDict(dict):
     """A dictionary for managing a sky map (a 2d array with an associated WCS) within Nemo. Keys within the
@@ -118,7 +121,7 @@ class MapDict(dict):
                     wcs=astWCS.WCS(img[extName].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
                 data=tileData
         elif type(pathToTileImages) == np.ndarray:
-            # We no longer want to support this kind of thing... clean this up later
+            # We no longer want to support this kind of thingclean this up later
             raise Exception("Expected a path but got an array instead (image already loaded).")
         else:
             # On-the-fly tile clipping
@@ -236,7 +239,7 @@ class MapDict(dict):
         # Load weight map if given
         if 'weightsFileName' in list(self.keys()) and self['weightsFileName'] is not None:
             weights=self.loadTile('weightsFileName', tileName)
-            # For Enki maps... take only I (temperature) for now, add options for this later
+            # For Enki mapstake only I (temperature) for now, add options for this later
             if weights.ndim == 3:       # I, Q, U
                 weights=weights[0, :]
             elif weights.ndim == 4:     # I, Q, U and also a covariance matrix
@@ -764,7 +767,7 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
             continue
         xc=int((maskSection[1].start+(maskSection[1].stop-1))/2)
 
-        # Some people want to run on full sky CAR ... so we have to avoid that blowing up at the poles
+        # Some people want to run on full sky CAR so we have to avoid that blowing up at the poles
         decMin, decMax=np.nan, np.nan
         deltaY=0
         while np.isnan(decMin) and np.isnan(decMax):
@@ -1102,7 +1105,7 @@ def applyPointSourceMask(maskFileName, mapData, mapWCS, mask = 0.0, radiusArcmin
         if type(mask) == float or type(mask) == int:
             maskedMapData[circleMask]=mask
         elif mask == "subtract":
-            print("Add code to subtract point sources")
+            logger.info("Add code to subtract point sources")
             ipshell()
             sys.exit()
         elif mask == "whiteNoise":
@@ -1161,7 +1164,7 @@ def simCMBMap(shape, wcs, noiseLevel = None, beam = None, seed = None, noiseSeed
     """
 
     # Power spectrum array ps here is indexed by ell, starting from 0
-    # i.e., each element corresponds to the power at ell = 0, 1, 2 ... etc.
+    # i.e., each element corresponds to the power at ell = 0, 1, 2 etc.
     if spectrumPath is None:
         spectrumPath=nemo.__path__[0]+os.path.sep+"data"+os.path.sep+"planck_lensedCls.dat"
     ps=powspec.read_spectrum(spectrumPath, scale = True, expand = None)
@@ -1443,11 +1446,11 @@ def estimateContaminationFromSkySim(config, imageDict):
     for i in range(numSkySims):
         
         # NOTE: we throw the first sim away on figuring out noiseBoostFactors
-        print(">>> Sky sim %d/%d [rank = %d] ..." % (i+1, numSkySims, config.rank))
+        logger.info("Sky sim %d/%d [rank = %d] ..." % (i+1, numSkySims, config.rank))
         t0=time.time()
 
         # We don't copy this, because it's complicated due to containing MPI-related things (comm)
-        # So... we modify the config parameters in-place, and restore them before exiting this method
+        # Sowe modify the config parameters in-place, and restore them before exiting this method
         simConfig=config
         
         # We use the seed here to keep the CMB sky the same across frequencies...
@@ -1491,7 +1494,7 @@ def estimateContaminationFromSkySim(config, imageDict):
         contaminTabDict=estimateContamination(simImageDict, imageDict, SNRKeys, 'skySim', config.diagnosticsDir)
         resultsList.append(contaminTabDict)
         t1=time.time()
-        print("... time taken for sky sim run = %.3f sec" % (t1-t0))
+        logger.info("time taken for sky sim run = %.3f sec" % (t1-t0))
 
     # Average results
     avContaminTabDict={}
@@ -1504,7 +1507,7 @@ def estimateContaminationFromSkySim(config, imageDict):
             avContaminTabDict[k][kk]=avContaminTabDict[k][kk]/float(len(resultsList))
     
     # For writing separate contamination .fits tables if running in parallel
-    # (if we're running in serial, then we'll get a giant file name with full tileNames list... fix later)
+    # (if we're running in serial, then we'll get a giant file name with full tileNames listfix later)
     tileNamesLabel="#"+str(config.tileNames).replace("[", "").replace("]", "").replace("'", "").replace(", ", "#")
     for k in list(avContaminTabDict.keys()):
         fitsOutFileName=config.diagnosticsDir+os.path.sep+"%s_contaminationEstimate_%s.fits" % (k, tileNamesLabel)
@@ -1592,8 +1595,8 @@ def plotContamination(contaminTabDict, diagnosticsDir):
             fracs=[0.4, 0.3, 0.2, 0.1, 0.05, 0.01]
             for f in fracs:
                 SNRf=fineSNRs[np.argmin(abs(fineContamination-f))]
-                logStr="... contamination fraction = %.2f for %s > %.3f ..." % (f, SNRKey, SNRf)
-                print(logStr)
+                logStr="contamination fraction = %.2f for %s > %.3f ..." % (f, SNRKey, SNRf)
+                logger.info(logStr)
                 outFile.write(logStr+"\n")
         
 #------------------------------------------------------------------------------------------------------------
@@ -1724,7 +1727,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     t0=time.time()
     catalog=catalogs.getCatalogWithinImage(catalog, shape, wcs)
     t1=time.time()
-    if reportTimingInfo: print("makeModelImage - getting catalog within image - took %.3f sec" % (t1-t0))
+    if reportTimingInfo: logger.info("makeModelImage - getting catalog within image - took %.3f sec" % (t1-t0))
 
     # Optional SNR cuts
     if 'SNR' in catalog.keys():
@@ -1749,7 +1752,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         cMask=np.logical_and(xMask, yMask)
         catalog=catalog[cMask]
         t1=time.time()
-        if reportTimingInfo: print("makeModelImage - cutting catalog to area mask - took %.3f sec" % (t1-t0))
+        if reportTimingInfo: logger.info("makeModelImage - cutting catalog to area mask - took %.3f sec" % (t1-t0))
 
     if len(catalog) == 0:
         return None
@@ -1763,7 +1766,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     beam=signals.BeamProfile(beamFileName = beamFileName)
     maxSizeDeg=(beam.FWHMArcmin*numFWHM)/60
     t1=time.time()
-    if reportTimingInfo: print("makeModelImage - set up beam - took %.3f sec" % (t1-t0))
+    if reportTimingInfo: logger.info("makeModelImage - set up beam - took %.3f sec" % (t1-t0))
     
     t0=time.time()
     if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
@@ -1848,7 +1851,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                                            omap = modelMap)
 
     t1=time.time()
-    if reportTimingInfo: print("makeModelImage - painting objects - took %.3f sec" % (t1-t0))
+    if reportTimingInfo: logger.info("makeModelImage - painting objects - took %.3f sec" % (t1-t0))
 
     # Optional: apply pixel window function - generally this should be True
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
@@ -1856,7 +1859,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
         t0=time.time()
         modelMap=enmap.apply_window(modelMap, pow = 1.0)
         t1=time.time()
-        if reportTimingInfo: print("makeModelImage - pix win application - took %.3f sec" % (t1-t0))
+        if reportTimingInfo: logger.info("makeModelImage - pix win application - took %.3f sec" % (t1-t0))
 
     return modelMap
         
@@ -1896,7 +1899,7 @@ def sourceInjectionTest(config):
                              enableCompletenessCalc = False, setUpAreaMask = True,
                              tileNames = config.allTileNames)
     
-    print(">>> Position recovery test [rank = %d] ..." % (config.rank))
+    logger.info("Position recovery test [rank = %d] ..." % (config.rank))
 
     if 'sourceInjectionIterations' not in config.parDict.keys():
         numIterations=1
@@ -1953,7 +1956,7 @@ def sourceInjectionTest(config):
     modelCount=0
     for sourceInjectionModel in sourceInjectionModelList:
         modelCount=modelCount+1
-        print(">>> Source injection model: %d/%d" % (modelCount, len(sourceInjectionModelList)))
+        logger.info("Source injection model: %d/%d" % (modelCount, len(sourceInjectionModelList)))
         RADegDict[sourceInjectionModel['label']]=[]
         decDegDict[sourceInjectionModel['label']]=[]
         SNRDict[sourceInjectionModel['label']]=[]
@@ -1963,7 +1966,7 @@ def sourceInjectionTest(config):
         noiseLevelDict[sourceInjectionModel['label']]=[]
         tileNamesDict[sourceInjectionModel['label']]=[]
         for i in range(numIterations):        
-            print(">>> Source injection and recovery test %d/%d [rank = %d]" % (i+1, numIterations, config.rank))
+            logger.info("Source injection and recovery test %d/%d [rank = %d]" % (i+1, numIterations, config.rank))
 
             # NOTE: This block below should be handled when parsing the config file - fix/remove
             # Optional override of default GNFW parameters (used by Arnaud model), if used in filters given
@@ -1988,7 +1991,7 @@ def sourceInjectionTest(config):
                 
             # Filling maps with injected sources will be done when maps.preprocessMapDict is called by the filter object
             # So, we only generate the catalog here
-            print("... generating mock catalog")
+            logger.info("generating mock catalog")
             if config.rank == 0:
                 if filtDict['class'].find("ArnaudModel") != -1:
                     if 'sourceInjectionAmplitudeRange' not in config.parDict.keys():
@@ -2007,7 +2010,7 @@ def sourceInjectionTest(config):
                                                             amplitudeRange = amplitudeRange,
                                                             amplitudeDistribution = distribution,
                                                             selFn = selFn, maskDilationPix = 20)
-                    # Or... proper mock, but this takes ~24 sec for E-D56
+                    # Orproper mock, but this takes ~24 sec for E-D56
                     #mockCatalog=pipelines.makeMockClusterCatalog(config, writeCatalogs = False, verbose = False)[0]
                     injectSources={'catalog': mockCatalog, 'GNFWParams': config.parDict['GNFWParams'],
                                    'override': sourceInjectionModel, 'profile': 'A10'}
@@ -2045,7 +2048,7 @@ def sourceInjectionTest(config):
             for mapDict in config.unfilteredMapsDictList:
                 mapDict['injectSources']=injectSources
             
-            # Ideally we shouldn't have blank tiles... but if we do, skip
+            # Ideally we shouldn't have blank tilesbut if we do, skip
             if len(mockCatalog) > 0:
 
                 # Uncomment line below if want to save filtered maps for quick and dirty debugging
@@ -2089,7 +2092,7 @@ def sourceInjectionTest(config):
                         if config.parDict['haltOnPositionRecoveryProblem'] == True:
                             raise Exception(msg)
                         else:
-                            print("... Warning: %s ..." % (msg))
+                            logger.info("Warning: %s ..." % (msg))
 
                     # Store everything - analyse later
                     RADegDict[sourceInjectionModel['label']]=RADegDict[sourceInjectionModel['label']]+x_recCatalog['RADeg'].tolist()
@@ -2216,15 +2219,15 @@ def positionRecoveryAnalysisRayleigh(posRecTable, plotFileName, numParamsModel =
         popt, _=optimize.curve_fit(pfunc, sncents[selMask], sigs[selMask], p0=[1,0.1])
         A, B=popt
         sigmaR=A*(1/plotSNRs) + B
-        # print("A = %.3f" % (A))
-        # print("B = %.3f" % (B))
+        # logger.info("A = %.3f" % (A))
+        # logger.info("B = %.3f" % (B))
         fitLabel="$\\sigma$ = (%.3f / $\\tilde{q}$) + %.3f" % (A, B)
     elif numParamsModel == 1:
         pfunc=lambda sncents,a: a*(1/sncents)
         popt, _=optimize.curve_fit(pfunc, sncents[selMask], sigs[selMask], p0=[1])
         A=popt
         sigmaR=A*(1/plotSNRs)
-        # print("A = %.3f" % (A))
+        # logger.info("A = %.3f" % (A))
         fitLabel="$\\sigma$ = %.3f / $\\tilde{q}$" % (A)
     else:
         raise Exception("numParamsModel must be 1 or 2, not %s" % (str(numParamsModel)))
@@ -2327,12 +2330,12 @@ def positionRecoveryAnalysisDR5(posRecTable, plotFileName, percentiles = [50, 95
         tab=tab[mask]
 
     # Optional cut on cross match distance
-    # We shouldn't have to do this... this is for testing
+    # We shouldn't have to do thisthis is for testing
     if maxCrossMatchRadiusArcmin is not None:
         tab=tab[tab['rArcmin'] < maxCrossMatchRadiusArcmin]
 
     # HACK: Try throwing out some %-age
-    # print("WARNING - Throwing out 0.1 per cent of largest offsets")
+    # logger.info("WARNING - Throwing out 0.1 per cent of largest offsets")
     # tab=tab[tab['rArcmin'] < np.percentile(tab['rArcmin'], 99.9)]
     
     # Old
@@ -2413,7 +2416,7 @@ def positionRecoveryAnalysisDR5(posRecTable, plotFileName, percentiles = [50, 95
             try:
                 results=optimize.curve_fit(catalogs._posRecFitFunc, snr, rArcmin)
             except:
-                print("... WARNING: curve_fit failed for key = %s ..." % (key))
+                logger.info("WARNING: curve_fit failed for key = %s ..." % (key))
                 continue
             bestFitSNRFold, bestFitPedestal, bestFitNorm=results[0]
             fitParamsDict[key]=np.array([bestFitSNRFold, bestFitPedestal, bestFitNorm])

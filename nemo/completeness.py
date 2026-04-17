@@ -39,9 +39,8 @@ import shutil
 import yaml
 from decimal import Decimal
 
-# If want to catch warnings as errors...
-#import warnings
-#warnings.filterwarnings('error')
+import logging
+logger=logging.getLogger('nemo')
 
 #------------------------------------------------------------------------------------------------------------
 class FootprintError(Exception):
@@ -132,7 +131,7 @@ class SelFn(object):
         Some of the methods of this class are experimental and not necessarily well tested.
 
     Note:
-        Once SNRCut is set for this object, it cannot be changed later (well, it can... but changing
+        Once SNRCut is set for this object, it cannot be changed later (well, it canbut changing
         self.SNRCut will not update anything, for the moment).
             
     """
@@ -913,7 +912,7 @@ class SelFn(object):
 
 #------------------------------------------------------------------------------------------------------------
 def optBiasModelFunc(snr, params):
-    """Optimization bias model function, of the form ``corrFactor = 1 + p1/x + p2/x**2 + ... + pn/x**n``
+    """Optimization bias model function, of the form ``corrFactor = 1 + p1/x + p2/x**2 + + pn/x**n``
     where p1...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
     method of the ``SelFn`` class.
 
@@ -964,7 +963,7 @@ def optBiasPowerModelFunc(snr, param):
 
 #------------------------------------------------------------------------------------------------------------
 def optBiasSeriesOffsetModelFunc(snr, params):
-    """Optimization bias model function, of the form ``corrFactor = p0 + p1/x + p2/x**2 + ... + pn/x**n``
+    """Optimization bias model function, of the form ``corrFactor = p0 + p1/x + p2/x**2 + + pn/x**n``
     where p0...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
     method of the ``SelFn`` class.
 
@@ -1137,7 +1136,7 @@ def _loadTile(tileName, baseDir, baseFileName, extension = 'fits'):
     
     """
     
-    # After tidyUp is run, this will be a MEF file... during first run, it won't be (written under MPI)
+    # After tidyUp is run, this will be a MEF fileduring first run, it won't be (written under MPI)
     if os.path.exists(baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)):
         fileName=baseDir+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)
     elif os.path.exists(baseDir+os.path.sep+tileName+os.path.sep+"%s#%s.%s" % (baseFileName, tileName, extension)):
@@ -1231,12 +1230,12 @@ def makeIntersectionMask(tileName, selFnDir, label, masksList = []):
         intersectMask, wcs=loadIntersectionMask(tileName, selFnDir, label)
         return intersectMask
 
-    # Otherwise... make it
+    # Otherwisemake it
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     RAMin, RAMax, decMin, decMax=wcs.getImageMinMaxWCSCoords()
     if masksList == []:
         raise Exception("didn't find previously cached intersection mask but makeIntersectionMask called with empty masksList")
-    print("... creating %s intersection mask (%s) ..." % (label, tileName))         
+    logger.info("creating %s intersection mask (%s) ..." % (label, tileName))
     intersectMask=np.zeros(areaMap.shape)
     outRACoords=np.array(wcs.pix2wcs(np.arange(intersectMask.shape[1]), [0]*intersectMask.shape[1]))
     outDecCoords=np.array(wcs.pix2wcs([0]*np.arange(intersectMask.shape[0]), np.arange(intersectMask.shape[0])))
@@ -1313,7 +1312,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None, maxFla
         return tab[np.where(tab['tileName'] == tileName)]
 
     # Table doesn't exist, so make it...
-    print(("... making RMS table for tile = %s, footprint = %s, maxFlags = %s" % (tileName, footprintLabel, str(maxFlags))))
+    print(("making RMS table for tile = %s, footprint = %s, maxFlags = %s" % (tileName, footprintLabel, str(maxFlags))))
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     if maxFlags is not None:
@@ -1459,7 +1458,7 @@ def completenessByFootprint(config):
                 raise Exception("If you specify biasModel, you must also give biasModelParams - check selFnOptions in your config")
             biasModelDict={'func': biasModel, 'params': biasModelParams}
             if footprintLabel == footprintLabels[0]:
-                print(">>> Optimization bias model will be applied")
+                logger.info("Optimization bias model will be applied")
 
         try:
             selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
@@ -1475,7 +1474,7 @@ def completenessByFootprint(config):
                         biasModel = biasModelDict)
         except FootprintError:
             continue
-            #print("... no overlapping area with footprint %s" % (footprintLabel))
+            #logger.info("no overlapping area with footprint %s" % (footprintLabel))
 
         massLabel=selFn.mockSurvey.mdefLabel
 
@@ -1494,9 +1493,9 @@ def completenessByFootprint(config):
         #                            title = "footprint: %s" % (footprintLabel))
         zMask=np.logical_and(selFn.z >= 0.2, selFn.z < 1.0)
         averageMassLimit_90Complete=np.average(massLimit_90Complete[zMask])
-        print(">>> Survey-averaged results inside footprint %s [maxFlags = %s]:" % (footprintLabel, config.parDict['selFnOptions']['maxFlags']))
-        print("... total survey area (after masking) = %.1f sq deg" % (selFn.totalAreaDeg2))
-        print("... survey-averaged 90%% mass (%s) completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLabel, massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
+        logger.info("Survey-averaged results inside footprint %s [maxFlags = %s]:" % (footprintLabel, config.parDict['selFnOptions']['maxFlags']))
+        logger.info("total survey area (after masking) = %.1f sq deg" % (selFn.totalAreaDeg2))
+        logger.info("survey-averaged 90%% mass (%s) completeness limit (z = 0.5) = %.1f x 10^14 MSun" % (massLabel, massLimit_90Complete[np.argmin(abs(zBinCentres-0.5))]))
 
 #------------------------------------------------------------------------------------------------------------
 def calcCompletenessContour(compMz, log10M, z, level = 0.90):
@@ -1640,7 +1639,7 @@ def makeMassLimitMapsAndPlots(config):
         except:
             raise Exception("If you specify biasModel, you must also give biasModelParams - check selFnOptions in your config")
         biasModelDict={'func': biasModel, 'params': biasModelParams}
-        # print(">>> Optimization bias model will be applied")
+        # logger.info("Optimization bias model will be applied")
 
     selFn=SelFn(config.selFnDir, config.parDict['selFnOptions']['fixedSNRCut'],
                 footprint = None, zStep = 0.1, setUpAreaMask = True,
@@ -1686,7 +1685,7 @@ def makeMassLimitMapsAndPlots(config):
                 stitchedMapLimDict[tileName]=d
         stitchedMapLimDict.saveStitchedFITS(outFileName, config.origWCS, compressionType = "RICE_1")
         t1=time.time()
-        print("... made mass limit map '%s' (time taken = %.3f sec)" % (outFileName, t1-t0))
+        logger.info("made mass limit map '%s' (time taken = %.3f sec)" % (outFileName, t1-t0))
 
         # Plots
         plotSettings.update_rcParams()

@@ -38,6 +38,9 @@ import yaml
 import warnings
 np.random.seed()
 
+import logging
+logger=logging.getLogger('nemo')
+
 #------------------------------------------------------------------------------------------------------------
 # Global constants (we could move others here but then need to give chunky obvious names, not just e.g. h)
 TCMB=2.72548
@@ -343,7 +346,7 @@ class QFit(object):
             Qs=self.fitDict[tileName](theta500Arcmin)
 
         if type(Qs) != float and (Qs < 0).sum() > 0:
-            #print("WARNING: negative Q value in tileName = %s" % (tileName))
+            #logger.info("WARNING: negative Q value in tileName = %s" % (tileName))
             Qs[Qs < 0]=0
         
         return Qs
@@ -867,7 +870,7 @@ def getFRelWeights(config):
                         freqGHz=str(img[0].header['RW%d_GHZ' % (i)])
                         if freqGHz == '':
                             freqGHz='148.0'
-                            print(">>> WARNING: setting freqGHz = '%s' in getFRelWeights - this is okay if you're running on a TILe-C y-map" % (freqGHz))
+                            logger.info("WARNING: setting freqGHz = '%s' in getFRelWeights - this is okay if you're running on a TILe-C y-map" % (freqGHz))
                         if freqGHz not in fRelTab.keys():
                             fRelTab.add_column(atpy.Column(np.zeros(len(config.allTileNames)), freqGHz))
                         fRelTab[freqGHz][tileCount]=img[0].header['RW%d' % (i)]
@@ -917,7 +920,7 @@ def fitQ(config):
         if f['label'] == photFilterLabel:
             ref=f
     
-    # This could be more general... but A10 model has no z-dependence, B12 model does
+    # This could be more generalbut A10 model has no z-dependence, B12 model does
     # So Q is a function of (theta500, z) for the latter
     # We add a header keyword to the QFit.fits table to indicate if z-dependence important or not
     # Everything is then handled internally by QFit class
@@ -997,11 +1000,11 @@ def fitQ(config):
     else:
         raise Exception("valid values for zDepQ are 0 or 1")
             
-    # Here we save the fit for each tile separately... 
+    # Here we save the fit for each tile separately
     QTabDict={}
     for tileName in config.tileNames:
         t0=time.time()
-        print("... fitting Q in tile %s" % (tileName))
+        logger.info("fitting Q in tile %s" % (tileName))
 
         # Load reference scale filter (it may be in memory already)
         if tileName in config.cachedFilters.keys():
@@ -1064,7 +1067,7 @@ def fitQ(config):
         #noiseLevel=120.0
         #for obsFreqGHz in list(beamsDict.keys()):
             #simCMBDict[obsFreqGHz]=maps.simCMBMap(shape, wcs, noiseLevel = noiseLevel, beam = beamsDict[obsFreqGHz], seed = seed)
-        #print("... adding CMB and noise = %.3f in Q models" % (noiseLevel))
+        #logger.info("adding CMB and noise = %.3f in Q models" % (noiseLevel))
 
         # Input signal maps to which we will apply filter(s)
         # We do this once and store in a dictionary for speed
@@ -1140,7 +1143,7 @@ def fitQ(config):
     if config.MPIEnabled == True:
         QTabDictList=config.comm.gather(QTabDict, root = 0)
         if config.rank == 0:
-            print("... gathered Q fits")
+            logger.info("gathered Q fits")
             combQTabDict={}
             for QTabDict in QTabDictList:
                 for key in QTabDict:
@@ -1160,7 +1163,7 @@ def fitQ(config):
         QTabMEF.writeto(outFileName, overwrite = True)
 
     if config.rank == 0:
-        print("... after Q fits completed: time since start = %.3f sec" % (time.time()-config._timeStarted))
+        logger.info("after Q fits completed: time since start = %.3f sec" % (time.time()-config._timeStarted))
 
 #------------------------------------------------------------------------------------------------------------
 def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):
@@ -1261,7 +1264,7 @@ def getMassFromP(P, log10M, calcErrors = True):
             if minIndex < 0 or maxIndex > fineP.shape[0]:
                 # This shouldn't happen; if it does, probably y0 is in the wrong units
                 # Previously we threw an exception here, but we can't if using this for forced photometry
-                #print("WARNING: outside M500 range - check y0 units or for problem at cluster location in map (if not in forced photometry mode)")
+                #logger.info("WARNING: outside M500 range - check y0 units or for problem at cluster location in map (if not in forced photometry mode)")
                 clusterM500MinusErr=0.
                 clusterM500PlusErr=0.
                 break
@@ -1311,7 +1314,7 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
     if y0 < 0:
         raise Exception('y0 cannot be negative')
     if y0 > 1e-2:
-        print("... WARNING: y0 is suspiciously large - perhaps you need to multiply by 1e-4?")
+        logger.info("WARNING: y0 is suspiciously large - perhaps you need to multiply by 1e-4?")
         return None
 
     P=calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = tenToA0, B0 = B0, Mpivot = Mpivot,
@@ -1358,7 +1361,7 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         # try:
         #     Q, Q_errMinus, Q_errPlus=getMLValueFromP(PQ, Qs)
         # except:
-        #     print("hmm")
+        #     logger.info("hmm")
         #     import IPython
         #     IPython.embed()
         #     sys.exit()
@@ -1506,7 +1509,7 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         #     # This generally means we wandered out of where Q is defined (e.g., beyond mockSurvey log10M limits)
         #     # Or fRel can dip -ve for extreme mass at high-z (can happen with large Om0)
         #     # Or it can be due to a photo-z with a huge error bar, and only affect some part of the z grid
-        #     # So... we could write a warning here. Previously we used to trigger an exception
+        #     # Sowe could write a warning here. Previously we used to trigger an exception
         #     # raise Exception("Some predicted y0 values are zero.")
         # else:
         #     log_y0pred=np.log(y0pred)
@@ -1565,7 +1568,7 @@ def getMLValueFromP(P, x, calcErrors = True):
     # try:
     #     tckP=interpolate.splrep(x, P)
     # except:
-    #     print("er")
+    #     logger.info("er")
     #     IPython.embed()
     #     sys.exit()
     # finex=np.linspace(x.min(), x.max(), 10000)

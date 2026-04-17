@@ -24,6 +24,9 @@ from . import maps
 import datetime
 import nemo
 
+import logging
+logger=logging.getLogger('nemo')
+
 #------------------------------------------------------------------------------------------------------------
 XMATCH_RADIUS_DEG=1.4/60.0  # catalog matching radius, for sim comparisons
 
@@ -1165,7 +1168,7 @@ def addPostFlags(config, origCatalogFileName = None):
         flagColsToAdd=[]
         for flagDict in config.parDict['postFlags']:
 
-            print("... post flagging - %s ..." % (flagDict['flagLabel']))
+            logger.info("post flagging - %s ..." % (flagDict['flagLabel']))
             t0=time.time()
             colName=flagDict['flagLabel']
             if colName[-4:] != 'Flag':
@@ -1205,7 +1208,7 @@ def addPostFlags(config, origCatalogFileName = None):
             else:
                 flagMapCube[flagDict['flagLabel']]=flagMapCube[flagDict['flagLabel']]+thisMap
             t1=time.time()
-            # print("took %.3f sec" % (t1-t0))
+            # logger.info("took %.3f sec" % (t1-t0))
 
         # Update total flags - we put the ones from Nemo run into 'finderFlag' first
         # ringFlag is already added by main nemo run itself and is part of finderFlag

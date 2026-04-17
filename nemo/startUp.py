@@ -13,10 +13,15 @@ import astropy.io.fits as pyfits
 import astropy.table as atpy
 from astLib import astWCS, astImages
 from nemo import signals
+import nemo
+import datetime
 import numpy as np
 import pickle
 import time
 from . import maps
+
+import logging
+logger=logging.getLogger('nemo')
 
 #------------------------------------------------------------------------------------------------------------
 def parseConfigFile(parDictFileName, verbose = False):
@@ -33,7 +38,7 @@ def parseConfigFile(parDictFileName, verbose = False):
     """
     
     if verbose:
-        print(">>> Parsing config file %s" % (parDictFileName))
+        logger.info("parsing config file %s" % (parDictFileName))
     with open(parDictFileName, "r") as stream:
         parDict=yaml.safe_load(stream)
         # We've moved masks out of the individual map definitions in the config file
@@ -53,7 +58,7 @@ def parseConfigFile(parDictFileName, verbose = False):
                 mapDict['weightsType']='invVar'
         # Apply global filter options (defined in allFilters) to mapFilters
         # Note that anything defined in mapFilters has priority
-        # Bit ugly... we only support up to three levels of nested dictionaries...
+        # Bit uglywe only support up to three levels of nested dictionaries...
         if 'allFilters' in parDict.keys():
             mapFiltersList=[]
             for filterDict in parDict['mapFilters']:
@@ -201,7 +206,7 @@ def parseConfigFile(parDictFileName, verbose = False):
                 if key not in scalingRelation.keys():
                     scalingRelation[key]=scalingDefaults[key]
 
-    # Stuff which is now mandatory... left here until we update everywhere in code + docs
+    # Stuff which is now mandatoryleft here until we update everywhere in code + docs
     parDict['stitchTiles']=True
 
     # This isn't actually being used, but has been left in for now
@@ -215,15 +220,15 @@ def parseConfigFile(parDictFileName, verbose = False):
         if k in list(parDict.keys()) and oldKeyMap[k] is None:
             del parDict[k]
             if verbose:
-                print("... WARNING: config parameter '%s' is no longer used by Nemo and will be ignored." % (k))
+                logger.info("WARNING: config parameter '%s' is no longer used by Nemo and will be ignored." % (k))
         if k in list(parDict.keys()) and type(oldKeyMap[k]) == str:
             if verbose:
-                print("... WARNING: config parameter '%s' (old usage) has been renamed to '%s' (current usage) - you may wish to update your config file." % (k, oldKeyMap[k]))
+                logger.info("WARNING: config parameter '%s' (old usage) has been renamed to '%s' (current usage) - you may wish to update your config file." % (k, oldKeyMap[k]))
             parDict[oldKeyMap[k]]=parDict[k]
             del parDict[k]
 
     if verbose:
-        print("... config loaded successfully")
+        logger.info("config loaded successfully")
 
     return parDict
 
@@ -290,7 +295,7 @@ class NemoConfig(object):
                 sys_excepthook=sys.excepthook
                 def mpi_excepthook(v, t, tb):
                     sys_excepthook(v, t, tb)
-                    print("Exception: %s" % (t.args[0]))
+                    logger.info("Exception: %s" % (t.args[0]))
                     MPI.COMM_WORLD.Abort(1)
                 sys.excepthook=mpi_excepthook
             self.comm=MPI.COMM_WORLD
@@ -338,7 +343,7 @@ class NemoConfig(object):
                 self.origWCS=astWCS.WCS(img[ext].header, mode = 'pyfits', zapKeywords = ['PC1_1', 'PC1_2', 'PC2_1', 'PC2_2'])
                 self.origShape=(img[ext].header['NAXIS2'], img[ext].header['NAXIS1'])
         except:
-            # We don't always need or want this... should we warn by default if not found?
+            # We don't always need or want thisshould we warn by default if not found?
             self.origWCS=None
             self.origShape=None
                 
@@ -366,13 +371,33 @@ class NemoConfig(object):
                 os.makedirs(d, exist_ok = True)
             madeOutputDirs=True
 
+        # Logging
+        logger=logging.getLogger('nemo')
+        logger.setLevel(logging.DEBUG)
+        # formatter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter=logging.Formatter('%(asctime)s - %(message)s')
+        # to terminal
+        handler=logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.DEBUG)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        # and to file
+        logFileName='%s_%s.log' % (self.rootOutDir, datetime.datetime.now().isoformat())
+        fh=logging.FileHandler(logFileName)
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+        # Initial blurb
+        if self.rank == 0:
+            logger.info("nemo version = %s" % (nemo.__version__))
+
         # Optional override of selFn directory location
         if selFnDir is not None:
             self.selFnDir=selFnDir
 
         if setUpMaps == True:
             if self.verbose == True:
-                print(">>> Setting up maps")
+                logger.info("setting up maps")
             self._setUpMaps(writeTileInfo = writeTileInfo)
         else:
             pickleFileName=self.selFnDir+os.path.sep+"tileCoordsDict.pkl"
@@ -443,7 +468,7 @@ class NemoConfig(object):
             else:
                 self.tileNames=[]
             if self.rank == 0 and verbose == True:
-                print(">>> Total tiles = %d ; total processes = %d ; balanced number of processes = %d" % (len(self.allTileNames), self.size, balancedNumProcesses))
+                logger.info("Total tiles = %d ; total processes = %d ; balanced number of processes = %d" % (len(self.allTileNames), self.size, balancedNumProcesses))
 
         # # MPI: just divide up tiles pointed at by tileNames among processes
         # if self.MPIEnabled == True and divideTilesByProcesses == True:
@@ -462,7 +487,7 @@ class NemoConfig(object):
         #     else:
         #         self.tileNames=[]
         # if self.rank == 0:
-        #     print(">>> Total tiles = %d ; total processes = %d" % (len(self.allTileNames), self.size))
+        #     logger.info("Total tiles = %d ; total processes = %d" % (len(self.allTileNames), self.size))
 
         # We're now writing items per tile into their own dir (friendlier for Lustre)
         # NOTE: No longer writing individual tile filtered maps - only stitched versions
@@ -480,7 +505,7 @@ class NemoConfig(object):
         
         # For debugging...
         if self.MPIEnabled == True and verbose == True:
-            print((">>> rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
+            print(("rank = %d [PID = %d]: tileNames = %s" % (self.rank, os.getpid(), str(self.tileNames))))
   
   
     def _identifyFilterSets(self):
@@ -552,7 +577,7 @@ class NemoConfig(object):
                                                            self.parDict['tileDefinitions']['targetTileWidthDeg'],
                                                            self.parDict['tileDefinitions']['targetTileHeightDeg'])
             if self.verbose:
-                print("... breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
+                logger.info("breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
 
             if DS9RegionFileName is not None:
                 maps.saveTilesDS9RegionsFile(self.parDict, DS9RegionFileName)
@@ -603,7 +628,7 @@ class NemoConfig(object):
 
         # Tiled - this takes about 4 sec
         if self.parDict['useTiling'] == True:
-            if self.verbose: print(">>> Finding tile coords")
+            if self.verbose: logger.info("Finding tile coords")
             # Extract tile definitions (may have been inserted by autotiler before calling here)
             tileNames=[]
             coordsList=[]
@@ -627,7 +652,7 @@ class NemoConfig(object):
                 x1=c[1]
                 ra0, dec0=wcs.pix2wcs(x0, y0)
                 ra1, dec1=wcs.pix2wcs(x1, y1)
-                # Be careful with signs here... and we're assuming approx pixel size is ok
+                # Be careful with signs hereand we're assuming approx pixel size is ok
                 if x0-tileOverlapDeg/wcs.getPixelSizeDeg() > 0:
                     ra0=ra0+flipper*tileOverlapDeg
                 if x1+tileOverlapDeg/wcs.getPixelSizeDeg() < mapData.shape[1]:
@@ -656,7 +681,7 @@ class NemoConfig(object):
                                           'reprojectToTan': self.parDict['reprojectToTan'],
                                           'numPix': int(abs(clip_x1-clip_x0)*abs(clip_y1-clip_y0))}
                     if self.verbose:
-                        print("... adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
+                        logger.info("adding %s [%d, %d, %d, %d ; %d, %d]" % (name, ra1, ra0, dec0, dec1, ra0-ra1, dec1-dec0))
 
         return clipCoordsDict
 

@@ -31,6 +31,9 @@ from . import signals
 from . import completeness
 from . import MockSurvey
 
+import logging
+logger=logging.getLogger('nemo')
+
 #------------------------------------------------------------------------------------------------------------
 def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = False, useCachedRMSMap = False,\
                               useCachedFilteredMaps = False, measureFluxes = True, invertMap = False, \
@@ -68,7 +71,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
         if rootOutDir is None:
             rootOutDir=config.rootOutDir
         for setNum in config.filterSets:
-            print(">>> Filter set: %d" % (setNum))
+            logger.info("Filter set: %d" % (setNum))
             config.setFilterSet(setNum)
             if setNum == config.filterSets[-1]:
                 writeAreaMask=True
@@ -106,7 +109,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
                                            writeAreaMask = writeAreaMask, writeFlagMask = writeFlagMask)
 
     if verbose == True and config.rank == 0:
-        print("... after map filtering and making catalogs: time since start = %.3f sec" % (time.time()-config._timeStarted))
+        logger.info("after map filtering and making catalogs: time since start = %.3f sec" % (time.time()-config._timeStarted))
 
     # If for whatever reason, we find nothing, the below will get passed safely through everything else
     if catalog == []:
@@ -186,7 +189,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     stitchedSNMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     stitchedRMSMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
-        if verbose == True: print(">>> [rank = %d] Making filtered maps - tileName = %s " % (config.rank, tileName))
+        if verbose == True: logger.info("[rank = %d] making filtered maps - tileName = %s " % (config.rank, tileName))
         # Operations that only need to be done once go here
         if 'findAndMaskExtended' in config.parDict.keys():
             maps.makeExtendedSourceMask(config, tileName)
@@ -202,7 +205,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             filteredMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_filteredMap.fits"  % (label)
             SNMapFileName=filteredMapsDir+os.path.sep+tileName+os.path.sep+"%s_SNMap.fits" % (label)
             if useCachedFilteredMaps == True and os.path.exists(filteredMapFileName):
-                print("... loading cached filtered map %s ..." % (filteredMapFileName))
+                logger.info("loading cached filtered map %s ..." % (filteredMapFileName))
                 filteredMapDict={}
                 with pyfits.open(filteredMapFileName) as img:
                     filteredMapDict['data']=img[0].data
@@ -266,7 +269,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             # Forced photometry on user-supplied list of objects, or detect sources
             if 'forcedPhotometryCatalog' in config.parDict.keys() and config.parDict['forcedPhotometryCatalog'] is not None:
                 if config.rank == 0:
-                    print("... doing forced photometry using catalog %s" % (config.parDict['forcedPhotometryCatalog']))
+                    logger.info("doing forced photometry using catalog %s" % (config.parDict['forcedPhotometryCatalog']))
                 catalog=photometry.makeForcedPhotometryCatalog(filteredMapDict, 
                                                                config.parDict['forcedPhotometryCatalog'],
                                                                useInterpolator = config.parDict['useInterpolator'],
@@ -320,7 +323,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     if config.MPIEnabled == True:
         # Every process needs the whole catalog, for running in multipass mode
         optimalCatalogList=config.comm.allgather(optimalCatalog)
-        if config.rank == 0: print("... gathered catalogs")
+        if config.rank == 0: logger.info("gathered catalogs")
         toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
         for collectedTab in optimalCatalogList:
             if type(collectedTab) == astropy.table.table.Table and len(collectedTab) > 0:
@@ -368,7 +371,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
             # Hmm. This isn't reliable on wits-core at least
             # gathered_tileDicts=config.comm.gather(tileDict, root = 0)
             # if config.rank == 0:
-            #     print("... gathered %s" % (label))
+            #     logger.info("gathered %s" % (label))
             #     for rankTileDict in gathered_tileDicts:
             #         for key in rankTileDict:
             #             if key not in tileDict:
@@ -383,7 +386,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 gathered_tileDicts.append(tileDict)
                 for source in range(1, config.size):
                     gathered_tileDicts.append(config.comm.recv(source = source))
-                print("... gathered %s" % (label))
+                logger.info("gathered %s" % (label))
                 for t in gathered_tileDicts:
                     for tileName in t.keys():
                         tileDict[tileName]=t[tileName]
@@ -431,7 +434,7 @@ def makeRMSTables(config, catFileName = None):
                 label=label+"_maxFlags%d" % (config.parDict['selFnOptions']['maxFlags'])
             outFileName=config.selFnDir+os.path.sep+"RMSTab"+label+".fits"
             if os.path.exists(outFileName) == True:
-                print("... intersection mask and RMS table already exist for %s footprint with maxFlags = %s - skipping" % (footprintDict['label'], config.parDict['selFnOptions']['maxFlags']))
+                logger.info("intersection mask and RMS table already exist for %s footprint with maxFlags = %s - skipping" % (footprintDict['label'], config.parDict['selFnOptions']['maxFlags']))
                 continue
             else:
                 selFnCollection[footprintDict['label']]=[]
@@ -464,7 +467,7 @@ def makeRMSTables(config, catFileName = None):
     if config.MPIEnabled == True:
         gathered_selFnCollections=config.comm.gather(selFnCollection, root = 0)
         if config.rank == 0:
-            print("... gathered RMS tables")
+            logger.info("gathered RMS tables")
             all_selFnCollection={'full': []}
             for key in selFnCollection.keys():
                 if key not in all_selFnCollection.keys():
@@ -607,18 +610,18 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     pixAreaMap=maps.getPixelAreaArcmin2Map(RMSMap.shape, wcs)
     areaDeg2=(pixAreaMap[RMSMap > 0].sum())/60.0**2
 
-    print(">>> Mock parameters:")
-    print("    noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s)" % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
+    logger.info("Mock parameters:")
+    logger.info("    noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s)" % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
     skipKeys=['redshiftCatalog']
     for key in config.parDict['massOptions'].keys():
         if key not in skipKeys:
             if key == 'scalingRelations':
-                print("    %s = %s" % (key, str(config.parDict['massOptions'][key][0])))
+                logger.info("    %s = %s" % (key, str(config.parDict['massOptions'][key][0])))
             else:
-                print("    %s = %s" % (key, str(config.parDict['massOptions'][key])))
-    print("    QSource = %s" % (QSource))
-    print("    optimization bias model = %s" % (str(biasModel)))
-    print("    total area = %.1f square degrees" % (areaDeg2))
+                logger.info("    %s = %s" % (key, str(config.parDict['massOptions'][key])))
+    logger.info("    QSource = %s" % (QSource))
+    logger.info("    optimization bias model = %s" % (str(biasModel)))
+    logger.info("    total area = %.1f square degrees" % (areaDeg2))
 
     # Common set up
     cosmoModel=ccl.Cosmology(Omega_c = Om0-Ob0, Omega_b = Ob0, h = 0.01*H0, sigma8 = sigma8, n_s = ns,
@@ -635,7 +638,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     # Generate mocks
     catList=[]
     for mockNum in range(1, numMocksToMake+1):
-        print(">>> Generating mock %d of %d:" % (mockNum, numMocksToMake))
+        logger.info("Generating mock %d of %d:" % (mockNum, numMocksToMake))
         t0=time.time()
         tab=mockSurvey.drawSample(RMSMap, scalingRelationDict, Q, wcs = wcs,
                                   photFilterLabel = photFilterLabel,
@@ -668,7 +671,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                                  addInfo = addInfo, color = "cyan")
         catList.append(tab)
         t1=time.time()
-        print("    took %.3f sec" % (t1-t0))
+        logger.info("    took %.3f sec" % (t1-t0))
 
     if combineMocks == True:
         tab=atpy.vstack(catList)
@@ -953,7 +956,7 @@ def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False,
     # NOTE: We assume index 0 of the unfiltered maps list is the reference for which the filter is made
     catalogList=[]
     for tileName in config.tileNames:
-        print("... rank %d: tileName = %s ..." % (config.rank, tileName))
+        logger.info("rank %d: tileName = %s ..." % (config.rank, tileName))
         diagnosticsDir=cacheDir+os.path.sep+tileName
         os.makedirs(diagnosticsDir, exist_ok = True)
         for f in filtersList:
