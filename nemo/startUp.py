@@ -372,6 +372,11 @@ class NemoConfig(object):
             madeOutputDirs=True
 
         # Logging
+        logFileName='%s.log' % (self.rootOutDir) #, datetime.datetime.now().isoformat())
+        if self.rank == 0 and os.path.isfile(logFileName) == True:
+            os.remove(logFileName)
+        if self.MPIEnabled == True:
+            self.comm.barrier()
         logger=logging.getLogger('nemo')
         logger.setLevel(logging.DEBUG)
         # formatter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -382,7 +387,7 @@ class NemoConfig(object):
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         # and to file
-        logFileName='%s_%s.log' % (self.rootOutDir, datetime.datetime.now().isoformat())
+        dateStr=datetime.datetime.now().isoformat()
         fh=logging.FileHandler(logFileName)
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(formatter)
@@ -469,25 +474,6 @@ class NemoConfig(object):
                 self.tileNames=[]
             if self.rank == 0 and verbose == True:
                 logger.info("Total tiles = %d ; total processes = %d ; balanced number of processes = %d" % (len(self.allTileNames), self.size, balancedNumProcesses))
-
-        # # MPI: just divide up tiles pointed at by tileNames among processes
-        # if self.MPIEnabled == True and divideTilesByProcesses == True:
-        #     # New - bit clunky but distributes more evenly
-        #     rankExtNames={}
-        #     rankCounter=1
-        #     for e in self.tileNames:
-        #         if rankCounter not in rankExtNames:
-        #             rankExtNames[rankCounter]=[]
-        #         rankExtNames[rankCounter].append(e)
-        #         rankCounter=rankCounter+1
-        #         if rankCounter > self.size-1:
-        #             rankCounter=1
-        #     if self.rank in rankExtNames.keys():
-        #         self.tileNames=rankExtNames[self.rank]
-        #     else:
-        #         self.tileNames=[]
-        # if self.rank == 0:
-        #     logger.info("Total tiles = %d ; total processes = %d" % (len(self.allTileNames), self.size))
 
         # We're now writing items per tile into their own dir (friendlier for Lustre)
         # NOTE: No longer writing individual tile filtered maps - only stitched versions
