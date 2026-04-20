@@ -372,11 +372,14 @@ class NemoConfig(object):
             madeOutputDirs=True
 
         # Logging
-        logFileName='%s.log' % (self.rootOutDir) #, datetime.datetime.now().isoformat())
-        if self.rank == 0 and os.path.isfile(logFileName) == True:
+        if self.rank == 0:
+            logFileName='%s.log' % (self.rootOutDir) #, datetime.datetime.now().isoformat())
+        else:
+            logFileName='%s_rank%d.log' % (self.rootOutDir, self.rank) #, datetime.datetime.now().isoformat())
+        if os.path.isfile(logFileName) == True:
             os.remove(logFileName)
         if self.MPIEnabled == True:
-            self.comm.barrier()
+            self.comm.barrier()     # not really needed if each rank gets its own log file
         logger=logging.getLogger('nemo')
         logger.setLevel(logging.DEBUG)
         # formatter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

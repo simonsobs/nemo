@@ -230,6 +230,10 @@ class MapDict(dict):
                 raise Exception("no code added to support conversion to uK from Jy/sr for freq = %.0f GHz" \
                         % (self['obsFreqGHz']))
 
+        # Optional hot pixel treatment [for CFC sim maps]
+        if 'capHotPixVal' in self.keys():
+            data[data > self['capHotPixVal']]=self['capHotPixVal']
+
         # On-the-fly white noise injection [for CFC maps made 2025/2026, which otherwise give checkerboards when filtered]
         # Fix seed so that if we have to use this, at least we get the same result every run
         # [not needed for real maps, nemo-sim-kit maps, or SO MSS2 sims]
