@@ -79,7 +79,8 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = 
         a label (for housekeeping).
     
     """
-        
+
+    # logger.info("pixWinOrder = %d" % (pixWinOrder))
     f=filterParams
     label=f['label']+"#"+tileName
 
@@ -102,7 +103,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = 
     # and then we can forget about if e.g. stacking or doing forced photometry later
     if undoPixelWindow == True:
         mask=np.equal(filteredMapDict['data'], 0)
-        filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0, order = pixWinOrder)
+        filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow = -1.0, order = pixWinOrder)
         filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
     if returnFilter == True:
@@ -547,7 +548,8 @@ class MatchedFilter(MapFilter):
                         for noiseModelCatalog in self.params['noiseModelCatalog']:
                             model=maps.makeModelImage(d.shape, self.wcs, noiseModelCatalog,
                                                       mapDict['beamFileName'],
-                                                      obsFreqGHz = mapDict['obsFreqGHz'])
+                                                      obsFreqGHz = mapDict['obsFreqGHz'],
+                                                      pixWinOrder = mapDict['pixWinOrder'])
                             if model is not None:
                                 d=d-model
                     fMapsForNoise.append(enmap.fft(enmap.apod(d, self.apodPix)))
