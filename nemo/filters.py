@@ -648,6 +648,7 @@ class MatchedFilter(MapFilter):
                         deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
                         signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], 
                                                              amplitude = deltaT0)
+                    assert(mapDict['pixWinOrder'] is not None)
                     signalMap=enmap.apply_window(signalMap, pow=1.0, order = mapDict['pixWinOrder']) # Needed for clusters, 1.5% effect
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)

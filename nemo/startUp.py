@@ -41,6 +41,10 @@ def parseConfigFile(parDictFileName, verbose = False):
         logger.info("parsing config file %s" % (parDictFileName))
     with open(parDictFileName, "r") as stream:
         parDict=yaml.safe_load(stream)
+        # For ACT, below is order 0; for SO, may be order 1 - hopefully there will be a header keyword soon
+        # We have to get this in early to get it into mapDict objects later
+        if 'pixWinOrder' not in parDict.keys():
+            parDict['pixWinOrder']=0
         # We've moved masks out of the individual map definitions in the config file
         # (makes config files simpler as we would never have different masks across maps)
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
@@ -190,9 +194,6 @@ def parseConfigFile(parDictFileName, verbose = False):
         # This replaces flagMask and flagFromCatalog, done after main nemo run
         if 'postFlags' not in parDict.keys():
             parDict['postFlags']=[]
-        # For ACT, below is order 0; for SO, may be order 1 - hopefully there will be a header keyword soon
-        if 'pixWinOrder' not in parDict.keys():
-            parDict['pixWinOrder']=0
         # Mass/scaling relation/cosmology options - set fiducial values here if not chosen in config
         # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
         # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation
