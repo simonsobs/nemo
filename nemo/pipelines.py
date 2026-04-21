@@ -228,7 +228,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 filterResults=filters.filterMaps(config.unfilteredMapsDictList, f, tileName,
                                                  diagnosticsDir = config.diagnosticsDir, selFnDir = config.selFnDir,
                                                  verbose = True, undoPixelWindow = undoPixelWindow,
-                                                 useCachedFilter = useCachedFilters, returnFilter = returnFilter)
+                                                 useCachedFilter = useCachedFilters, returnFilter = returnFilter,
+                                                 pixWinOrder = config.parDict['pixWinOrder'])
                 if returnFilter == False:
                     filteredMapDict=filterResults
                 else:
@@ -978,6 +979,7 @@ def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False,
                                                                   selFnDir = cacheDir, 
                                                                   verbose = True, 
                                                                   undoPixelWindow = True,
+                                                                  pixWinOrder = config.parDict['pixWinOrder'],
                                                                   returnFilter = True)
                 else:
                     mapDict['smoothKernel']=kernelDict[tileName][mapDict['obsFreqGHz']]['smoothKernel']

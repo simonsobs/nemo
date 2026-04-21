@@ -53,7 +53,7 @@ logger=logging.getLogger('nemo')
 #-------------------------------------------------------------------------------------------------------------
 def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = '.', \
                selFnDir = '.', verbose = True, undoPixelWindow = True, useCachedFilter = False, \
-               returnFilter = False):
+               returnFilter = False, pixWinOrder = 0):
     """Builds and applies filters to the unfiltered map(s). 
     
     Args:
@@ -71,6 +71,8 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = 
             read from disk, rather than re-calculated (used by source injection simulations).
         returnFilter (:obj:`bool`, optional): If True, the filter object is returned, as well as a dictionary
             containing the filtered map.
+        pixWinOrder (:obj:`int`, optional): The order of the pixel window function. For ACT maps, use 0
+            (nearest neighbour). For Simons Observatory maps, this may be 1 (bilinear).
     
     Returns:
         A dictionary containing the filtered map in signal units, a signal-to-noise-map, area mask, WCS, and
@@ -100,7 +102,7 @@ def filterMaps(unfilteredMapsDictList, filterParams, tileName, diagnosticsDir = 
     # and then we can forget about if e.g. stacking or doing forced photometry later
     if undoPixelWindow == True:
         mask=np.equal(filteredMapDict['data'], 0)
-        filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+        filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0, order = pixWinOrder)
         filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
     if returnFilter == True:
@@ -644,7 +646,7 @@ class MatchedFilter(MapFilter):
                         deltaT0=maps.convertToDeltaT(y0, mapDict['obsFreqGHz'])
                         signalMap=self.makeSignalTemplateMap(mapDict['beamFileName'], 
                                                              amplitude = deltaT0)
-                    signalMap=enmap.apply_window(signalMap, pow=1.0) # Needed for clusters, 1.5% effect
+                    signalMap=enmap.apply_window(signalMap, pow=1.0, order = mapDict['pixWinOrder']) # Needed for clusters, 1.5% effect
                     signalMaps.append(signalMap)
                     fSignal=enmap.fft(signalMap)
                     fSignalMaps.append(fSignal)

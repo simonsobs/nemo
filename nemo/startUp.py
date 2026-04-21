@@ -46,7 +46,8 @@ def parseConfigFile(parDictFileName, verbose = False):
         # To save re-jigging how masks are treated inside filter code, add them back to map definitions here
         # NOTE: 'flagMask' and 'flagFromCatalog' were here, now replaced by 'postFlags'
         maskKeys=['pointSourceMask', 'surveyMask', 'maskPointSourcesFromCatalog', 'apodizeUsingSurveyMask',
-                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan']
+                  'maskSubtractedPointSources', 'RADecSection', 'maskHoleDilationFactor', 'reprojectToTan',
+                  'pixWinOrder']
         for mapDict in parDict['unfilteredMaps']:
             for k in maskKeys:
                 if k in parDict.keys():
@@ -189,6 +190,9 @@ def parseConfigFile(parDictFileName, verbose = False):
         # This replaces flagMask and flagFromCatalog, done after main nemo run
         if 'postFlags' not in parDict.keys():
             parDict['postFlags']=[]
+        # For ACT, below is order 0; for SO, may be order 1 - hopefully there will be a header keyword soon
+        if 'pixWinOrder' not in parDict.keys():
+            parDict['pixWinOrder']=0
         # Mass/scaling relation/cosmology options - set fiducial values here if not chosen in config
         # NOTE: We SHOULD use M200c not M500c here (to avoid CCL Tinker08 problem)
         # But we don't, currently, as old runs/tests used M500c and Arnaud-like scaling relation

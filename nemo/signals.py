@@ -1099,7 +1099,7 @@ def fitQ(config):
                                              GNFWParams = config.parDict['GNFWParams'])
                 except ccl.CCLError:
                     continue
-                signalMap=enmap.apply_window(signalMap, pow = 1.0)
+                signalMap=enmap.apply_window(signalMap, pow = 1.0, order = config.parDict['pixWinOrder'])
                 # except:
                 #     continue
                 #signalMap=signalMap+simCMBDict[obsFreqGHz]

@@ -351,7 +351,8 @@ class MapDict(dict):
                                     self['beamFileName'], obsFreqGHz = obsFreqGHz,
                                     GNFWParams = GNFWParams, profile = self['injectSources']['profile'],
                                     validAreaSection = validAreaSection,
-                                    override = self['injectSources']['override'])
+                                    override = self['injectSources']['override'],
+                                    pixWinOrder = self['pixWinOrder'])
             if modelMap is not None:
                 modelMap[weights == 0]=0
                 data=data+modelMap
@@ -443,7 +444,8 @@ class MapDict(dict):
                 if type(tab) != atpy.Table:
                     tab=atpy.Table().read(catalogPath)
                 tab=catalogs.getCatalogWithinImage(tab, data.shape, wcs)
-                model=makeModelImage(data.shape, wcs, tab, self['beamFileName'], obsFreqGHz = self['obsFreqGHz'])
+                model=makeModelImage(data.shape, wcs, tab, self['beamFileName'], obsFreqGHz = self['obsFreqGHz'],
+                                     pixWinOrder = self['pixWinOrder'])
                 if model is not None:
                     data=data-model
                     # Threshold of > 1 uK here should be made adjustable in config
@@ -1673,7 +1675,7 @@ def estimateContamination(contamSimDict, imageDict, SNRKeys, label, diagnosticsD
 def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWParams = 'default',\
                    profile = 'A10', cosmoModel = None, applyPixelWindow = True, override = None,\
                    validAreaSection = None, minSNR = -99, TCMBAlpha = 0, reportTimingInfo = False,\
-                   maxSizeDegMultiplier = 5, useInferredSZProperties = False):
+                   maxSizeDegMultiplier = 5, useInferredSZProperties = False, pixWinOrder = 0):
     """Make a map with the given dimensions (shape) and WCS, containing model clusters or point sources, 
     with properties as listed in the catalog. This can be used to either inject or subtract sources
     from real maps.
@@ -1700,6 +1702,8 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
             {'M500', 'redshift'} is given, all objects in the model image are forced to have the 
             corresponding angular size. Used by :meth:`sourceInjectionTest`.
         applyPixelWindow (bool, optional): If True, apply the pixel window function to the map.
+        pixWinOrder (:obj:`int`, optional): The order of the pixel window function. For ACT maps, use 0
+            (nearest neighbour). For Simons Observatory maps, this may be 1 (bilinear).
         validAreaSection (list, optional): Pixel coordinates within the wcs in the format
             [xMin, xMax, yMin, yMax] that define valid area within the model map. Pixels outside this 
             region will be set to zero. Use this to remove overlaps between tile boundaries.
@@ -1861,7 +1865,7 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     # (because the source-insertion routines in signals.py interpolate onto the grid rather than average)
     if applyPixelWindow == True:
         t0=time.time()
-        modelMap=enmap.apply_window(modelMap, pow = 1.0)
+        modelMap=enmap.apply_window(modelMap, pow = 1.0, order = pixWinOrder)
         t1=time.time()
         if reportTimingInfo: logger.info("makeModelImage - pix win application - took %.3f sec" % (t1-t0))
 
