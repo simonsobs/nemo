@@ -250,7 +250,8 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
                 SNMap[validMask]=SNMap[validMask]/RMSMap[validMask]
                 filteredMapDict['SNMap']=SNMap
                 mask=np.equal(filteredMapDict['data'], 0)
-                filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+                filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0,
+                                                           order = config.parDict['pixWinOrder'])
                 filteredMapDict['data'][mask]=0 # just in case we rely elsewhere on zero == no data
 
             # New behavior - only save stitched tiles [and make stitched maps even if not tiled]
@@ -990,7 +991,8 @@ def _extractSpecMatchedFilter(config, tab, kernelDict, saveFilteredMaps = False,
                     filteredMapDict['SNMap']=np.zeros(filterObj.shape)
                     mask=np.greater(filteredMapDict['surveyMask'], 0)
                     filteredMapDict['SNMap'][mask]=filteredMapDict['data'][mask]/RMSMap[mask]
-                    filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0)
+                    filteredMapDict['data']=enmap.apply_window(filteredMapDict['data'], pow=-1.0,
+                                                               pixWinOrder = config.parDict['pixWinOrder'])
                 if saveFilteredMaps == True:
                     outFileName=cacheDir+os.path.sep+'%d_' % (mapDict['obsFreqGHz'])+f['label']+'#'+tileName+'.fits'
                     # Add conversion to delta T in here?
