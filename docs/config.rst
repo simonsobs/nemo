@@ -487,6 +487,21 @@ undoPixelWindow
     
        undoPixelWindow: True
 
+
+pixWinOrder
+^^^^^^^^^^^
+
+    The order to use for pixel window corrections. If this parameter is
+    not given in the config file, the default value of 0 is used (nearest
+    neighbour, appropriate for ACT maps). For Simons Observatory, where
+    bilinear map making is used, this should be set to a value of 1.
+
+    *Example:*
+
+    .. code-block:: yaml
+
+       pixWinOrder: 1    # Use 0 for ACT, 1 for Simons Obs maps
+
        
 forcedPhotometryCatalog
 ^^^^^^^^^^^^^^^^^^^^^^^
