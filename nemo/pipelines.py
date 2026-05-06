@@ -324,6 +324,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     # Gathering catalogs
     if config.MPIEnabled == True:
         # Every process needs the whole catalog, for running in multipass mode
+        if config.rank == 0: logger.info("gathering catalogs")
         optimalCatalogList=config.comm.allgather(optimalCatalog)
         if config.rank == 0: logger.info("gathered catalogs")
         toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
