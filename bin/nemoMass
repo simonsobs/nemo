@@ -39,6 +39,9 @@ import astropy.io.fits as pyfits
 import time
 import yaml
 
+import logging
+logger=logging.getLogger('nemo')
+
 #------------------------------------------------------------------------------------------------------------
 def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassEstimates = [],
              inferSZProperties = False):
@@ -59,7 +62,7 @@ def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassE
     if 'onePlusRedshift_power' not in scalingRelation.keys():
         scalingRelation['onePlusRedshift_power']=0.0
     
-    # print("scalingRelation", scalingRelation)
+    # logger.info("scalingRelation", scalingRelation)
 
     # Extra columns for other inferred quantities
     if inferSZProperties == True:
@@ -103,7 +106,7 @@ def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassE
     count=0
     for row in tab:
         count=count+1
-        print("... rank %d; %d/%d; %s (%.3f +/- %.3f) ..." % (config.rank, count, len(tab), row['name'], 
+        logger.info("rank %d; %d/%d; %s (%.3f +/- %.3f)" % (config.rank, count, len(tab), row['name'],
                                                               row['redshift'], row['redshiftErr']))
 
         tileName=row['tileName']
@@ -111,7 +114,7 @@ def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassE
         # Cuts on z, fixed_y_c for forced photometry mode (invalid objects will be listed but without a mass)
         # Added cut on z here to avoid blow-ups for extreme low-z
         if row['redshift'] < 0.027: # Ok, this is highly tuned... but is the lowest z in ACT DR6
-            print("... skipping %s - redshift < 0.027 ..." % (row['name']))
+            logger.info("skipping %s - redshift < 0.027" % (row['name']))
             continue
         if row['fixed_y_c'] > 0 and np.isnan(row['redshift']) == False:
             # Corrected for mass function steepness
@@ -130,7 +133,7 @@ def calcMass(tab, scalingRelation, QFit, fRelWeightsDict, mockSurvey, otherMassE
                                             tileName = tileName,
                                             inferSZProperties = inferSZProperties)
             if massDict is None:
-                print("... skipping %s - failed to get mass (perhaps Q outside valid range for this M, z) ..." % (row['name']))
+                logger.info("skipping %s - failed to get mass (perhaps Q outside valid range for this M, z)" % (row['name']))
                 continue
             row[prefix+'%s' % (label)]=massDict['%s' % (label)]
             row[prefix+'%s_errPlus' % (label)]=massDict['%s_errPlus' % (label)]
@@ -252,7 +255,7 @@ if __name__ == '__main__':
     outFileName=args.outFileName
     forcedPhotometry=args.forcedPhotometry
     if forcedPhotometry == True and args.MPIEnabled == True:
-        print("Aborted - cannot use forced photometry mode with MPI currently")
+        logger.info("Aborted - cannot use forced photometry mode with MPI currently")
         sys.exit()
     QSource=args.QSource
     if QSource not in ['fit', 'injection', 'hybrid']:
@@ -287,7 +290,7 @@ if __name__ == '__main__':
         if 'redshiftErr' in zTab.keys():
             nemoTab['redshiftErr']=zTab['redshiftErr']
         else:
-            print("... WARNING: no redshiftErr column found in '%s' - assuming redshiftErr = 0 for all clusters ..." %  (config.parDict['massOptions']['redshiftCatalog']))
+            logger.info("WARNING: no redshiftErr column found in '%s' - assuming redshiftErr = 0 for all clusters" %  (config.parDict['massOptions']['redshiftCatalog']))
             nemoTab['redshiftErr']=0
         tab=nemoTab
         if outFileName is None:
@@ -368,7 +371,7 @@ if __name__ == '__main__':
         else:
             inferSZProperties=False
         count=count+1
-        print(">>> Scaling relation %d/%d" % (count, len(massOptions['scalingRelations'])))
+        logger.info(">>> Scaling relation %d/%d" % (count, len(massOptions['scalingRelations'])))
         mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                      rhoType = scalingRelation['rhoType'], delta = scalingRelation['delta'])
         tab=calcMass(tab, scalingRelation, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates,
@@ -378,10 +381,10 @@ if __name__ == '__main__':
         tabList=config.comm.gather(tab, root = 0)
         if config.rank != 0:
             assert tabList is None
-            print("... MPI rank %d finished ..." % (config.rank))
+            # logger.info("... MPI rank %d finished ..." % (config.rank))
             sys.exit()
         else:
-            print("... gathering catalogs ...")
+            logger.info("gathering catalogs")
             tab=atpy.vstack(tabList)
     
     tab.sort('sortIndex')
@@ -406,21 +409,21 @@ if __name__ == '__main__':
     # tab.meta['RHOTYPE']=massOptions['rhoType']
     # tab.meta['DELTA']=massOptions['delta']
     tab.write(outFileName, overwrite = True)
-    print("... mass table written to %s ..." % (outFileName))
+    logger.info("mass table written to %s" % (outFileName))
 
     # Optionally making model images
     # These take ~2 min per map for ~7000 clusters in an ACT DR5/DR6 scale map on a single core
     if args.makeModelMaps == True:
         del MockSurvey
-        print(">>> Making model cluster SZ signal maps [inferred SZ properties are not used]")
+        logger.info("making model cluster SZ signal maps [inferred SZ properties are not used]")
         t0=time.time()
         os.makedirs(outDir+os.path.sep+"clusterModelMaps", exist_ok = True)
         catFileName=outFileName
         for mapDict in config.parDict['unfilteredMaps']:
-            print("... %s ..." % (mapDict['label']))
+            logger.info("%s" % (mapDict['label']))
             outModelFileName=outDir+os.path.sep+"clusterModelMaps"+os.path.sep+"clusterModelMap_%s.fits" % (mapDict['label'])
-            cmd="nemoModel %s %s %s %s -f %.1f -m" % (catFileName, mapDict['surveyMask'], mapDict['beamFileName'],
-                                                      outModelFileName, mapDict['obsFreqGHz'])
+            cmd="nemoModel %s %s %s %s -f %.1f -m -x 40" % (catFileName, mapDict['surveyMask'], mapDict['beamFileName'],
+                                                            outModelFileName, mapDict['obsFreqGHz'])
             os.system(cmd)
         t1=time.time()
-        print("... time taken to generate model cluster SZ signal maps = %.1f sec" % (t1-t0))
+        logger.info("time taken to generate model cluster SZ signal maps = %.1f sec" % (t1-t0))

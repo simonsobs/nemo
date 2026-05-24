@@ -1456,7 +1456,7 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
     PArr=[]
     for k in range(len(zRange)):
 
-        zk=zRange[k]
+        zk=float(zRange[k])
 
         # We've generalised mockSurvey to be able to use e.g. M200m, but Q defined for theta500c
         # So, need a mapping between M500c and whatever mass definition used in mockSurvey

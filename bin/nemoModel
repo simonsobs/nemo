@@ -21,6 +21,9 @@ on_rtd=os.environ.get('READTHEDOCS', None)
 if on_rtd is None:
     import pyccl as ccl
 
+import logging
+logger=logging.getLogger('nemo')
+
 #------------------------------------------------------------------------------------------------------------
 def makeParser():
     
@@ -216,12 +219,12 @@ if __name__ == '__main__':
         if key in tab.meta.keys():
             keyCount=keyCount+1
     if keyCount == len(keywords):
-        if rank == 0: print(">>> Using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
+        if rank == 0: logger.info("using cosmology specified in header for catalog %s [only affects painted cluster sizes]" % (args.catalog))
         cosmoModel=ccl.Cosmology(Omega_c = tab.meta['OM0']-tab.meta['OB0'], Omega_b = tab.meta['OB0'],
                                  h = 0.01*tab.meta['H0'], sigma8 = tab.meta['SIGMA8'], n_s = tab.meta['NS'],
                                  transfer_function = signals.transferFunction)
     else:
-        if rank == 0: print(">>> Using fiducial cosmology")
+        if rank == 0: logger.info("using fiducial cosmology")
         cosmoModel=signals.fiducialCosmoModel
 
     # Optional signal scaling (useful for diff alpha sims)
@@ -239,7 +242,7 @@ if __name__ == '__main__':
         tab=tab[startIndex:endIndex]
 
     # Build a dictionary containing the model images which we'll stich together at the end
-    if rank == 0: print(">>> Building models ...")
+    if rank == 0: logger.info("building models")
     t0=time.time()
     modelImage=maps.makeModelImage(shape, wcs, tab, args.beamFileName,
                                    obsFreqGHz = args.obsFreqGHz,
@@ -249,16 +252,16 @@ if __name__ == '__main__':
                                    maxSizeDegMultiplier = args.maxSizeDegMultiplier,
                                    useInferredSZProperties = args.useInferredSZProperties)
     t1=time.time()
-    print("... rank %d image complete (took %.3f sec)" % (rank, t1-t0))
+    logger.info("rank %d image complete (took %.3f sec)" % (rank, t1-t0))
 
     if args.MPIEnabled == True:
         # comm.barrier()
         if rank > 0:
-            print("... rank = %d sending sky model image" % (rank))
+            logger.info("rank = %d sending sky model image" % (rank))
             comm.send(modelImage, dest = 0)
             del modelImage
         elif rank == 0:
-            print("... gathering sky model images")
+            logger.info("gathering sky model images")
             for source in range(1, size):
                 recModelImage=comm.recv(source = source)
                 if recModelImage is not None:
@@ -267,7 +270,7 @@ if __name__ == '__main__':
 
     # Assembly with optional CMB and noise
     if rank == 0:
-        print(">>> Assembling final model image ...")
+        logger.info("assembling final model image")
         if modelImage is None:  # e.g., if we run with pointsources-0 to just get CMB and noise
             d=np.zeros(shape)
         else:
@@ -325,4 +328,4 @@ if __name__ == '__main__':
             with pyfits.open(args.addMap) as img:
                 d=d+float(args.addMapScaling)*img[0].data
         astImages.saveFITS(args.outputFileName, d, wcs)
-        print("... finished")
+        logger.info("finished")
