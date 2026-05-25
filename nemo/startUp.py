@@ -379,30 +379,28 @@ class NemoConfig(object):
         # Logging
         if self.rank == 0:
             logFileName='%s.log' % (self.rootOutDir) #, datetime.datetime.now().isoformat())
-        else:
-            logFileName='%s_rank%d.log' % (self.rootOutDir, self.rank) #, datetime.datetime.now().isoformat())
-        if os.path.isfile(logFileName) == True:
-            os.remove(logFileName)
-        if self.MPIEnabled == True:
-            self.comm.barrier()     # not really needed if each rank gets its own log file
-        logger=logging.getLogger('nemo')
-        logger.setLevel(logging.DEBUG)
-        # formatter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        formatter=logging.Formatter('%(asctime)s - %(message)s')
-        # to terminal
-        handler=logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.DEBUG)
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        # and to file
-        dateStr=datetime.datetime.now().isoformat()
-        fh=logging.FileHandler(logFileName)
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-        # Initial blurb
-        if self.rank == 0:
-            logger.info("nemo version = %s" % (nemo.__version__))
+        # else:
+            # logFileName='%s_rank%d.log' % (self.rootOutDir, self.rank) #, datetime.datetime.now().isoformat())
+            if os.path.isfile(logFileName) == True:
+                os.remove(logFileName)
+            logger=logging.getLogger('nemo')
+            logger.setLevel(logging.DEBUG)
+            # formatter=logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            formatter=logging.Formatter('%(asctime)s - %(message)s')
+            # to terminal
+            handler=logging.StreamHandler(sys.stdout)
+            handler.setLevel(logging.DEBUG)
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            # and to file
+            dateStr=datetime.datetime.now().isoformat()
+            fh=logging.FileHandler(logFileName)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(formatter)
+            logger.addHandler(fh)
+            # Initial blurb
+            if self.rank == 0:
+                logger.info("nemo version = %s" % (nemo.__version__))
 
         # Optional override of selFn directory location
         if selFnDir is not None:

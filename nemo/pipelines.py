@@ -189,7 +189,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     stitchedSNMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     stitchedRMSMapDict=maps.TileDict({}, tileCoordsDict = config.tileCoordsDict)
     for tileName in config.tileNames:
-        if verbose == True: logger.info("[rank = %d] making filtered maps - tileName = %s " % (config.rank, tileName))
+        # if verbose == True: logger.info("[rank = %d] making filtered maps - tileName = %s " % (config.rank, tileName))
         # Operations that only need to be done once go here
         if 'findAndMaskExtended' in config.parDict.keys():
             maps.makeExtendedSourceMask(config, tileName)

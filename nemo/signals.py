@@ -1004,7 +1004,7 @@ def fitQ(config):
     QTabDict={}
     for tileName in config.tileNames:
         t0=time.time()
-        logger.info("fitting Q in tile %s" % (tileName))
+        # logger.info("fitting Q in tile %s" % (tileName))
 
         # Load reference scale filter (it may be in memory already)
         if tileName in config.cachedFilters.keys():
