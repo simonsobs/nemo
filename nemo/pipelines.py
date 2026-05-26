@@ -71,7 +71,7 @@ def filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fals
         if rootOutDir is None:
             rootOutDir=config.rootOutDir
         for setNum in config.filterSets:
-            logger.info("Filter set: %d" % (setNum))
+            logger.info("filter set: %d" % (setNum))
             config.setFilterSet(setNum)
             if setNum == config.filterSets[-1]:
                 writeAreaMask=True
@@ -324,7 +324,7 @@ def _filterMapsAndMakeCatalogs(config, rootOutDir = None, useCachedFilters = Fal
     # Gathering catalogs
     if config.MPIEnabled == True:
         # Every process needs the whole catalog, for running in multipass mode
-        if config.rank == 0: logger.info("gathering catalogs")
+        if config.rank == 0: logger.info("filtering maps and making catalogs in each tile")
         optimalCatalogList=config.comm.allgather(optimalCatalog)
         if config.rank == 0: logger.info("gathered catalogs")
         toStack=[]  # We sometimes return [] if no objects found - we can't vstack those
