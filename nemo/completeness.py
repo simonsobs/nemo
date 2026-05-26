@@ -22,6 +22,10 @@ from scipy import special
 on_rtd=os.environ.get('READTHEDOCS', None)
 if on_rtd is None:
     import pyccl as ccl
+    import jax
+    import jax.numpy as jnp
+    import jax.scipy.special as jspecial
+    jax.config.update("jax_enable_x64", True)
 import nemo
 from . import signals
 from . import maps
@@ -630,54 +634,59 @@ class SelFn(object):
 
 
     def _fastCompMz(self, y0Grid, RMSTab, minSN, maxSN):
-        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-        # SOLikeT style - tiny loops are faster than doing this with array functions
-        # Again, k == 0 is the everything > SNRCut, other planes are S/N bins if requested
-        compMzTile=np.zeros(y0Grid.shape)
-        for i in range(len(RMSTab)):
+        rms_vals=jnp.array(RMSTab['y0RMS'])                              # (nRMS,)
+        areaWeights=jnp.array(RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum())  # (nRMS,)
+        y0g=jnp.array(y0Grid)                                            # (nz, nM)
+
+        if self.scalingRelationDict['sigma_int'] == 0:
+            # Vectorised over RMS axis: (nRMS, nz, nM)
             if self.biasModel is not None:
-                trueSNR=y0Grid/RMSTab['y0RMS'][i]
+                trueSNR=y0g[None,:,:] / rms_vals[:,None,None]
                 corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
-                # Some models may give unphysically large correction factors when extrapolated S/N -> 0
-                # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
+                # Truncate unphysically large correction factors below the S/N cut
                 if self.truncateDeltaSNR is not None:
-                    # corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
-                    corrFactors[trueSNR < minSN-self.truncateDeltaSNR]=1.0
+                    corrFactors=jnp.where(trueSNR < minSN - self.truncateDeltaSNR, 1.0, corrFactors)
             else:
-                corrFactors=np.ones(y0Grid.shape)
-            if self.scalingRelationDict['sigma_int'] == 0:
-                compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
-            else:
-                # SOLikeT style but simpson integration
-                scatter=self.scalingRelationDict['sigma_int']
-                lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44) # y0Grid.shape[1]) # was 44
-                yy0=np.exp(lnyy)
-                mu=np.log(y0Grid*corrFactors)
-                fac=1./np.sqrt(2.*np.pi*scatter**2)
-                # arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)
-                arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, minSN)
-                cc=arg*areaWeights[i]
-                arg0=(lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter)
-                args=fac*np.exp(-arg0**2.) * cc[:, None,None]
-                # compMzTile+=integrate.simpson(args, x=lnyy, axis=0)
-                compMzTile=compMzTile+np.trapezoid(args, x=lnyy, axis=0)
-        # We could probably retire this
-        if self.maxTheta500Arcmin is not None:
-            compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
-        return compMzTile
-
-
-    def _get_erf_diff(self, qin, qmin, qmax, qcut):
-        """Based on SOLikeT - qin == input SNR (y0/RMS on the grid)"""
-        arg1 = (qin - qmax)/np.sqrt(2.)
-        if qmin > qcut:
-            qlim = qmin
+                corrFactors=1.0
+            snr=(y0g[None,:,:] * corrFactors) / rms_vals[:,None,None]
+            erf_vals=self._get_erf_diff(snr, minSN, maxSN, self.SNRCut)  # (nRMS, nz, nM)
+            compMzTile=jnp.sum(erf_vals * areaWeights[:,None,None], axis=0)  # (nz, nM)
         else:
-            qlim = qcut
-        arg2 = (qin - qlim)/np.sqrt(2.)
-        erf_compl = (special.erf(arg2) - special.erf(arg1)) / 2.
+            # Scatter branch: loop over RMS rows, JAX ops inside each iteration
+            scatter=self.scalingRelationDict['sigma_int']
+            lnyy=jnp.linspace(jnp.min(jnp.log(y0g)), jnp.max(jnp.log(y0g)), 44)  # (44,)
+            yy0=jnp.exp(lnyy)
+            fac=1. / jnp.sqrt(2. * jnp.pi * scatter**2)
+            compMzTile=jnp.zeros(y0g.shape)
+            for i in range(len(RMSTab)):
+                if self.biasModel is not None:
+                    trueSNR=y0g / rms_vals[i]
+                    corrFactor_i=self.biasModel['func'](trueSNR, self.biasModel['params'])
+                    if self.truncateDeltaSNR is not None:
+                        corrFactor_i=jnp.where(trueSNR < minSN - self.truncateDeltaSNR, 1.0, corrFactor_i)
+                else:
+                    corrFactor_i=1.0
+                mu=jnp.log(y0g * corrFactor_i)                                  # (nz, nM)
+                arg=self._get_erf_diff(yy0 / rms_vals[i], minSN, maxSN, minSN)  # (44,)
+                cc=arg * areaWeights[i]                                          # (44,)
+                arg0=(lnyy[:,None,None] - mu[None,:,:]) / (jnp.sqrt(2.) * scatter)  # (44, nz, nM)
+                args=fac * jnp.exp(-arg0**2.) * cc[:,None,None]                 # (44, nz, nM)
+                compMzTile=compMzTile + jnp.trapezoid(args, x=lnyy, axis=0)
 
-        return erf_compl
+        if self.maxTheta500Arcmin is not None:
+            compMzTile=compMzTile * jnp.array(self._theta500Grid < self.maxTheta500Arcmin, dtype=float)
+
+        return np.array(compMzTile)
+
+
+    @staticmethod
+    @jax.jit
+    def _get_erf_diff(qin, qmin, qmax, qcut):
+        """Based on SOLikeT - qin == input SNR (y0/RMS on the grid)"""
+        qlim = jnp.where(qmin > qcut, qmin, qcut)
+        arg1 = (qin - qmax) / jnp.sqrt(2.)
+        arg2 = (qin - qlim) / jnp.sqrt(2.)
+        return (jspecial.erf(arg2) - jspecial.erf(arg1)) / 2.
 
 
     def _checkIfParametersUpdated(self):
@@ -728,23 +737,27 @@ class SelFn(object):
                 zpivot=0
             else:
                 zpivot=self.scalingRelationDict['zpivot']
-            y0Grid=np.zeros([zRange.shape[0], self.clusterCount.shape[1]])
             # NOTE: Still called Ez2, but now has gamma option enabled, and possibly zpivot != 0
             Ez0=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zpivot)), Ez_gamma)
             Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), Ez_gamma)/Ez0
+            # Pre-compute the scaling-relation signal for all (z, M) at once, then apply
+            # per-z Q and fRel corrections in the loop below (both require scalar z).
+            M_ratio=jnp.power(jnp.array(np.power(10, self.log10M)) / Mpivot, 1 + B0)  # (nM,)
+            true_y0s_all=(tenToA0
+                          * jnp.array(Ez2)[:,None]
+                          * M_ratio[None,:]
+                          * jnp.power(1 + jnp.array(zRange)[:,None], onePlusRedshift_power))  # (nz, nM)
+            y0Grid=np.array(true_y0s_all)
             for i in range(len(zRange)):
                 zk=zRange[i]
                 # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
                 k=np.argmin(abs(self.mockSurvey.z-zk))
                 Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
-                #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)*np.power(1+zk, onePlusRedshift_power)
                 if applyQ == True:
-                    true_y0s_zk=true_y0s_zk*Qs_zk
+                    y0Grid[i]=y0Grid[i]*Qs_zk
                 if self.applyRelativisticCorrection == True:
                     fRels_zk=interpolate.splev(self._log10M500s, self.mockSurvey.fRelSplines[k])
-                    true_y0s_zk=true_y0s_zk*fRels_zk
-                y0Grid[i]=true_y0s_zk
+                    y0Grid[i]=y0Grid[i]*fRels_zk
             # For some cosmological parameters, we can still get the odd -ve y0
             y0Grid[y0Grid <= 0] = 1e-9
             self._y0GridCache[tileName]=y0Grid
@@ -911,6 +924,7 @@ class SelFn(object):
         return massLimit
 
 #------------------------------------------------------------------------------------------------------------
+@jax.jit
 def optBiasModelFunc(snr, params):
     """Optimization bias model function, of the form ``corrFactor = 1 + p1/x + p2/x**2 + + pn/x**n``
     where p1...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
@@ -925,25 +939,21 @@ def optBiasModelFunc(snr, params):
 
     """
 
-    model=np.ones(snr.shape)
-    index=1
-    for p in params:
-        model=model+p/(snr**index)
-        index=index+1
+    params=jnp.asarray(params)
+    powers=jnp.arange(1, params.shape[0] + 1)
+    return 1.0 + jnp.sum(params / jnp.power(jnp.asarray(snr)[..., None], powers), axis=-1)
 
-    return model
 
+@jax.jit
 def optBiasModelFuncB(snr, params):
     """Same as series, but starts at index 2"""
-    model=np.ones(snr.shape)#*params['par0']
-    index=2
-    for p in params:
-        model=model+p/(snr**index)
-        index=index+1
+    params=jnp.asarray(params)
+    powers=jnp.arange(2, params.shape[0] + 2)
+    return 1.0 + jnp.sum(params / jnp.power(jnp.asarray(snr)[..., None], powers), axis=-1)
 
-    return model
 
 #------------------------------------------------------------------------------------------------------------
+@jax.jit
 def optBiasPowerModelFunc(snr, param):
     """Optimization bias model function, of the form ``corrFactor = 1 + 1/x**p``
     where p is a fit paramer. This is for use with the `fast` completeness
@@ -958,10 +968,11 @@ def optBiasPowerModelFunc(snr, param):
 
     """
 
-    model=1+1/np.power(snr, param)
-    return model
+    return 1.0 + 1.0 / jnp.power(jnp.asarray(snr), param)
+
 
 #------------------------------------------------------------------------------------------------------------
+@jax.jit
 def optBiasSeriesOffsetModelFunc(snr, params):
     """Optimization bias model function, of the form ``corrFactor = p0 + p1/x + p2/x**2 + + pn/x**n``
     where p0...pn are fit coefficents given as the params array. This is for use with the `fast` completeness
@@ -976,12 +987,9 @@ def optBiasSeriesOffsetModelFunc(snr, params):
 
     """
 
-    model=np.ones(snr.shape)*params[0]
-    index=1
-    for p in params[1:]:
-        model=model+p/(snr**index)
-        index=index+1
-    return model
+    params=jnp.asarray(params)
+    powers=jnp.arange(1, params.shape[0])
+    return params[0] + jnp.sum(params[1:] / jnp.power(jnp.asarray(snr)[..., None], powers), axis=-1)
 
 #------------------------------------------------------------------------------------------------------------
 def _parseSourceInjectionData(injTab, inputTab, SNRCut):
