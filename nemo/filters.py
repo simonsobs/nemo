@@ -19,6 +19,7 @@ derived from these:
 """
 
 import math
+import os
 from pixell import enmap
 from pixell import fft as enfft
 from pixell import powspec
@@ -27,7 +28,6 @@ from astLib import *
 import numpy as np
 from numpy import fft
 import pylab as plt
-import os
 from scipy import interpolate
 from scipy import ndimage
 import astropy.io.fits as pyfits
@@ -46,6 +46,14 @@ from . import gnfw
 from . import completeness
 import astropy.table as atpy
 import time
+
+on_rtd = os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import jax
+    jax.config.update("jax_enable_x64", True)
+    import jax.numpy as jnp
+else:
+    jnp = np
 
 import logging
 logger=logging.getLogger('nemo')
@@ -624,14 +632,15 @@ class MatchedFilter(MapFilter):
                 fSignalsArr.append(fSignal)
             fSignalsArr=np.array(fSignalsArr)
                     
-            # Build the filter itself
-            self.filt=np.zeros([len(self.unfilteredMapsDictList), self.shape[0], self.shape[1]], dtype = np.float32)
-            for y in range(0, self.shape[0]):
-                for x in range(0, self.shape[1]):
-                    try:
-                        self.filt[:, y, x]=np.dot(np.linalg.inv(noiseCov[:, :, y, x]), w*abs(fSignalsArr[:, y, x])) 
-                    except:
-                        continue
+            # Build the filter itself — vectorised batch matrix inversion over all pixels
+            n = len(self.unfilteredMapsDictList)
+            N_yx = jnp.asarray(noiseCov.transpose(2, 3, 0, 1))               # (Y, X, n, n)
+            s_yx = jnp.asarray(w * abs(fSignalsArr).transpose(1, 2, 0))      # (Y, X, n)
+            with np.errstate(invalid='ignore', divide='ignore'):
+                N_inv = jnp.linalg.inv(N_yx)                                  # (Y, X, n, n)
+            filt_yx = (N_inv @ s_yx[..., None])[..., 0]                       # (Y, X, n)
+            filt_yx = jnp.where(jnp.isfinite(filt_yx), filt_yx, 0.0)
+            self.filt = np.asarray(filt_yx.transpose(2, 0, 1), dtype=np.float32)  # (n, Y, X)
             del fSignalsArr
             del noiseCov
                         

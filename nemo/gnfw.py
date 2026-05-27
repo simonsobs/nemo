@@ -8,8 +8,17 @@ It now includes much faster routines based on those in Pixell by Sigurd Naess
 
 """
 
+import os
 import numpy as np
 from scipy.optimize import fmin
+
+on_rtd = os.environ.get('READTHEDOCS', None)
+if on_rtd is None:
+    import jax
+    jax.config.update("jax_enable_x64", True)
+    import jax.numpy as jnp
+else:
+    jnp = np
 #import warnings
 #warnings.filterwarnings("error")
 
@@ -48,11 +57,9 @@ def func(x, params):
         
     """
     G, A, B, c500, P0 = params['gamma'], params['alpha'], params['beta'], params['c500'], params['P0']
-    prof=np.zeros(x.shape)
-    mask=np.greater(x, 0)
-    prof[mask]=P0*((x[mask]*c500)**-G * (1+(x[mask]*c500)**A)**((G-B)/A))
-    #prof[x == 0]=np.inf
-    return prof
+    mask = jnp.greater(x, 0)
+    x_safe = jnp.where(mask, x, jnp.ones_like(x))
+    return jnp.where(mask, P0 * ((x_safe*c500)**-G * (1 + (x_safe*c500)**A)**((G-B)/A)), jnp.zeros_like(x))
 
 def xfunc(x, b, params):
     """The log-scaled integrand for GNFW cylindrical integration along the line-of-sight coordinate `x`,
@@ -68,13 +75,12 @@ def xfunc(x, b, params):
         Value of integrand.
         
     """
-    x = np.array(x)
+    x = jnp.asarray(x)
     if x.ndim == 0:
-        return xfunc([x], b, params)[0]
+        return xfunc(jnp.array([x]), b, params)[0]
     r = (x**2 + b**2)**.5
-    y = x*func(r, params)
-    y[x==0] = 0
-    return y
+    y = x * func(r, params)
+    return jnp.where(x == 0, jnp.zeros_like(y), y)
 
 def integrated(b, params = _default_params):
     """Returns the line of sight integral of the GNFW profile at impact parameter `b`.
@@ -104,13 +110,13 @@ def integrated(b, params = _default_params):
     x_lo = (y_max * TH)**(1/(1-G))
     x_hi = (y_max * TH)**(1/(1-B))
     # Take log-spaced bins
-    u_lo, u_hi = np.log(x_lo), np.log(x_hi)
-    du = (u_hi-u_lo) / N
-    x = np.exp(np.arange(u_lo, u_hi, du))
+    u_lo, u_hi = jnp.log(x_lo), jnp.log(x_hi)
+    du = (u_hi - u_lo) / N
+    x = jnp.exp(jnp.arange(u_lo, u_hi, du))
     # Sum
-    I1 = np.sum(du*xfunc(x,b,params))
+    I1 = jnp.sum(du * xfunc(x, b, params))
     # Wing (under-)estimate
-    x_hi = np.exp(u_hi)
+    x_hi = jnp.exp(u_hi)
     I2 = x_lo**(1-G)/(1-G) + x_hi**(1-B)/(1-B)
     return I1 + I2
 
@@ -150,22 +156,25 @@ def tsz_profile_los(x, c = 1.177, alpha = 1.0510, beta = 5.4905, gamma = 0.3081,
     # Cache the fit parameters.
     if cache is None: global _tsz_profile_los_cache
     else: _tsz_profile_los_cache = {}
-    key = (c, alpha, beta, gamma, zmax, npoint, _a, x1, x2)
+    key = (float(c), float(alpha), float(beta), float(gamma), zmax, npoint, _a, x1, x2)
     if key not in _tsz_profile_los_cache:
         xp = np.linspace(np.log(x1),np.log(x2),npoint)
         yp = np.log(tsz_profile_los_exact(np.exp(xp), c = c, alpha=alpha, beta=beta, gamma=gamma, zmax=zmax, _a=_a))
         _tsz_profile_los_cache[key] = (interpolate.interp1d(xp, yp, "cubic"), x1, x2, yp[0], yp[-1], (yp[-2]-yp[-1])/(xp[-2]-xp[-1]))
     spline, xmin, xmax, vleft, vright, slope = _tsz_profile_los_cache[key]
     # Split into 3 cases: x<xmin, x inside and x > xmax.
-    x     = np.asarray(x, dtype = float)
-    left  = x<xmin
-    right = x>xmax
-    inside= (~left) & (~right)
-    return np.piecewise(x, [inside, left, right], [
-        lambda x: np.exp(spline(np.log(x))),
-        lambda x: np.exp(vleft),
-        lambda x: np.exp(vright + (np.log(x)-np.log(xmax))*slope),
-    ])
+    x = jnp.asarray(x, dtype=float)
+    left = x < xmin
+    right = x > xmax
+    inside = (~left) & (~right)
+    # Evaluate spline (scipy) on numpy array, masked to inside region to avoid log(0)
+    x_np = np.asarray(x)
+    log_x_safe = np.where(np.asarray(inside), np.log(x_np), 0.0)
+    spline_vals = jnp.asarray(spline(log_x_safe))
+    log_x_right = jnp.log(jnp.where(right, x, jnp.full_like(x, float(xmax))))
+    return jnp.where(inside, jnp.exp(spline_vals),
+           jnp.where(left, jnp.exp(vleft),
+                     jnp.exp(vright + (log_x_right - jnp.log(xmax)) * slope)))
 
 def tsz_profile_los_exact(x, c = 1.177, alpha = 1.0510, beta = 5.4905, gamma = 0.3081, zmax=1e5, _a=8):
     """Line-of-sight integral of the cluster_pressure_profile. See tsz_profile_raw
@@ -183,15 +192,15 @@ def tsz_profile_los_exact(x, c = 1.177, alpha = 1.0510, beta = 5.4905, gamma = 0
     tsz_profile_los instead. It's 10000x faster and more than accurate enough.
     """
     from scipy.integrate import quad
-    x     = np.asarray(x)
+    x = np.asarray(x)
     xflat = x.reshape(-1)
     # We have int f(x) dx, but would be easier to integrate
     # int y**a f(y) dy. So we want y**a dy = dx => 1/(a+1)*y**(a+1) = x
     # => y = (x*(a+1))**(1/(a+1))
     def yfun(x): return (x*(_a+1))**(1/(_a+1))
     def xfun(y): return y**(_a+1)/(_a+1)
-    res    = 2*np.array([quad(lambda y: y**_a*tsz_profile_raw((xfun(y)**2+x1**2)**0.5, c=c, alpha=alpha, beta=beta, gamma=gamma), 0, yfun(zmax))[0] for x1 in xflat])
-    res   = res.reshape(x.shape)
+    res = 2*np.array([quad(lambda y: y**_a*tsz_profile_raw((xfun(y)**2+x1**2)**0.5, c=c, alpha=alpha, beta=beta, gamma=gamma), 0, yfun(zmax))[0] for x1 in xflat])
+    res = res.reshape(x.shape)
     return res
 
 # Test

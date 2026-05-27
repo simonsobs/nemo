@@ -68,11 +68,16 @@ if on_rtd is None:
     M200mDef=ccl.halos.MassDef(200, "matter")
     M200cDef=ccl.halos.MassDef(200, "critical")
     M500cDef=ccl.halos.MassDef(500, "critical")
+
+    import jax
+    jax.config.update("jax_enable_x64", True)
+    import jax.numpy as jnp
 else:
     fiducialCosmoModel=None
     M200mDef=None
     M200cDef=None
     M500cDef=None
+    jnp=np
 
 #------------------------------------------------------------------------------------------------------------
 class BeamProfile(object):
@@ -335,19 +340,19 @@ class QFit(object):
                 z=self.zMax
             Qs=self.fitDict[tileName](z, theta500Arcmin)[0]
             thetaMask=theta500Arcmin > self.zDepThetaMax(z)
-            Qs[thetaMask]=0.0
+            Qs=jnp.where(thetaMask, 0.0, jnp.asarray(Qs))
             if z < self.zMin:# or z > self.zMax:
                 if type(theta500Arcmin) == float:
                     Qs=0.0
                 else:
-                    Qs=np.zeros(len(theta500Arcmin))
+                    Qs=jnp.zeros(len(theta500Arcmin))
         else:
             # Univariate case handles own valid bounds checking
             Qs=self.fitDict[tileName](theta500Arcmin)
 
         if type(Qs) != float and (Qs < 0).sum() > 0:
             #logger.info("WARNING: negative Q value in tileName = %s" % (tileName))
-            Qs[Qs < 0]=0
+            Qs=jnp.where(jnp.asarray(Qs) < 0, 0.0, jnp.asarray(Qs))
         
         return Qs
 
@@ -374,8 +379,8 @@ def fSZ(obsFrequencyGHz, TCMBAlpha = 0.0, z = None):
     x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
     if TCMBAlpha != 0 and z is not None:
         assert(z >= 0)
-        x=x*np.power(1+z, TCMBAlpha)
-    fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
+        x=x*jnp.power(1+z, TCMBAlpha)
+    fSZ=x*((jnp.exp(x)+1)/(jnp.exp(x)-1))-4.0
     
     return fSZ
 
@@ -406,7 +411,7 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
         wrtDensity=ccl.omega_x(cosmoModel, 1/(1+z), 'matter')*ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
     else:
         raise Exception("wrt should be either 'critical' or 'mean'")
-    RDeltaMpc=np.power((3*MDelta)/(4*np.pi*delta*wrtDensity), 1.0/3.0)
+    RDeltaMpc=jnp.power((3*MDelta)/(4*jnp.pi*delta*wrtDensity), 1.0/3.0)
         
     return RDeltaMpc
 
@@ -445,7 +450,7 @@ def calcTheta500Arcmin(z, M500, cosmoModel):
     
     R500Mpc=calcR500Mpc(z, M500, cosmoModel)
     #theta500Arcmin=np.degrees(np.arctan(R500Mpc/cosmoModel.angular_diameter_distance(z).value))*60.0
-    theta500Arcmin=np.degrees(np.arctan(R500Mpc/ccl.angular_diameter_distance(cosmoModel, 1/(1+z))))*60.0
+    theta500Arcmin=jnp.degrees(jnp.arctan(R500Mpc/ccl.angular_diameter_distance(cosmoModel, 1/(1+z))))*60.0
     
     return theta500Arcmin
     
@@ -553,9 +558,9 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     # Throws CCL error if mass out-of-range - we catch that elsewhere, e.g., in fitQ
     M200c=M500cToMdef(M500c, z, M200cDef, cosmoModel) #, c_m_relation = 'Ishiyama21')
 
-    P0z=P0*np.power(M200c/1e14, P0_alpha_m)*np.power(1+z, P0_alpha_z)
-    xcz=xc*np.power(M200c/1e14, xc_alpha_m)*np.power(1+z, xc_alpha_z)
-    betaz=beta*np.power(M200c/1e14, beta_alpha_m)*np.power(1+z, beta_alpha_z)
+    P0z=P0*jnp.power(M200c/1e14, P0_alpha_m)*jnp.power(1+z, P0_alpha_z)
+    xcz=xc*jnp.power(M200c/1e14, xc_alpha_m)*jnp.power(1+z, xc_alpha_z)
+    betaz=beta*jnp.power(M200c/1e14, beta_alpha_m)*jnp.power(1+z, beta_alpha_z)
     
     # Some more B12 -> A10 notation conversion
     GNFWParams['P0']=P0z
@@ -1177,7 +1182,7 @@ def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):
         if fRelWeightsDict[obsFreqGHz] > 0:
             fRels.append(calcFRel(z, M500, Ez, obsFreqGHz = obsFreqGHz))
             freqWeights.append(fRelWeightsDict[obsFreqGHz])
-    fRel=np.average(fRels, weights = freqWeights)
+    fRel=jnp.average(jnp.array(fRels), weights=jnp.array(freqWeights))
     
     return fRel
     
@@ -1204,37 +1209,37 @@ def calcFRel(z, M500, Ez, obsFreqGHz = 148.0):
     B=1.71
     #TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)   # HMF/Astropy
     #TkeV=5.*np.power(((cosmoModel.Ez(z)*M500)/A), 1/B)   # Colossus
-    TkeV=5.*np.power(((Ez*M500)/A), 1/B)
+    TkeV=5.*jnp.power(((Ez*M500)/A), 1/B)
     TKelvin=TkeV*((1000*e)/kB)
 
     # Itoh et al. (1998) eqns. 2.25 - 2.30
     thetae=(kB*TKelvin)/(me*c**2)
     X=(h*obsFreqGHz*1e9)/(kB*TCMB)
-    Xtw=X*(np.cosh(X/2.)/np.sinh(X/2.))
-    Stw=X/np.sinh(X/2.)
+    Xtw=X*(jnp.cosh(X/2.)/jnp.sinh(X/2.))
+    Stw=X/jnp.sinh(X/2.)
 
     Y0=-4+Xtw
 
-    Y1=-10. + (47/2.)*Xtw - (42/5.)*Xtw**2 + (7/10.)*Xtw**3 + np.power(Stw, 2)*(-(21/5.) + (7/5.)*Xtw)
+    Y1=-10. + (47/2.)*Xtw - (42/5.)*Xtw**2 + (7/10.)*Xtw**3 + jnp.power(Stw, 2)*(-(21/5.) + (7/5.)*Xtw)
 
     Y2=-(15/2.) +  (1023/8.)*Xtw - (868/5.)*Xtw**2 + (329/5.)*Xtw**3 - (44/5.)*Xtw**4 + (11/30.)*Xtw**5 \
-        + np.power(Stw, 2)*(-(434/5.) + (658/5.)*Xtw - (242/5.)*Xtw**2 + (143/30.)*Xtw**3) \
-        + np.power(Stw, 4)*(-(44/5.) + (187/60.)*Xtw)
+        + jnp.power(Stw, 2)*(-(434/5.) + (658/5.)*Xtw - (242/5.)*Xtw**2 + (143/30.)*Xtw**3) \
+        + jnp.power(Stw, 4)*(-(44/5.) + (187/60.)*Xtw)
 
     Y3=(15/2.) + (2505/8.)*Xtw - (7098/5.)*Xtw**2 + (14253/10.)*Xtw**3 - (18594/35.)*Xtw**4 + (12059/140.)*Xtw**5 - (128/21.)*Xtw**6 + (16/105.)*Xtw**7 \
-        + np.power(Stw, 2)*(-(7098/10.) + (14253/5.)*Xtw - (102267/35.)*Xtw**2 + (156767/140.)*Xtw**3 - (1216/7.)*Xtw**4 + (64/7.)*Xtw**5) \
-        + np.power(Stw, 4)*(-(18594/35.) + (205003/280.)*Xtw - (1920/7.)*Xtw**2 + (1024/35.)*Xtw**3) \
-        + np.power(Stw, 6)*(-(544/21.) + (992/105.)*Xtw)
+        + jnp.power(Stw, 2)*(-(7098/10.) + (14253/5.)*Xtw - (102267/35.)*Xtw**2 + (156767/140.)*Xtw**3 - (1216/7.)*Xtw**4 + (64/7.)*Xtw**5) \
+        + jnp.power(Stw, 4)*(-(18594/35.) + (205003/280.)*Xtw - (1920/7.)*Xtw**2 + (1024/35.)*Xtw**3) \
+        + jnp.power(Stw, 6)*(-(544/21.) + (992/105.)*Xtw)
 
     Y4=-(135/32.) + (30375/128.)*Xtw - (62391/10.)*Xtw**2 + (614727/40.)*Xtw**3 - (124389/10.)*Xtw**4 \
         + (355703/80.)*Xtw**5 - (16568/21.)*Xtw**6 + (7516/105.)*Xtw**7 - (22/7.)*Xtw**8 + (11/210.)*Xtw**9 \
-        + np.power(Stw, 2)*(-(62391/20.) + (614727/20.)*Xtw - (1368279/20.)*Xtw**2 + (4624139/80.)*Xtw**3 - (157396/7.)*Xtw**4 \
+        + jnp.power(Stw, 2)*(-(62391/20.) + (614727/20.)*Xtw - (1368279/20.)*Xtw**2 + (4624139/80.)*Xtw**3 - (157396/7.)*Xtw**4 \
         + (30064/7.)*Xtw**5 - (2717/7.)*Xtw**6 + (2761/210.)*Xtw**7) \
-        + np.power(Stw, 4)*(-(124389/10.) + (6046951/160.)*Xtw - (248520/7.)*Xtw**2 + (481024/35.)*Xtw**3 - (15972/7.)*Xtw**4 + (18689/140.)*Xtw**5) \
-        + np.power(Stw, 6)*(-(70414/21.) + (465992/105.)*Xtw - (11792/7.)*Xtw**2 + (19778/105.)*Xtw**3) \
-        + np.power(Stw, 8)*(-(682/7.) + (7601/210.)*Xtw)
+        + jnp.power(Stw, 4)*(-(124389/10.) + (6046951/160.)*Xtw - (248520/7.)*Xtw**2 + (481024/35.)*Xtw**3 - (15972/7.)*Xtw**4 + (18689/140.)*Xtw**5) \
+        + jnp.power(Stw, 6)*(-(70414/21.) + (465992/105.)*Xtw - (11792/7.)*Xtw**2 + (19778/105.)*Xtw**3) \
+        + jnp.power(Stw, 8)*(-(682/7.) + (7601/210.)*Xtw)
 
-    deltaSZE=((X**3)/(np.exp(X)-1)) * ((thetae*X*np.exp(X))/(np.exp(X)-1)) * (Y0 + Y1*thetae + Y2*thetae**2 + Y3*thetae**3 + Y4*thetae**4)
+    deltaSZE=((X**3)/(jnp.exp(X)-1)) * ((thetae*X*jnp.exp(X))/(jnp.exp(X)-1)) * (Y0 + Y1*thetae + Y2*thetae**2 + Y3*thetae**3 + Y4*thetae**4)
 
     fRel=1+deltaSZE
     
@@ -1248,14 +1253,14 @@ def getMassFromP(P, log10M, calcErrors = True):
     """
 
     # Find max likelihood and integrate to get error bars
-    tckP=interpolate.splrep(log10M, P)
-    fineLog10M=np.linspace(log10M.min(), log10M.max(), 10000)
-    fineP=interpolate.splev(fineLog10M, tckP)
-    fineP=fineP/np.trapezoid(fineP, fineLog10M)
-    index=np.argmax(fineP)
-    
+    tckP=interpolate.splrep(np.asarray(log10M), np.asarray(P))
+    fineLog10M=jnp.linspace(float(log10M.min()), float(log10M.max()), 10000)
+    fineP=jnp.asarray(interpolate.splev(np.asarray(fineLog10M), tckP))
+    fineP=fineP/jnp.trapezoid(fineP, fineLog10M)
+    index=int(jnp.argmax(fineP))
+
     clusterLogM500=fineLog10M[index]
-    clusterM500=np.power(10, clusterLogM500)/1e14
+    clusterM500=jnp.power(10, clusterLogM500)/1e14
 
     if calcErrors == True:
         for n in range(fineP.shape[0]):
@@ -1268,17 +1273,17 @@ def getMassFromP(P, log10M, calcErrors = True):
                 clusterM500MinusErr=0.
                 clusterM500PlusErr=0.
                 break
-            p=np.trapezoid(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
+            p=jnp.trapezoid(fineP[minIndex:maxIndex], fineLog10M[minIndex:maxIndex])
             if p >= 0.6827:
                 clusterLogM500Min=fineLog10M[minIndex]
                 clusterLogM500Max=fineLog10M[maxIndex]
-                clusterM500MinusErr=(np.power(10, clusterLogM500)-np.power(10, clusterLogM500Min))/1e14
-                clusterM500PlusErr=(np.power(10, clusterLogM500Max)-np.power(10, clusterLogM500))/1e14
-                break        
+                clusterM500MinusErr=(jnp.power(10, clusterLogM500)-jnp.power(10, clusterLogM500Min))/1e14
+                clusterM500PlusErr=(jnp.power(10, clusterLogM500Max)-jnp.power(10, clusterLogM500))/1e14
+                break
     else:
         clusterM500MinusErr=0.
         clusterM500PlusErr=0.
-    
+
     return clusterM500, clusterM500MinusErr, clusterM500PlusErr
 
 #------------------------------------------------------------------------------------------------------------
@@ -1333,7 +1338,7 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
     if inferSZProperties == True:
         log10Ms=mockSurvey.log10M
         if mockSurvey.delta != 500 or mockSurvey.rhoType != "critical":
-            log10M500c=np.log10(mockSurvey._transToM500c(mockSurvey.cosmoModel, np.power(10, log10Ms), 1/(1+z)))
+            log10M500c=jnp.log10(jnp.asarray(mockSurvey._transToM500c(mockSurvey.cosmoModel, np.power(10, log10Ms), 1/(1+z))))
         else:
             log10M500c=log10Ms
 
@@ -1341,42 +1346,32 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         # (this is a bit clunky but easier)
 
         # M500c in 1e14 MSun
-        Plog10M500c=P/np.trapezoid(P, log10M500c)
-        M500c, M500c_errMinus, M500c_errPlus=getMassFromP(Plog10M500c, log10M500c, calcErrors = calcErrors)
+        Plog10M500c=P/jnp.trapezoid(P, jnp.asarray(log10M500c))
+        M500c, M500c_errMinus, M500c_errPlus=getMassFromP(Plog10M500c, log10M500c, calcErrors=calcErrors)
 
         # theta500
-        mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-z))
-        theta500s=interpolate.splev(log10M500c, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
-        Ptheta500=P/np.trapezoid(P, theta500s)
+        mockSurvey_zIndex=int(jnp.argmin(jnp.abs(jnp.asarray(mockSurvey.z)-z)))
+        theta500s=interpolate.splev(log10M500c, mockSurvey.theta500Splines[mockSurvey_zIndex], ext=3)
+        Ptheta500=P/jnp.trapezoid(P, jnp.asarray(theta500s))
         theta500, theta500_errMinus, theta500_errPlus=getMLValueFromP(Ptheta500, theta500s)
 
         # Q
-        Q=float(QFit.getQ(theta500, z, tileName = tileName))
-        Q_errMinus=abs(Q-QFit.getQ(theta500-theta500_errMinus, z, tileName = tileName))
-        Q_errPlus=abs(Q-QFit.getQ(theta500+theta500_errPlus, z, tileName = tileName))
-        Qs=QFit.getQ(theta500s, z, tileName = tileName)
-        # # Qs=QFit(theta500s)
-        # Below can blow up at low-z
-        # PQ=P/np.trapezoid(P, Qs)
-        # try:
-        #     Q, Q_errMinus, Q_errPlus=getMLValueFromP(PQ, Qs)
-        # except:
-        #     logger.info("hmm")
-        #     import IPython
-        #     IPython.embed()
-        #     sys.exit()
+        Q=float(QFit.getQ(theta500, z, tileName=tileName))
+        Q_errMinus=abs(Q-QFit.getQ(theta500-theta500_errMinus, z, tileName=tileName))
+        Q_errPlus=abs(Q-QFit.getQ(theta500+theta500_errPlus, z, tileName=tileName))
+        Qs=QFit.getQ(theta500s, z, tileName=tileName)
 
         # y0
         # NOTE: To avoid issues where we might stray out of valid Q range, at low z, we truncate a bit
-        fRels=interpolate.splev(log10M500c, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)
-        fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
-        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
-        y0pred=y0pred*np.power(1+z, onePlusRedshift_power)
+        fRels=interpolate.splev(log10M500c, mockSurvey.fRelSplines[mockSurvey_zIndex], ext=3)
+        fRels=np.where(np.less_equal(fRels, 0), 1e-4, fRels)  # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
+        y0pred=tenToA0*jnp.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*jnp.power(jnp.power(10, jnp.asarray(log10Ms))/Mpivot, 1+B0)*jnp.asarray(Qs)
+        y0pred=y0pred*jnp.power(1+z, onePlusRedshift_power)
         if applyRelativisticCorrection == True:
-            y0pred=y0pred*fRels
+            y0pred=y0pred*jnp.asarray(fRels)
         valid=Qs > 0
-        true_y0pred=y0pred[valid]/Qs[valid]
-        Ptrue_y0=P[valid]/np.trapezoid(P[valid], true_y0pred)
+        true_y0pred=y0pred[valid]/jnp.asarray(Qs)[valid]
+        Ptrue_y0=P[valid]/jnp.trapezoid(P[valid], true_y0pred)
         true_y0, true_y0_errMinus, true_y0_errPlus=getMLValueFromP(Ptrue_y0, true_y0pred)
 
         # Y500
@@ -1384,12 +1379,12 @@ def inferClusterProperties(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e
         # NOTE: This is cylindrical version - integrating the projected profile - people often use spherically integrated
         Y500s=[]
         for mval in [M500c, M500c-M500c_errMinus, M500c+M500c_errPlus]:
-            profDict=makeArnaudModelProfile(z, mval*1e14, GNFWParams = 'default', cosmoModel = mockSurvey.cosmoModel)
+            profDict=makeArnaudModelProfile(z, float(mval)*1e14, GNFWParams='default', cosmoModel=mockSurvey.cosmoModel)
             # rarcmin=np.logspace(-8, np.log10(theta500), 10000000)
-            rarcmin=np.linspace(0, theta500, 100000)
-            prof=true_y0*interpolate.splev(rarcmin/60, profDict['tckP'])
+            rarcmin=jnp.linspace(0, float(theta500), 100000)
+            prof=true_y0*jnp.asarray(interpolate.splev(np.asarray(rarcmin)/60, profDict['tckP']))
             # np.sum(2*np.pi*rarcmin*np.gradient(rarcmin)) # area check of accuracy
-            Y500s.append(np.sum(prof*2*np.pi*rarcmin*np.gradient(rarcmin))) # Y500 in arcmin2
+            Y500s.append(jnp.sum(prof*2*jnp.pi*rarcmin*jnp.asarray(np.gradient(np.asarray(rarcmin))))) # Y500 in arcmin2
         Y500Arcmin2=Y500s[0]
         Y500Arcmin2_errMinus=Y500s[0]-Y500s[1]
         Y500Arcmin2_errPlus=Y500s[2]-Y500s[0]
@@ -1434,18 +1429,18 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
     if zErr > 0:
         zMin=z-zErr*5
         zMax=z+zErr*5
-        zMask=np.logical_and(np.greater_equal(mockSurvey.z, zMin), np.less(mockSurvey.z, zMax))
-        zRange=mockSurvey.z[zMask]
+        zMask=jnp.logical_and(jnp.greater_equal(mockSurvey.z, zMin), jnp.less(mockSurvey.z, zMax))
+        zRange=mockSurvey.z[np.asarray(zMask)]
         #if zMin <= 0:
             #zMin=1e-3
         #zRange=np.arange(zMin, zMax, 0.005)
-        Pz=np.exp(-np.power(z-zRange, 2)/(2*(np.power(zErr, 2))))
-        Pz=Pz/np.trapezoid(Pz, zRange)
+        Pz=jnp.exp(-jnp.power(z-zRange, 2)/(2*(jnp.power(zErr, 2))))
+        Pz=Pz/jnp.trapezoid(Pz, zRange)
     else:
         zRange=[z]
-        Pz=np.ones(len(zRange))
+        Pz=jnp.ones(len(zRange))
 
-    log_y0=np.log(y0)
+    log_y0=jnp.log(y0)
     log_y0Err=y0Err/y0
 
     # NOTE: Swap below if want to use bigger log10M range...
@@ -1462,44 +1457,42 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         # So, need a mapping between M500c and whatever mass definition used in mockSurvey
         # This only needed for extracting Q, fRel values
         if mockSurvey.delta != 500 or mockSurvey.rhoType != "critical":
-            log10M500c_zk=np.log10(mockSurvey._transToM500c(mockSurvey.cosmoModel,
+            log10M500c_zk=jnp.log10(jnp.asarray(mockSurvey._transToM500c(mockSurvey.cosmoModel,
                                                             np.power(10, log10Ms),
-                                                            1/(1+zk)))
+                                                            1/(1+zk))))
         else:
             log10M500c_zk=log10Ms
 
-        mockSurvey_zIndex=np.argmin(abs(mockSurvey.z-zk))
-        theta500s=interpolate.splev(log10M500c_zk, mockSurvey.theta500Splines[mockSurvey_zIndex], ext = 3)
-        Qs=QFit.getQ(theta500s, zk, tileName = tileName)
-        # Qs=QFit(theta500s)
-        fRels=interpolate.splev(log10M500c_zk, mockSurvey.fRelSplines[mockSurvey_zIndex], ext = 3)
-        fRels[np.less_equal(fRels, 0)]=1e-4   # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
-        y0pred=tenToA0*np.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*Qs
-        y0pred=y0pred*np.power(1+zk, onePlusRedshift_power)
+        mockSurvey_zIndex=int(jnp.argmin(jnp.abs(jnp.asarray(mockSurvey.z)-zk)))
+        theta500s=interpolate.splev(log10M500c_zk, mockSurvey.theta500Splines[mockSurvey_zIndex], ext=3)
+        Qs=QFit.getQ(theta500s, zk, tileName=tileName)
+        fRels=interpolate.splev(log10M500c_zk, mockSurvey.fRelSplines[mockSurvey_zIndex], ext=3)
+        fRels=np.where(np.less_equal(fRels, 0), 1e-4, fRels)  # For extreme masses (> 10^16 MSun) at high-z, this can dip -ve
+        y0pred=tenToA0*jnp.power(mockSurvey.Ez[mockSurvey_zIndex], Ez_gamma)*jnp.power(jnp.power(10, jnp.asarray(log10Ms))/Mpivot, 1+B0)*jnp.asarray(Qs)
+        y0pred=y0pred*jnp.power(1+zk, onePlusRedshift_power)
         if applyRelativisticCorrection == True:
-            y0pred=y0pred*fRels
+            y0pred=y0pred*jnp.asarray(fRels)
 
         ###
         # Adjusted below to cope with objects with big z errors
         valid=y0pred > 0
         if valid.sum() == 0:
             continue
-        log_y0pred=np.log(y0pred[valid])
-        Py0GivenM=np.exp(-np.power(log_y0-log_y0pred, 2)/(2*(np.power(log_y0Err, 2)+np.power(sigma_int, 2))))
-        Py0GivenM=Py0GivenM/np.trapezoid(Py0GivenM, log10Ms[valid])
+        log_y0pred=jnp.log(y0pred[valid])
+        Py0GivenM=jnp.exp(-jnp.power(log_y0-log_y0pred, 2)/(2*(jnp.power(log_y0Err, 2)+jnp.power(sigma_int, 2))))
+        Py0GivenM=Py0GivenM/jnp.trapezoid(Py0GivenM, jnp.asarray(log10Ms)[valid])
 
         # Mass function de-bias
         if applyMFDebiasCorrection == True:
-            PLog10M=mockSurvey.getPLog10M(zk)
-            PLog10M=PLog10M/np.trapezoid(PLog10M, log10Ms)
+            PLog10M=jnp.asarray(mockSurvey.getPLog10M(zk))
+            PLog10M=PLog10M/jnp.trapezoid(PLog10M, jnp.asarray(log10Ms))
         else:
             PLog10M=1.0
 
-        P=np.zeros(log10Ms.shape[0])
-        if type(PLog10M) == float:
-            P[valid]=Py0GivenM*PLog10M*Pz[k]
-        else:
-            P[valid]=Py0GivenM*PLog10M[valid]*Pz[k]
+        valid_idx=jnp.where(valid)[0]
+        P_valid=Py0GivenM*(PLog10M if type(PLog10M) == float else PLog10M[valid])*Pz[k]
+        P=jnp.zeros(jnp.asarray(log10Ms).shape[0])
+        P=P.at[valid_idx].set(P_valid)
         PArr.append(P)
         ###
 
@@ -1528,12 +1521,12 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
         #     PArr.append(P)
 
     # 2D PArr is what we would want to project onto (M, z) grid
-    PArr=np.array(PArr)
+    PArr=jnp.array(PArr)
 
     # Marginalised over z uncertainty
-    P=np.sum(PArr, axis = 0)
+    P=jnp.sum(PArr, axis=0)
     try:
-        P=P/np.trapezoid(P, log10Ms)
+        P=P/jnp.trapezoid(P, jnp.asarray(log10Ms))
     except:
         return None
 
@@ -1542,11 +1535,12 @@ def calcPMass(y0, y0Err, z, zErr, QFit, mockSurvey, tenToA0 = 4.95e-5, B0 = 0.08
     #P=interpolate.splev(mockSurvey.log10M, tck, ext = 1)
 
     if return2D == True:
-        P2D=np.zeros(mockSurvey.clusterCount.shape)
+        P2D=jnp.zeros(mockSurvey.clusterCount.shape)
         if zErr == 0:
-            P2D[np.argmin(abs(mockSurvey.z-z))]=PArr
+            idx=int(jnp.argmin(jnp.abs(jnp.asarray(mockSurvey.z)-z)))
+            P2D=P2D.at[idx].set(PArr[0])
         else:
-            P2D[zMask]=PArr
+            P2D=P2D.at[jnp.where(jnp.asarray(zMask))[0]].set(PArr)
         P=P2D/P2D.sum()
         #astImages.saveFITS("test.fits", P.transpose(), None)
 
@@ -1575,7 +1569,7 @@ def getMLValueFromP(P, x, calcErrors = True):
     # fineP=interpolate.splev(finex, tckP)
     # fineP=fineP/np.trapezoid(fineP, finex)
 
-    index=np.argmax(fineP)
+    index=int(jnp.argmax(fineP))
     MLValue=finex[index]
 
     if calcErrors == True:
@@ -1586,7 +1580,7 @@ def getMLValueFromP(P, x, calcErrors = True):
                 minusErr=0.
                 plusErr=0.
                 break
-            p=np.trapezoid(fineP[minIndex:maxIndex], finex[minIndex:maxIndex])
+            p=jnp.trapezoid(fineP[minIndex:maxIndex], finex[minIndex:maxIndex])
             if p >= 0.6827:
                 xMin=finex[minIndex]
                 xMax=finex[maxIndex]
