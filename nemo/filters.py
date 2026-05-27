@@ -931,7 +931,7 @@ class RealSpaceMatchedFilter(MapFilter):
         # NOTE: we could merge 'bckSubScaleArcmin' and 'maxArcmin' keys here!
         #mapDict['bckSubScaleArcmin']=maxArcmin
         keysWanted=['mapFileName', 'weights', 'weightsFileName', 'obsFreqGHz', 'units', 'beamFileName', 'addNoise',
-                    'pointSourceRemoval', 'weightsType', 'tileName', 'reprojectToTan']
+                    'pointSourceRemoval', 'weightsType', 'tileName', 'reprojectToTan', 'pixWinOrder']
         kernelUnfilteredMapsDictList=[]
         for mapDict in self.unfilteredMapsDictList:
             for key in list(mapDict.keys()):

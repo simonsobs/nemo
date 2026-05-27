@@ -1320,7 +1320,7 @@ def getRMSTab(tileName, photFilterLabel, selFnDir, footprintLabel = None, maxFla
         return tab[np.where(tab['tileName'] == tileName)]
 
     # Table doesn't exist, so make it...
-    print(("making RMS table for tile = %s, footprint = %s, maxFlags = %s" % (tileName, footprintLabel, str(maxFlags))))
+    # print(("making RMS table for tile = %s, footprint = %s, maxFlags = %s" % (tileName, footprintLabel, str(maxFlags))))
     RMSMap, wcs=loadRMSMap(tileName, selFnDir, photFilterLabel)
     areaMap, wcs=loadAreaMask(tileName, selFnDir)
     if maxFlags is not None:
