@@ -411,6 +411,8 @@ def makeRMSTables(config, catFileName = None):
 
     """
 
+    if config.rank == 0: logger.info("making RMS tables")
+
     # We only care about the filter used for fixed_ columns
     if config.parDict['photFilter'] is None:
         return None

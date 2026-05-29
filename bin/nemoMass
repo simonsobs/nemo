@@ -371,7 +371,7 @@ if __name__ == '__main__':
         else:
             inferSZProperties=False
         count=count+1
-        logger.info(">>> Scaling relation %d/%d" % (count, len(massOptions['scalingRelations'])))
+        logger.info("scaling relation %d/%d" % (count, len(massOptions['scalingRelations'])))
         mockSurvey=MockSurvey.MockSurvey(minMass, areaDeg2, zMin, zMax, H0, Om0, Ob0, sigma8, ns,
                                      rhoType = scalingRelation['rhoType'], delta = scalingRelation['delta'])
         tab=calcMass(tab, scalingRelation, Q, fRelWeightsDict, mockSurvey, otherMassEstimates = otherMassEstimates,
