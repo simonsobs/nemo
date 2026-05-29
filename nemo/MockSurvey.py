@@ -258,30 +258,30 @@ class MockSurvey(object):
         self.Ez2=np.power(self.Ez, 2)
         self.DAz=ccl.angular_diameter_distance(self.cosmoModel,self.a)
         self.criticalDensity=ccl.physical_constants.RHO_CRITICAL*(self.Ez*self.cosmoModel['h'])**2
-        for k in range(len(self.z)):
-            # NOTE: Q fit uses theta500, as does fRel (hardcoded M500 - T relation in there)
-            # This bit here may not be strictly necessary, since we don't need to map on to binning
-            if self.delta == 500 and self.rhoType == "critical":
-                interpLim_minLog10M500c=self.log10M.min()
-                interpLim_maxLog10M500c=self.log10M.max()
-            else:
+        interpPoints=100
+        if self.delta == 500 and self.rhoType == "critical":
+            # Common case: mass bounds are the same at every z — vectorise over all z at once
+            fitM500s=np.power(10, np.linspace(self.log10M.min(), self.log10M.max(), interpPoints))  # (100,)
+            log10_fitM500s=np.log10(fitM500s)
+            # theta500: (nz, 100)
+            R500Mpc_all=np.power((3*fitM500s[None,:]) /
+                                  (4*np.pi*500*self.criticalDensity[:,None]), 1.0/3.0)
+            fitTheta500s_all=np.degrees(np.arctan(R500Mpc_all/self.DAz[:,None]))*60.0
+            # fRel: (nz, 100) — calcFRel ignores z when TCMBAlpha=0; pass broadcast arrays
+            fitFRels_all=signals.calcFRel(0.0, fitM500s[None,:], self.Ez[:,None])
+            for k in range(len(self.z)):
+                self.theta500Splines.append(interpolate.splrep(log10_fitM500s, fitTheta500s_all[k]))
+                self.fRelSplines.append(interpolate.splrep(log10_fitM500s, fitFRels_all[k]))
+        else:
+            for k in range(len(self.z)):
                 interpLim_minLog10M500c=np.log10(self._transToM500c(self.cosmoModel, self.M.min(), self.a[k]))
                 interpLim_maxLog10M500c=np.log10(self._transToM500c(self.cosmoModel, self.M.max(), self.a[k]))
-            zk=self.z[k]
-            interpPoints=100
-            fitM500s=np.power(10, np.linspace(interpLim_minLog10M500c, interpLim_maxLog10M500c, interpPoints))
-            fitTheta500s=np.zeros(len(fitM500s))
-            fitFRels=np.zeros(len(fitM500s))
-            criticalDensity=self.criticalDensity[k]
-            DA=self.DAz[k]
-            Ez=self.Ez[k]
-            R500Mpc=np.power((3*fitM500s)/(4*np.pi*500*criticalDensity), 1.0/3.0)    
-            fitTheta500s=np.degrees(np.arctan(R500Mpc/DA))*60.0
-            fitFRels=signals.calcFRel(zk, fitM500s, Ez)
-            tckLog10MToTheta500=interpolate.splrep(np.log10(fitM500s), fitTheta500s)
-            tckLog10MToFRel=interpolate.splrep(np.log10(fitM500s), fitFRels)
-            self.theta500Splines.append(tckLog10MToTheta500)
-            self.fRelSplines.append(tckLog10MToFRel)
+                fitM500s=np.power(10, np.linspace(interpLim_minLog10M500c, interpLim_maxLog10M500c, interpPoints))
+                R500Mpc=np.power((3*fitM500s)/(4*np.pi*500*self.criticalDensity[k]), 1.0/3.0)
+                fitTheta500s=np.degrees(np.arctan(R500Mpc/self.DAz[k]))*60.0
+                fitFRels=signals.calcFRel(self.z[k], fitM500s, self.Ez[k])
+                self.theta500Splines.append(interpolate.splrep(np.log10(fitM500s), fitTheta500s))
+                self.fRelSplines.append(interpolate.splrep(np.log10(fitM500s), fitFRels))
 
 
     def _cumulativeNumberDensity(self, z):
@@ -326,6 +326,7 @@ class MockSurvey(object):
                 dndlnM=self.mfunc(self.cosmoModel, self.M, self.a[i]) * norm_mfunc
                 dndmdz[i]=4.*np.pi*self.fsky*dVdzdOmega[i]*dndlnM
             dndmdz=dndmdz.transpose()
+            self.dndmdz=dndmdz                                       # (nM, nz), axes: ln(M) × z
             self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
             self.dndmdzInterpolator=interpolate.RectBivariateSpline(np.log(self.M),
                                                                     self.z,
@@ -339,6 +340,7 @@ class MockSurvey(object):
             dndmdz = np.zeros((self.log10M.shape[0], self.z.shape[0]))
             for (im,mm) in enumerate(lnms):
                 dndmdz[im,:]=4.*np.pi*self.fsky*np.vectorize(self.cosmoCLASS.get_volume_dVdzdOmega_at_z)(self.z)*np.vectorize(self.cosmoCLASS.get_dndlnM_at_z_and_M)(self.z,np.exp(mm))
+            self.dndmdz=dndmdz                                       # (nM, nz), axes: ln(M) × z
             self.HMFRange=np.array([np.min(dndmdz),np.max(dndmdz)])
             dndz=np.trapezoid(dndmdz,x = lnms,axis = 0)
             self.numClusters=np.trapezoid(dndz, x = self.z)

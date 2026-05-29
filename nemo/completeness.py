@@ -438,36 +438,38 @@ class SelFn(object):
         return inMask
         
 
-    def _doClusterCount(self, numRedshiftPoints = 25, numMassPoints = 25):
+    def _doClusterCount(self, numRedshiftPoints=25, numMassPoints=25):
         """Update cluster counts (prior to applying selection function) on the gridding used by this object.
-        This routine used to be in the MockSurvey class.
 
-        Args:
-            numRedshiftPoints (int): Number of points to subdivide each SelFn redshift bin into.
-            numMassPoints (int): Number of points to subdivide each SelFn mass bin into.
-
+        Uses a 2D antiderivative + differencing approach on the theory grid stored in MockSurvey,
+        replacing the previous O(nZbins × nMbins) double Python loop.  The numRedshiftPoints and
+        numMassPoints arguments are kept for API compatibility but are no longer used.
         """
 
-        # t0=time.time()
-        summedOverBins=0
-        for zi in range(self.zBinEdges.shape[0]-1):
-            zMin=self.zBinEdges[zi]
-            zMax=self.zBinEdges[zi+1]
-            zPoints=np.linspace(zMin, zMax, numRedshiftPoints)
-            for mi in range(self.logMBinEdges.shape[0]-1):
-                mMin=self.logMBinEdges[mi]
-                mMax=self.logMBinEdges[mi+1]
-                mPoints=np.linspace(mMin, mMax, numMassPoints)
-                dndz=integrate.simpson(self.mockSurvey.dndmdzInterpolator(mPoints, zPoints), x = mPoints, axis = 0)
-                # dndm=integrate.simpson(dndmdz_interpolator(mPoints, zPoints), x = zPoints, axis = 1)
-                numClusters_from_dndz=integrate.simpson(dndz, x = zPoints)
-                # numClusters_from_dndm=integrate.simpson(dndm, x = mPoints)
-                summedOverBins=summedOverBins+numClusters_from_dndz
-                self.clusterCount[zi, mi]=numClusters_from_dndz
+        lnM=np.log(self.mockSurvey.M)    # (nM_theory,)
+        z=self.mockSurvey.z               # (nz_theory,)
+        dndmdz=self.mockSurvey.dndmdz     # (nM_theory, nz_theory)
+
+        # Build 2D antiderivative F[i,j] = ∫_{lnM[0]}^{lnM[i]} ∫_{z[0]}^{z[j]} dndmdz dm dz
+        F_m=integrate.cumulative_trapezoid(dndmdz, x=lnM, axis=0, initial=0)    # (nM_theory, nz_theory)
+        F_mz=integrate.cumulative_trapezoid(F_m,   x=z,   axis=1, initial=0)    # (nM_theory, nz_theory)
+
+        # Interpolate antiderivative at all bin-edge corners in one vectorised call
+        F_interp=interpolate.RegularGridInterpolator((lnM, z), F_mz,
+                                                     method='linear',
+                                                     bounds_error=False, fill_value=None)
+        M_mesh, Z_mesh=np.meshgrid(self.logMBinEdges, self.zBinEdges, indexing='ij')
+        F_corners=F_interp(np.stack([M_mesh.ravel(), Z_mesh.ravel()], axis=1))
+        F_corners=F_corners.reshape(len(self.logMBinEdges), len(self.zBinEdges))
+
+        # 2D differencing gives each bin's integral; result shape (nMbins, nZbins) → transpose
+        self.clusterCount=(F_corners[1:, 1:] - F_corners[:-1, 1:]
+                           - F_corners[1:, :-1] + F_corners[:-1, :-1]).T
+
+        summedOverBins=self.clusterCount.sum()
         res=abs(1-(summedOverBins/self.mockSurvey.numClusters))
         if res > 1e-2:
             raise Exception("Coarse (mass, z) binning used in SelFn does not accurately reproduce total theory cluster count (res = %.3e)." % (res))
-        # t1=time.time()
 
 
     def update(self, H0, Om0, Ob0, sigma8, ns, scalingRelationDict = None):
