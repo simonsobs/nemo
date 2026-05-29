@@ -604,67 +604,115 @@ class SelFn(object):
             y0Grid=self._makeSignalGrid(tileName = tileName)
         else:
             y0Grid=self._makeSignalGrid(tileName = None)
-        # 0-index of this is everything > SNRCut, then each plane after is a SN bin
-        if self.SNBinEdges is not None:
-            compMzCube=np.zeros((self.SNBinEdges.shape[0], y0Grid.shape[0], y0Grid.shape[1]))
-            numIter=self.SNBinEdges.shape[0]
-        else:
-            compMzCube=np.zeros((1, y0Grid.shape[0], y0Grid.shape[1]))
-            numIter=1
-        # Calculate completeness using area-weighted average
-        # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
         if RMSTab is None:
             RMSTab=self.RMSDict[tileName]
-        for k in range(numIter):
-            if k == 0:
-                minSN=self.SNRCut
-                maxSN=1e5
-            else:
-                minSN=self.SNBinEdges[k-1]
-                maxSN=self.SNBinEdges[k]
-            compMzCube[k]=self._fastCompMz(y0Grid, RMSTab, minSN, maxSN)
+        # 0-index plane is everything > SNRCut; subsequent planes are individual S/N bins (if requested)
+        # Each row of snBins is [minSN, maxSN] for one plane
+        if self.SNBinEdges is not None:
+            snBins=np.zeros((self.SNBinEdges.shape[0], 2))
+            snBins[0]=[self.SNRCut, 1e5]
+            snBins[1:, 0]=self.SNBinEdges[:-1]
+            snBins[1:, 1]=self.SNBinEdges[1:]
+        else:
+            snBins=np.array([[self.SNRCut, 1e5]])
+        compMzCube=self._calcCompMzCube(y0Grid, RMSTab, snBins)
+        # We could probably retire this
+        if self.maxTheta500Arcmin is not None:
+            compMzCube=compMzCube*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)[None]
         if return_y0Grid is True:
             return compMzCube, y0Grid
         else:
             return compMzCube
 
 
-    def _fastCompMz(self, y0Grid, RMSTab, minSN, maxSN):
-        areaWeights=RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum()
-        # SOLikeT style - tiny loops are faster than doing this with array functions
-        # Again, k == 0 is the everything > SNRCut, other planes are S/N bins if requested
-        compMzTile=np.zeros(y0Grid.shape)
-        for i in range(len(RMSTab)):
-            if self.biasModel is not None:
-                trueSNR=y0Grid/RMSTab['y0RMS'][i]
-                corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
-                # Some models may give unphysically large correction factors when extrapolated S/N -> 0
-                # So, we truncate this at some level (e.g. 3-sigma) below the S/N cut
-                if self.truncateDeltaSNR is not None:
-                    # corrFactors[trueSNR < self.SNRCut-self.truncateDeltaSNR]=1.0
-                    corrFactors[trueSNR < minSN-self.truncateDeltaSNR]=1.0
+    def _calcCompMzCube(self, y0Grid, RMSTab, snBins):
+        """Area-weighted completeness on the (log\ :sub:`10` mass, z) grid for a set of S/N selection
+        bins, for a single tile.
+
+        This is the vectorized replacement for the old per-RMS-row Python loop. All RMS noise values
+        in the tile share the same ``y0Grid``, so the calculation is broadcast over an RMS-row axis.
+        With intrinsic scatter, the (expensive) log-normal kernel ``exp(-((lnyy - mu)/(sqrt(2) sigma))**2)``
+        depends on the S/N bin only through the optional truncation of the optimization bias correction,
+        so it is built once per tile and re-used across all bins.
+
+        Args:
+            y0Grid (:obj:`np.ndarray`): The ``fixed_y_c`` signal grid, shape (numZ, numMass).
+            RMSTab (:obj:`astropy.table.Table`): RMS noise table for the tile (``y0RMS``, ``areaDeg2``).
+                This may be downsampled in noise resolution for speed.
+            snBins (:obj:`np.ndarray`): Array of shape (numBins, 2), each row ``[minSN, maxSN]``.
+
+        Returns:
+            3d array of completeness, shape (numBins, numZ, numMass).
+
+        """
+
+        numZ, numMass=y0Grid.shape
+        numBins=len(snBins)
+        # Plain numpy views - avoids per-element astropy Column overhead in the hot loop
+        y0RMS=np.asarray(RMSTab['y0RMS'], dtype = float)            # (numRMS)
+        areaDeg2=np.asarray(RMSTab['areaDeg2'], dtype = float)
+        areaWeights=areaDeg2/areaDeg2.sum()                         # (numRMS)
+        numRMS=y0RMS.shape[0]
+
+        # trueSNR depends on the RMS row only (not the S/N bin); used for the bias correction and
+        # for its truncation below the S/N cut
+        trueSNR=y0Grid[None]/y0RMS[:, None, None]                   # (numRMS, numZ, numMass)
+        if self.biasModel is not None:
+            corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
+        else:
+            corrFactors=np.ones((numRMS, numZ, numMass))
+        # Some models give unphysically large correction factors when extrapolated to S/N -> 0, so they
+        # are truncated to 1 at some level (e.g. 3-sigma) below each bin's lower S/N edge. When this is
+        # active, corrFactors (and hence the kernel) become S/N-bin dependent.
+        truncate=self.biasModel is not None and self.truncateDeltaSNR is not None
+
+        scatter=self.scalingRelationDict['sigma_int']
+        compMzCube=np.zeros((numBins, numZ, numMass))
+
+        if scatter == 0:
+            # No intrinsic scatter - direct erf, with qcut == SNRCut for every bin
+            for k in range(numBins):
+                minSN, maxSN=snBins[k]
+                if truncate:
+                    corr=np.where(trueSNR < minSN-self.truncateDeltaSNR, 1.0, corrFactors)
+                else:
+                    corr=corrFactors
+                erfDiff=self._get_erf_diff((y0Grid[None]*corr)/y0RMS[:, None, None], minSN, maxSN, self.SNRCut)
+                compMzCube[k]=np.sum(erfDiff*areaWeights[:, None, None], axis = 0)
+            return compMzCube
+
+        # Intrinsic scatter > 0 - integrate a log-normal in fixed_y_c (SOLikeT style, trapezoid rule).
+        # The lnyy grid and Gaussian kernel do not depend on the S/N bin (except via truncation), so we
+        # build the kernel(s) once here rather than inside the bin loop.
+        lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44)   # (numY)
+        yy0=np.exp(lnyy)
+        fac=1./np.sqrt(2.*np.pi*scatter**2)
+        norm=1./(np.sqrt(2.)*scatter)
+        mu=np.log(y0Grid[None]*corrFactors)                        # (numRMS, numZ, numMass)
+        kernel=fac*np.exp(-np.power((lnyy[:, None, None, None]-mu[None])*norm, 2)) # (numY, numRMS, numZ, numMass)
+        if truncate:
+            # Where the bias correction is truncated to 1, mu reduces to log(y0Grid)
+            muTrunc=np.log(y0Grid)                                  # (numZ, numMass)
+            kernelTrunc=fac*np.exp(-np.power((lnyy[:, None, None]-muTrunc[None])*norm, 2)) # (numY, numZ, numMass)
+
+        # lnyy is uniformly spaced, so trapezoidal integration over y is a fixed weighted sum: the
+        # integration weights are folded into the (numY, numRMS) factor and the y-integral + RMS-row
+        # average are done together as a single contraction (much faster than np.trapezoid here).
+        dlnyy=lnyy[1]-lnyy[0]
+        trapW=np.full(lnyy.shape[0], dlnyy)
+        trapW[0]=trapW[0]*0.5
+        trapW[-1]=trapW[-1]*0.5
+        for k in range(numBins):
+            minSN, maxSN=snBins[k]
+            if truncate:
+                truncMask=trueSNR < minSN-self.truncateDeltaSNR    # (numRMS, numZ, numMass)
+                K=np.where(truncMask[None], kernelTrunc[:, None], kernel)
             else:
-                corrFactors=np.ones(y0Grid.shape)
-            if self.scalingRelationDict['sigma_int'] == 0:
-                compMzTile=compMzTile+self._get_erf_diff((y0Grid*corrFactors)/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)*areaWeights[i]
-            else:
-                # SOLikeT style but simpson integration
-                scatter=self.scalingRelationDict['sigma_int']
-                lnyy=np.linspace(np.min(np.log(y0Grid)), np.max(np.log(y0Grid)), 44) # y0Grid.shape[1]) # was 44
-                yy0=np.exp(lnyy)
-                mu=np.log(y0Grid*corrFactors)
-                fac=1./np.sqrt(2.*np.pi*scatter**2)
-                # arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, self.SNRCut)
-                arg=self._get_erf_diff(yy0/RMSTab['y0RMS'][i], minSN, maxSN, minSN)
-                cc=arg*areaWeights[i]
-                arg0=(lnyy[:, None,None]-mu)/(np.sqrt(2.)*scatter)
-                args=fac*np.exp(-arg0**2.) * cc[:, None,None]
-                # compMzTile+=integrate.simpson(args, x=lnyy, axis=0)
-                compMzTile=compMzTile+np.trapezoid(args, x=lnyy, axis=0)
-        # We could probably retire this
-        if self.maxTheta500Arcmin is not None:
-            compMzTile=compMzTile*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)
-        return compMzTile
+                K=kernel
+            arg=self._get_erf_diff(yy0[:, None]/y0RMS[None], minSN, maxSN, minSN)   # (numY, numRMS)
+            ccw=(arg*areaWeights[None])*trapW[:, None]            # (numY, numRMS): erf x area x trap weights
+            compMzCube[k]=np.einsum('yrzm,yr->zm', K, ccw, optimize = True)
+        return compMzCube
 
 
     def _get_erf_diff(self, qin, qmin, qmax, qcut):
