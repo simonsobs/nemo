@@ -117,12 +117,17 @@ def runEquivalenceCheck(selFnDir, nTiles=6, rtol=RTOL, atol=ATOL):
         ("scatter==0, no bias model",             None,   3.0,  srd(B0=0.12, sigma_int=0.0)),
     ]
 
+    tileIndex = {t: i for i, t in enumerate(selFn.tileNames)}
     worstAbs, worstRel, allPass = 0.0, 0.0, True
+    jaxWorstAbs, jaxChecked, jaxOK = 0.0, False, True
     for label, biasModel, truncDeltaSNR, scalingRelationDict in cases:
         selFn.biasModel = biasModel
         selFn.truncateDeltaSNR = truncDeltaSNR
         selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict=scalingRelationDict)
         snBins = buildSNBins(selFn)
+        # If the JAX fast-completeness path is available and supports this config, also check that its
+        # (batched, float64) result matches the numpy per-tile path that the reference validates.
+        jaxCube = selFn._calcCompMzCubeAllTilesJAX(snBins) if selFn._jaxSupported() else None
         caseAbs, caseRel, caseOK = 0.0, 0.0, True
         for tileName in tiles:
             y0Grid = selFn._makeSignalGrid(tileName=tileName)
@@ -135,6 +140,12 @@ def runEquivalenceCheck(selFnDir, nTiles=6, rtol=RTOL, atol=ATOL):
             caseRel = max(caseRel, relDiff[ref != 0].max() if np.any(ref != 0) else 0.0)
             if not np.allclose(new, ref, rtol=rtol, atol=atol):
                 caseOK = False
+            if jaxCube is not None:
+                jaxChecked = True
+                jaxDiff = np.abs(jaxCube[tileIndex[tileName]] - new)
+                jaxWorstAbs = max(jaxWorstAbs, jaxDiff.max())
+                if not np.allclose(jaxCube[tileIndex[tileName]], new, rtol=1e-7, atol=1e-9):
+                    jaxOK = False
         worstAbs, worstRel = max(worstAbs, caseAbs), max(worstRel, caseRel)
         allPass = allPass and caseOK
         print("  [%s] %-38s maxAbs=%.2e maxRel=%.2e" %
@@ -142,7 +153,11 @@ def runEquivalenceCheck(selFnDir, nTiles=6, rtol=RTOL, atol=ATOL):
 
     print("\nWorst over all cases: maxAbs=%.2e maxRel=%.2e" % (worstAbs, worstRel))
     print("EQUIVALENCE OK (rtol=%.0e, atol=%.0e)" % (rtol, atol) if allPass else "EQUIVALENCE FAILED")
-    return allPass
+    if jaxChecked:
+        print("JAX path vs numpy: maxAbs=%.2e  [%s]" % (jaxWorstAbs, "PASS" if jaxOK else "FAIL"))
+    else:
+        print("JAX path: not available/unsupported - numpy fallback only")
+    return allPass and jaxOK
 
 
 if __name__ == '__main__':

@@ -43,6 +43,66 @@ import logging
 logger=logging.getLogger('nemo')
 
 #------------------------------------------------------------------------------------------------------------
+# Optional JAX-accelerated fast-completeness path. JAX is imported lazily (only when first used) so it adds
+# no import cost to runs that don't compute completeness, and so we don't force float64 mode on the rest of
+# the process unless this path is actually exercised. The numpy implementation (_calcCompMzCube) remains the
+# fallback and is used whenever JAX is unavailable or the configuration is unsupported.
+_jaxCompMzBatch=None         # cached jitted+vmapped function (built on first use)
+_jaxImportFailed=False       # so we only attempt (and log) the import once
+
+def _getJaxCompMzBatch():
+    """Lazily build and cache the JAX batched fast-completeness function, or return None if JAX is
+    unavailable. float64 is enabled so results match the numpy path exactly.
+
+    """
+    global _jaxCompMzBatch, _jaxImportFailed
+    if _jaxCompMzBatch is not None:
+        return _jaxCompMzBatch
+    if _jaxImportFailed:
+        return None
+    try:
+        import jax
+        jax.config.update("jax_enable_x64", True)   # match the numpy (float64) path exactly
+        import jax.numpy as jnp
+        from jax.scipy.special import erf as jerf
+    except Exception:
+        _jaxImportFailed=True
+        logger.info("JAX not available - using numpy fast-completeness path.")
+        return None
+
+    def _tile(y0Grid, y0RMS, areaW, snMin, snMax, scatter, biasParam, biasOn, truncDelta):
+        # Per-tile completeness on the (z, M) grid for all S/N bins. Vectorized over RMS-noise rows; the
+        # log-normal scatter kernel exp(...) is built once and the y-integral + RMS-row average done as
+        # contractions. The optional bias correction and its truncation are folded in continuously
+        # (biasOn in {0,1}; truncDelta=+inf disables truncation) so this compiles a single time.
+        lny=jnp.log(y0Grid)
+        lnyy=jnp.linspace(jnp.min(lny), jnp.max(lny), 44)
+        yy0=jnp.exp(lnyy)
+        dl=lnyy[1]-lnyy[0]
+        trapW=jnp.full(44, dl).at[0].mul(0.5).at[-1].mul(0.5)
+        fac=1.0/jnp.sqrt(2.0*jnp.pi*scatter**2)
+        norm=1.0/(jnp.sqrt(2.0)*scatter)
+        trueSNR=y0Grid[None]/y0RMS[:, None, None]                          # (R, Z, M)
+        corr=1.0+biasOn/jnp.power(trueSNR, biasParam)                      # biasOn 0 -> corr 1
+        mu=jnp.log(y0Grid[None]*corr)
+        kernel=fac*jnp.exp(-jnp.square((lnyy[:, None, None, None]-mu[None])*norm))   # (Y, R, Z, M)
+        kernelTrunc=fac*jnp.exp(-jnp.square((lnyy[:, None, None]-lny[None])*norm))   # (Y, Z, M)
+        qin=yy0[:, None]/y0RMS[None]                                       # (Y, R)
+        a2=(qin[None]-snMin[:, None, None])/jnp.sqrt(2.0)                  # (B, Y, R)
+        a1=(qin[None]-snMax[:, None, None])/jnp.sqrt(2.0)
+        ccw=((jerf(a2)-jerf(a1))/2.0)*areaW[None, None, :]*trapW[None, :, None]
+        # base assumes the (possibly bias-corrected) kernel everywhere; correction swaps in the untruncated
+        # kernel where the bias correction is truncated (D == 0 when biasOn == 0, mask == 0 when truncDelta inf)
+        base=jnp.einsum('yrzm,byr->bzm', kernel, ccw)
+        D=kernelTrunc[:, None]-kernel                                      # (Y, R, Z, M)
+        G=jnp.einsum('yrzm,byr->brzm', D, ccw)                            # (B, R, Z, M)
+        mask=(trueSNR[None] < (snMin[:, None, None, None]-truncDelta)).astype(y0Grid.dtype)
+        return base+jnp.einsum('brzm,brzm->bzm', mask, G)
+
+    _jaxCompMzBatch=jax.jit(jax.vmap(_tile, in_axes=(0, 0, 0, None, None, None, None, None, None)))
+    return _jaxCompMzBatch
+
+#------------------------------------------------------------------------------------------------------------
 class FootprintError(Exception):
     pass
 
@@ -535,25 +595,37 @@ class SelFn(object):
                                                                                   mode = mode, truncate = truncate)
 
         elif self.method == 'fast' or self.method == 'faster':
-            compMzCube=np.zeros([len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
-            if self.SNBinEdges is not None:
-                compMzSNBins=np.zeros([len(self.tileNames), self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
+            if self._jaxSupported() == True:
+                # JAX path: compute all tiles in one fused, jitted, vmapped call (see _getJaxCompMzBatch)
+                snBins=np.zeros((self.SNBinEdges.shape[0], 2))
+                snBins[0]=[self.SNRCut, 1e5]
+                snBins[1:, 0]=self.SNBinEdges[:-1]
+                snBins[1:, 1]=self.SNBinEdges[1:]
+                cube=self._calcCompMzCubeAllTilesJAX(snBins)   # (numTiles, numBins, numZ, numMass)
+                # Plane 0 is everything > SNRCut; subsequent planes are individual S/N bins
+                self.compMz=np.average(cube[:, 0], axis = 0, weights = self.fracArea)
+                self.compMzSNBins=np.average(cube[:, 1:], axis = 0, weights = self.fracArea)
             else:
-                compMzSNBins=None
-            t0=time.time()
-            for tileIndex in range(len(self.tileNames)):
-                tileName=self.tileNames[tileIndex]
-                compMzBinsInTile=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
-                compMzCube[tileIndex]=compMzBinsInTile[0]
+                # numpy fallback
+                compMzCube=np.zeros([len(self.tileNames), self.clusterCount.shape[0], self.clusterCount.shape[1]])
                 if self.SNBinEdges is not None:
-                    compMzSNBins[tileIndex]=compMzBinsInTile[1:]
-            self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
-            if compMzSNBins is not None:
-                self.compMzSNBins=np.zeros([self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
-                for i in range(self.compMzSNBins.shape[0]):
-                    self.compMzSNBins[i]=np.average(compMzSNBins[:, i], axis = 0, weights = self.fracArea)
-            else:
-                self.compMzSNBins=None
+                    compMzSNBins=np.zeros([len(self.tileNames), self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
+                else:
+                    compMzSNBins=None
+                t0=time.time()
+                for tileIndex in range(len(self.tileNames)):
+                    tileName=self.tileNames[tileIndex]
+                    compMzBinsInTile=self.calcFastCompletenessInTile(tileName, return_y0Grid = False)
+                    compMzCube[tileIndex]=compMzBinsInTile[0]
+                    if self.SNBinEdges is not None:
+                        compMzSNBins[tileIndex]=compMzBinsInTile[1:]
+                self.compMz=np.average(compMzCube, axis = 0, weights = self.fracArea)
+                if compMzSNBins is not None:
+                    self.compMzSNBins=np.zeros([self.SNBinEdges.shape[0]-1, self.clusterCount.shape[0], self.clusterCount.shape[1]])
+                    for i in range(self.compMzSNBins.shape[0]):
+                        self.compMzSNBins[i]=np.average(compMzSNBins[:, i], axis = 0, weights = self.fracArea)
+                else:
+                    self.compMzSNBins=None
 
         # Deals with corner at high S/N, high-z sometimes weirdly having lower than 1 completeness
         for i in range(self.compMz.shape[0]):
@@ -720,6 +792,58 @@ class SelFn(object):
             # Kernel is the same for every S/N bin, so no per-bin copy is needed
             compMzCube=np.einsum('yrzm,byr->bzm', kernel, ccwAll, optimize = True)
         return compMzCube
+
+
+    def _jaxSupported(self):
+        """Whether the JAX fast-completeness path can be used for the current configuration. It supports
+        intrinsic scatter > 0, with no bias model or the power bias model; everything else falls back to
+        the numpy path.
+
+        """
+        if self.SNBinEdges is None:
+            return False
+        if self.scalingRelationDict['sigma_int'] <= 0:
+            return False
+        if self.biasModel is not None and self.biasModel['func'] is not optBiasPowerModelFunc:
+            return False
+        return _getJaxCompMzBatch() is not None
+
+
+    def _calcCompMzCubeAllTilesJAX(self, snBins):
+        """JAX-accelerated equivalent of looping :meth:`_calcCompMzCube` over all tiles. Returns the
+        per-tile completeness cube, shape (numTiles, numBins, numZ, numMass), as a numpy array.
+
+        """
+        jaxFunc=_getJaxCompMzBatch()
+        numZ, numMass=self.clusterCount.shape
+        numTiles=len(self.tileNames)
+        Rmax=max(len(self.RMSDict[t]) for t in self.tileNames)
+        # Stack per-tile signal grids; pad RMS rows to a fixed length (zero area weight) so the jitted
+        # function compiles a single time regardless of the per-tile row counts
+        y0Grids=np.empty((numTiles, numZ, numMass))
+        y0RMS=np.ones((numTiles, Rmax))
+        areaW=np.zeros((numTiles, Rmax))
+        for i, tileName in enumerate(self.tileNames):
+            if self.useAverageQ == False:
+                y0Grids[i]=self._makeSignalGrid(tileName = tileName)
+            else:
+                y0Grids[i]=self._makeSignalGrid(tileName = None)
+            RMSTab=self.RMSDict[tileName]
+            rms=np.asarray(RMSTab['y0RMS'], dtype = float)
+            area=np.asarray(RMSTab['areaDeg2'], dtype = float)
+            n=rms.shape[0]
+            y0RMS[i, :n]=rms
+            areaW[i, :n]=area/area.sum()
+        truncate=self.biasModel is not None and self.truncateDeltaSNR is not None
+        biasOn=1.0 if self.biasModel is not None else 0.0
+        biasParam=float(self.biasModel['params']) if self.biasModel is not None else 1.0
+        truncDelta=float(self.truncateDeltaSNR) if truncate else np.inf
+        scatter=float(self.scalingRelationDict['sigma_int'])
+        cube=np.asarray(jaxFunc(y0Grids, y0RMS, areaW, snBins[:, 0], snBins[:, 1],
+                                scatter, biasParam, biasOn, truncDelta))
+        if self.maxTheta500Arcmin is not None:
+            cube=cube*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)[None, None]
+        return cube
 
 
     def _get_erf_diff(self, qin, qmin, qmax, qcut):
