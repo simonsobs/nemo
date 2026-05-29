@@ -340,19 +340,19 @@ class QFit(object):
                 z=self.zMax
             Qs=self.fitDict[tileName](z, theta500Arcmin)[0]
             thetaMask=theta500Arcmin > self.zDepThetaMax(z)
-            Qs=jnp.where(thetaMask, 0.0, jnp.asarray(Qs))
+            Qs=np.where(thetaMask, 0.0, Qs)
             if z < self.zMin:# or z > self.zMax:
                 if type(theta500Arcmin) == float:
                     Qs=0.0
                 else:
-                    Qs=jnp.zeros(len(theta500Arcmin))
+                    Qs=np.zeros(len(theta500Arcmin))
         else:
             # Univariate case handles own valid bounds checking
             Qs=self.fitDict[tileName](theta500Arcmin)
 
         if type(Qs) != float and (Qs < 0).sum() > 0:
             #logger.info("WARNING: negative Q value in tileName = %s" % (tileName))
-            Qs=jnp.where(jnp.asarray(Qs) < 0, 0.0, jnp.asarray(Qs))
+            Qs=np.where(Qs < 0, 0.0, Qs)
         
         return Qs
 
@@ -379,8 +379,8 @@ def fSZ(obsFrequencyGHz, TCMBAlpha = 0.0, z = None):
     x=(h*obsFrequencyGHz*1e9)/(kB*TCMB)
     if TCMBAlpha != 0 and z is not None:
         assert(z >= 0)
-        x=x*jnp.power(1+z, TCMBAlpha)
-    fSZ=x*((jnp.exp(x)+1)/(jnp.exp(x)-1))-4.0
+        x=x*np.power(1+z, TCMBAlpha)
+    fSZ=x*((np.exp(x)+1)/(np.exp(x)-1))-4.0
     
     return fSZ
 
@@ -411,7 +411,7 @@ def calcRDeltaMpc(z, MDelta, cosmoModel, delta = 500, wrt = 'critical'):
         wrtDensity=ccl.omega_x(cosmoModel, 1/(1+z), 'matter')*ccl.physical_constants.RHO_CRITICAL*(Ez*cosmoModel['h'])**2
     else:
         raise Exception("wrt should be either 'critical' or 'mean'")
-    RDeltaMpc=jnp.power((3*MDelta)/(4*jnp.pi*delta*wrtDensity), 1.0/3.0)
+    RDeltaMpc=np.power((3*MDelta)/(4*np.pi*delta*wrtDensity), 1.0/3.0)
         
     return RDeltaMpc
 
@@ -450,7 +450,7 @@ def calcTheta500Arcmin(z, M500, cosmoModel):
     
     R500Mpc=calcR500Mpc(z, M500, cosmoModel)
     #theta500Arcmin=np.degrees(np.arctan(R500Mpc/cosmoModel.angular_diameter_distance(z).value))*60.0
-    theta500Arcmin=jnp.degrees(jnp.arctan(R500Mpc/ccl.angular_diameter_distance(cosmoModel, 1/(1+z))))*60.0
+    theta500Arcmin=np.degrees(np.arctan(R500Mpc/ccl.angular_diameter_distance(cosmoModel, 1/(1+z))))*60.0
     
     return theta500Arcmin
     
@@ -558,9 +558,9 @@ def makeBattagliaModelProfile(z, M500c, GNFWParams = 'default', cosmoModel = Non
     # Throws CCL error if mass out-of-range - we catch that elsewhere, e.g., in fitQ
     M200c=M500cToMdef(M500c, z, M200cDef, cosmoModel) #, c_m_relation = 'Ishiyama21')
 
-    P0z=P0*jnp.power(M200c/1e14, P0_alpha_m)*jnp.power(1+z, P0_alpha_z)
-    xcz=xc*jnp.power(M200c/1e14, xc_alpha_m)*jnp.power(1+z, xc_alpha_z)
-    betaz=beta*jnp.power(M200c/1e14, beta_alpha_m)*jnp.power(1+z, beta_alpha_z)
+    P0z=P0*np.power(M200c/1e14, P0_alpha_m)*np.power(1+z, P0_alpha_z)
+    xcz=xc*np.power(M200c/1e14, xc_alpha_m)*np.power(1+z, xc_alpha_z)
+    betaz=beta*np.power(M200c/1e14, beta_alpha_m)*np.power(1+z, beta_alpha_z)
     
     # Some more B12 -> A10 notation conversion
     GNFWParams['P0']=P0z
@@ -1182,7 +1182,7 @@ def calcWeightedFRel(z, M500, Ez, fRelWeightsDict):
         if fRelWeightsDict[obsFreqGHz] > 0:
             fRels.append(calcFRel(z, M500, Ez, obsFreqGHz = obsFreqGHz))
             freqWeights.append(fRelWeightsDict[obsFreqGHz])
-    fRel=jnp.average(jnp.array(fRels), weights=jnp.array(freqWeights))
+    fRel=np.average(fRels, weights=freqWeights)
     
     return fRel
     
@@ -1209,37 +1209,37 @@ def calcFRel(z, M500, Ez, obsFreqGHz = 148.0):
     B=1.71
     #TkeV=5.*np.power(((cosmoModel.efunc(z)*M500)/A), 1/B)   # HMF/Astropy
     #TkeV=5.*np.power(((cosmoModel.Ez(z)*M500)/A), 1/B)   # Colossus
-    TkeV=5.*jnp.power(((Ez*M500)/A), 1/B)
+    TkeV=5.*np.power(((Ez*M500)/A), 1/B)
     TKelvin=TkeV*((1000*e)/kB)
 
     # Itoh et al. (1998) eqns. 2.25 - 2.30
     thetae=(kB*TKelvin)/(me*c**2)
     X=(h*obsFreqGHz*1e9)/(kB*TCMB)
-    Xtw=X*(jnp.cosh(X/2.)/jnp.sinh(X/2.))
-    Stw=X/jnp.sinh(X/2.)
+    Xtw=X*(np.cosh(X/2.)/np.sinh(X/2.))
+    Stw=X/np.sinh(X/2.)
 
     Y0=-4+Xtw
 
-    Y1=-10. + (47/2.)*Xtw - (42/5.)*Xtw**2 + (7/10.)*Xtw**3 + jnp.power(Stw, 2)*(-(21/5.) + (7/5.)*Xtw)
+    Y1=-10. + (47/2.)*Xtw - (42/5.)*Xtw**2 + (7/10.)*Xtw**3 + np.power(Stw, 2)*(-(21/5.) + (7/5.)*Xtw)
 
     Y2=-(15/2.) +  (1023/8.)*Xtw - (868/5.)*Xtw**2 + (329/5.)*Xtw**3 - (44/5.)*Xtw**4 + (11/30.)*Xtw**5 \
-        + jnp.power(Stw, 2)*(-(434/5.) + (658/5.)*Xtw - (242/5.)*Xtw**2 + (143/30.)*Xtw**3) \
-        + jnp.power(Stw, 4)*(-(44/5.) + (187/60.)*Xtw)
+        + np.power(Stw, 2)*(-(434/5.) + (658/5.)*Xtw - (242/5.)*Xtw**2 + (143/30.)*Xtw**3) \
+        + np.power(Stw, 4)*(-(44/5.) + (187/60.)*Xtw)
 
     Y3=(15/2.) + (2505/8.)*Xtw - (7098/5.)*Xtw**2 + (14253/10.)*Xtw**3 - (18594/35.)*Xtw**4 + (12059/140.)*Xtw**5 - (128/21.)*Xtw**6 + (16/105.)*Xtw**7 \
-        + jnp.power(Stw, 2)*(-(7098/10.) + (14253/5.)*Xtw - (102267/35.)*Xtw**2 + (156767/140.)*Xtw**3 - (1216/7.)*Xtw**4 + (64/7.)*Xtw**5) \
-        + jnp.power(Stw, 4)*(-(18594/35.) + (205003/280.)*Xtw - (1920/7.)*Xtw**2 + (1024/35.)*Xtw**3) \
-        + jnp.power(Stw, 6)*(-(544/21.) + (992/105.)*Xtw)
+        + np.power(Stw, 2)*(-(7098/10.) + (14253/5.)*Xtw - (102267/35.)*Xtw**2 + (156767/140.)*Xtw**3 - (1216/7.)*Xtw**4 + (64/7.)*Xtw**5) \
+        + np.power(Stw, 4)*(-(18594/35.) + (205003/280.)*Xtw - (1920/7.)*Xtw**2 + (1024/35.)*Xtw**3) \
+        + np.power(Stw, 6)*(-(544/21.) + (992/105.)*Xtw)
 
     Y4=-(135/32.) + (30375/128.)*Xtw - (62391/10.)*Xtw**2 + (614727/40.)*Xtw**3 - (124389/10.)*Xtw**4 \
         + (355703/80.)*Xtw**5 - (16568/21.)*Xtw**6 + (7516/105.)*Xtw**7 - (22/7.)*Xtw**8 + (11/210.)*Xtw**9 \
-        + jnp.power(Stw, 2)*(-(62391/20.) + (614727/20.)*Xtw - (1368279/20.)*Xtw**2 + (4624139/80.)*Xtw**3 - (157396/7.)*Xtw**4 \
+        + np.power(Stw, 2)*(-(62391/20.) + (614727/20.)*Xtw - (1368279/20.)*Xtw**2 + (4624139/80.)*Xtw**3 - (157396/7.)*Xtw**4 \
         + (30064/7.)*Xtw**5 - (2717/7.)*Xtw**6 + (2761/210.)*Xtw**7) \
-        + jnp.power(Stw, 4)*(-(124389/10.) + (6046951/160.)*Xtw - (248520/7.)*Xtw**2 + (481024/35.)*Xtw**3 - (15972/7.)*Xtw**4 + (18689/140.)*Xtw**5) \
-        + jnp.power(Stw, 6)*(-(70414/21.) + (465992/105.)*Xtw - (11792/7.)*Xtw**2 + (19778/105.)*Xtw**3) \
-        + jnp.power(Stw, 8)*(-(682/7.) + (7601/210.)*Xtw)
+        + np.power(Stw, 4)*(-(124389/10.) + (6046951/160.)*Xtw - (248520/7.)*Xtw**2 + (481024/35.)*Xtw**3 - (15972/7.)*Xtw**4 + (18689/140.)*Xtw**5) \
+        + np.power(Stw, 6)*(-(70414/21.) + (465992/105.)*Xtw - (11792/7.)*Xtw**2 + (19778/105.)*Xtw**3) \
+        + np.power(Stw, 8)*(-(682/7.) + (7601/210.)*Xtw)
 
-    deltaSZE=((X**3)/(jnp.exp(X)-1)) * ((thetae*X*jnp.exp(X))/(jnp.exp(X)-1)) * (Y0 + Y1*thetae + Y2*thetae**2 + Y3*thetae**3 + Y4*thetae**4)
+    deltaSZE=((X**3)/(np.exp(X)-1)) * ((thetae*X*np.exp(X))/(np.exp(X)-1)) * (Y0 + Y1*thetae + Y2*thetae**2 + Y3*thetae**3 + Y4*thetae**4)
 
     fRel=1+deltaSZE
     

@@ -260,6 +260,14 @@ class SelFn(object):
             self.totalAreaDeg2=totalAreaDeg2
             if totalAreaDeg2 == 0:
                 raise FootprintError
+            # Pre-convert RMS arrays to JAX once — survey noise never changes after load
+            self._snrCut_j=jnp.asarray(self.SNRCut)
+            self._theta500Mask_j=None
+            self._jaxRMSCache={}
+            for _tileName in self.tileNames:
+                _tab=self.RMSDict[_tileName]
+                self._jaxRMSCache[_tileName]=(jnp.array(_tab['y0RMS']),
+                                              jnp.array(_tab['areaDeg2']/_tab['areaDeg2'].sum()))
             # If want a plot of noise distribution
             # plt.hist(self.RMSTab['y0RMS'], weights = self.RMSTab['areaDeg2'], bins  = 100, density=True)
 
@@ -510,6 +518,8 @@ class SelFn(object):
                     self._log10M500s=self.log10M
                 R500Mpc=np.power((3*M500s)/(4*np.pi*500*criticalDensity[i]), 1.0/3.0)
                 self._theta500Grid[i]=np.degrees(np.arctan(R500Mpc/DAz[i]))*60.0
+            if self.maxTheta500Arcmin is not None:
+                self._theta500Mask_j=jnp.array(self._theta500Grid < self.maxTheta500Arcmin, dtype=float)
 
         if self.method == 'injection':
             # WARNING: Here there is no Q, and y0 is true y0, NOT y0~
@@ -618,7 +628,11 @@ class SelFn(object):
         # Calculate completeness using area-weighted average
         # NOTE: RMSTab that is fed in here can be downsampled in noise resolution for speed
         if RMSTab is None:
-            RMSTab=self.RMSDict[tileName]
+            rms_vals_j, areaWeights_j=self._jaxRMSCache[tileName]
+        else:
+            rms_vals_j=jnp.array(RMSTab['y0RMS'])
+            areaWeights_j=jnp.array(RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum())
+        y0g_j=jnp.array(y0Grid)
         for k in range(numIter):
             if k == 0:
                 minSN=self.SNRCut
@@ -626,63 +640,82 @@ class SelFn(object):
             else:
                 minSN=self.SNBinEdges[k-1]
                 maxSN=self.SNBinEdges[k]
-            compMzCube[k]=self._fastCompMz(y0Grid, RMSTab, minSN, maxSN)
+            compMzCube[k]=self._fastCompMz(y0g_j, rms_vals_j, areaWeights_j,
+                                           jnp.asarray(minSN), jnp.asarray(maxSN))
         if return_y0Grid is True:
             return compMzCube, y0Grid
         else:
             return compMzCube
 
 
-    def _fastCompMz(self, y0Grid, RMSTab, minSN, maxSN):
-        rms_vals=jnp.array(RMSTab['y0RMS'])                              # (nRMS,)
-        areaWeights=jnp.array(RMSTab['areaDeg2']/RMSTab['areaDeg2'].sum())  # (nRMS,)
-        y0g=jnp.array(y0Grid)                                            # (nz, nM)
+    def _fastCompMz(self, y0g, rms_vals, areaWeights, minSN, maxSN):
+        """y0g, rms_vals, areaWeights are pre-converted JAX arrays; minSN/maxSN are 0-d JAX arrays."""
+        snrCut_j=self._snrCut_j
 
         if self.scalingRelationDict['sigma_int'] == 0:
-            # Vectorised over RMS axis: (nRMS, nz, nM)
             if self.biasModel is not None:
                 trueSNR=y0g[None,:,:] / rms_vals[:,None,None]
                 corrFactors=self.biasModel['func'](trueSNR, self.biasModel['params'])
-                # Truncate unphysically large correction factors below the S/N cut
                 if self.truncateDeltaSNR is not None:
                     corrFactors=jnp.where(trueSNR < minSN - self.truncateDeltaSNR, 1.0, corrFactors)
+                snr=(y0g[None,:,:] * corrFactors) / rms_vals[:,None,None]
             else:
-                corrFactors=1.0
-            snr=(y0g[None,:,:] * corrFactors) / rms_vals[:,None,None]
-            erf_vals=self._get_erf_diff(snr, minSN, maxSN, self.SNRCut)  # (nRMS, nz, nM)
-            compMzTile=jnp.sum(erf_vals * areaWeights[:,None,None], axis=0)  # (nz, nM)
+                snr=y0g[None,:,:] / rms_vals[:,None,None]
+            compMzTile=SelFn._erf_weighted_sum(snr, areaWeights, minSN, maxSN, snrCut_j)
         else:
-            # Scatter branch: loop over RMS rows, JAX ops inside each iteration
             scatter=self.scalingRelationDict['sigma_int']
-            lnyy=jnp.linspace(jnp.min(jnp.log(y0g)), jnp.max(jnp.log(y0g)), 44)  # (44,)
+            lnyy=jnp.linspace(jnp.min(jnp.log(y0g)), jnp.max(jnp.log(y0g)), 44)
             yy0=jnp.exp(lnyy)
-            fac=1. / jnp.sqrt(2. * jnp.pi * scatter**2)
+            fac=jnp.asarray(1. / np.sqrt(2. * np.pi * scatter**2))
+            scatter_j=jnp.asarray(scatter)
+            if self.biasModel is None:
+                mu=jnp.log(y0g)  # constant across RMS entries when no bias
             compMzTile=jnp.zeros(y0g.shape)
-            for i in range(len(RMSTab)):
+            for i in range(len(rms_vals)):
                 if self.biasModel is not None:
                     trueSNR=y0g / rms_vals[i]
                     corrFactor_i=self.biasModel['func'](trueSNR, self.biasModel['params'])
                     if self.truncateDeltaSNR is not None:
                         corrFactor_i=jnp.where(trueSNR < minSN - self.truncateDeltaSNR, 1.0, corrFactor_i)
-                else:
-                    corrFactor_i=1.0
-                mu=jnp.log(y0g * corrFactor_i)                                  # (nz, nM)
-                arg=self._get_erf_diff(yy0 / rms_vals[i], minSN, maxSN, minSN)  # (44,)
-                cc=arg * areaWeights[i]                                          # (44,)
-                arg0=(lnyy[:,None,None] - mu[None,:,:]) / (jnp.sqrt(2.) * scatter)  # (44, nz, nM)
-                args=fac * jnp.exp(-arg0**2.) * cc[:,None,None]                 # (44, nz, nM)
-                compMzTile=compMzTile + jnp.trapezoid(args, x=lnyy, axis=0)
+                    mu=jnp.log(y0g * corrFactor_i)
+                compMzTile=compMzTile + SelFn._scatter_rms_contrib(
+                    lnyy, yy0, mu, rms_vals[i], areaWeights[i], fac, scatter_j, minSN, maxSN)
 
         if self.maxTheta500Arcmin is not None:
-            compMzTile=compMzTile * jnp.array(self._theta500Grid < self.maxTheta500Arcmin, dtype=float)
+            if self._theta500Mask_j is None:
+                self._theta500Mask_j=jnp.array(self._theta500Grid < self.maxTheta500Arcmin, dtype=float)
+            compMzTile=compMzTile * self._theta500Mask_j
 
         return np.array(compMzTile)
 
 
     @staticmethod
     @jax.jit
+    def _erf_weighted_sum(snr, areaWeights, minSN, maxSN, snrCut):
+        """JIT-compiled erf + area-weighted sum for the no-scatter completeness branch."""
+        erf_vals=SelFn._get_erf_diff_jit(snr, minSN, maxSN, snrCut)       # (nRMS, nz, nM)
+        return jnp.sum(erf_vals * areaWeights[:,None,None], axis=0)        # (nz, nM)
+
+
+    @staticmethod
+    @jax.jit
+    def _scatter_rms_contrib(lnyy, yy0, mu, rms_val_i, areaWeight_i, fac, scatter, minSN, maxSN):
+        """JIT-compiled inner body for one RMS entry in the scatter completeness branch."""
+        arg=SelFn._get_erf_diff_jit(yy0 / rms_val_i, minSN, maxSN, minSN)  # (44,)
+        cc=arg * areaWeight_i                                                 # (44,)
+        arg0=(lnyy[:,None,None] - mu[None,:,:]) / (jnp.sqrt(2.) * scatter)  # (44, nz, nM)
+        args=fac * jnp.exp(-arg0**2.) * cc[:,None,None]                      # (44, nz, nM)
+        return jnp.trapezoid(args, x=lnyy, axis=0)                           # (nz, nM)
+
+
+    @staticmethod
     def _get_erf_diff(qin, qmin, qmax, qcut):
         """Based on SOLikeT - qin == input SNR (y0/RMS on the grid)"""
+        return SelFn._get_erf_diff_jit(qin, jnp.asarray(qmin), jnp.asarray(qmax), jnp.asarray(qcut))
+
+    @staticmethod
+    @jax.jit
+    def _get_erf_diff_jit(qin, qmin, qmax, qcut):
         qlim = jnp.where(qmin > qcut, qmin, qcut)
         arg1 = (qin - qmax) / jnp.sqrt(2.)
         arg2 = (qin - qlim) / jnp.sqrt(2.)
