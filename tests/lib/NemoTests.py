@@ -386,6 +386,21 @@ class NemoTests(object):
             self._status="SUCCESS"
     
             
+    def check_fast_completeness_equivalence(self, selFnDir):
+        """Check that the vectorized fast-completeness calculation in SelFn reproduces the original
+        per-RMS-row algorithm, for the selFn in the given directory (relative to the tests directory).
+
+        """
+        testsDir=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if testsDir not in sys.path:
+            sys.path.insert(0, testsDir)
+        from test_fastCompMz_equivalence import runEquivalenceCheck
+        if runEquivalenceCheck(os.path.abspath(selFnDir)) == True:
+            self._status="SUCCESS"
+        else:
+            self._status="FAILED"
+
+
     def status_should_be(self, expected_status):
         if expected_status != self._status:
             raise AssertionError("Expected status to be '%s' but was '%s'."

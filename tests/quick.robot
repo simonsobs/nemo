@@ -13,6 +13,11 @@ Mass estimation works
     Run quickstart clusters with Q
     Run nemo mass
 
+Fast completeness calculation is unchanged
+    Run quickstart clusters with Q
+    Check fast completeness equivalence     testsCache/quickstart-clusters-Q/selFn
+    Status should be        SUCCESS
+
 Forced photometry using nemo works
     Set config              configs/quickstart-clusters-Q.yml
     Run nemo    DR5_cluster-catalog_v1.1.fits

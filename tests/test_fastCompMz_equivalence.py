@@ -11,6 +11,10 @@ new implementation reproduces it to floating-point tolerance, across:
 
 and for several scaling-relation parameter sets and tiles.
 
+It can be run standalone, or via the Robot Framework ``quick.robot`` suite (which generates a quickstart
+selFn first; see the "Fast completeness calculation is unchanged" test case and the
+``Check fast completeness equivalence`` keyword).
+
 Usage:
     python test_fastCompMz_equivalence.py [selFnDir] [nTiles]
 
@@ -23,8 +27,6 @@ from nemo import completeness
 
 defaultSelFnDir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "..", "examples", "quickstart", "quickstart-clusters", "selFn")
-selFnDir = sys.argv[1] if len(sys.argv) > 1 else defaultSelFnDir
-nTiles = int(sys.argv[2]) if len(sys.argv) > 2 else 6
 
 RTOL, ATOL = 1e-9, 1e-12
 
@@ -78,57 +80,72 @@ def srd(tenToA0=2.25e-05, B0=0.08, sigma_int=0.2):
             'Ez_gamma': 2.0, 'onePlusRedshift_power': 0.0, 'zpivot': 0.0}
 
 
-print("Building SelFn from %s ..." % selFnDir)
-SNBinEdges = np.logspace(np.log10(5.5), np.log10(50), 11)
-selFn = completeness.SelFn(selFnDir, SNRCut=SNBinEdges[0], zStep=0.1, zMin=0.3, zMax=2.0,
-                           massFunction='Tinker08', numMassBins=40, applyRelativisticCorrection=False,
-                           rhoType='critical', delta=500, method='fast', QSource='fit',
-                           footprint=None, maxFlags=None, downsampleRMS=8, setUpAreaMask=False,
-                           biasModel={'func': completeness.optBiasPowerModelFunc, 'params': 2.1},
-                           theoryCode='CCL', useAverageQ=False, massBinsTheory=200, zStepTheory=0.01,
-                           SNBinEdges=SNBinEdges)
-H0, Om0, Ob0, sigma8, ns = 67.62, 0.3116, 0.0492, 0.8149, 0.9709
-tiles = list(selFn.tileNames)[:nTiles]
-print("Checking %d tiles, %d S/N planes\n" % (len(tiles), selFn.SNBinEdges.shape[0]))
+def runEquivalenceCheck(selFnDir, nTiles=6, rtol=RTOL, atol=ATOL):
+    """Build a SelFn from ``selFnDir`` and assert the vectorized fast-completeness calculation
+    reproduces the original per-RMS-row algorithm, across several configurations and parameter sets.
 
-# (label, sets biasModel back on?, scalingRelationDict)
-biasOn = {'func': completeness.optBiasPowerModelFunc, 'params': 2.1}
-cases = [
-    ("scatter>0, bias+truncation (hot path)", biasOn, 3.0,  srd(B0=0.08, sigma_int=0.20)),
-    ("scatter>0, different params",           biasOn, 3.0,  srd(tenToA0=3.0e-05, B0=0.30, sigma_int=0.35)),
-    ("scatter>0, no truncation",              biasOn, None, srd(B0=0.15, sigma_int=0.25)),
-    ("scatter>0, no bias model",              None,   3.0,  srd(B0=0.10, sigma_int=0.30)),
-    ("scatter==0, bias+truncation",           biasOn, 3.0,  srd(B0=0.12, sigma_int=0.0)),
-    ("scatter==0, no bias model",             None,   3.0,  srd(B0=0.12, sigma_int=0.0)),
-]
+    Args:
+        selFnDir (str): Path to a ``selFn/`` directory (must contain RMSTab.fits, QFit.fits, etc.).
+        nTiles (int): Maximum number of tiles to check.
 
-worstAbs, worstRel, allPass = 0.0, 0.0, True
-for label, biasModel, truncDeltaSNR, scalingRelationDict in cases:
-    selFn.biasModel = biasModel
-    selFn.truncateDeltaSNR = truncDeltaSNR
-    selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict=scalingRelationDict)
-    snBins = buildSNBins(selFn)
-    caseAbs, caseRel, caseOK = 0.0, 0.0, True
-    for tileName in tiles:
-        y0Grid = selFn._makeSignalGrid(tileName=tileName)
-        RMSTab = selFn.RMSDict[tileName]
-        ref = referenceCompMzCube(selFn, y0Grid, RMSTab, snBins)
-        new = selFn.calcFastCompletenessInTile(tileName, return_y0Grid=False)
-        absDiff = np.abs(new - ref)
-        relDiff = absDiff / np.abs(ref).clip(min=1e-30)
-        caseAbs = max(caseAbs, absDiff.max())
-        caseRel = max(caseRel, relDiff[ref != 0].max() if np.any(ref != 0) else 0.0)
-        if not np.allclose(new, ref, rtol=RTOL, atol=ATOL):
-            caseOK = False
-    worstAbs, worstRel = max(worstAbs, caseAbs), max(worstRel, caseRel)
-    allPass = allPass and caseOK
-    print("  [%s] %-38s maxAbs=%.2e maxRel=%.2e" %
-          ("PASS" if caseOK else "FAIL", label, caseAbs, caseRel))
+    Returns:
+        bool: True if every case matches to within (rtol, atol).
 
-print("\nWorst over all cases: maxAbs=%.2e maxRel=%.2e" % (worstAbs, worstRel))
-if allPass:
-    print("EQUIVALENCE OK (rtol=%.0e, atol=%.0e)" % (RTOL, ATOL))
-    sys.exit(0)
-else:
-    print("EQUIVALENCE FAILED")
-    sys.exit(1)
+    """
+
+    print("Building SelFn from %s ..." % selFnDir)
+    SNBinEdges = np.logspace(np.log10(5.5), np.log10(50), 11)
+    selFn = completeness.SelFn(selFnDir, SNRCut=SNBinEdges[0], zStep=0.1, zMin=0.3, zMax=2.0,
+                               massFunction='Tinker08', numMassBins=40, applyRelativisticCorrection=False,
+                               rhoType='critical', delta=500, method='fast', QSource='fit',
+                               footprint=None, maxFlags=None, downsampleRMS=8, setUpAreaMask=False,
+                               biasModel={'func': completeness.optBiasPowerModelFunc, 'params': 2.1},
+                               theoryCode='CCL', useAverageQ=False, massBinsTheory=200, zStepTheory=0.01,
+                               SNBinEdges=SNBinEdges)
+    H0, Om0, Ob0, sigma8, ns = 67.62, 0.3116, 0.0492, 0.8149, 0.9709
+    tiles = list(selFn.tileNames)[:nTiles]
+    print("Checking %d tiles, %d S/N planes\n" % (len(tiles), selFn.SNBinEdges.shape[0]))
+
+    # (label, biasModel, truncateDeltaSNR, scalingRelationDict)
+    biasOn = {'func': completeness.optBiasPowerModelFunc, 'params': 2.1}
+    cases = [
+        ("scatter>0, bias+truncation (hot path)", biasOn, 3.0,  srd(B0=0.08, sigma_int=0.20)),
+        ("scatter>0, different params",           biasOn, 3.0,  srd(tenToA0=3.0e-05, B0=0.30, sigma_int=0.35)),
+        ("scatter>0, no truncation",              biasOn, None, srd(B0=0.15, sigma_int=0.25)),
+        ("scatter>0, no bias model",              None,   3.0,  srd(B0=0.10, sigma_int=0.30)),
+        ("scatter==0, bias+truncation",           biasOn, 3.0,  srd(B0=0.12, sigma_int=0.0)),
+        ("scatter==0, no bias model",             None,   3.0,  srd(B0=0.12, sigma_int=0.0)),
+    ]
+
+    worstAbs, worstRel, allPass = 0.0, 0.0, True
+    for label, biasModel, truncDeltaSNR, scalingRelationDict in cases:
+        selFn.biasModel = biasModel
+        selFn.truncateDeltaSNR = truncDeltaSNR
+        selFn.update(H0, Om0, Ob0, sigma8, ns, scalingRelationDict=scalingRelationDict)
+        snBins = buildSNBins(selFn)
+        caseAbs, caseRel, caseOK = 0.0, 0.0, True
+        for tileName in tiles:
+            y0Grid = selFn._makeSignalGrid(tileName=tileName)
+            RMSTab = selFn.RMSDict[tileName]
+            ref = referenceCompMzCube(selFn, y0Grid, RMSTab, snBins)
+            new = selFn.calcFastCompletenessInTile(tileName, return_y0Grid=False)
+            absDiff = np.abs(new - ref)
+            relDiff = absDiff / np.abs(ref).clip(min=1e-30)
+            caseAbs = max(caseAbs, absDiff.max())
+            caseRel = max(caseRel, relDiff[ref != 0].max() if np.any(ref != 0) else 0.0)
+            if not np.allclose(new, ref, rtol=rtol, atol=atol):
+                caseOK = False
+        worstAbs, worstRel = max(worstAbs, caseAbs), max(worstRel, caseRel)
+        allPass = allPass and caseOK
+        print("  [%s] %-38s maxAbs=%.2e maxRel=%.2e" %
+              ("PASS" if caseOK else "FAIL", label, caseAbs, caseRel))
+
+    print("\nWorst over all cases: maxAbs=%.2e maxRel=%.2e" % (worstAbs, worstRel))
+    print("EQUIVALENCE OK (rtol=%.0e, atol=%.0e)" % (rtol, atol) if allPass else "EQUIVALENCE FAILED")
+    return allPass
+
+
+if __name__ == '__main__':
+    selFnDir = sys.argv[1] if len(sys.argv) > 1 else defaultSelFnDir
+    nTiles = int(sys.argv[2]) if len(sys.argv) > 2 else 6
+    sys.exit(0 if runEquivalenceCheck(selFnDir, nTiles) else 1)
