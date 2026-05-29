@@ -696,22 +696,29 @@ class SelFn(object):
             kernelTrunc=fac*np.exp(-np.power((lnyy[:, None, None]-muTrunc[None])*norm, 2)) # (numY, numZ, numMass)
 
         # lnyy is uniformly spaced, so trapezoidal integration over y is a fixed weighted sum: the
-        # integration weights are folded into the (numY, numRMS) factor and the y-integral + RMS-row
-        # average are done together as a single contraction (much faster than np.trapezoid here).
+        # integration weights are folded into the (numBins, numY, numRMS) factor below, and the y-integral
+        # + RMS-row average are then done for all S/N bins together as a single contraction. Doing one
+        # large contraction rather than one per bin avoids the per-call numpy/einsum dispatch overhead,
+        # which dominates once the actual arithmetic has been vectorized.
         dlnyy=lnyy[1]-lnyy[0]
         trapW=np.full(lnyy.shape[0], dlnyy)
         trapW[0]=trapW[0]*0.5
         trapW[-1]=trapW[-1]*0.5
+        ccwAll=np.zeros((numBins, lnyy.shape[0], numRMS))          # (numBins, numY, numRMS)
+        if truncate:
+            KAll=np.empty((numBins, lnyy.shape[0], numRMS, numZ, numMass))
         for k in range(numBins):
             minSN, maxSN=snBins[k]
+            arg=self._get_erf_diff(yy0[:, None]/y0RMS[None], minSN, maxSN, minSN)   # (numY, numRMS)
+            ccwAll[k]=(arg*areaWeights[None])*trapW[:, None]      # erf x area x trapezoid weights
             if truncate:
                 truncMask=trueSNR < minSN-self.truncateDeltaSNR    # (numRMS, numZ, numMass)
-                K=np.where(truncMask[None], kernelTrunc[:, None], kernel)
-            else:
-                K=kernel
-            arg=self._get_erf_diff(yy0[:, None]/y0RMS[None], minSN, maxSN, minSN)   # (numY, numRMS)
-            ccw=(arg*areaWeights[None])*trapW[:, None]            # (numY, numRMS): erf x area x trap weights
-            compMzCube[k]=np.einsum('yrzm,yr->zm', K, ccw, optimize = True)
+                KAll[k]=np.where(truncMask[None], kernelTrunc[:, None], kernel)
+        if truncate:
+            compMzCube=np.einsum('byrzm,byr->bzm', KAll, ccwAll, optimize = True)
+        else:
+            # Kernel is the same for every S/N bin, so no per-bin copy is needed
+            compMzCube=np.einsum('yrzm,byr->bzm', kernel, ccwAll, optimize = True)
         return compMzCube
 
 
@@ -780,13 +787,15 @@ class SelFn(object):
             # NOTE: Still called Ez2, but now has gamma option enabled, and possibly zpivot != 0
             Ez0=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zpivot)), Ez_gamma)
             Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), Ez_gamma)/Ez0
+            # Mass dependence is z-independent, so compute it once outside the redshift loop
+            massTerm=np.power(np.power(10, self.log10M)/Mpivot, 1+B0)
             for i in range(len(zRange)):
                 zk=zRange[i]
                 # NOTE: Now we have two z bin schemes (one in MockSurvey, one in SelFn) need to take care here with indices
                 k=np.argmin(abs(self.mockSurvey.z-zk))
                 Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
                 #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-                true_y0s_zk=tenToA0*Ez2[i]*np.power(np.power(10, self.log10M)/Mpivot, 1+B0)*np.power(1+zk, onePlusRedshift_power)
+                true_y0s_zk=tenToA0*Ez2[i]*massTerm*np.power(1+zk, onePlusRedshift_power)
                 if applyQ == True:
                     true_y0s_zk=true_y0s_zk*Qs_zk
                 if self.applyRelativisticCorrection == True:
