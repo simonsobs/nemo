@@ -203,9 +203,13 @@ class SelFn(object):
                  massFunction = 'Tinker08', maxTheta500Arcmin = None, method = 'fast',
                  QSource = 'fit', useAverageQ = False, theoryCode = 'CCL', noiseCut = None, biasModel = None,
                  truncateDeltaSNR = 3.0, overrideNoise = None, massBinsTheory = 2000, zStepTheory = 0.001,
-                 SNBinEdges = None, maxFlags = None):
-        
+                 SNBinEdges = None, maxFlags = None, jaxUseFloat32 = False):
+
         self.SNRCut=SNRCut
+        # If True, the JAX fast-completeness path computes in float32 (~2x faster than float64 on CPU, at
+        # ~1e-5 relative precision). Default False (float64) reproduces the numpy path exactly. No effect
+        # when the numpy fallback is used.
+        self.jaxUseFloat32=jaxUseFloat32
         self.biasModel=biasModel
         if footprint == 'full':
             footprint=None
@@ -815,14 +819,18 @@ class SelFn(object):
 
         """
         jaxFunc=_getJaxCompMzBatch()
+        # float32 (opt-in) is ~2x faster on CPU but only ~1e-5 precise; the input dtype selects which
+        # variant the jitted function compiles. The output is returned as float64 either way so the rest
+        # of the pipeline stays float64-typed (in float32 mode the values just carry float32 precision).
+        dtype=np.float32 if self.jaxUseFloat32 else np.float64
         numZ, numMass=self.clusterCount.shape
         numTiles=len(self.tileNames)
         Rmax=max(len(self.RMSDict[t]) for t in self.tileNames)
         # Stack per-tile signal grids; pad RMS rows to a fixed length (zero area weight) so the jitted
         # function compiles a single time regardless of the per-tile row counts
-        y0Grids=np.empty((numTiles, numZ, numMass))
-        y0RMS=np.ones((numTiles, Rmax))
-        areaW=np.zeros((numTiles, Rmax))
+        y0Grids=np.empty((numTiles, numZ, numMass), dtype = dtype)
+        y0RMS=np.ones((numTiles, Rmax), dtype = dtype)
+        areaW=np.zeros((numTiles, Rmax), dtype = dtype)
         for i, tileName in enumerate(self.tileNames):
             if self.useAverageQ == False:
                 y0Grids[i]=self._makeSignalGrid(tileName = tileName)
@@ -839,8 +847,10 @@ class SelFn(object):
         biasParam=float(self.biasModel['params']) if self.biasModel is not None else 1.0
         truncDelta=float(self.truncateDeltaSNR) if truncate else np.inf
         scatter=float(self.scalingRelationDict['sigma_int'])
-        cube=np.asarray(jaxFunc(y0Grids, y0RMS, areaW, snBins[:, 0], snBins[:, 1],
-                                scatter, biasParam, biasOn, truncDelta))
+        # Pass scalars in the chosen dtype so the whole computation stays in that precision
+        cube=np.asarray(jaxFunc(y0Grids, y0RMS, areaW,
+                                snBins[:, 0].astype(dtype), snBins[:, 1].astype(dtype),
+                                dtype(scatter), dtype(biasParam), dtype(biasOn), dtype(truncDelta))).astype(np.float64)
         if self.maxTheta500Arcmin is not None:
             cube=cube*np.array(self._theta500Grid < self.maxTheta500Arcmin, dtype = float)[None, None]
         return cube
