@@ -1775,39 +1775,41 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
     maxSizeDeg=(beam.FWHMArcmin*numFWHM)/60
     t1=time.time()
     if reportTimingInfo: logger.info("makeModelImage - set up beam - took %.3f sec" % (t1-t0))
-    
-    t0=time.time()
-    if 'y_c' in catalog.keys() or 'true_y_c' in catalog.keys():
-        # Clusters - insert one at a time (with different scales etc.)
-        # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
-        if profile == 'A10':
-            makeClusterSignalMap=signals.makeArnaudModelSignalMap
-        elif profile == 'B12':
-            makeClusterSignalMap=signals.makeBattagliaModelSignalMap
-        else:
-            raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
-                            to accept a string of GNFW parameters, but that is not implemented yet.")
+
+    # Re-organised below to allow mixed catalogs of sources and clusters
+    # First bit here (override) is for doing injection sims faster
+    if override is not None and override != {'label': 'pointSource'}:
+        z=override['redshift']
+        M500=override['M500']
+        y0ToInsert=catalog['y_c'].data*1e-4
+        RAs=catalog['RADeg'].data
+        decs=catalog['decDeg'].data
+        theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
+        maxSizeDeg=5*(theta500Arcmin/60)
+        modelMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = RAs,
+                                    decDeg = decs, beam = beam,
+                                    GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                    maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                    cosmoModel = cosmoModel)
+        if obsFreqGHz is not None:
+            modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
+                                    TCMBAlpha = TCMBAlpha, z = z)
+    # Otherwise paint in clusters and sources
+    else:
+        t0=time.time()
         count=0
-        # First bit here (override) is for doing injection sims faster
-        if override is not None:
-            z=override['redshift']
-            M500=override['M500']
-            y0ToInsert=catalog['y_c'].data*1e-4
-            RAs=catalog['RADeg'].data
-            decs=catalog['decDeg'].data
-            theta500Arcmin=signals.calcTheta500Arcmin(z, M500, cosmoModel)
-            maxSizeDeg=5*(theta500Arcmin/60)
-            modelMap=makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = RAs,
-                                          decDeg = decs, beam = beam,
-                                          GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                          maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                          cosmoModel = cosmoModel)
-            if obsFreqGHz is not None:
-                modelMap=convertToDeltaT(modelMap, obsFrequencyGHz = obsFreqGHz,
-                                         TCMBAlpha = TCMBAlpha, z = z)
-        else:
-            for row in catalog:
-                count=count+1
+        for row in catalog:
+            count=count+1
+            if ('y_c' in catalog.keys() or 'true_y_c' in catalog.keys()) and np.ma.is_masked(row['y_c']) == False:
+                # Clusters - insert one at a time (with different scales etc.)
+                # We could use this to replace how GNFWParams are fed in also (easier for nemoModel script)
+                if profile == 'A10':
+                    makeClusterSignalMap=signals.makeArnaudModelSignalMap
+                elif profile == 'B12':
+                    makeClusterSignalMap=signals.makeBattagliaModelSignalMap
+                else:
+                    raise Exception("Didn't understand profile - should be A10 or B12. This would be an excellent place\
+                                    to accept a string of GNFW parameters, but that is not implemented yet.")
                 theta500Arcmin=None # If using inferred properties, we will get this below
                 if 'true_M500c' in catalog.keys():
                     # This case is for when we're running from nemoMock output
@@ -1832,7 +1834,13 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                     if 'template' not in catalog.keys():
                         raise Exception("No M500, z, or template column found in catalog.")
                     bits=row['template'].split("#")[0].split("_")
-                    M500=float(bits[1][1:].replace("p", "."))
+                    try:
+                        M500=float(bits[1][1:].replace("p", "."))
+                    except:
+                        print("huh")
+                        import IPython
+                        IPython.embed()
+                        sys.exit()
                     z=float(bits[2][1:].replace("p", "."))
                     y0ToInsert=row['y_c']*1e-4  # or fixed_y_c...
                     if z == 0:
@@ -1843,21 +1851,19 @@ def makeModelImage(shape, wcs, catalog, beamFileName, obsFreqGHz = None, GNFWPar
                 # Updated in place
                 try:
                     makeClusterSignalMap(z, M500, modelMap.shape, wcs, RADeg = row['RADeg'],
-                                     decDeg = row['decDeg'], beam = beam,
-                                     GNFWParams = GNFWParams, amplitude = y0ToInsert,
-                                     maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
-                                     cosmoModel = cosmoModel, omap = modelMap,
-                                     obsFrequencyGHz = obsFreqGHz, TCMBAlpha = TCMBAlpha)
+                                         decDeg = row['decDeg'], beam = beam,
+                                         GNFWParams = GNFWParams, amplitude = y0ToInsert,
+                                         maxSizeDeg = maxSizeDeg, convolveWithBeam = True,
+                                         cosmoModel = cosmoModel, omap = modelMap,
+                                         obsFrequencyGHz = obsFreqGHz, TCMBAlpha = TCMBAlpha)
                 except:
                     raise Exception("Failed on makeClusterSignalMap: z = %.4f, M500 = %.4e, modelMap.shape = %s, maxSizeDeg = %.4f" % (z, M500, str(modelMap.shape), maxSizeDeg))
-    else:
-        # Sources - switched to sim_objects underneath
-        for row in catalog:
-            signals.makeBeamModelSignalMap(shape, wcs, beam, RADeg = row['RADeg'],
-                                           decDeg = row['decDeg'], maxSizeDeg = 1.0,
-                                           amplitude = row['deltaT_c'],
-                                           omap = modelMap)
-
+            else:
+                # Sources - switched to sim_objects underneath
+                signals.makeBeamModelSignalMap(shape, wcs, beam, RADeg = row['RADeg'],
+                                               decDeg = row['decDeg'], maxSizeDeg = 1.0,
+                                               amplitude = row['deltaT_c'],
+                                               omap = modelMap)
     t1=time.time()
     if reportTimingInfo: logger.info("makeModelImage - painting objects - took %.3f sec" % (t1-t0))
 
