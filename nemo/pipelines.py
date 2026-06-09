@@ -565,9 +565,23 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     # The same as was used for detecting objects
     thresholdSigma=config.parDict['thresholdSigma']
 
+    # Footprints if given
+    footprintsList=[]
+    if 'selFnFootprints' in config.parDict.keys():
+        for f in config.parDict['selFnFootprints']:
+            fDict={'label': f['label']}
+            mList=[]
+            wcsList=[]
+            for fileName in f['maskList']:
+                m, wcs=maps.chunkLoadMask(fileName)
+                mList.append(m)
+                wcsList.append(wcs)
+            fDict['maskList']=mList
+            fDict['wcsList']=wcsList
+            footprintsList.append(fDict)
+
     # We can now specify multiple scaling relations in the config - but we only use the first one here
     scalingRelationDict=config.parDict['massOptions']['scalingRelations'][0]
-
     # If the config didn't give cosmological parameters, put in defaults
     defaults={'H0': 70.0, 'Om0': 0.30, 'Ob0': 0.05, 'sigma8': 0.8, 'ns': 0.95,
               'concMassRelation': 'Bhattacharya13', 'massFunction': 'Tinker08',
@@ -584,6 +598,19 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     rhoType=scalingRelationDict['rhoType']
     delta=scalingRelationDict['delta']
     relCorr=scalingRelationDict['relativisticCorrection']
+    # Optional extras for z evolution
+    if 'onePlusRedshift_power' not in scalingRelationDict.keys():
+        onePlusRedshift_power=0.0
+    else:
+        onePlusRedshift_power=scalingRelationDict['onePlusRedshift_power']
+    if 'Ez_gamma' not in scalingRelationDict.keys():
+        Ez_gamma=2.0 # Default self-similar
+    else:
+        Ez_gamma=scalingRelationDict['Ez_gamma']
+    if 'zpivot' not in scalingRelationDict.keys():
+        zpivot=0.0
+    else:
+        zpivot=scalingRelationDict['zpivot']
 
     H0=config.parDict['massOptions']['H0']
     Om0=config.parDict['massOptions']['Om0']
@@ -615,18 +642,18 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
     pixAreaMap=maps.getPixelAreaArcmin2Map(RMSMap.shape, wcs)
     areaDeg2=(pixAreaMap[RMSMap > 0].sum())/60.0**2
 
-    logger.info("Mock parameters:")
-    logger.info("    noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s)" % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
+    logger.info("mock parameters:")
+    logger.info("noise sources (Poisson, intrinsic, measurement noise) = (%s, %s, %s)" % (applyPoissonScatter, applyIntrinsicScatter, applyNoiseScatter))
     skipKeys=['redshiftCatalog']
     for key in config.parDict['massOptions'].keys():
         if key not in skipKeys:
             if key == 'scalingRelations':
-                logger.info("    %s = %s" % (key, str(config.parDict['massOptions'][key][0])))
+                logger.info("%s = %s" % (key, str(config.parDict['massOptions'][key][0])))
             else:
-                logger.info("    %s = %s" % (key, str(config.parDict['massOptions'][key])))
-    logger.info("    QSource = %s" % (QSource))
-    logger.info("    optimization bias model = %s" % (str(biasModel)))
-    logger.info("    total area = %.1f square degrees" % (areaDeg2))
+                logger.info("%s = %s" % (key, str(config.parDict['massOptions'][key])))
+    logger.info("QSource = %s" % (QSource))
+    logger.info("optimization bias model = %s" % (str(biasModel)))
+    logger.info("total area = %.1f square degrees" % (areaDeg2))
 
     # Common set up
     cosmoModel=ccl.Cosmology(Omega_c = Om0-Ob0, Omega_b = Ob0, h = 0.01*H0, sigma8 = sigma8, n_s = ns,
@@ -638,7 +665,8 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                                      transferFunction = transferFunction,
                                      massFunction = massFunction,
                                      theoryCode = theoryCode)
-    scalingRelationDict={'tenToA0': tenToA0, 'B0': B0, 'sigma_int': sigma_int, 'Mpivot': Mpivot}
+    scalingRelationDict={'tenToA0': tenToA0, 'B0': B0, 'sigma_int': sigma_int, 'Mpivot': Mpivot,
+                         'Ez_gamma': Ez_gamma, 'onePlusRedshift_power': onePlusRedshift_power, 'zpivot': zpivot}
 
     # Generate mocks
     catList=[]
@@ -655,6 +683,10 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                                   applyRelativisticCorrection = relCorr,
                                   biasModel = biasModel,
                                   tileCoordsDict = tileCoordsDict)
+        # Some gynastics here just in case we have multiple mask images per footprint
+        for fDict in footprintsList:
+            for m, wcs in zip(fDict['maskList'], fDict['wcsList']):
+                tab=catalogs.addFootprintColumnToCatalog(tab, fDict['label'], m, wcs)
         if writeCatalogs == True:
             mockCatalogFileName=config.mocksDir+os.path.sep+"mockCatalog_%d.csv" % (mockNum)
             tab.meta['OM0']=Om0
@@ -666,6 +698,9 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
             tab.meta['B0']=B0
             tab.meta['SIGMA']=sigma_int
             tab.meta['MPIVOT']=Mpivot/1e14
+            tab.meta['ZPIVOT']=zpivot
+            tab.meta['EZGAMMA']=Ez_gamma
+            tab.meta['ZPPOWER']=onePlusRedshift_power
             tab.meta['RHOTYPE']=rhoType
             tab.meta['DELTA']=delta
             tab.meta['QSOURCE']=QSource
@@ -676,7 +711,7 @@ def makeMockClusterCatalog(config, numMocksToMake = 1, combineMocks = False, wri
                                  addInfo = addInfo, color = "cyan")
         catList.append(tab)
         t1=time.time()
-        logger.info("    took %.3f sec" % (t1-t0))
+        logger.info("took %.3f sec" % (t1-t0))
 
     if combineMocks == True:
         tab=atpy.vstack(catList)

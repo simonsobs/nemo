@@ -464,6 +464,10 @@ class MockSurvey(object):
             Ez_gamma=2.0 # Default self-similar
         else:
             Ez_gamma=scalingRelationDict['Ez_gamma']
+        if 'zpivot' not in scalingRelationDict.keys():
+            zpivot=0.0
+        else:
+            zpivot=scalingRelationDict['zpivot']
 
         # If given y0Noise as RMSMap, draw coords (assuming clusters aren't clustered - which they are...)
         # NOTE: switched to using valid part of RMSMap here rather than areaMask - we need to fix the latter to same area
@@ -557,8 +561,10 @@ class MockSurvey(object):
 
         # True y_c from the scaling relation
         Ez2s=np.power(ccl.h_over_h0(self.cosmoModel, 1/(1+zs)), Ez_gamma) # Ez_gamma = 2 for self-similar
+        Ez0=np.power(ccl.h_over_h0(self.cosmoModel, 1/(1+zpivot)), Ez_gamma)
+        onePlusRedshift_power_z0=np.power(1+zpivot, onePlusRedshift_power)
         try:
-            true_y0s=tenToA0*Ez2s*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*np.power(1+zs, onePlusRedshift_power)
+            true_y0s=tenToA0*(Ez2s/Ez0)*np.power(np.power(10, log10Ms)/Mpivot, 1+B0)*(np.power(1+zs, onePlusRedshift_power)/onePlusRedshift_power_z0)
         except:
             raise Exception("Negative y0 values (probably spline related) for H0 = %.6f Om0 = %.6f sigma8 = %.6f at z = %.3f" % (self.H0, self.Om0, self.sigma8, zk))
         if applyRelativisticCorrection == True:
