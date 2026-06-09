@@ -921,6 +921,7 @@ class SelFn(object):
             # NOTE: Still called Ez2, but now has gamma option enabled, and possibly zpivot != 0
             Ez0=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zpivot)), Ez_gamma)
             Ez2=np.power(ccl.h_over_h0(self.mockSurvey.cosmoModel, 1/(1+zRange)), Ez_gamma)/Ez0
+            onePlusRedshift_power_z0=np.power(1+zpivot, onePlusRedshift_power)
             # Mass dependence is z-independent, so compute it once outside the redshift loop
             massTerm=np.power(np.power(10, self.log10M)/Mpivot, 1+B0)
             for i in range(len(zRange)):
@@ -929,7 +930,7 @@ class SelFn(object):
                 k=np.argmin(abs(self.mockSurvey.z-zk))
                 Qs_zk=self.Q.getQ(self._theta500Grid[i], zk, tileName = tileName)
                 #Qs_zk=self.compQInterpolator(theta500s_zk) # Survey-averaged Q from injection sims
-                true_y0s_zk=tenToA0*Ez2[i]*massTerm*np.power(1+zk, onePlusRedshift_power)
+                true_y0s_zk=tenToA0*Ez2[i]*massTerm*(np.power(1+zk, onePlusRedshift_power)/onePlusRedshift_power_z0)
                 if applyQ == True:
                     true_y0s_zk=true_y0s_zk*Qs_zk
                 if self.applyRelativisticCorrection == True:
