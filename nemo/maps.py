@@ -1423,6 +1423,134 @@ def getPixelAreaArcmin2Map(shape, wcs):
     return pixAreasArcmin2Map    
     
 #-------------------------------------------------------------------------------------------------------------
+def _getLocalWCSScalesDeg(shape, wcs, x, y):
+    """Measures the WCS scales local to the given pixel coordinates, by differencing in pixel coordinates.
+
+    Returns:
+        RA degrees per pixel in the x direction, dec degrees per pixel in the y direction, and the
+        declination in degrees at the given position.
+
+    Note:
+        The x scale here is in degrees *of RA*, not degrees on the sky - see
+        :meth:`getLocalPixelScalesDeg` for the latter, which is usually what is wanted. This is used
+        directly only by :meth:`getRAPixelPeriod`.
+
+    Note:
+        We difference in pixel coordinates, so the RA = +/-180 deg branch cut is never crossed in the wrong
+        direction, although the RA values we get back may straddle it (hence wrapping the difference into
+        +/-180 deg). We use the pixell routines rather than :meth:`astWCS.WCS.pix2wcs`, because the latter
+        returns nan for pixel coordinates that fall outside of the map (and we need to look just over the
+        edge).
+
+    """
+
+    pix=np.array([[y, y, y-0.5, y+0.5], [x-0.5, x+0.5, x, x]])
+    coords=np.degrees(enmap.pix2sky(shape, wcs.AWCS, pix))
+    RADegPerPix=abs((coords[1, 1]-coords[1, 0]+180) % 360 - 180)
+    decDegPerPix=abs(coords[0, 3]-coords[0, 2])
+    decDeg=0.5*(coords[0, 2]+coords[0, 3])
+
+    return RADegPerPix, decDegPerPix, decDeg
+
+#-------------------------------------------------------------------------------------------------------------
+def getLocalPixelScalesDeg(shape, wcs, x, y):
+    """Returns the local pixel scales at the given pixel coordinates, in degrees *on the sky*, measured from
+    the WCS itself so that this works for any projection.
+
+    Use this for anything defined as an angle on the sky - e.g., sizing the postage stamp used to paint a
+    cluster of a given angular radius (see :meth:`nemo.signals._getStampPixelBounds`).
+
+    Args:
+        shape (:obj:`tuple`): The dimensions of the map (height, width) in pixels.
+        wcs (:obj:`astWCS.WCS`): WCS of the map.
+        x (:obj:`float`): Pixel coordinate on the x axis.
+        y (:obj:`float`): Pixel coordinate on the y axis.
+
+    Returns:
+        Degrees on the sky per pixel in the x direction, and in the y direction.
+
+    Note:
+        Lines of constant RA converge towards the poles, so a pixel spans less angle on the sky than it does
+        in RA, and the x scale is scaled by cos(dec) accordingly. For projections where the pixel scale
+        already varies with declination (e.g., TAN), the measured RA scale carries the 1/cos(dec) factor
+        itself, and this puts it back onto the sky. The y scale needs no such correction, since degrees of
+        declination along a meridian are degrees on the sky.
+
+    """
+
+    RADegPerPix, decDegPerPix, decDeg=_getLocalWCSScalesDeg(shape, wcs, x, y)
+
+    return RADegPerPix*np.cos(np.radians(decDeg)), decDegPerPix
+
+#-------------------------------------------------------------------------------------------------------------
+def getRAPixelPeriod(shape, wcs, y = None):
+    """Returns the number of pixels corresponding to 360 deg in RA, for a map that covers all RA (and so
+    wraps in the x direction, as full sky ACT/SO CAR maps do). Returns None if the map does not wrap.
+
+    Objects within a whisker of RA = +/-180 deg need this: RA -> pixel conversion folds at the branch cut
+    there, so such an object is reported either at the far end of the map or at x = -1e-10 rather than 0,
+    when it is really at the other edge (or right on it).
+
+    Args:
+        shape (:obj:`tuple`): The dimensions of the map (height, width) in pixels.
+        wcs (:obj:`astWCS.WCS`): WCS of the map.
+        y (:obj:`float`, optional): Pixel coordinate on the y axis at which to measure the RA pixel scale.
+            Defaults to the middle of the map.
+
+    Returns:
+        Number of pixels spanning 360 deg in RA, or None if the map does not cover all RA.
+
+    Note:
+        This is the one place that wants the pixel scale in degrees of RA rather than degrees on the sky,
+        since the wrap period is a property of the RA axis.
+
+    """
+
+    if y is None:
+        y=shape[0]/2
+    RADegPerPix, decDegPerPix, decDeg=_getLocalWCSScalesDeg(shape, wcs, shape[1]/2, y)
+    if RADegPerPix <= 0:
+        return None
+    wrapPix=int(round(360.0/RADegPerPix))
+    if wrapPix < 1 or shape[1] < wrapPix:
+        return None
+
+    # We check that the WCS really is periodic, rather than assume it from the pixel scale (which is only
+    # linear in RA for cylindrical projections)
+    pix=np.array([[y, y], [0.0, float(wrapPix)]])
+    coords=np.degrees(enmap.pix2sky(shape, wcs.AWCS, pix))
+    if abs((coords[1, 1]-coords[1, 0]+180) % 360 - 180) > 0.01*RADegPerPix or \
+       abs(coords[0, 1]-coords[0, 0]) > 1e-6:
+        return None
+
+    return wrapPix
+
+#-------------------------------------------------------------------------------------------------------------
+def wrapXPixelCoords(x, shape, wcs = None, xPixWrap = None):
+    """Folds x pixel coordinates into the range covered by the map, for a map that wraps in RA. Coordinates
+    are folded into [-0.5, shape[1]-0.5), i.e., the area covered by the map's pixels.
+
+    Args:
+        x (:obj:`float` or :obj:`np.ndarray`): Pixel coordinate(s) on the x axis.
+        shape (:obj:`tuple`): The dimensions of the map (height, width) in pixels.
+        wcs (:obj:`astWCS.WCS`, optional): WCS of the map, used to find the wrap period if `xPixWrap` is
+            not given.
+        xPixWrap (:obj:`int`, optional): Number of pixels spanning 360 deg in RA, as returned by
+            :meth:`getRAPixelPeriod` (None if the map does not wrap, in which case `x` is returned as is).
+
+    Returns:
+        x pixel coordinate(s), folded into the map if it wraps in RA.
+
+    """
+
+    if xPixWrap is None and wcs is not None:
+        xPixWrap=getRAPixelPeriod(shape, wcs)
+    if xPixWrap is None:
+        return x
+
+    return (x+0.5) % xPixWrap - 0.5
+
+#-------------------------------------------------------------------------------------------------------------
 def estimateContaminationFromSkySim(config, imageDict):
     """Estimate contamination by running on source-free sky simulations (CMB plus noise that we generate here
     on the fly).

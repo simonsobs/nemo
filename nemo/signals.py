@@ -630,6 +630,71 @@ def makeBeamModelSignalMap(shape, wcs, beam, amplitude = None, RADeg = None, dec
     return signalMap
 
 #------------------------------------------------------------------------------------------------------------
+def _getStampPixelBounds(shape, wcs, RADeg, decDeg, maxSizeDeg):
+    """Finds the pixel bounds of the smallest postage stamp that contains everything within `maxSizeDeg`
+    (an angular radius, in degrees) of the given coordinates. This is used to restrict the area over which
+    objects are painted into maps (see :meth:`_paintSignalMap`).
+
+    The bounds are found in pixel coordinates, rather than by feeding an RA, dec range to
+    :meth:`astImages.clipUsingRADecCoords`, because RA -> pixel conversion folds at the RA = +/-180 deg
+    branch cut. For an object within `maxSizeDeg` of there, that gives a pixel range which is the inverse
+    of the one wanted (i.e., the whole map except the stamp), and the object is silently not painted.
+
+    Args:
+        shape (:obj:`tuple`): The dimensions of the map (height, width) in pixels.
+        wcs (:obj:`astWCS.WCS`): WCS of the map.
+        RADeg (:obj:`float`): Right ascension of the stamp centre, in decimal degrees.
+        decDeg (:obj:`float`): Declination of the stamp centre, in decimal degrees.
+        maxSizeDeg (:obj:`float`): Angular radius of the stamp, in degrees.
+
+    Returns:
+        Pixel bounds of the stamp (xMin, xMax, yMin, yMax - as used for a numpy slice), and the number of
+        pixels corresponding to 360 deg in RA (or None, if the map does not wrap in RA). If the map does
+        wrap, then xMin may be negative, and xMax may be larger than the map width - the stamp must then be
+        added into the map modulo the returned wrap period.
+
+    Note:
+        The pixel scales come from :meth:`maps.getLocalPixelScalesDeg`, in degrees on the sky, and the RA
+        wrap period from :meth:`maps.getRAPixelPeriod`, which :meth:`catalogs.getCatalogWithinImage` uses
+        too.
+
+    """
+
+    # NOTE: pixell and astWCS agree on the pixel coordinate convention here
+    yc, xc=enmap.sky2pix(shape, wcs.AWCS, np.array([[np.radians(decDeg)], [np.radians(RADeg)]])).ravel()
+
+    # Does the map cover all 360 deg of RA (and so wrap)? If so, fold the object into it, which matters for
+    # an object just the other side of RA = +/-180 deg (reported at the far end of the map)
+    xPixWrap=maps.getRAPixelPeriod(shape, wcs, y = yc)
+    if xPixWrap is not None:
+        xc=maps.wrapXPixelCoords(xc, shape, xPixWrap = xPixWrap)
+
+    # maxSizeDeg is an angle on the sky, so we need the pixel scales on the sky (i.e., the x scale here
+    # already accounts for lines of constant RA converging towards the poles)
+    xDegPerPix, yDegPerPix=maps.getLocalPixelScalesDeg(shape, wcs, xc, yc)
+    if xDegPerPix > 0:
+        xHalfPix=int(np.ceil(maxSizeDeg/xDegPerPix))
+    else:   # e.g., exactly at a pole
+        xHalfPix=shape[1]
+    if yDegPerPix > 0:
+        yHalfPix=int(np.ceil(maxSizeDeg/yDegPerPix))
+    else:
+        yHalfPix=shape[0]
+
+    xMin=int(np.floor(xc))-xHalfPix
+    xMax=int(np.ceil(xc))+xHalfPix+1
+    yMin=max(int(np.floor(yc))-yHalfPix, 0)
+    yMax=min(int(np.ceil(yc))+yHalfPix+1, shape[0])
+
+    # Only x can run off the edge of the map and still mean something, and only if the map wraps in RA
+    if xPixWrap is None or xMax-xMin >= shape[1]:
+        xPixWrap=None
+        xMin=max(xMin, 0)
+        xMax=min(xMax, shape[1])
+
+    return xMin, xMax, yMin, yMax, xPixWrap
+
+#------------------------------------------------------------------------------------------------------------
 def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, amplitude = None,
                     maxSizeDeg = 10.0, convolveWithBeam = True, vmin = 1e-12, omap = None,
                     obsFrequencyGHz = None, TCMBAlpha = 0, z = None):
@@ -676,19 +741,33 @@ def _paintSignalMap(shape, wcs, tckP, beam = None, RADeg = None, decDeg = None, 
         amps=np.array([amp], dtype = dtype)
 
     if omap is not None:
-        ra1=RADeg-(maxSizeDeg/1.0)/np.cos(np.radians(decDeg))
-        ra0=RADeg+(maxSizeDeg/1.0)/np.cos(np.radians(decDeg))
-        dec1=decDeg-maxSizeDeg/1.0
-        dec0=decDeg+maxSizeDeg/1.0
-        clip=astImages.clipUsingRADecCoords(omap, wcs, ra1, ra0, dec0, dec1)
-        modelClip=pointsrcs.sim_objects(clip['data'].shape, clip['wcs'].AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,
-                                        rmax = np.radians(maxSizeDeg), #prof_equi = False,
-                                        pixwin = False)
-        if obsFrequencyGHz is not None:
-            modelClip=maps.convertToDeltaT(modelClip, obsFrequencyGHz = obsFrequencyGHz,
-                                           TCMBAlpha = TCMBAlpha, z = z)
-        xMin, xMax, yMin, yMax=clip['clippedSection']
-        omap[yMin:yMax, xMin:xMax]=omap[yMin:yMax, xMin:xMax]+modelClip
+        # We paint into a postage stamp per object, rather than over the whole map, purely for speed.
+        # NOTE: The stamp bounds are found in pixel coordinates - working them out by converting an RA, dec
+        # range breaks for objects within maxSizeDeg of RA = +/-180 deg (see _getStampPixelBounds).
+        for i in range(poss.shape[1]):
+            objRADeg=np.degrees(poss[1, i])
+            objDecDeg=np.degrees(poss[0, i])
+            xMin, xMax, yMin, yMax, xPixWrap=_getStampPixelBounds(omap.shape, wcs, objRADeg, objDecDeg,
+                                                                  maxSizeDeg)
+            if xMax <= xMin or yMax <= yMin:
+                continue
+            clipAWCS=wcs.AWCS.deepcopy()
+            clipAWCS.wcs.crpix=[wcs.AWCS.wcs.crpix[0]-xMin, wcs.AWCS.wcs.crpix[1]-yMin]
+            clipAWCS.wcs.set()
+            modelClip=pointsrcs.sim_objects((yMax-yMin, xMax-xMin), clipAWCS, poss[:, i:i+1],
+                                            amps[i:i+1] if len(amps) > 1 else amps, (r, abs(rprof)),
+                                            vmin = vmin, rmax = np.radians(maxSizeDeg), #prof_equi = False,
+                                            pixwin = False)
+            if obsFrequencyGHz is not None:
+                modelClip=maps.convertToDeltaT(modelClip, obsFrequencyGHz = obsFrequencyGHz,
+                                               TCMBAlpha = TCMBAlpha, z = z)
+            if xPixWrap is None:
+                omap[yMin:yMax, xMin:xMax]=omap[yMin:yMax, xMin:xMax]+modelClip
+            else:
+                # Stamp straddles the RA = +/-180 deg wrap point, so it goes in at both ends of the map
+                xIndices=np.arange(xMin, xMax) % xPixWrap
+                keep=np.logical_and(xIndices >= 0, xIndices < omap.shape[1])
+                omap[yMin:yMax][:, xIndices[keep]]=omap[yMin:yMax][:, xIndices[keep]]+modelClip[:, keep]
         signalMap=omap
     else:
         signalMap=pointsrcs.sim_objects(shape, wcs.AWCS, poss, amps, (r, abs(rprof)), vmin = vmin,

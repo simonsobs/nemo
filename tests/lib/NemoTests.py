@@ -401,6 +401,22 @@ class NemoTests(object):
             self._status="FAILED"
 
 
+    def check_RA_wrap_painting(self, beamFileName = None):
+        """Check that objects within maxSizeDeg of RA = +/-180 deg are painted into maps, i.e., that the
+        postage stamps used by the object painter are not mangled by the RA wrap (see
+        test_RAWrapPainting.py).
+
+        """
+        testsDir=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if testsDir not in sys.path:
+            sys.path.insert(0, testsDir)
+        from test_RAWrapPainting import runRAWrapCheck
+        if runRAWrapCheck(beamFileName) == True:
+            self._status="SUCCESS"
+        else:
+            self._status="FAILED"
+
+
     def status_should_be(self, expected_status):
         if expected_status != self._status:
             raise AssertionError("Expected status to be '%s' but was '%s'."

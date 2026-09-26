@@ -42,6 +42,11 @@ Cluster sim with nemoModel runs
 
 Source sim with nemoModel runs
     Generate simulated source maps
+
+Objects near RA = 180 deg are painted
+    Setup quickstart
+    Check RA wrap painting
+    Status should be        SUCCESS
     
 Recovered sim source amplitudes are unbiased
     Generate simulated source maps

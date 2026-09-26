@@ -1059,13 +1059,20 @@ def getCatalogWithinImage(tab, shape, wcs, mask = None):
     """
     
     xyCoords=np.array(wcs.wcs2pix(tab['RADeg'].tolist(), tab['decDeg'].tolist()))
+    # For a map covering all RA, an object a whisker either side of RA = +/-180 deg is reported at the far
+    # end of the map (or at x = -1e-10 rather than 0), because RA -> pixel conversion folds at the branch
+    # cut there. Folding x back into the map stops such objects being thrown out altogether.
+    xPixWrap=maps.getRAPixelPeriod(shape, wcs)
     selected=[]
     for i in range(len(tab)):
         x, y=xyCoords[i][0], xyCoords[i][1]
         if np.isnan(x) == True or np.isnan(y) == True:
             selected.append(False)
             continue
-        if x >= 0 and x < shape[1]-1 and y >= 0 and y < shape[0]-1:
+        if xPixWrap is not None:
+            x=maps.wrapXPixelCoords(x, shape, xPixWrap = xPixWrap)
+        # NOTE: Pixel centres run 0 ... shape-1, each covering +/-0.5 pix, so this is the area of the map
+        if x >= -0.5 and x < shape[1]-0.5 and y >= -0.5 and y < shape[0]-0.5:
             if mask is not None:
                 if mask[int(round(y)), int(round(x))] == 1:
                     selected.append(True)
