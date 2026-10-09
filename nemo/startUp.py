@@ -541,6 +541,8 @@ class NemoConfig(object):
         #     return None
 
         if 'tileDefinitions' in self.parDict.keys() and type(self.parDict['tileDefinitions']) == dict:
+            if 'minTileHeightPix' not in self.parDict['tileDefinitions'].keys():
+                self.parDict['tileDefinitions']['minTileHeightPix']=None
             # If we're not given a survey mask, we'll make one up from the map image itself
             if 'mask' in self.parDict['tileDefinitions'].keys() and self.parDict['tileDefinitions']['mask'] is not None:
                 surveyMaskPath=self.parDict['tileDefinitions']['mask']
@@ -567,9 +569,10 @@ class NemoConfig(object):
             self._tileDefinitionsMaskPath=surveyMaskPath
             self.parDict['tileDefinitions']=maps.autotiler(surveyMask, wcs,
                                                            self.parDict['tileDefinitions']['targetTileWidthDeg'],
-                                                           self.parDict['tileDefinitions']['targetTileHeightDeg'])
+                                                           self.parDict['tileDefinitions']['targetTileHeightDeg'],
+                                                           minTileHeightPix = self.parDict['tileDefinitions']['minTileHeightPix'])
             if self.verbose:
-                logger.info("breaking map into %d tiles" % (len(self.parDict['tileDefinitions'])))
+                logger.info("autotiler: map breaks into %d tiles [only applied if useTiling: True is set]" % (len(self.parDict['tileDefinitions'])))
 
             if DS9RegionFileName is not None:
                 maps.saveTilesDS9RegionsFile(self.parDict, DS9RegionFileName)

@@ -144,7 +144,8 @@ stitchTiles: True
 tileOverlapDeg: 1.0
 tileDefinitions: {mask: 'dr5_masking/AdvACTSurveyMask_v7_S18.fits',
                   targetTileWidthDeg: 10.0, 
-                  targetTileHeightDeg: 5.0}
+                  targetTileHeightDeg: 5.0,
+                  minTileHeightPix: 1000}
 
 # If this is given, only the named tiles will be processed (useful for testing)
 #tileNameList:

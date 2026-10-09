@@ -712,7 +712,7 @@ def convertToDeltaT(mapData, obsFrequencyGHz = 148, TCMBAlpha = 0.0, z = None):
     return mapData
 
 #-------------------------------------------------------------------------------------------------------------
-def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
+def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight, minTileHeightPix = None):
     """Given a survey mask (where values > 0 indicate valid area, and 0 indicates area to be ignored), 
     figure out an optimal tiling strategy to accommodate tiles of the given dimensions. The survey mask need
     not be contiguous (e.g., AdvACT and SO maps, using the default pixelization, can be segmented into three
@@ -724,6 +724,8 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
         wcs (astWCS.WCS): WCS associated with survey mask image.
         targetTileWidth (float): Desired tile width, in degrees (RA direction for CAR).
         targetTileHeight (float): Desired tile height, in degrees (dec direction for CAR).
+        minTileHeightPix (int, optional): Minimum tile height in pixels to accept. Useful to set if you have
+            a mask with a funky shape (e.g., this was set to 1000 for ACT DR5).
     
     Returns:
         Dictionary list defining tiles in same format as config file.
@@ -769,8 +771,9 @@ def autotiler(surveyMask, wcs, targetTileWidth, targetTileHeight):
     for maskSection, f in zip(maskSections, fieldIDs):
         yMin=maskSection[0].start
         yMax=maskSection[0].stop-1
-        if yMax-yMin < 1000:  # In case of stray individual pixels (e.g., combined with extended sources mask)
-            continue
+        if minTileHeightPix is not None: # Legacy from mask used in ACT DR5 when minTileHeightPix = 1000 needed
+            if yMax-yMin < minTileHeightPix:  # In case of stray individual pixels (e.g., combined with extended sources mask)
+                continue
         xc=int((maskSection[1].start+(maskSection[1].stop-1))/2)
 
         # Some people want to run on full sky CAR so we have to avoid that blowing up at the poles
