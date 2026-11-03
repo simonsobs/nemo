@@ -818,6 +818,14 @@ class NemoConfig(object):
                         filtDict['params']['noiseModelCatalog']=[]
                         for noiseSubIndex in options['noiseModelCatalogFromSets']:
                             filtDict['params']['noiseModelCatalog'].append(self.filterSetOptions[noiseSubIndex]['catalog'])
+                    # Per-set changes to noiseParams (e.g., estimating the noise differently in a later pass)
+                    if 'noiseParams' in options.keys():
+                        if 'noiseParams' in filtDict['params'].keys():
+                            noiseParams=copy.deepcopy(filtDict['params']['noiseParams'])
+                        else:
+                            noiseParams={}
+                        noiseParams.update(options['noiseParams'])
+                        filtDict['params']['noiseParams']=noiseParams
                 # NOTE: We prevent any filter set apart from the last one from writing maps, filters to disk
                 # Similarly, no point doing forced photometry on any run except the last, unless this is specifically requested
                 if setNum != self.filterSets[-1]:

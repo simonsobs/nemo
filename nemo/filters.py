@@ -364,7 +364,13 @@ class MapFilter(object):
         for mapDict in self.unfilteredMapsDictList:
             medWeights.append(mapDict['weights'])
         medWeights=np.median(np.array(medWeights), axis = 0)
-        
+
+        # Optionally exclude areas around objects in noiseModelCatalog (e.g., detections from a previous
+        # filter set) from the noise estimate - the filtered map itself is not changed
+        noiseMask=None
+        if 'maskNoiseModelCatalog' in self.params['noiseParams'].keys() and self.params['noiseParams']['maskNoiseModelCatalog'] == True:
+            noiseMask=self.makeNoiseModelCatalogMask(mapData.shape)
+
         # 'smart option' - measure noise in areas with similar weights (however weights defined)
         if self.params['noiseParams']['noiseGridArcmin'] == "smart":
             try:
@@ -374,6 +380,8 @@ class MapFilter(object):
             binEdges=np.linspace(medWeights.min(), medWeights.max(), numBins)
             RMSMap=np.zeros(medWeights.shape, dtype = np.float32)
             apodMask=np.not_equal(mapData, 0)
+            if noiseMask is not None:
+                apodMask=np.logical_and(apodMask, np.logical_not(noiseMask))
             for i in range(len(binEdges)-1):
                 # Find area of similar weight
                 binMin=binEdges[i]
@@ -391,6 +399,12 @@ class MapFilter(object):
                         chunkRMS=0.
                 elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'percentile':
                     chunkRMS=np.percentile(abs(chunkValues[goodAreaMask]), 68.3)
+                elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'std':
+                    # Plain stdev - only sensible if objects are excluded (see maskNoiseModelCatalog)
+                    if goodAreaMask.sum() >= 10:
+                        chunkRMS=np.std(chunkValues[goodAreaMask])
+                    else:
+                        chunkRMS=0.
                 else:
                     # Default: 3-sigma clipped stdev
                     if np.not_equal(chunkValues, 0).sum() != 0:
@@ -423,6 +437,21 @@ class MapFilter(object):
                 numYChunks=mapData.shape[0]/gridSize
             yChunks=np.linspace(0, mapData.shape[0], int(numYChunks+1), dtype = int)
             xChunks=np.linspace(0, mapData.shape[1], int(numXChunks+1), dtype = int)
+            # Optionally, lay the cells over this tile's own area only (i.e., excluding the overlap border),
+            # and write the RMS into each cell only, rather than into the whole window it is measured in.
+            # Every pixel in the tile's own area then gets the RMS measured in a window centred on its own
+            # cell. Windows can extend into the overlap border, but not into the apodized region.
+            onTileArea=False
+            if 'noiseGridOnTileArea' in self.params['noiseParams'].keys() and self.params['noiseParams']['noiseGridOnTileArea'] == True:
+                if self.unfilteredMapsDictList[0]['reprojectToTan'] == True:
+                    raise Exception("noiseGridOnTileArea is not supported with reprojectToTan")
+                onTileArea=True
+                minX, maxX, minY, maxY=self.unfilteredMapsDictList[0].tileCoordsDict[self.tileName]['areaMaskInClipSection']
+                if 'noiseGridArcmin' in self.params['noiseParams'].keys() and self.params['noiseParams']['noiseGridArcmin'] is not None:
+                    numXChunks=max(1, int(round((maxX-minX)/gridSize)))
+                    numYChunks=max(1, int(round((maxY-minY)/gridSize)))
+                yChunks=minY+np.linspace(0, maxY-minY, int(numYChunks+1), dtype = int)
+                xChunks=minX+np.linspace(0, maxX-minX, int(numXChunks+1), dtype = int)
             apodMask=np.not_equal(mapData, 0)
             RMSMap=np.zeros(mapData.shape, dtype = np.float32)
             # For this mode, interpreted as number of noise bins per cell
@@ -444,6 +473,11 @@ class MapFilter(object):
                         x0=0
                     if x1 > mapData.shape[1]:
                         x1=mapData.shape[1]
+                    if onTileArea:
+                        y0=max(y0, self.apodPix)
+                        y1=min(y1, mapData.shape[0]-self.apodPix)
+                        x0=max(x0, self.apodPix)
+                        x1=min(x1, mapData.shape[1]-self.apodPix)
                     chunkValues=mapData[y0:y1, x0:x1]
                     goodAreaMask=np.greater_equal(apodMask[y0:y1, x0:x1], 1.0)
                     if goodAreaMask.sum() == 0:
@@ -455,6 +489,10 @@ class MapFilter(object):
                     for p in percentiles:
                         binEdges.append(np.percentile(weightValues[goodAreaMask], p))
                     binEdges.append(weightValues[goodAreaMask].max()+1e-6)
+                    # Masked pixels are left out of the noise estimate only (the weight bins above include them,
+                    # so that they still get assigned an RMS value)
+                    if noiseMask is not None:
+                        goodAreaMask=np.logical_and(goodAreaMask, np.logical_not(noiseMask[y0:y1, x0:x1]))
                     for b in range(len(binEdges)-1):
                         binMin=binEdges[b]
                         binMax=binEdges[b+1]
@@ -467,6 +505,12 @@ class MapFilter(object):
                                 chunkRMS=0.
                         elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'percentile':
                             chunkRMS=np.percentile(abs(binValues), 68.3)
+                        elif 'RMSEstimator' in self.params['noiseParams'].keys() and self.params['noiseParams']['RMSEstimator'] == 'std':
+                            # Plain stdev - only sensible if objects are excluded (see maskNoiseModelCatalog)
+                            if (binMask*goodAreaMask).sum() >= 10:
+                                chunkRMS=np.std(binValues)
+                            else:
+                                chunkRMS=0.
                         else:
                             # Default: 3-sigma clipped stdev
                             if np.not_equal(binValues, 0).sum() != 0:
@@ -481,9 +525,83 @@ class MapFilter(object):
                             else:
                                 chunkRMS=0.
                         if chunkRMS > 0:
-                            RMSMap[y0:y1, x0:x1][binMask]=chunkRMS
-        
+                            if onTileArea:
+                                # Write into the cell only - the outermost weight bins are open-ended here,
+                                # so that every pixel in the cell gets a value
+                                cellWeights=medWeights[yChunks[i]:yChunks[i+1], xChunks[k]:xChunks[k+1]]
+                                cellMask=np.ones(cellWeights.shape, dtype = bool)
+                                if b > 0:
+                                    cellMask=np.logical_and(cellMask, cellWeights >= binMin)
+                                if b < len(binEdges)-2:
+                                    cellMask=np.logical_and(cellMask, cellWeights < binMax)
+                                RMSMap[yChunks[i]:yChunks[i+1], xChunks[k]:xChunks[k+1]][cellMask]=chunkRMS
+                            else:
+                                RMSMap[y0:y1, x0:x1][binMask]=chunkRMS
+
         return RMSMap
+
+
+    def makeNoiseModelCatalogMask(self, shape):
+        """Makes a mask of circular regions around the objects in the noise model catalog(s) (see
+        `noiseModelCatalogFromSets` in `filterSetOptions`), which are excluded from the noise estimate
+        in :meth:`makeNoiseMap` if ``maskNoiseModelCatalog`` is True in ``noiseParams``. Only objects with
+        fixed_SNR (or SNR, if fixed_SNR is not present) above ``noiseMaskMinSNR`` are masked. The radius
+        depends on the same S/N, as set by ``noiseMaskSNRBins`` and ``noiseMaskRadiiArcmin`` in ``noiseParams``.
+
+        Args:
+            shape (:obj:`tuple`): Shape of the filtered map.
+
+        Returns:
+            Mask (2d :obj:`np.ndarray`, bool), where True marks pixels to leave out of the noise estimate.
+
+        """
+
+        if 'noiseModelCatalog' not in self.params.keys() or self.params['noiseModelCatalog'] is None:
+            raise Exception("maskNoiseModelCatalog is True but there is no noiseModelCatalog - set noiseModelCatalogFromSets in filterSetOptions")
+        if 'noiseMaskSNRBins' in self.params['noiseParams'].keys():
+            SNRBins=self.params['noiseParams']['noiseMaskSNRBins']
+        else:
+            SNRBins=[10., 20., 50.]
+        if 'noiseMaskRadiiArcmin' in self.params['noiseParams'].keys():
+            radiiArcmin=self.params['noiseParams']['noiseMaskRadiiArcmin']
+        else:
+            radiiArcmin=[5., 10., 15., 20.]
+        if len(radiiArcmin) != len(SNRBins)+1:
+            raise Exception("noiseMaskRadiiArcmin needs one more entry than noiseMaskSNRBins")
+        if 'noiseMaskMinSNR' in self.params['noiseParams'].keys():
+            minSNR=self.params['noiseParams']['noiseMaskMinSNR']
+        else:
+            minSNR=4.0
+
+        noiseMask=np.zeros(shape, dtype = bool)
+        degreesMap=np.ones(shape, dtype = float)*1e6
+        pixScaleDeg=self.wcs.getPixelSizeDeg()
+        for tab in self.params['noiseModelCatalog']:
+            if tab is None or len(tab) == 0:
+                continue
+            if 'fixed_SNR' in tab.keys():
+                SNRs=np.array(tab['fixed_SNR'])
+            else:
+                SNRs=np.array(tab['SNR'])
+            # Only objects above noiseMaskMinSNR: catalogCuts are not applied to the catalogs of earlier filter sets,
+            # so they go down to thresholdSigma, and masking all those noise peaks would bias the RMS low
+            keep=SNRs > minSNR
+            SNRs=SNRs[keep]
+            # radiiArcmin[0] for SNR <= SNRBins[0], radiiArcmin[1] for SNRBins[0] < SNR <= SNRBins[1], etc.
+            radiiDeg=np.array(radiiArcmin)[np.digitize(SNRs, SNRBins, right = True)]/60.
+            # Only objects whose mask region can overlap this map (including those in neighbouring tiles)
+            RAs, decs=np.array(tab['RADeg'])[keep], np.array(tab['decDeg'])[keep]
+            xy=np.array(self.wcs.wcs2pix(RAs, decs))
+            padPix=radiiDeg/pixScaleDeg/np.cos(np.radians(decs))+2
+            near=np.logical_and(np.logical_and(xy[:, 0] > -padPix, xy[:, 0] < shape[1]+padPix),
+                                np.logical_and(xy[:, 1] > -padPix, xy[:, 1] < shape[0]+padPix))
+            for RADeg, decDeg, rDeg in zip(RAs[near], decs[near], radiiDeg[near]):
+                degreesMap, xBounds, yBounds=maps.makeDegreesDistanceMap(degreesMap, self.wcs, RADeg, decDeg, 1.2*rDeg)
+                section=np.s_[yBounds[0]:yBounds[1], xBounds[0]:xBounds[1]]
+                noiseMask[section]=np.logical_or(noiseMask[section], degreesMap[section] < rDeg)
+                degreesMap[section]=1e6
+
+        return noiseMask
     
     
     def loadFRelWeights(self):

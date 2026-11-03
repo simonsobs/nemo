@@ -723,9 +723,34 @@ noiseParams
         
         The method used to estimate the noise in cells (see `noiseGridArcmin`).
         If this is not given, the default 3σ clipping is used. Other options
-        are ``biweight`` (uses a biweight scale estimate of the noise) or
-        ``percentile`` (uses the 68.3 percentile as the noise estimate).
-    
+        are ``biweight`` (uses a biweight scale estimate of the noise),
+        ``percentile`` (uses the 68.3 percentile as the noise estimate), or
+        ``std`` (plain standard deviation, with no outlier rejection - only
+        sensible if detected objects are excluded, see `maskNoiseModelCatalog`).
+
+    :noiseGridOnTileArea (bool):
+
+        If True, the noise cells (see `noiseGridArcmin`) are laid over each
+        tile's own area only (excluding the overlap border), and the RMS
+        measured in the window around each cell is written into that cell only.
+        Each pixel then gets the RMS measured in a window centred on its own
+        cell, and the windows never reach into the apodized tile edge
+        (default: False).
+
+    :maskNoiseModelCatalog (bool):
+
+        If True, pixels within some radius of the objects in the noise model
+        catalog (see `noiseModelCatalogFromSets` in `filterSetOptions`_) are
+        left out of the noise estimate (default: False). Only objects with
+        fixed_SNR (or SNR) > ``noiseMaskMinSNR`` (default: 4) are masked:
+        `catalogCuts` are not applied to the catalogs of earlier filter sets,
+        which therefore go down to `thresholdSigma`, and masking those noise
+        peaks would bias the noise estimate low. The radius depends on the same
+        S/N, as set by ``noiseMaskSNRBins`` (default: [10, 20, 50]) and
+        ``noiseMaskRadiiArcmin`` (default: [5, 10, 15, 20]): i.e., by default,
+        5 arcmin for fixed_SNR <= 10, 10 arcmin for 10 < fixed_SNR <= 20, and
+        so on.
+
         
     .. note:: Additional options used by the ``RealSpaceMatchedFilter`` method
               are not yet documented here. For now, please refer to the config
@@ -817,6 +842,20 @@ filterSetOptions
 ^^^^^^^^^^^^^^^^
 
     To be added later.
+
+    :noiseParams (dict):
+
+        Overrides entries in the `noiseParams` of all filters in this filter set
+        (see `mapFilters`_). For example, to estimate the noise in the second pass
+        with the objects detected in the first pass left out:
+
+        .. code-block:: yaml
+
+           filterSetOptions: {10: {},
+                              11: {noiseModelCatalogFromSets: [10],
+                                   noiseParams: {noiseGridOnTileArea: True,
+                                                 maskNoiseModelCatalog: True,
+                                                 RMSEstimator: 'std'}}}
 
 
 .. _ClusterMassEstimates:
